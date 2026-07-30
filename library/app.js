@@ -52,6 +52,72 @@ function getHits(){ try{ return JSON.parse(localStorage.getItem(HITS)||"[]"); }c
 function getEndpoint(){ try{ return localStorage.getItem(ENDPT)||""; }catch(e){ return ""; } }
 function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.removeItem(ENDPT); }catch(e){} }
 
+/* ---------- GitHub publishing (the console's backend = the repo itself) ---------- */
+const GH = "thrive_gh_v1";
+function ghConfig(){ try{ return JSON.parse(localStorage.getItem(GH)||"{}"); }catch(e){ return {}; } }
+function setGhConfig(c){ try{ localStorage.setItem(GH, JSON.stringify(c)); }catch(e){} }
+function ghReady(){ const c=ghConfig(); return !!(c.token && c.owner && c.repo); }
+function b64(str){ return btoa(unescape(encodeURIComponent(str))); }
+function unb64(str){ try{ return decodeURIComponent(escape(atob((str||"").replace(/\n/g,"")))); }catch(e){ return ""; } }
+async function ghApi(path, opts){
+  const c=ghConfig();
+  return fetch("https://api.github.com/repos/"+c.owner+"/"+c.repo+path, Object.assign({}, opts, {
+    headers: Object.assign({ "Authorization":"Bearer "+c.token, "Accept":"application/vnd.github+json",
+      "X-GitHub-Api-Version":"2022-11-28" }, (opts&&opts.headers)||{}) }));
+}
+async function ghGetFile(path){
+  const c=ghConfig(); const r=await ghApi("/contents/"+path+"?ref="+encodeURIComponent(c.branch||"main"));
+  if(r.status===404) return null;
+  if(!r.ok) throw new Error("GitHub "+r.status);
+  return r.json();
+}
+async function ghPutFile(path, text, message){
+  const c=ghConfig(); const existing=await ghGetFile(path);
+  const body={ message:message, content:b64(text), branch:(c.branch||"main") };
+  if(existing && existing.sha) body.sha=existing.sha;
+  const r=await ghApi("/contents/"+path, {method:"PUT", body:JSON.stringify(body)});
+  if(!r.ok) throw new Error("GitHub "+r.status+" — "+(await r.text()).slice(0,140));
+  return r.json();
+}
+async function ghDeleteFile(path, message){
+  const c=ghConfig(); const existing=await ghGetFile(path); if(!existing) return;
+  const r=await ghApi("/contents/"+path, {method:"DELETE", body:JSON.stringify({message:message, sha:existing.sha, branch:(c.branch||"main")})});
+  if(!r.ok && r.status!==404) throw new Error("GitHub "+r.status);
+}
+async function ghVerify(){
+  const c=ghConfig();
+  const r=await fetch("https://api.github.com/repos/"+c.owner+"/"+c.repo,
+    {headers:{ "Authorization":"Bearer "+c.token, "Accept":"application/vnd.github+json" }});
+  if(!r.ok) throw new Error("GitHub "+r.status);
+  return r.json();
+}
+function manifestEntry(rec){
+  return { slug:rec.slug, business:rec.business||"", template:rec.template||"", sent_on:rec.sent_on||"",
+    location:rec.location||"", phone:rec.phone||"", status:rec.status||"sent" };
+}
+async function publishOpp(rec){
+  await ghPutFile("opp/"+rec.slug+"/index.html", rec.html||"", "Publish opp/"+rec.slug);
+  const mf=await ghGetFile("library/manifest.json");
+  let man = mf ? (JSON.parse(unb64(mf.content))||{}) : {};
+  man.site=man.site||SITE; man.base_path=man.base_path||OPP_PATH; man.opportunities=man.opportunities||[];
+  const e=manifestEntry(rec); const i=man.opportunities.findIndex(o=>o.slug===rec.slug);
+  if(i>=0) man.opportunities[i]=e; else man.opportunities.push(e);
+  man.updated=new Date().toISOString().slice(0,10);
+  await ghPutFile("library/manifest.json", JSON.stringify(man,null,2)+"\n", "Update manifest: "+rec.slug);
+}
+async function unpublishOpp(slug){
+  await ghDeleteFile("opp/"+slug+"/index.html", "Unpublish opp/"+slug);
+  const mf=await ghGetFile("library/manifest.json");
+  if(mf){ let man=JSON.parse(unb64(mf.content))||{}; man.opportunities=(man.opportunities||[]).filter(o=>o.slug!==slug);
+    man.updated=new Date().toISOString().slice(0,10);
+    await ghPutFile("library/manifest.json", JSON.stringify(man,null,2)+"\n", "Remove "+slug+" from manifest"); }
+}
+function openLocalPreview(html){
+  const blob=new Blob([html||"<!doctype html><meta charset=utf-8><p style='font-family:sans-serif;color:#888;padding:40px'>No saved content.</p>"],{type:"text/html;charset=utf-8"});
+  const url=URL.createObjectURL(blob); const w=window.open(url,"_blank");
+  setTimeout(()=>URL.revokeObjectURL(url), 60000); return w;
+}
+
 /* ---------- data (manifest = committed, overlay = local edits) ---------- */
 async function loadManifest(){
   try{ const r=await fetch("./manifest.json",{cache:"no-store"}); const j=await r.json();
@@ -96,11 +162,12 @@ async function initDashboard(){
     const op=document.createElement("option"); op.value=tp; op.textContent=tp; filt.appendChild(op);
   });
 
+  function isLive(o){ return !o._local || !!o.published; }
   function badgeFor(o){
     if(o.archived) return '<span class="badge arch">'+t("badge_archived")+'</span>';
-    if(o._local)  return '<span class="badge draft">'+t("draft")+'</span>';
+    if(o._local && !o.published) return '<span class="badge draft">'+t("draft")+'</span>';
     if(o._edited) return '<span class="badge edit">'+t("badge_edited")+'</span>';
-    return '<span class="badge sent">'+t("sent")+'</span>';
+    return '<span class="badge sent">'+t("badge_live")+'</span>';
   }
 
   function render(){
@@ -119,11 +186,17 @@ async function initDashboard(){
     if(!rows.length){ grid.className="empty-wrap"; grid.innerHTML='<div class="empty">'+t("empty")+'</div>'; return; }
     grid.className="grid";
     grid.innerHTML = rows.map(o=>{
-      const arch = o.archived;
-      return `<div class="card${arch?" is-arch":""}">
+      const arch=o.archived, live=isLive(o), enc=encodeURIComponent(o.slug);
+      const linkRow = live
+        ? `<a class="link" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${esc(liveUrl(o.slug))}</a>`
+        : `<span class="link muted">${esc(liveUrl(o.slug))} · ${t("not_published")}</span>`;
+      const primary = live
+        ? `<a class="btn sm" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${t("open_page")}</a>`
+        : `<button class="btn sm" data-pub="${esc(o.slug)}">${t("publish")}</button>`;
+      const preview = o.html ? `<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>` : "";
+      return `<div class="card${arch?" is-arch":""}${live?"":" is-draft"}">
         <div class="card-top">
-          <div class="card-id"><p class="biz">${esc(o.business)||esc(o.slug)}</p>
-          <a class="link" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${esc(liveUrl(o.slug))}</a></div>
+          <div class="card-id"><p class="biz">${esc(o.business)||esc(o.slug)}</p>${linkRow}</div>
           ${badgeFor(o)}
         </div>
         <div class="meta">
@@ -133,9 +206,10 @@ async function initDashboard(){
           <span class="chip">${t("col_phone")}: ${esc(o.phone)||t("none")}</span>
         </div>
         <div class="row">
-          <a class="btn sm" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${t("open_page")}</a>
+          ${primary}
           <div class="actions">
-            <a class="btn ghost sm" href="editor.html?slug=${encodeURIComponent(o.slug)}">${t("edit")}</a>
+            ${preview}
+            <a class="btn ghost sm" href="editor.html?slug=${enc}">${t("edit")}</a>
             <button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>
             ${(o._local&&!o._edited)?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:""}
           </div>
@@ -143,6 +217,19 @@ async function initDashboard(){
       </div>`;
     }).join("");
 
+    grid.querySelectorAll("[data-prev]").forEach(b=>b.addEventListener("click",()=>{
+      const o=state.data.find(x=>x.slug===b.getAttribute("data-prev")); if(o) openLocalPreview(o.html);
+    }));
+    grid.querySelectorAll("[data-pub]").forEach(b=>b.addEventListener("click", async ()=>{
+      const slug=b.getAttribute("data-pub"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
+      if(!o.html){ toast(t("no_content_publish")); return; }
+      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
+      b.disabled=true; b.textContent=t("publishing");
+      try{
+        await publishOpp(o); saveDraft({slug, published:true}); o.published=true;
+        logActivity("publish", slug, o.business); toast(t("published_live")); render();
+      }catch(e){ toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("publish"); }
+    }));
     grid.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
       const slug=b.getAttribute("data-del");
       if(!confirm(t("confirm_remove"))) return;
@@ -249,14 +336,16 @@ async function initEditor(){
     const html=await currentHTML();
     el("frame").srcdoc = html || "<!doctype html><meta charset='utf-8'>";
   }
+  let editingLive=false;
   function record(){
     const slug = curSlug(); const v=values();
     return { slug, business:el("f_biz").value.trim(),
       template: mode==="upload"?"custom":el("f_template").value,
       sent_on:el("f_sent").value, location:el("f_location").value.trim(),
-      phone:el("f_phone").value.trim(), status:"sent",
+      phone:el("f_phone").value.trim(), status:"sent", mode:mode, published:editingLive,
       fields:{ QUOTE:v.QUOTE, QUOTE_BY:v.QUOTE_BY, PROOF1:v.PROOF1, PROOF2:v.PROOF2, PROOF3:v.PROOF3, WANT:v.WANT } };
   }
+  async function fullRecord(){ const r=record(); r.html=await currentHTML(); return r; }
 
   // mode switch
   el("mode_fill").addEventListener("click",()=>{ mode="fill"; el("mode_fill").classList.add("on"); el("mode_upload").classList.remove("on");
@@ -319,13 +408,29 @@ async function initEditor(){
     logActivity("download", curSlug(), el("f_biz").value.trim());
     toast(t("dl_toast"));
   });
-  el("saveLib").addEventListener("click", ()=>{
+  el("saveLib").addEventListener("click", async ()=>{
     if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
-    const rec=record(); const isNew = existing.indexOf(rec.slug)<0;
+    const rec=await fullRecord(); const isNew = existing.indexOf(rec.slug)<0;
     saveDraft(rec);
-    if(existing.indexOf(rec.slug)<0) existing.push(rec.slug);
+    if(isNew) existing.push(rec.slug);
     logActivity(isNew?"create":"save", rec.slug, rec.business);
     toast(t("saved_toast"));
+  });
+  const pubBtn=el("publishBtn");
+  if(pubBtn) pubBtn.addEventListener("click", async ()=>{
+    if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
+    if(missingRequired().length){ toast(t("need_fields")); return; }
+    if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
+    const rec=await fullRecord();
+    pubBtn.disabled=true; const old=pubBtn.textContent; pubBtn.textContent=t("publishing");
+    try{
+      await publishOpp(rec);
+      editingLive=true; rec.published=true; saveDraft(rec);
+      if(existing.indexOf(rec.slug)<0) existing.push(rec.slug);
+      logActivity("publish", rec.slug, rec.business);
+      toast(t("published_live"));
+    }catch(e){ toast(t("gh_err")+": "+e.message); }
+    finally{ pubBtn.disabled=false; pubBtn.textContent=old; }
   });
   el("copyManifest").addEventListener("click", ()=>{
     if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
@@ -343,9 +448,17 @@ async function initEditor(){
     const all=await mergedOpps();
     const d=all.find(x=>x.slug===editSlug);
     if(d){
+      editingLive = (!d._local || !!d.published);
       el("f_biz").value=d.business||""; el("f_slug").value=d.slug; el("f_slug").dataset.touched="1";
       el("f_sent").value=d.sent_on||el("f_sent").value; el("f_location").value=d.location||""; el("f_phone").value=d.phone||"";
       if(d.template && d.template!=="custom"){ el("f_template").value=d.template; }
+      // restore an uploaded/custom page so editing keeps its content
+      if((d.mode==="upload" || d.template==="custom") && d.html){
+        mode="upload"; uploadedHTML=d.html; uploadedName=(d.slug||"page")+".html";
+        el("mode_upload").classList.add("on"); el("mode_fill").classList.remove("on");
+        el("fillFields").hidden=true; el("uploadBox").hidden=false;
+        dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>";
+      }
       const F=d.fields||{};
       if("QUOTE" in F) el("f_quote").value=F.QUOTE||"";
       if("QUOTE_BY" in F) el("f_quoteby").value=F.QUOTE_BY||"";
@@ -383,6 +496,31 @@ function initActivity(){
   });
   window.onLangApplied=render;
   render();
+}
+
+/* ---------- settings (GitHub publishing + analytics endpoint) ---------- */
+function initSettings(){
+  const el=id=>document.getElementById(id);
+  const c=ghConfig();
+  el("gh_owner").value=c.owner||"thriveiii";
+  el("gh_repo").value=c.repo||"thrive-console";
+  el("gh_branch").value=c.branch||"main";
+  el("gh_token").value=c.token||"";
+  el("ep2").value=getEndpoint();
+  function persist(){ setGhConfig({ owner:el("gh_owner").value.trim(), repo:el("gh_repo").value.trim(),
+    branch:el("gh_branch").value.trim()||"main", token:el("gh_token").value.trim() }); }
+  function status(){ el("ghStatus").textContent = ghReady()?t("gh_connected"):t("gh_not_connected");
+    el("ghStatus").className="pill "+(ghReady()?"ok":"warn"); }
+  el("ghSave").addEventListener("click",()=>{ persist(); logActivity("settings","","github config"); toast(t("settings_saved")); status(); });
+  el("ghTest").addEventListener("click", async ()=>{
+    persist(); el("ghStatus").textContent=t("testing"); el("ghStatus").className="pill";
+    try{ const r=await ghVerify();
+      el("ghStatus").textContent="✓ "+r.full_name+(r.permissions&&r.permissions.push?" · write":" · read-only");
+      el("ghStatus").className="pill "+(r.permissions&&r.permissions.push?"ok":"warn"); }
+    catch(e){ el("ghStatus").textContent="✕ "+e.message; el("ghStatus").className="pill warn"; }
+  });
+  el("epSave2").addEventListener("click",()=>{ setEndpoint(el("ep2").value.trim()); toast(t("ins_saved")); });
+  window.onLangApplied=status; status();
 }
 
 /* ---------- templates gallery ---------- */
