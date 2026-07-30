@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Thrive · Activity</title>
+<title>Thrive · Insights</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="styles.css">
@@ -18,28 +18,31 @@
     <a href="index.html" data-i18n="nav_library">Library</a>
     <a href="editor.html" data-i18n="nav_editor">Editor</a>
     <a href="templates.html" data-i18n="nav_templates">Templates</a>
-    <a href="insights.html" data-i18n="nav_insights">Insights</a>
-    <a href="activity.html" class="active" data-i18n="nav_activity">Activity</a>
+    <a href="insights.html" class="active" data-i18n="nav_insights">Insights</a>
+    <a href="activity.html" data-i18n="nav_activity">Activity</a>
     <button id="langbtn" class="langbtn">العربية</button>
     <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
 
 <main class="wrap">
-  <div class="page-h"><h1 class="title" data-i18n="act_title">Activity Log</h1></div>
-  <p class="sub" data-i18n="act_sub"></p>
+  <div class="page-h"><h1 class="title" data-i18n="ins_title">Insights</h1><span class="pill" id="insSource"></span></div>
+  <p class="sub" data-i18n="ins_sub"></p>
 
   <div class="toolbar">
-    <button class="btn ghost" id="logRefresh" data-i18n="act_refresh">Refresh</button>
-    <button class="btn ghost" id="logExport" data-i18n="act_export">Export</button>
-    <button class="btn ghost danger" id="logClear" data-i18n="act_clear">Clear</button>
+    <div class="search"><input id="epInput" class="input" type="url" data-i18n-ph="ins_endpoint_ph"></div>
+    <button class="btn" id="epSave" data-i18n="ins_save">Save</button>
+    <button class="btn ghost" id="insRefresh" data-i18n="ins_refresh">Refresh</button>
+    <button class="btn ghost danger" id="insClear" data-i18n="ins_clear">Clear local data</button>
   </div>
+  <div class="note" data-i18n="ins_help"></div>
 
-  <div id="logBody" class="logwrap"></div>
+  <div class="tiles" id="tiles"></div>
+  <div id="insBody"></div>
 </main>
 
 <script src="i18n.js"></script>
 <script src="app.js"></script>
-<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initActivity(); });</script>
+<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initInsights(); });</script>
 </body>
 </html>

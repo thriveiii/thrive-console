@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Thrive · Approved Templates</title>
+<title>Thrive · Templates</title>
 <link rel="icon" href="../assets/thrive-logo.png">
+<link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="styles.css">
 <script>(function(){try{if(sessionStorage.getItem('thrive_gate_v1')!=='e00475a9bf66c48e332882a90f2638d0bf2f37272572f60ff0ca41e49f6e7c06')document.documentElement.classList.add('gate-locked');}catch(e){document.documentElement.classList.add('gate-locked');}})();</script>
 <script src="gate.js" defer></script>
@@ -17,6 +18,7 @@
     <a href="index.html" data-i18n="nav_library">Library</a>
     <a href="editor.html" data-i18n="nav_editor">Editor</a>
     <a href="templates.html" class="active" data-i18n="nav_templates">Templates</a>
+    <a href="insights.html" data-i18n="nav_insights">Insights</a>
     <a href="activity.html" data-i18n="nav_activity">Activity</a>
     <button id="langbtn" class="langbtn">العربية</button>
     <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
@@ -24,9 +26,28 @@
 </header>
 
 <main class="wrap">
-  <div class="page-h"><h1 class="title" data-i18n="tpl_title">Approved Templates</h1></div>
+  <div class="page-h"><h1 class="title" data-i18n="tpl_title">Templates</h1></div>
   <p class="sub" data-i18n="tpl_sub"></p>
-  <div class="tpl" id="tplList"></div>
+
+  <section class="panel upload-panel">
+    <h3 class="block-h" data-i18n="tpl_upload_h">Upload a template</h3>
+    <p class="sub" data-i18n="tpl_upload_sub"></p>
+    <div class="dz" id="tplDz" data-i18n="upload_dz">Drop a finished .html file here, or click to choose</div>
+    <input id="tplFile" type="file" accept=".html,.htm,text/html" hidden>
+    <div class="grid3">
+      <div class="field"><label data-i18n="tpl_id">Template id</label><input id="tpl_id" class="input" autocomplete="off" placeholder="my-template"></div>
+      <div class="field"><label data-i18n="tpl_name">Display name</label><input id="tpl_name" class="input" autocomplete="off"></div>
+      <div class="field"><label data-i18n="tpl_lang">Language</label>
+        <select id="tpl_lang"><option value="EN">EN</option><option value="AR">AR</option></select></div>
+    </div>
+    <button class="btn" id="tplAdd" data-i18n="tpl_add">Add template</button>
+  </section>
+
+  <h3 class="block-h" data-i18n="tpl_builtin_h">Approved templates</h3>
+  <div class="tpl" id="builtinList"></div>
+
+  <h3 class="block-h" style="margin-top:26px" data-i18n="tpl_custom_h">Your uploaded templates</h3>
+  <div class="tpl" id="customList"></div>
 </main>
 
 <script src="i18n.js"></script>

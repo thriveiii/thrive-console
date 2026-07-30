@@ -3,7 +3,7 @@
 A self-hosted, static library for the daily prospect pages. Each prospect gets a clean link:
 
 ```
-https://thriveiii.com/opp/<business-slug>
+https://console.thriveiii.com/opp/<business-slug>
 ```
 
 No Netlify, no per-deploy credits. Just a GitHub repo served by GitHub Pages, with a bilingual (AR/EN) dashboard and editor.
@@ -17,7 +17,7 @@ No Netlify, no per-deploy credits. Just a GitHub repo served by GitHub Pages, wi
 /library/              the dashboard, editor, and approved-templates gallery
 /library/manifest.json the classified list of every opportunity (name, date, location, phone)
 /templates/en-opp1/    the approved "Signal Brief" template (tokenized)
-/opp/<slug>/index.html one live page per prospect  ->  thriveiii.com/opp/<slug>
+/opp/<slug>/index.html one live page per prospect  ->  console.thriveiii.com/opp/<slug>
 /assets/               the Thrive logo
 CNAME                  thriveiii.com
 ```
@@ -53,7 +53,7 @@ The `CNAME` file already contains `thriveiii.com`. At your domain registrar (whe
 
 Then in **Settings → Pages → Custom domain** enter `thriveiii.com`, Save, and tick **Enforce HTTPS** once it is available. DNS can take a little while to propagate.
 
-> If you serve from a repo named exactly `thriveiii.com` or from `<username>.github.io`, the paths stay `/opp/<slug>` as shown. If you use a project repo with a custom domain (recommended), the custom domain makes the root `/`, so links remain `thriveiii.com/opp/<slug>`.
+> If you serve from a repo named exactly `thriveiii.com` or from `<username>.github.io`, the paths stay `/opp/<slug>` as shown. If you use a project repo with a custom domain (recommended), the custom domain makes the root `/`, so links remain `console.thriveiii.com/opp/<slug>`.
 
 ---
 
@@ -63,7 +63,7 @@ Each working day you receive **3 finished pages** (and their manifest entries). 
 
 1. In the repo, create the folder `opp/<slug>/` and put the page there as `index.html`.
 2. Add the opportunity to `library/manifest.json` under `opportunities` (or use the dashboard's **Export manifest.json** to regenerate the whole file).
-3. Commit and push. The page is live at `thriveiii.com/opp/<slug>` in about a minute.
+3. Commit and push. The page is live at `console.thriveiii.com/opp/<slug>` in about a minute.
 4. Copy that link into your outreach email.
 
 ### Doing it yourself in the browser

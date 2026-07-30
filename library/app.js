@@ -1,5 +1,5 @@
 /* Thrive Opportunity Library — shared client logic (vanilla JS, no build step) */
-const SITE = "thriveiii.com";
+const SITE = "console.thriveiii.com";  // live host for opp/ result pages
 const OPP_PATH = "/opp/";
 const STORE = "thrive_opps_v1";     // local overlay (drafts + edits + archive flags)
 const LOG   = "thrive_activity_v1"; // activity log
@@ -36,6 +36,21 @@ function logActivity(action, slug, detail){
   setActivity(a);
 }
 window.logActivity = logActivity;
+
+/* ---------- custom templates (local registry) ---------- */
+const TPLSTORE = "thrive_templates_v1";
+function getCustomTemplates(){ try{ return JSON.parse(localStorage.getItem(TPLSTORE)||"[]"); }catch(e){ return []; } }
+function setCustomTemplates(a){ try{ localStorage.setItem(TPLSTORE, JSON.stringify(a)); return true; }catch(e){ toast(t("storage_full")); return false; } }
+function getCustomTemplate(id){ return getCustomTemplates().find(x=>x.id===id); }
+function saveCustomTemplate(rec){ const a=getCustomTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setCustomTemplates(a); }
+function removeCustomTemplate(id){ setCustomTemplates(getCustomTemplates().filter(x=>x.id!==id)); }
+
+/* ---------- analytics (beacon hits stored same-origin) ---------- */
+const HITS = "thrive_hits_v1";
+const ENDPT = "thrive_endpoint";
+function getHits(){ try{ return JSON.parse(localStorage.getItem(HITS)||"[]"); }catch(e){ return []; } }
+function getEndpoint(){ try{ return localStorage.getItem(ENDPT)||""; }catch(e){ return ""; } }
+function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.removeItem(ENDPT); }catch(e){} }
 
 /* ---------- data (manifest = committed, overlay = local edits) ---------- */
 async function loadManifest(){
@@ -180,8 +195,19 @@ async function initEditor(){
   const el=id=>document.getElementById(id);
   const existing = await allSlugs();
 
+  // add custom templates to the picker, then honor ?t=
+  const tsel=el("f_template");
+  getCustomTemplates().forEach(ct=>{
+    if([...tsel.options].some(o=>o.value===ct.id)) return;
+    const o=document.createElement("option"); o.value=ct.id; o.textContent=ct.id+" · "+(ct.name||ct.id)+" (custom)"; tsel.appendChild(o);
+  });
+  const tParam=new URLSearchParams(location.search).get("t");
+  if(tParam && [...tsel.options].some(o=>o.value===tParam)) tsel.value=tParam;
+
   async function getTemplate(idT){
     if(templateCache[idT]) return templateCache[idT];
+    const custom=getCustomTemplate(idT);
+    if(custom){ templateCache[idT]=custom.html||""; return templateCache[idT]; }
     const r=await fetch("../templates/"+idT+"/template.html",{cache:"no-store"});
     const txt=await r.text(); templateCache[idT]=txt; return txt;
   }
@@ -263,9 +289,32 @@ async function initEditor(){
   el("f_biz").addEventListener("input",()=>{ if(!el("f_slug").dataset.touched) el("f_slug").value=slugify(el("f_biz").value); refresh(); });
   el("f_slug").addEventListener("input",()=>{ el("f_slug").dataset.touched="1"; refresh(); });
 
+  // preview controls
+  const openTab=el("openTab"), copyLink=el("copyLink");
+  if(openTab) openTab.addEventListener("click", async ()=>{
+    const w=window.open("","_blank"); if(!w) return;
+    w.document.open(); w.document.write(await currentHTML()); w.document.close();
+  });
+  if(copyLink) copyLink.addEventListener("click", ()=>{
+    const url=liveUrl(curSlug()||"<name>");
+    navigator.clipboard.writeText(url).then(()=>toast(t("link_copied")), ()=>toast(url));
+  });
+  document.querySelectorAll(".devtoggle [data-dev]").forEach(b=>b.addEventListener("click",()=>{
+    document.querySelectorAll(".devtoggle [data-dev]").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on"); el("frame").classList.toggle("phone", b.getAttribute("data-dev")==="phone");
+  }));
+
+  function missingRequired(){
+    if(mode==="upload") return uploadedHTML? [] : ["upload"];
+    const need=[["f_proof1","f_proof1"],["f_proof2","f_proof2"],["f_proof3","f_proof3"],["f_want","f_want"]];
+    return need.filter(([id])=>!el(id).value.trim()).map(([,k])=>k);
+  }
+
   // actions
   el("dlPage").addEventListener("click", async ()=>{
     if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
+    const miss=missingRequired();
+    if(miss.length){ toast(t("need_fields")); return; }
     download("index.html", await currentHTML());
     logActivity("download", curSlug(), el("f_biz").value.trim());
     toast(t("dl_toast"));
@@ -348,13 +397,15 @@ const APPROVED_TEMPLATES = [
     example:"../templates/ar-opp1/preview.html" }
 ];
 function initTemplates(){
-  const wrap=document.getElementById("tplList");
-  function render(){
+  const el=id=>document.getElementById(id);
+  let pendingHTML=null;
+
+  function renderBuiltin(){
     const l=getLang();
-    wrap.innerHTML = APPROVED_TEMPLATES.map(tp=>`
+    el("builtinList").innerHTML = APPROVED_TEMPLATES.map(tp=>`
       <div class="item">
         <div class="thumb"><iframe src="${tp.example}" loading="lazy" title="${esc(tp.id)}"></iframe></div>
-        <div>
+        <div class="item-body">
           <div class="id">${esc(tp.id)} · ${esc(tp.lang)}</div>
           <h3>${l==="ar"?esc(tp.name_ar):esc(tp.name_en)}</h3>
           <span class="badge sent">${t("status_approved")}</span>
@@ -367,6 +418,142 @@ function initTemplates(){
         </div>
       </div>`).join("");
   }
+  function renderCustom(){
+    const list=getCustomTemplates();
+    if(!list.length){ el("customList").innerHTML='<div class="empty">'+t("tpl_none")+'</div>'; return; }
+    el("customList").innerHTML = list.map(ct=>`
+      <div class="item">
+        <div class="thumb"><iframe srcdoc="${esc(ct.html||"").slice(0,200000).replace(/"/g,'&quot;')}" loading="lazy" title="${esc(ct.id)}"></iframe></div>
+        <div class="item-body">
+          <div class="id">${esc(ct.id)} · ${esc(ct.lang||"EN")}</div>
+          <h3>${esc(ct.name||ct.id)}</h3>
+          <span class="badge edit">${t("tpl_badge_custom")}</span>
+          <p class="meta-line">${t("act_upload")}: ${esc((ct.created||"").slice(0,10))||t("none")} · ${Math.round((ct.html||"").length/1024)} KB</p>
+          <div class="actions">
+            <a class="btn sm" href="editor.html?t=${encodeURIComponent(ct.id)}">${t("use_template")}</a>
+            <button class="btn ghost sm" data-dl="${esc(ct.id)}">${t("dl_template")}</button>
+            <button class="btn ghost sm danger" data-del="${esc(ct.id)}">${t("tpl_delete")}</button>
+          </div>
+        </div>
+      </div>`).join("");
+    el("customList").querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
+      const id=b.getAttribute("data-del");
+      if(!confirm(t("tpl_confirm_del"))) return;
+      removeCustomTemplate(id); logActivity("tpl_remove", id, ""); renderCustom();
+    }));
+    el("customList").querySelectorAll("[data-dl]").forEach(b=>b.addEventListener("click",()=>{
+      const ct=getCustomTemplate(b.getAttribute("data-dl")); if(ct) download(ct.id+".html", ct.html||"");
+    }));
+  }
+
+  // upload / add custom template
+  const dz=el("tplDz"), file=el("tplFile");
+  function readTpl(f){
+    if(!/\.html?$/i.test(f.name)){ toast(t("need_html")); return; }
+    const fr=new FileReader();
+    fr.onload=()=>{ pendingHTML=fr.result;
+      dz.innerHTML=t("uploaded")+"<b>"+esc(f.name)+"</b>";
+      if(!el("tpl_id").value) el("tpl_id").value=slugify(f.name.replace(/\.html?$/i,""));
+      if(!el("tpl_name").value) el("tpl_name").value=f.name.replace(/\.html?$/i,"");
+    };
+    fr.onerror=()=>toast(t("read_err"));
+    fr.readAsText(f);
+  }
+  dz.addEventListener("click",()=>file.click());
+  dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("over");});
+  dz.addEventListener("dragleave",()=>dz.classList.remove("over"));
+  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("over"); if(e.dataTransfer.files[0]) readTpl(e.dataTransfer.files[0]);});
+  file.addEventListener("change",e=>{ if(e.target.files[0]) readTpl(e.target.files[0]); });
+
+  el("tplAdd").addEventListener("click",()=>{
+    if(!pendingHTML){ toast(t("tpl_need_file")); return; }
+    const id=slugify(el("tpl_id").value)|| slugify(el("tpl_name").value);
+    if(!id){ toast(t("tpl_need_id")); return; }
+    const reserved=APPROVED_TEMPLATES.some(t2=>t2.id===id);
+    if(reserved){ toast(t("tpl_id_taken")); return; }
+    const ok=saveCustomTemplate({ id, name:el("tpl_name").value.trim()||id, lang:el("tpl_lang").value||"EN",
+      html:pendingHTML, created:new Date().toISOString() });
+    if(!ok) return;
+    logActivity("tpl_add", id, el("tpl_name").value.trim());
+    pendingHTML=null; dz.innerHTML=t("upload_dz"); el("tpl_id").value=""; el("tpl_name").value="";
+    toast(t("tpl_added")); renderCustom();
+  });
+
+  window.onLangApplied=()=>{ renderBuiltin(); renderCustom(); };
+  renderBuiltin(); renderCustom();
+}
+
+/* ---------- insights (analytics) ---------- */
+async function initInsights(){
+  const el=id=>document.getElementById(id);
+  el("epInput").value = getEndpoint();
+
+  function fmtDur(ms){ if(!ms) return "—"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
+  function fmtDate(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||"—"; } }
+
+  async function fetchData(){
+    const ep=getEndpoint();
+    if(ep){
+      try{
+        const r=await fetch(ep,{cache:"no-store"});
+        const j=await r.json();
+        return { source:"remote", events: Array.isArray(j)?j : (j.events||[]) };
+      }catch(e){ toast(t("ins_fetch_err")); return { source:"remote-error", events:getHits() }; }
+    }
+    return { source:"local", events:getHits() };
+  }
+
+  function aggregate(events){
+    const bySlug={};
+    events.forEach(ev=>{
+      const slug=ev.slug||"(unknown)";
+      const o=bySlug[slug]||(bySlug[slug]={slug, opens:0, vids:new Set(), ips:new Set(), lastTs:"", dwellMs:0, dwellN:0, days:{}});
+      if(ev.type==="open" || !ev.type){ o.opens++; if(ev.ts>o.lastTs)o.lastTs=ev.ts; const d=(ev.ts||"").slice(0,10); if(d)o.days[d]=(o.days[d]||0)+1; }
+      if(ev.vid) o.vids.add(ev.vid);
+      if(ev.ip) o.ips.add(ev.ip);
+      if(ev.type==="dwell" && ev.ms){ o.dwellMs+=ev.ms; o.dwellN++; }
+    });
+    return Object.values(bySlug).sort((a,b)=>b.opens-a.opens);
+  }
+
+  function spark(days){
+    const keys=Object.keys(days).sort(); if(!keys.length) return "";
+    const max=Math.max(...keys.map(k=>days[k]));
+    return '<span class="spark">'+keys.slice(-14).map(k=>{
+      const h=Math.max(3, Math.round(days[k]/max*22));
+      return `<i style="height:${h}px" title="${esc(k)}: ${days[k]}"></i>`;
+    }).join("")+"</span>";
+  }
+
+  async function render(){
+    const {source,events}=await fetchData();
+    const rows=aggregate(events);
+    el("insSource").textContent = source==="remote" ? t("ins_src_remote") : t("ins_src_local");
+    el("insSource").className = "pill "+(source==="remote"?"ok":"warn");
+    const totOpens=rows.reduce((s,r)=>s+r.opens,0);
+    const uniq=new Set(); events.forEach(e=>e.vid&&uniq.add(e.vid));
+    const dwellVals=rows.filter(r=>r.dwellN).map(r=>r.dwellMs/r.dwellN);
+    const avgDwell=dwellVals.length? dwellVals.reduce((a,b)=>a+b,0)/dwellVals.length : 0;
+    el("tiles").innerHTML = [
+      [t("ins_total_opens"), totOpens],
+      [t("ins_unique"), uniq.size],
+      [t("ins_tracked"), rows.length],
+      [t("ins_avg_dwell"), fmtDur(avgDwell)]
+    ].map(([k,v])=>`<div class="tile"><div class="tile-v">${esc(String(v))}</div><div class="tile-k">${k}</div></div>`).join("");
+
+    if(!rows.length){ el("insBody").innerHTML='<div class="empty">'+t("ins_empty")+'</div>'; return; }
+    el("insBody").innerHTML='<div class="logwrap"><table class="logtable"><thead><tr>'+
+      `<th>${t("ins_item")}</th><th>${t("ins_opens")}</th><th>${t("ins_unique")}</th><th>${t("ins_ips")}</th><th>${t("ins_dwell")}</th><th>${t("ins_last")}</th><th>${t("ins_trend")}</th></tr></thead><tbody>`+
+      rows.map(r=>`<tr>
+        <td><a class="link" href="${relOpp(r.slug)}" target="_blank" rel="noopener">${esc(r.slug)}</a></td>
+        <td><b>${r.opens}</b></td><td>${r.vids.size}</td><td>${r.ips.size||"—"}</td>
+        <td>${r.dwellN?fmtDur(r.dwellMs/r.dwellN):"—"}</td><td class="mono">${r.lastTs?esc(fmtDate(r.lastTs)):"—"}</td>
+        <td>${spark(r.days)}</td></tr>`).join("")+'</tbody></table></div>';
+  }
+
+  el("epSave").addEventListener("click",()=>{ setEndpoint(el("epInput").value.trim()); toast(t("ins_saved")); render(); });
+  el("insRefresh").addEventListener("click",render);
+  el("insClear").addEventListener("click",()=>{ if(!confirm(t("ins_confirm_clear"))) return; try{localStorage.removeItem(HITS);}catch(e){} render(); });
   window.onLangApplied=render;
   render();
 }
