@@ -1,0 +1,19 @@
+{
+  "id": "en-opp1",
+  "name": "The Signal Brief",
+  "lang": "en",
+  "dir": "ltr",
+  "status": "approved",
+  "approved_on": "2026-07-30",
+  "description": "Respect-first single-page brief. Signal motif hero, owner or self quote, three proof points, the discovery gap, the six-part monthly system, CTA. Category-agnostic: fits makers, shops, studios, services.",
+  "file": "template.html",
+  "slots": [
+    { "key": "BIZ",      "label_en": "Business name",        "label_ar": "اسم العمل",            "type": "text",     "required": true },
+    { "key": "QUOTE",    "label_en": "Quote (owner or self)","label_ar": "اقتباس (المالك أو المنشأة)", "type": "text", "required": false, "hint_en": "Leave empty to hide the quote block", "hint_ar": "اتركه فارغًا لإخفاء كتلة الاقتباس" },
+    { "key": "QUOTE_BY", "label_en": "Quote attribution",   "label_ar": "نسبة الاقتباس",        "type": "text",     "required": false },
+    { "key": "PROOF1",   "label_en": "What you built · 1",   "label_ar": "ما بنيته · 1",         "type": "text",     "required": true },
+    { "key": "PROOF2",   "label_en": "What you built · 2",   "label_ar": "ما بنيته · 2",         "type": "text",     "required": true },
+    { "key": "PROOF3",   "label_en": "What you built · 3",   "label_ar": "ما بنيته · 3",         "type": "text",     "required": true },
+    { "key": "WANT",     "label_en": "The busier-pair",      "label_ar": "زوج ما تريده أكثر ازدحامًا", "type": "text", "required": true, "hint_en": "e.g. the nights or the shelf", "hint_ar": "مثال: الليالي أو الرفّ" }
+  ]
+}

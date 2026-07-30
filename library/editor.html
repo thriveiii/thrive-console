@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Thrive · Editor</title>
+<link rel="icon" href="../assets/thrive-logo.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <nav class="nav">
+    <a href="index.html" data-i18n="nav_library">Library</a>
+    <a href="editor.html" class="active" data-i18n="nav_editor">Editor</a>
+    <a href="templates.html" data-i18n="nav_templates">Templates</a>
+    <button id="langbtn" class="langbtn">العربية</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="page-h"><h1 class="title" data-i18n="ed_title">Template Editor</h1></div>
+  <p class="sub" data-i18n="ed_sub"></p>
+
+  <div class="editor">
+    <div class="panel">
+      <div class="seg">
+        <button id="mode_fill" class="on" data-i18n="mode_fill">Fill a template</button>
+        <button id="mode_upload" data-i18n="mode_upload">Upload HTML</button>
+      </div>
+
+      <div class="field"><label data-i18n="f_template">Template</label>
+        <select id="f_template"><option value="en-opp1">en-opp1 · The Signal Brief (EN)</option><option value="ar-opp1">ar-opp1 · موجز الإشارة (AR)</option></select></div>
+
+      <div class="field req"><label data-i18n="f_biz">Business name</label><input id="f_biz" class="input" autocomplete="off"></div>
+      <div class="field"><label data-i18n="f_slug">Link slug</label><input id="f_slug" class="input" autocomplete="off">
+        <div class="hint" data-i18n="f_slughint"></div></div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="field" style="flex:1 1 120px"><label data-i18n="f_sent">Send date</label><input id="f_sent" class="input" type="date"></div>
+        <div class="field" style="flex:1 1 120px"><label data-i18n="f_location">Location</label><input id="f_location" class="input" autocomplete="off"></div>
+      </div>
+      <div class="field"><label data-i18n="f_phone">Phone (if any)</label><input id="f_phone" class="input" autocomplete="off"></div>
+
+      <div id="fillFields">
+        <div class="field"><label data-i18n="f_quote">Quote</label><textarea id="f_quote" rows="2"></textarea>
+          <div class="hint" data-i18n="f_quotehint"></div></div>
+        <div class="field"><label data-i18n="f_quoteby">Quote attribution</label><input id="f_quoteby" class="input" autocomplete="off"></div>
+        <div class="field req"><label data-i18n="f_proof1">What you built · 1</label><textarea id="f_proof1" rows="2"></textarea></div>
+        <div class="field req"><label data-i18n="f_proof2">What you built · 2</label><textarea id="f_proof2" rows="2"></textarea></div>
+        <div class="field req"><label data-i18n="f_proof3">What you built · 3</label><textarea id="f_proof3" rows="2"></textarea></div>
+        <div class="field req"><label data-i18n="f_want">The busier-pair</label><input id="f_want" class="input" autocomplete="off">
+          <div class="hint" data-i18n="f_wanthint"></div></div>
+      </div>
+
+      <div id="uploadBox" hidden>
+        <div class="dz" id="dz" data-i18n="upload_dz">Drop a finished .html file here, or click to choose</div>
+        <input id="fileInput" type="file" accept=".html,.htm,text/html" hidden>
+      </div>
+
+      <div class="note" data-i18n="help_body"></div>
+    </div>
+
+    <div class="preview">
+      <div class="bar">
+        <span class="urlpill" id="urlpill">https://thriveiii.com/opp/</span>
+      </div>
+      <div class="bar">
+        <button class="btn" id="dlPage" data-i18n="dl_page">Download page (index.html)</button>
+        <button class="btn ghost" id="saveLib" data-i18n="save_lib">Save to library</button>
+        <button class="btn ghost" id="copyManifest" data-i18n="copy_manifest">Copy manifest entry</button>
+      </div>
+      <iframe id="frame" class="frame" title="preview"></iframe>
+    </div>
+  </div>
+</main>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+<script>document.addEventListener("DOMContentLoaded",function(){
+  var pt=new URLSearchParams(location.search).get("t"); if(pt){ document.getElementById("f_template").value=pt; }
+  initLang(); initEditor();
+});</script>
+</body>
+</html>

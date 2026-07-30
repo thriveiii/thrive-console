@@ -1,0 +1,13 @@
+{
+  "id": "ar-opp1",
+  "name": "موجز الإشارة",
+  "lang": "ar",
+  "dir": "rtl",
+  "status": "approved",
+  "approved_on": "2026-07-30",
+  "font_ar": "Alyamama",
+  "font_en": "Lato",
+  "description": "النسخة العربية RTL من موجز الإشارة، بخط اليمامة.",
+  "file": "template.html",
+  "slots": ["BIZ","QUOTE","QUOTE_BY","PROOF1","PROOF2","PROOF3","WANT"]
+}

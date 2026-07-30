@@ -1,0 +1,34 @@
+{
+  "site": "thriveiii.com",
+  "base_path": "/opp/",
+  "updated": "2026-07-30",
+  "opportunities": [
+    {
+      "slug": "ludic-lillian",
+      "business": "Ludic Lillian",
+      "template": "en-opp1",
+      "sent_on": "2026-07-28",
+      "location": "Fairfax, VA",
+      "phone": "",
+      "status": "sent"
+    },
+    {
+      "slug": "wise-butterfly",
+      "business": "Wise Butterfly",
+      "template": "en-opp1",
+      "sent_on": "2026-07-30",
+      "location": "Vienna, VA",
+      "phone": "",
+      "status": "sent"
+    },
+    {
+      "slug": "2-faces",
+      "business": "2 Faces",
+      "template": "en-opp1",
+      "sent_on": "2026-07-30",
+      "location": "Fairfax, VA",
+      "phone": "",
+      "status": "sent"
+    }
+  ]
+}

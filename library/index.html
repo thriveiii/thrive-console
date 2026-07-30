@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Thrive · Opportunity Library</title>
+<link rel="icon" href="../assets/thrive-logo.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <nav class="nav">
+    <a href="index.html" class="active" data-i18n="nav_library">Library</a>
+    <a href="editor.html" data-i18n="nav_editor">Editor</a>
+    <a href="templates.html" data-i18n="nav_templates">Templates</a>
+    <button id="langbtn" class="langbtn">العربية</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="page-h"><h1 class="title" data-i18n="lib_title">Opportunity Library</h1></div>
+  <p class="sub" data-i18n="lib_sub"></p>
+
+  <div class="toolbar">
+    <div class="search"><input id="q" type="search" data-i18n-ph="search_ph"></div>
+    <select id="sort" style="max-width:180px">
+      <option value="new" data-i18n="sort_new">Newest sent</option>
+      <option value="old" data-i18n="sort_old">Oldest sent</option>
+      <option value="az" data-i18n="sort_az">Business A–Z</option>
+    </select>
+    <select id="filter" style="max-width:180px"><option value="all" data-i18n="filter_all">All templates</option></select>
+    <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
+    <button class="btn ghost" id="exportManifest" data-i18n="export_manifest">Export manifest.json</button>
+  </div>
+
+  <div id="grid" class="grid"></div>
+</main>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initDashboard(); });</script>
+</body>
+</html>

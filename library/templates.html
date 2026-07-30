@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Thrive · Approved Templates</title>
+<link rel="icon" href="../assets/thrive-logo.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <nav class="nav">
+    <a href="index.html" data-i18n="nav_library">Library</a>
+    <a href="editor.html" data-i18n="nav_editor">Editor</a>
+    <a href="templates.html" class="active" data-i18n="nav_templates">Templates</a>
+    <button id="langbtn" class="langbtn">العربية</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="page-h"><h1 class="title" data-i18n="tpl_title">Approved Templates</h1></div>
+  <p class="sub" data-i18n="tpl_sub"></p>
+  <div class="tpl" id="tplList"></div>
+</main>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initTemplates(); });</script>
+</body>
+</html>
