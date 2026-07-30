@@ -7,6 +7,8 @@
 <title>Thrive · Opportunity Library</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <link rel="stylesheet" href="styles.css">
+<script>(function(){try{if(sessionStorage.getItem('thrive_gate_v1')!=='e00475a9bf66c48e332882a90f2638d0bf2f37272572f60ff0ca41e49f6e7c06')document.documentElement.classList.add('gate-locked');}catch(e){document.documentElement.classList.add('gate-locked');}})();</script>
+<script src="gate.js" defer></script>
 </head>
 <body>
 <header class="top">
@@ -15,7 +17,9 @@
     <a href="index.html" class="active" data-i18n="nav_library">Library</a>
     <a href="editor.html" data-i18n="nav_editor">Editor</a>
     <a href="templates.html" data-i18n="nav_templates">Templates</a>
+    <a href="activity.html" data-i18n="nav_activity">Activity</a>
     <button id="langbtn" class="langbtn">العربية</button>
+    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
 
@@ -30,7 +34,12 @@
       <option value="old" data-i18n="sort_old">Oldest sent</option>
       <option value="az" data-i18n="sort_az">Business A–Z</option>
     </select>
-    <select id="filter" style="max-width:180px"><option value="all" data-i18n="filter_all">All templates</option></select>
+    <select id="filter" style="max-width:170px"><option value="all" data-i18n="filter_all">All templates</option></select>
+    <select id="statusFilter" style="max-width:150px">
+      <option value="active" data-i18n="statusf_active">Active</option>
+      <option value="archived" data-i18n="statusf_archived">Archived</option>
+      <option value="all" data-i18n="statusf_all">All statuses</option>
+    </select>
     <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
     <button class="btn ghost" id="exportManifest" data-i18n="export_manifest">Export manifest.json</button>
   </div>

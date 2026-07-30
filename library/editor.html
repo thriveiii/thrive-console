@@ -7,6 +7,8 @@
 <title>Thrive · Editor</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <link rel="stylesheet" href="styles.css">
+<script>(function(){try{if(sessionStorage.getItem('thrive_gate_v1')!=='e00475a9bf66c48e332882a90f2638d0bf2f37272572f60ff0ca41e49f6e7c06')document.documentElement.classList.add('gate-locked');}catch(e){document.documentElement.classList.add('gate-locked');}})();</script>
+<script src="gate.js" defer></script>
 </head>
 <body>
 <header class="top">
@@ -15,7 +17,9 @@
     <a href="index.html" data-i18n="nav_library">Library</a>
     <a href="editor.html" class="active" data-i18n="nav_editor">Editor</a>
     <a href="templates.html" data-i18n="nav_templates">Templates</a>
+    <a href="activity.html" data-i18n="nav_activity">Activity</a>
     <button id="langbtn" class="langbtn">العربية</button>
+    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
 
@@ -35,7 +39,8 @@
 
       <div class="field req"><label data-i18n="f_biz">Business name</label><input id="f_biz" class="input" autocomplete="off"></div>
       <div class="field"><label data-i18n="f_slug">Link slug</label><input id="f_slug" class="input" autocomplete="off">
-        <div class="hint" data-i18n="f_slughint"></div></div>
+        <div class="hint" data-i18n="f_slughint"></div>
+        <div class="hint warn" id="slugWarn" data-i18n="slug_taken" hidden></div></div>
 
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="field" style="flex:1 1 120px"><label data-i18n="f_sent">Send date</label><input id="f_sent" class="input" type="date"></div>

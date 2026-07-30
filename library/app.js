@@ -1,7 +1,8 @@
 /* Thrive Opportunity Library — shared client logic (vanilla JS, no build step) */
 const SITE = "thriveiii.com";
 const OPP_PATH = "/opp/";
-const STORE = "thrive_opps_v1";
+const STORE = "thrive_opps_v1";     // local overlay (drafts + edits + archive flags)
+const LOG   = "thrive_activity_v1"; // activity log
 
 /* ---------- utilities ---------- */
 function slugify(s){
@@ -10,7 +11,7 @@ function slugify(s){
     .replace(/[^a-z0-9؀-ۿ]+/g,"-")
     .replace(/^-+|-+$/g,"").replace(/-{2,}/g,"-");
 }
-function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function esc(s){ return (s==null?"":String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function liveUrl(slug){ return "https://"+SITE+OPP_PATH+slug; }
 function relOpp(slug){ return "../opp/"+slug+"/"; }
 function toast(msg){
@@ -26,41 +27,72 @@ function download(name, text, type){
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 100);
 }
 
-/* ---------- data ---------- */
+/* ---------- activity log ---------- */
+function getActivity(){ try{ return JSON.parse(localStorage.getItem(LOG)||"[]"); }catch(e){ return []; } }
+function setActivity(a){ try{ localStorage.setItem(LOG, JSON.stringify(a.slice(-800))); }catch(e){} }
+function logActivity(action, slug, detail){
+  const a=getActivity();
+  a.push({ ts:new Date().toISOString(), action:action||"", slug:slug||"", detail:detail||"" });
+  setActivity(a);
+}
+window.logActivity = logActivity;
+
+/* ---------- data (manifest = committed, overlay = local edits) ---------- */
 async function loadManifest(){
   try{ const r=await fetch("./manifest.json",{cache:"no-store"}); const j=await r.json();
        return {site:j.site||SITE, list:(j.opportunities||[])}; }
   catch(e){ return {site:SITE, list:[]}; }
 }
 function getDrafts(){ try{ return JSON.parse(localStorage.getItem(STORE)||"[]"); }catch(e){ return []; } }
-function setDrafts(a){ localStorage.setItem(STORE, JSON.stringify(a)); }
+function setDrafts(a){ try{ localStorage.setItem(STORE, JSON.stringify(a)); }catch(e){} }
+function getDraft(slug){ return getDrafts().find(x=>x.slug===slug); }
 function saveDraft(rec){
   const a=getDrafts(); const i=a.findIndex(x=>x.slug===rec.slug);
-  if(i>=0) a[i]=rec; else a.push(rec); setDrafts(a);
+  if(i>=0) a[i]={...a[i], ...rec}; else a.push(rec); setDrafts(a);
 }
 function removeDraft(slug){ setDrafts(getDrafts().filter(x=>x.slug!==slug)); }
+
 async function mergedOpps(){
   const {list}=await loadManifest();
-  const bySlug={}; list.forEach(o=>bySlug[o.slug]={...o, _local:false});
-  getDrafts().forEach(o=>{ if(!bySlug[o.slug]) bySlug[o.slug]={...o,_local:true}; });
-  return Object.values(bySlug);
+  const bySlug={};
+  list.forEach(o=>{ bySlug[o.slug]={...o, _local:false, _edited:false}; });
+  getDrafts().forEach(d=>{
+    if(bySlug[d.slug]) bySlug[d.slug]={...bySlug[d.slug], ...d, _local:false, _edited:true};
+    else bySlug[d.slug]={...d, _local:true, _edited:false};
+  });
+  const rows=Object.values(bySlug);
+  rows.forEach(o=>{ o.archived=!!o.archived; });
+  return rows;
 }
+async function allSlugs(){ return (await mergedOpps()).map(o=>o.slug); }
 
 /* ---------- dashboard ---------- */
 async function initDashboard(){
-  const state={ q:"", sort:"new", tmpl:"all", data:[] };
+  const state={ q:"", sort:"new", tmpl:"all", status:"active", data:[] };
   state.data = await mergedOpps();
 
   const search=document.getElementById("q");
   const sort=document.getElementById("sort");
   const filt=document.getElementById("filter");
-  // populate template filter
-  const tmpls=[...new Set(state.data.map(o=>o.template))];
-  tmpls.forEach(tp=>{ const op=document.createElement("option"); op.value=tp; op.textContent=tp; filt.appendChild(op); });
+  const statusFilt=document.getElementById("statusFilter");
+
+  // populate template filter (guard against empty/undefined)
+  [...new Set(state.data.map(o=>o.template).filter(Boolean))].forEach(tp=>{
+    const op=document.createElement("option"); op.value=tp; op.textContent=tp; filt.appendChild(op);
+  });
+
+  function badgeFor(o){
+    if(o.archived) return '<span class="badge arch">'+t("badge_archived")+'</span>';
+    if(o._local)  return '<span class="badge draft">'+t("draft")+'</span>';
+    if(o._edited) return '<span class="badge edit">'+t("badge_edited")+'</span>';
+    return '<span class="badge sent">'+t("sent")+'</span>';
+  }
 
   function render(){
     const grid=document.getElementById("grid");
     let rows=state.data.slice();
+    if(state.status==="active")   rows=rows.filter(o=>!o.archived);
+    else if(state.status==="archived") rows=rows.filter(o=>o.archived);
     if(state.tmpl!=="all") rows=rows.filter(o=>o.template===state.tmpl);
     if(state.q){ const q=state.q.toLowerCase();
       rows=rows.filter(o=>[o.business,o.location,o.template,o.slug].join(" ").toLowerCase().includes(q)); }
@@ -69,44 +101,75 @@ async function initDashboard(){
       const da=(a.sent_on||""), db=(b.sent_on||"");
       return state.sort==="old" ? da.localeCompare(db) : db.localeCompare(da);
     });
-    if(!rows.length){ grid.className=""; grid.innerHTML='<div class="empty" data-i18n="empty">'+t("empty")+'</div>'; return; }
+    if(!rows.length){ grid.className="empty-wrap"; grid.innerHTML='<div class="empty">'+t("empty")+'</div>'; return; }
     grid.className="grid";
     grid.innerHTML = rows.map(o=>{
-      const status = o._local ? '<span class="badge draft">'+t("draft")+'</span>' : '<span class="badge sent">'+t("sent")+'</span>';
-      return `<div class="card">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-          <div><p class="biz">${esc(o.business)}</p>
-          <a class="link" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${liveUrl(o.slug)}</a></div>
-          ${status}
+      const arch = o.archived;
+      return `<div class="card${arch?" is-arch":""}">
+        <div class="card-top">
+          <div class="card-id"><p class="biz">${esc(o.business)||esc(o.slug)}</p>
+          <a class="link" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${esc(liveUrl(o.slug))}</a></div>
+          ${badgeFor(o)}
         </div>
         <div class="meta">
-          <span class="chip tmpl">${esc(o.template)}</span>
+          <span class="chip tmpl">${esc(o.template)||t("none")}</span>
           <span class="chip">${t("col_sent")}: ${esc(o.sent_on)||t("none")}</span>
           <span class="chip">${t("col_location")}: ${esc(o.location)||t("none")}</span>
           <span class="chip">${t("col_phone")}: ${esc(o.phone)||t("none")}</span>
         </div>
         <div class="row">
-          <a class="btn sm" href="${relOpp(o.slug)}" target="_blank" rel="noopener" data-i18n="open_page">${t("open_page")}</a>
+          <a class="btn sm" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${t("open_page")}</a>
           <div class="actions">
-            <a class="btn ghost sm" href="editor.html?slug=${encodeURIComponent(o.slug)}" data-i18n="edit">${t("edit")}</a>
-            ${o._local?`<button class="btn ghost sm" data-del="${o.slug}" data-i18n="remove">${t("remove")}</button>`:""}
+            <a class="btn ghost sm" href="editor.html?slug=${encodeURIComponent(o.slug)}">${t("edit")}</a>
+            <button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>
+            ${(o._local&&!o._edited)?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:""}
           </div>
         </div>
       </div>`;
     }).join("");
+
     grid.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
-      removeDraft(b.getAttribute("data-del")); state.data=state.data.filter(o=>!(o._local&&o.slug===b.getAttribute("data-del"))); render();
+      const slug=b.getAttribute("data-del");
+      if(!confirm(t("confirm_remove"))) return;
+      removeDraft(slug); logActivity("remove", slug, "");
+      state.data=state.data.filter(o=>!(o._local&&o.slug===slug)); render();
+    }));
+    grid.querySelectorAll("[data-arch]").forEach(b=>b.addEventListener("click",()=>{
+      const slug=b.getAttribute("data-arch"); const val=b.getAttribute("data-val")==="1";
+      const o=state.data.find(x=>x.slug===slug); if(!o) return;
+      // carry the summary into the overlay so manifest-only items keep rendering
+      saveDraft({ slug, business:o.business, template:o.template, sent_on:o.sent_on,
+                  location:o.location, phone:o.phone, status:o.status||"sent", archived:val });
+      o.archived=val; o._edited = o._edited || !o._local;
+      logActivity(val?"archive":"unarchive", slug, "");
+      toast(val?t("archived_toast"):t("unarchived_toast"));
+      render();
     }));
   }
+
   search.addEventListener("input",e=>{ state.q=e.target.value; render(); });
   sort.addEventListener("change",e=>{ state.sort=e.target.value; render(); });
   filt.addEventListener("change",e=>{ state.tmpl=e.target.value; render(); });
+  if(statusFilt) statusFilt.addEventListener("change",e=>{ state.status=e.target.value; render(); });
+
   document.getElementById("exportManifest").addEventListener("click", async ()=>{
     const {site}=await loadManifest();
+    const rows=state.data.slice().sort((a,b)=>{
+      const d=(b.sent_on||"").localeCompare(a.sent_on||""); return d!==0?d:(a.business||"").localeCompare(b.business||"");
+    });
     const out={ site:site||SITE, base_path:OPP_PATH, updated:new Date().toISOString().slice(0,10),
-      opportunities: state.data.map(({_local, ...o})=>o) };
+      opportunities: rows.map(o=>{
+        const e={ slug:o.slug, business:o.business||"", template:o.template||"", sent_on:o.sent_on||"",
+                  location:o.location||"", phone:o.phone||"", status:o.status||"sent" };
+        if(o.archived) e.archived=true;
+        return e;
+      }) };
     download("manifest.json", JSON.stringify(out,null,2), "application/json");
+    logActivity("export", "", rows.length+" opportunities");
+    const localCount=state.data.filter(o=>o._local).length;
+    toast(localCount? t("export_local_note").replace("{n}",localCount) : t("exported_toast"));
   });
+
   window.onLangApplied=render;
   render();
 }
@@ -115,6 +178,8 @@ async function initDashboard(){
 async function initEditor(){
   let templateCache={};
   const el=id=>document.getElementById(id);
+  const existing = await allSlugs();
+
   async function getTemplate(idT){
     if(templateCache[idT]) return templateCache[idT];
     const r=await fetch("../templates/"+idT+"/template.html",{cache:"no-store"});
@@ -145,16 +210,26 @@ async function initEditor(){
     const tpl=await getTemplate(el("f_template").value);
     return fill(tpl, values());
   }
+  function curSlug(){ return (el("f_slug").value.trim() || slugify(el("f_biz").value)); }
+  function checkCollision(){
+    const s=curSlug(); const warn=el("slugWarn"); if(!warn) return;
+    const editing=new URLSearchParams(location.search).get("slug");
+    warn.hidden = !(s && s!==editing && existing.indexOf(s)>=0);
+  }
   async function refresh(){
-    const slug = el("f_slug").value || slugify(el("f_biz").value);
+    const slug = curSlug();
     el("urlpill").textContent = liveUrl(slug||"<name>");
+    checkCollision();
     const html=await currentHTML();
-    if(html) el("frame").srcdoc=html;
+    el("frame").srcdoc = html || "<!doctype html><meta charset='utf-8'>";
   }
   function record(){
-    const slug = el("f_slug").value || slugify(el("f_biz").value);
-    return { slug, business:el("f_biz").value, template: mode==="upload"?"custom":el("f_template").value,
-      sent_on:el("f_sent").value, location:el("f_location").value, phone:el("f_phone").value, status:"sent" };
+    const slug = curSlug(); const v=values();
+    return { slug, business:el("f_biz").value.trim(),
+      template: mode==="upload"?"custom":el("f_template").value,
+      sent_on:el("f_sent").value, location:el("f_location").value.trim(),
+      phone:el("f_phone").value.trim(), status:"sent",
+      fields:{ QUOTE:v.QUOTE, QUOTE_BY:v.QUOTE_BY, PROOF1:v.PROOF1, PROOF2:v.PROOF2, PROOF3:v.PROOF3, WANT:v.WANT } };
   }
 
   // mode switch
@@ -170,45 +245,95 @@ async function initEditor(){
   dz.addEventListener("dragleave",()=>dz.classList.remove("over"));
   dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("over"); if(e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);});
   fileInput.addEventListener("change",e=>{ if(e.target.files[0]) readFile(e.target.files[0]); });
-  function readFile(f){ const fr=new FileReader(); fr.onload=()=>{ uploadedHTML=fr.result; uploadedName=f.name;
-    dz.innerHTML=t("uploaded")+"<b>"+esc(f.name)+"</b>"; if(!el("f_biz").value){ el("f_biz").value=f.name.replace(/\.html?$/i,""); }
-    refresh(); }; fr.readAsText(f); }
+  function readFile(f){
+    if(!/\.html?$/i.test(f.name)){ toast(t("need_html")); return; }
+    const fr=new FileReader();
+    fr.onload=()=>{ uploadedHTML=fr.result; uploadedName=f.name;
+      dz.innerHTML=t("uploaded")+"<b>"+esc(f.name)+"</b>"; if(!el("f_biz").value){ el("f_biz").value=f.name.replace(/\.html?$/i,""); }
+      logActivity("upload", curSlug(), f.name); refresh(); };
+    fr.onerror=()=>toast(t("read_err"));
+    fr.readAsText(f);
+  }
 
   // live inputs
-  ["f_biz","f_slug","f_quote","f_quoteby","f_proof1","f_proof2","f_proof3","f_want","f_template"].forEach(id=>{
+  ["f_quote","f_quoteby","f_proof1","f_proof2","f_proof3","f_want","f_template"].forEach(id=>{
     el(id).addEventListener("input",refresh); el(id).addEventListener("change",refresh);
   });
+  el("f_location").addEventListener("input",()=>{}); el("f_phone").addEventListener("input",()=>{});
   el("f_biz").addEventListener("input",()=>{ if(!el("f_slug").dataset.touched) el("f_slug").value=slugify(el("f_biz").value); refresh(); });
-  el("f_slug").addEventListener("input",()=>{ el("f_slug").dataset.touched="1"; });
+  el("f_slug").addEventListener("input",()=>{ el("f_slug").dataset.touched="1"; refresh(); });
 
   // actions
   el("dlPage").addEventListener("click", async ()=>{
-    if(!el("f_biz").value){ toast(t("need_biz")); return; }
-    download("index.html", await currentHTML()); toast(t("dl_toast"));
+    if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
+    download("index.html", await currentHTML());
+    logActivity("download", curSlug(), el("f_biz").value.trim());
+    toast(t("dl_toast"));
   });
   el("saveLib").addEventListener("click", ()=>{
-    if(!el("f_biz").value){ toast(t("need_biz")); return; }
-    saveDraft(record()); toast(t("saved_toast"));
+    if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
+    const rec=record(); const isNew = existing.indexOf(rec.slug)<0;
+    saveDraft(rec);
+    if(existing.indexOf(rec.slug)<0) existing.push(rec.slug);
+    logActivity(isNew?"create":"save", rec.slug, rec.business);
+    toast(t("saved_toast"));
   });
   el("copyManifest").addEventListener("click", ()=>{
-    if(!el("f_biz").value){ toast(t("need_biz")); return; }
-    const {_local, ...r}=record();
-    navigator.clipboard.writeText(JSON.stringify(r,null,2)).then(()=>toast(t("copied_toast")),
+    if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
+    const r=record(); delete r.fields;
+    navigator.clipboard.writeText(JSON.stringify(r,null,2)).then(
+      ()=>{ logActivity("copy", r.slug, ""); toast(t("copied_toast")); },
       ()=>{ download("entry.json", JSON.stringify(r,null,2), "application/json"); });
   });
 
-  // prefill from ?slug= (edit an existing draft) or default date today
+  // prefill from ?slug= (edit any existing opp) or default date today
   const params=new URLSearchParams(location.search);
   el("f_sent").value = new Date().toISOString().slice(0,10);
   const editSlug=params.get("slug");
   if(editSlug){
-    const d=getDrafts().find(x=>x.slug===editSlug);
-    if(d){ el("f_biz").value=d.business||""; el("f_slug").value=d.slug; el("f_slug").dataset.touched="1";
+    const all=await mergedOpps();
+    const d=all.find(x=>x.slug===editSlug);
+    if(d){
+      el("f_biz").value=d.business||""; el("f_slug").value=d.slug; el("f_slug").dataset.touched="1";
       el("f_sent").value=d.sent_on||el("f_sent").value; el("f_location").value=d.location||""; el("f_phone").value=d.phone||"";
-      if(d.template && d.template!=="custom") el("f_template").value=d.template; }
+      if(d.template && d.template!=="custom"){ el("f_template").value=d.template; }
+      const F=d.fields||{};
+      if("QUOTE" in F) el("f_quote").value=F.QUOTE||"";
+      if("QUOTE_BY" in F) el("f_quoteby").value=F.QUOTE_BY||"";
+      if("PROOF1" in F) el("f_proof1").value=F.PROOF1||"";
+      if("PROOF2" in F) el("f_proof2").value=F.PROOF2||"";
+      if("PROOF3" in F) el("f_proof3").value=F.PROOF3||"";
+      if("WANT" in F) el("f_want").value=F.WANT||"";
+    }
   }
   window.onLangApplied=()=>{ if(mode==="upload" && uploadedName) dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>"; };
   refresh();
+}
+
+/* ---------- activity log page ---------- */
+function initActivity(){
+  const el=id=>document.getElementById(id);
+  const actionLabel=a=>t("act_"+a) !== ("act_"+a) ? t("act_"+a) : a;
+  function fmt(ts){ try{ const d=new Date(ts); return d.toLocaleString(getLang()==="ar"?"ar":"en", {dateStyle:"medium", timeStyle:"short"}); }catch(e){ return ts; } }
+  function render(){
+    const rows=getActivity().slice().reverse();
+    const wrap=el("logBody");
+    if(!rows.length){ wrap.innerHTML='<div class="empty">'+t("act_empty")+'</div>'; return; }
+    wrap.innerHTML='<table class="logtable"><thead><tr>'+
+      '<th>'+t("act_time")+'</th><th>'+t("act_action")+'</th><th>'+t("act_item")+'</th><th>'+t("act_detail")+'</th></tr></thead><tbody>'+
+      rows.map(r=>`<tr><td class="mono">${esc(fmt(r.ts))}</td><td><span class="tag tag-${esc(r.action)}">${esc(actionLabel(r.action))}</span></td><td class="mono">${esc(r.slug)||"—"}</td><td>${esc(r.detail)||"—"}</td></tr>`).join("")+
+      '</tbody></table>';
+  }
+  el("logRefresh").addEventListener("click",render);
+  el("logClear").addEventListener("click",()=>{
+    if(!confirm(t("confirm_clear"))) return;
+    setActivity([]); logActivity("clear","",""); render();
+  });
+  el("logExport").addEventListener("click",()=>{
+    download("thrive-activity.json", JSON.stringify(getActivity(),null,2), "application/json");
+  });
+  window.onLangApplied=render;
+  render();
 }
 
 /* ---------- templates gallery ---------- */
@@ -228,16 +353,16 @@ function initTemplates(){
     const l=getLang();
     wrap.innerHTML = APPROVED_TEMPLATES.map(tp=>`
       <div class="item">
-        <div class="thumb"><iframe src="${tp.example}" loading="lazy" title="${tp.id}"></iframe></div>
+        <div class="thumb"><iframe src="${tp.example}" loading="lazy" title="${esc(tp.id)}"></iframe></div>
         <div>
-          <div class="id">${tp.id} · ${tp.lang}</div>
-          <h3>${l==="ar"?tp.name_ar:tp.name_en}</h3>
+          <div class="id">${esc(tp.id)} · ${esc(tp.lang)}</div>
+          <h3>${l==="ar"?esc(tp.name_ar):esc(tp.name_en)}</h3>
           <span class="badge sent">${t("status_approved")}</span>
-          <p>${l==="ar"?tp.desc_ar:tp.desc_en}</p>
+          <p>${l==="ar"?esc(tp.desc_ar):esc(tp.desc_en)}</p>
           <div class="actions">
-            <a class="btn sm" href="editor.html?t=${tp.id}" data-i18n="use_template">${t("use_template")}</a>
-            <a class="btn ghost sm" href="../templates/${tp.id}/template.html" download="${tp.id}.html" data-i18n="dl_template">${t("dl_template")}</a>
-            <a class="btn ghost sm" href="${tp.example}" target="_blank" rel="noopener" data-i18n="open_page">${t("open_page")}</a>
+            <a class="btn sm" href="editor.html?t=${encodeURIComponent(tp.id)}">${t("use_template")}</a>
+            <a class="btn ghost sm" href="../templates/${encodeURIComponent(tp.id)}/template.html" download="${esc(tp.id)}.html">${t("dl_template")}</a>
+            <a class="btn ghost sm" href="${esc(tp.example)}" target="_blank" rel="noopener">${t("open_page")}</a>
           </div>
         </div>
       </div>`).join("");
