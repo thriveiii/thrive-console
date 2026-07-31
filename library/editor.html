@@ -8,12 +8,14 @@
 <link rel="icon" href="../assets/thrive-logo.png">
 <link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="styles.css">
+<link rel="preconnect" href="https://api.github.com" crossorigin>
+<link rel="dns-prefetch" href="https://api.github.com">
 <script>(function(){try{if(sessionStorage.getItem('thrive_gate_v1')!=='e00475a9bf66c48e332882a90f2638d0bf2f37272572f60ff0ca41e49f6e7c06')document.documentElement.classList.add('gate-locked');}catch(e){document.documentElement.classList.add('gate-locked');}})();</script>
 <script src="gate.js" defer></script>
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
   <nav class="nav">
     <a href="index.html" data-i18n="nav_library">Library</a>
     <a href="editor.html" class="active" data-i18n="nav_editor">Editor</a>
@@ -96,8 +98,8 @@
   </div>
 </main>
 
-<script src="i18n.js"></script>
-<script src="app.js"></script>
+<script src="i18n.js" defer></script>
+<script src="app.js" defer></script>
 <script>document.addEventListener("DOMContentLoaded",function(){
   var pt=new URLSearchParams(location.search).get("t"); if(pt){ var s=document.getElementById("f_template"); if([].some.call(s.options,function(o){return o.value===pt;})) s.value=pt; }
   initLang(); initEditor();

@@ -266,3 +266,11 @@ html[dir="rtl"] .card .link,html[dir="rtl"] .urlpill{direction:ltr;text-align:st
 html[dir="rtl"] .tpl .thumb iframe{transform-origin:top right}
 html[dir="rtl"] #thriveGate .gate-input{text-align:center}
 html[dir="rtl"] .logtable td.mono{direction:ltr;text-align:start}
+
+/* ---- Performance: off-screen cards skip layout/paint; respect reduced-motion; pause logo spin on hidden tab ---- */
+.card{content-visibility:auto;contain-intrinsic-size:0 240px}
+@media (prefers-reduced-motion:reduce){
+  .brand img,.gate-logo,.card,.card:hover{animation:none!important;transition:none!important}
+  .card:hover{transform:none}
+}
+html.tab-hidden .brand img,html.tab-hidden .gate-logo{animation-play-state:paused}

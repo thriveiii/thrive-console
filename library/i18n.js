@@ -248,6 +248,9 @@ const I18N = {
     set_email_h: "Email sending",
     set_email_sub: "Endpoint that sends mail from hi@thriveiii.com (a Google Apps Script that calls Resend). Leave empty to use Copy-for-Gmail only.",
     set_email_ph: "Email send endpoint URL (optional)",
+    set_from_name: "Sender name",
+    set_from_email: "Sender address",
+    set_email_ep_l: "Send endpoint",
     clear_filters: "Clear filters",
     cmp_template: "Template",
     cmp_manage_tpl: "Manage",
@@ -527,6 +530,9 @@ const I18N = {
     set_email_h: "إرسال البريد",
     set_email_sub: "نقطة تُرسل البريد من hi@thriveiii.com (سكربت Google Apps Script يستدعي Resend). اتركها فارغة لاستخدام النسخ للـ Gmail فقط.",
     set_email_ph: "رابط نقطة إرسال البريد (اختياري)",
+    set_from_name: "اسم المرسل",
+    set_from_email: "عنوان المرسل",
+    set_email_ep_l: "نقطة الإرسال",
     clear_filters: "مسح الفلاتر",
     cmp_template: "القالب",
     cmp_manage_tpl: "إدارة",
@@ -577,5 +583,7 @@ function applyLang(){
 function initLang(){
   const lb = document.getElementById("langbtn");
   if(lb) lb.addEventListener("click", ()=> setLang(getLang()==="en"?"ar":"en"));
+  // perf: pause the spinning logo when the tab is hidden (saves CPU/battery)
+  document.addEventListener("visibilitychange", ()=> document.documentElement.classList.toggle("tab-hidden", document.hidden));
   applyLang();
 }

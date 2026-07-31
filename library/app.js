@@ -62,7 +62,16 @@ const ENDPT = "thrive_endpoint";
 function getHits(){ try{ return JSON.parse(localStorage.getItem(HITS)||"[]"); }catch(e){ return []; } }
 function getEndpoint(){ try{ return localStorage.getItem(ENDPT)||""; }catch(e){ return ""; } }
 function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.removeItem(ENDPT); }catch(e){} }
-function opensForSlug(slug){ let n=0; getHits().forEach(e=>{ if((e.type==="open"||!e.type)&&e.slug===slug) n++; }); return n; }
+/* perf: memoise the opens-per-slug map (avoids re-parsing hits for every card each render) */
+let __opensCache=null, __opensTs=0;
+function opensMap(){
+  const now=Date.now();
+  if(__opensCache && (now-__opensTs)<3000) return __opensCache;
+  const m={}; getHits().forEach(e=>{ if(e.type==="open"||!e.type){ m[e.slug]=(m[e.slug]||0)+1; } });
+  __opensCache=m; __opensTs=now; return m;
+}
+function opensForSlug(slug){ return opensMap()[slug]||0; }
+function debounce(fn, ms){ let h; return function(){ const a=arguments, c=this; clearTimeout(h); h=setTimeout(()=>fn.apply(c,a), ms||150); }; }
 
 /* ---------- pipeline stages (mini CRM) ---------- */
 const STAGES=["sent","opened","replied","won","lost"];
@@ -387,7 +396,8 @@ async function initDashboard(){
     }));
   }
 
-  search.addEventListener("input",e=>{ state.q=e.target.value; render(); });
+  const debRender=debounce(render,140);
+  search.addEventListener("input",e=>{ state.q=e.target.value; debRender(); });
   sort.addEventListener("change",e=>{ state.sort=e.target.value; render(); });
   filt.addEventListener("change",e=>{ state.tmpl=e.target.value; render(); });
   if(statusFilt) statusFilt.addEventListener("change",e=>{ state.status=e.target.value; render(); });
@@ -445,13 +455,11 @@ async function initEditor(){
     const editing=new URLSearchParams(location.search).get("slug");
     warn.hidden = !(s && s!==editing && existing.indexOf(s)>=0);
   }
-  async function refresh(){
-    const slug = curSlug();
-    el("urlpill").textContent = liveUrl(slug||"<name>");
-    checkCollision();
-    const html=await currentHTML();
-    el("frame").srcdoc = html || "<!doctype html><meta charset='utf-8'>";
-  }
+  function refreshMeta(){ el("urlpill").textContent = liveUrl(curSlug()||"<name>"); checkCollision(); }
+  async function refreshPreview(){ const html=await currentHTML(); el("frame").srcdoc = html || "<!doctype html><meta charset='utf-8'>"; }
+  async function refresh(){ refreshMeta(); await refreshPreview(); }
+  const debPreview=debounce(refreshPreview, 220);   // perf: don't regenerate the heavy preview on every keystroke
+  function refreshLive(){ refreshMeta(); debPreview(); }
   let editingLive=false;
   function record(){
     const slug = curSlug(); const v=values();
@@ -489,11 +497,11 @@ async function initEditor(){
 
   // live inputs
   ["f_quote","f_quoteby","f_proof1","f_proof2","f_proof3","f_want","f_template"].forEach(id=>{
-    el(id).addEventListener("input",refresh); el(id).addEventListener("change",refresh);
+    el(id).addEventListener("input",refreshLive); el(id).addEventListener("change",refresh);
   });
   el("f_location").addEventListener("input",()=>{}); el("f_phone").addEventListener("input",()=>{});
-  el("f_biz").addEventListener("input",()=>{ if(!el("f_slug").dataset.touched) el("f_slug").value=slugify(el("f_biz").value); refresh(); });
-  el("f_slug").addEventListener("input",()=>{ el("f_slug").dataset.touched="1"; refresh(); });
+  el("f_biz").addEventListener("input",()=>{ if(!el("f_slug").dataset.touched) el("f_slug").value=slugify(el("f_biz").value); refreshLive(); });
+  el("f_slug").addEventListener("input",()=>{ el("f_slug").dataset.touched="1"; refreshLive(); });
 
   // preview controls
   const openTab=el("openTab"), copyLink=el("copyLink");
@@ -657,8 +665,20 @@ function initActivity(){
 /* ---------- email compose + send ---------- */
 const EMAIL_EP = "thrive_email_ep";
 const FROM_EMAIL = "hi@thriveiii.com";
+const FROM_NAME_KEY = "thrive_from_name";
 function getEmailEndpoint(){ try{ return localStorage.getItem(EMAIL_EP)||""; }catch(e){ return ""; } }
 function setEmailEndpoint(u){ try{ u?localStorage.setItem(EMAIL_EP,u):localStorage.removeItem(EMAIL_EP); }catch(e){} }
+function getFromName(){ try{ return (localStorage.getItem(FROM_NAME_KEY)||"Thrive"); }catch(e){ return "Thrive"; } }
+function setFromName(v){ try{ v?localStorage.setItem(FROM_NAME_KEY, v):localStorage.removeItem(FROM_NAME_KEY); }catch(e){} }
+/* wrap the message with a branded header (logo) + footer for outgoing mail */
+function brandWrap(inner){
+  const logo="https://"+SITE+"/assets/thrive-logo.png", name=esc(getFromName());
+  return '<div style="font-family:Lato,Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;padding:10px 4px">'
+    +'<img src="'+logo+'" width="42" height="42" alt="'+name+'" style="display:block;border-radius:10px;margin-bottom:16px">'
+    +'<div style="font-size:15px;line-height:1.7;color:#111827">'+inner+'</div>'
+    +'<div style="margin-top:24px;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#9aa0aa">'+name+' · thriveiii.com</div>'
+    +'</div>';
+}
 
 /* email templates (reusable subject + body with merge fields) */
 const ETPL = "thrive_email_templates_v1";
@@ -728,23 +748,25 @@ async function initCompose(){
     tbOpp.addEventListener("click",()=>{ if(!hasSel()){ toast(t("cmp_select_first")); return; } cmd("createLink", oppUrl); });
   }
 
-  el("efrom").value=FROM_EMAIL;
+  el("efrom").value=getFromName()+" <"+FROM_EMAIL+">";
   let oppObj=null;
   if(slug){ const all=await mergedOpps(); oppObj=all.find(x=>x.slug===slug)||null; }
   const nameEl=el("ename"), tplSel=el("etpl"), firstEl=el("efirst");
+  let tplCache=getEmailTemplates();                       // parse localStorage once, not on every keystroke
+  const refreshTplCache=()=>{ tplCache=getEmailTemplates(); };
   function recipientName(){
     const n=(nameEl?nameEl.value.trim():"");
     if(firstEl && firstEl.checked && n) return n.split(/\s+/)[0];
     return n;
   }
-  function currentTpl(){ return getEmailTemplates().find(x=>x.id===(tplSel?tplSel.value:"monthly")) || getEmailTemplates()[0]; }
+  function currentTpl(){ return tplCache.find(x=>x.id===(tplSel?tplSel.value:"monthly")) || tplCache[0]; }
   function applyTemplate(tp){
     if(!tp) return;
     el("esubject").value = mergeFields(tp.subject, oppObj, recipientName());
     body.innerHTML = mergeFields(tp.html, oppObj, recipientName());
   }
   if(tplSel){
-    getEmailTemplates().forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
+    tplCache.forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
     const preT=params.get("etpl");
     if(preT && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
     tplSel.addEventListener("change",()=>applyTemplate(currentTpl()));
@@ -756,7 +778,7 @@ async function initCompose(){
   if(saveT) saveT.addEventListener("click",()=>{
     const name=prompt(t("cmp_tpl_name")); if(!name) return;
     const id=slugify(name)||("tpl"+getEmailTemplates().length);
-    saveEmailTemplate({ id, name, subject:el("esubject").value, html:body.innerHTML });
+    saveEmailTemplate({ id, name, subject:el("esubject").value, html:body.innerHTML }); refreshTplCache();
     if(tplSel && ![...tplSel.options].some(o=>o.value===id)){ const op=document.createElement("option"); op.value=id; op.textContent=name; tplSel.appendChild(op); }
     if(tplSel) tplSel.value=id;
     logActivity("etpl_add", id, name); toast(t("cmp_tpl_saved"));
@@ -765,7 +787,7 @@ async function initCompose(){
   function plainText(){ return body.innerText; }
   el("eCopy").addEventListener("click", async ()=>{
     try{
-      const html=body.innerHTML, text=plainText();
+      const html=brandWrap(body.innerHTML), text=plainText();
       if(navigator.clipboard && window.ClipboardItem){
         await navigator.clipboard.write([new ClipboardItem({
           "text/html": new Blob([html],{type:"text/html"}),
@@ -786,7 +808,7 @@ async function initCompose(){
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
     const ep=getEmailEndpoint();
     if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>location.href="settings.html",1100); return; }
-    const payload={ from:FROM_EMAIL, to:to, subject:el("esubject").value.trim(), html:body.innerHTML, text:plainText() };
+    const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to, subject:el("esubject").value.trim(), html:brandWrap(body.innerHTML), text:plainText() };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
       const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
@@ -829,8 +851,15 @@ function initSettings(){
     catch(e){ result("✕ "+t("gh_test_fail")+": "+e.message, "warn"); }
   });
   el("epSave2").addEventListener("click",()=>{ setEndpoint(el("ep2").value.trim()); toast(t("ins_saved")); });
-  if(el("em_ep")){ el("em_ep").value=getEmailEndpoint();
-    el("emSave").addEventListener("click",()=>{ setEmailEndpoint(el("em_ep").value.trim()); logActivity("settings","","email endpoint"); toast(t("settings_saved")); }); }
+  if(el("em_ep")){
+    el("em_ep").value=getEmailEndpoint();
+    if(el("em_name")) el("em_name").value=getFromName();
+    el("emSave").addEventListener("click",()=>{
+      setEmailEndpoint(el("em_ep").value.trim());
+      if(el("em_name")) setFromName(el("em_name").value.trim());
+      logActivity("settings","","email"); toast(t("settings_saved"));
+    });
+  }
   const bkExport=el("bkExport"), bkFile=el("bkFile");
   if(bkExport) bkExport.addEventListener("click",()=>{
     download("thrive-console-backup.json", JSON.stringify(exportBackup(),null,2), "application/json"); logActivity("backup","","");
