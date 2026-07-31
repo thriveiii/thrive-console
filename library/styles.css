@@ -349,3 +349,7 @@ html[dir="rtl"] .mdir.out,html[dir="rtl"] .mdir.in{transform:scaleX(-1);display:
 .eoppstatus.ok{background:rgba(142,207,154,.16);color:#8ecf9a}
 .eoppstatus.todo{background:rgba(150,160,170,.14);color:#aab2bd}
 html[dir="rtl"] .eopp-thumb{transform-origin:top right}
+
+/* ---------- live merge fields (compose) ---------- */
+.month-input{max-width:240px}
+.ebody [data-m]{border-bottom:1px dashed rgba(150,133,202,.55)}  /* editor-only cue; sent HTML has no spans */

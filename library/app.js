@@ -794,23 +794,43 @@ function brandWrap(inner, branded){
 
 /* email templates (reusable subject + body with merge fields) */
 const ETPL = "thrive_email_templates_v1";
+/* The monthly template is month-aware ({{MONTH}} — the composer asks which month) and ships
+   with NO embedded opportunity link: the writer decides which words carry it (guided flow). */
+const ETPL_MONTHLY = { id:"monthly", name:"Monthly update", subject:"{{MONTH}} at Thrive",
+  html:'Hi {{NAME}},<br><br>End of the month, so here is {{MONTH}} at Thrive. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com' };
 function getEmailTemplates(){
   let a; try{ a=JSON.parse(localStorage.getItem(ETPL)||"null"); }catch(e){ a=null; }
-  if(!a){ a=[{ id:"monthly", name:"Monthly update", subject:"{{BIZ}} · Thrive",
-    html:'Hi {{NAME}},<br><br>End of the month, so here is <a href="{{LINK}}">this month at Thrive</a>. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com' }]; }
+  if(!a) return [Object.assign({},ETPL_MONTHLY)];
+  // migrate the two OLD stock defaults (hard-wired month / auto-embedded link) to the new one
+  const i=a.findIndex(x=>x.id==="monthly");
+  if(i>=0 && /<a href="\{\{LINK\}\}">(this month|July) at Thrive<\/a>/.test(a[i].html||"")){
+    a[i]=Object.assign({},ETPL_MONTHLY); try{ localStorage.setItem(ETPL, JSON.stringify(a)); }catch(e){}
+  }
   return a;
 }
 function setEmailTemplates(a){ return lsSet(ETPL, JSON.stringify(a)); }
 function saveEmailTemplate(rec){ const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
 function removeEmailTemplate(id){ setEmailTemplates(getEmailTemplates().filter(x=>x.id!==id)); }
-function mergeFields(str, o, name){
-  // Text-position values are escaped before they reach body.innerHTML (a name like
-  // "<img onerror=…>" must never execute in the console origin); {{LINK}} stays a raw URL.
+/* Merge fields — two variants:
+   - mergeFieldsText: plain replacements for the subject input (.value, never HTML).
+   - mergeFieldsHtml: for the body. Values are escaped (a name like "<img onerror=…>" must never
+     execute in the console origin), and NAME/MONTH become tagged spans so the editor can keep
+     them in sync live — even after the writer has edited the rest of the message. */
+function mergeFieldsText(str, o, name, month){
+  return (str||"").split("{{BIZ}}").join((o&&o.business)||"")
+    .split("{{LINK}}").join(o?liveUrl(o.slug):"")
+    .split("{{NAME}}").join(name||"there")
+    .split("{{MONTH}}").join(month||"")
+    .split("{{SLUG}}").join(o?o.slug:"");
+}
+function mergeFieldsHtml(str, o, name, month){
   return (str||"").split("{{BIZ}}").join(esc((o&&o.business)||""))
     .split("{{LINK}}").join(o?liveUrl(o.slug):"")
-    .split("{{NAME}}").join(esc(name||"there"))
+    .split("{{NAME}}").join('<span data-m="name">'+esc(name||"there")+'</span>')
+    .split("{{MONTH}}").join('<span data-m="month">'+esc(month||"")+'</span>')
     .split("{{SLUG}}").join(esc(o?o.slug:""));
 }
+function tplUsesMonth(tp){ return !!tp && /\{\{MONTH\}\}/.test((tp.subject||"")+(tp.html||"")); }
 
 /* mail log — every send/copy/reply, per recipient (campaign documentation) */
 const MAILLOG = "thrive_mail_v1";
@@ -860,7 +880,6 @@ function getThreads(){
 async function initCompose(){
   const el=id=>document.getElementById(id);
   const body=el("ebody");
-  let composeDirty=false;   // true once the writer edits body/subject — guards against template re-render wiping their work
   const params=new URLSearchParams(location.search);
   const slug=params.get("slug");
   const oppUrl = slug ? liveUrl(slug) : "";
@@ -1045,20 +1064,35 @@ async function initCompose(){
   el("efrom").value=getFromName()+" <"+FROM_EMAIL+">";
   let oppObj=null;
   if(slug){ const all=await mergedOpps(); oppObj=all.find(x=>x.slug===slug)||null; }
-  const nameEl=el("ename"), tplSel=el("etpl"), firstEl=el("efirst");
+  const nameEl=el("ename"), tplSel=el("etpl"), firstEl=el("efirst"),
+        monthEl=el("emonth"), monthWrap=el("emonthWrap");
   let tplCache=getEmailTemplates();                       // parse localStorage once, not on every keystroke
   const refreshTplCache=()=>{ tplCache=getEmailTemplates(); };
+  let subjectDirty=false;                                 // writer edited the subject by hand — stop recomputing it
   function recipientName(){
     const n=(nameEl?nameEl.value.trim():"");
     if(firstEl && firstEl.checked && n) return n.split(/\s+/)[0];
     return n;
   }
+  function monthVal(){ return monthEl ? monthEl.value.trim() : ""; }
+  if(monthEl && !monthEl.value) monthEl.value=new Date().toLocaleString("en",{month:"long"});  // asks for the month; defaults to the current one
   // Empty selection ("") is an intentional plain, template-less message — currentTpl() returns null.
   function currentTpl(){ if(tplSel && tplSel.value==="") return null; return tplCache.find(x=>x.id===(tplSel?tplSel.value:"monthly")) || tplCache[0]; }
+  // Live merge sync: NAME/MONTH live in tagged spans, so typing the recipient's name or the month
+  // updates them IN PLACE — it never re-renders (and can never wipe) the writer's edited message.
+  function syncMerge(){
+    const nm=recipientName()||"there", mo=monthVal();
+    body.querySelectorAll('[data-m="name"]').forEach(s=>{ s.textContent=nm; });
+    body.querySelectorAll('[data-m="month"]').forEach(s=>{ s.textContent=mo; });
+    const tp=currentTpl();
+    if(tp && !subjectDirty) el("esubject").value=mergeFieldsText(tp.subject, oppObj, nm, mo);
+  }
   function applyTemplate(tp){
+    if(monthWrap) monthWrap.hidden=!tplUsesMonth(tp);
     if(!tp) return;                                  // plain: leave whatever the user has typed
-    el("esubject").value = mergeFields(tp.subject, oppObj, recipientName());
-    body.innerHTML = mergeFields(tp.html, oppObj, recipientName());
+    subjectDirty=false;
+    el("esubject").value = mergeFieldsText(tp.subject, oppObj, recipientName()||"there", monthVal());
+    body.innerHTML = mergeFieldsHtml(tp.html, oppObj, recipientName(), monthVal());
     // Mark the template's own links so the manager can tell them apart from links you add.
     body.querySelectorAll("a").forEach(a=>{ if(!a.getAttribute("data-origin")) a.setAttribute("data-origin","template"); });
     refreshLinks();
@@ -1070,27 +1104,54 @@ async function initCompose(){
     const preT=params.get("etpl");
     if(preT!==null && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
     tplSel.addEventListener("change",()=>{
-      composeDirty=false;                                // a fresh template choice replaces the draft
-      if(tplSel.value===""){ el("esubject").value=""; body.innerHTML=""; refreshLinks(); }  // plain: start from an empty editor
+      if(tplSel.value===""){ subjectDirty=false; el("esubject").value=""; body.innerHTML=""; if(monthWrap) monthWrap.hidden=true; refreshLinks(); }  // plain: start from an empty editor
       else applyTemplate(currentTpl());
     });
   }
-  // Once the writer edits the body or subject, stop auto-rewriting from the template — otherwise
-  // typing the recipient's name (a common last step) would wipe the whole composed message.
-  body.addEventListener("input",()=>{ composeDirty=true; });
-  el("esubject").addEventListener("input",()=>{ composeDirty=true; });
-  if(nameEl) nameEl.addEventListener("input",()=>{ if(!composeDirty) applyTemplate(currentTpl()); });
-  if(firstEl) firstEl.addEventListener("change",()=>{ if(!composeDirty) applyTemplate(currentTpl()); });
+  el("esubject").addEventListener("input",()=>{ subjectDirty=true; });
+  if(nameEl) nameEl.addEventListener("input",syncMerge);
+  if(firstEl) firstEl.addEventListener("change",syncMerge);
+  if(monthEl) monthEl.addEventListener("input",syncMerge);
   applyTemplate(currentTpl());
   refreshLinks();
+  // Outgoing HTML: unwrap the merge spans so the sent email is clean markup.
+  function htmlOut(){
+    const c=body.cloneNode(true);
+    c.querySelectorAll("[data-m]").forEach(s=>s.replaceWith(document.createTextNode(s.textContent)));
+    return c.innerHTML;
+  }
   const saveT=el("eSaveTpl");
   if(saveT) saveT.addEventListener("click",()=>{
     const name=prompt(t("cmp_tpl_name")); if(!name) return;
     const id=slugify(name)||("tpl"+getEmailTemplates().length);
-    saveEmailTemplate({ id, name, subject:el("esubject").value, html:body.innerHTML }); refreshTplCache();
+    // Convert live merge spans back into {{NAME}}/{{MONTH}} placeholders so the template stays reusable.
+    const c=body.cloneNode(true);
+    c.querySelectorAll('[data-m="name"]').forEach(s=>s.replaceWith(document.createTextNode("{{NAME}}")));
+    c.querySelectorAll('[data-m="month"]').forEach(s=>s.replaceWith(document.createTextNode("{{MONTH}}")));
+    c.querySelectorAll("[data-origin]").forEach(a=>a.removeAttribute("data-origin"));
+    saveEmailTemplate({ id, name, subject:el("esubject").value, html:c.innerHTML }); refreshTplCache();
     if(tplSel && ![...tplSel.options].some(o=>o.value===id)){ const op=document.createElement("option"); op.value=id; op.textContent=name; tplSel.appendChild(op); }
     if(tplSel) tplSel.value=id;
     logActivity("etpl_add", id, name); toast(t("cmp_tpl_saved"));
+  });
+  // Upload a ready-built month template (an .html file authored elsewhere) and use it to send.
+  const tplFile=el("eTplFile");
+  if(tplFile) tplFile.addEventListener("change",e=>{
+    const f=e.target.files && e.target.files[0]; if(!f) return; tplFile.value="";
+    if(!/\.html?$/i.test(f.name)){ toast(t("need_html")); return; }
+    const fr=new FileReader();
+    fr.onload=()=>{
+      const base=f.name.replace(/\.html?$/i,"");
+      let id=slugify(base)||"uploaded"; let n=2;
+      while(tplCache.some(x=>x.id===id)) id=(slugify(base)||"uploaded")+"-"+(n++);
+      const rec={ id, name:base, subject:el("esubject").value || base, html:String(fr.result||"") };
+      saveEmailTemplate(rec); refreshTplCache();
+      if(tplSel){ const op=document.createElement("option"); op.value=id; op.textContent=base; tplSel.appendChild(op); tplSel.value=id; }
+      applyTemplate(currentTpl());
+      logActivity("etpl_add", id, base+" (upload)"); toast(t("cmp_tpl_uploaded"));
+    };
+    fr.onerror=()=>toast(t("read_err"));
+    fr.readAsText(f);
   });
 
   function plainText(){ return body.innerText; }
@@ -1107,7 +1168,7 @@ async function initCompose(){
   function preview(){ return plainText().replace(/\s+/g," ").trim().slice(0,600); }
   el("eCopy").addEventListener("click", async ()=>{
     try{
-      const html=brandWrap(body.innerHTML, isBranded()), text=plainText();
+      const html=brandWrap(htmlOut(), isBranded()), text=plainText();
       if(navigator.clipboard && window.ClipboardItem){
         await navigator.clipboard.write([new ClipboardItem({
           "text/html": new Blob([html],{type:"text/html"}),
@@ -1146,7 +1207,7 @@ async function initCompose(){
     const q=quotaUsage();
     if(q.dayFull){ toast(t("cmp_quota_day_hit")+(q.freeInMs>0?" "+t("cmp_quota_resets")+" "+fmtDur(q.freeInMs):"")); return; }
     if(q.monthFull){ toast(t("cmp_quota_month_hit")); return; }
-    const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to, subject:el("esubject").value.trim(), html:brandWrap(body.innerHTML, isBranded()), text:plainText() };
+    const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to, subject:el("esubject").value.trim(), html:brandWrap(htmlOut(), isBranded()), text:plainText() };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
       const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
