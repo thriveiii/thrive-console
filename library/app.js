@@ -511,13 +511,17 @@ function initSettings(){
     branch:el("gh_branch").value.trim()||"main", token:el("gh_token").value.trim() }); }
   function status(){ el("ghStatus").textContent = ghReady()?t("gh_connected"):t("gh_not_connected");
     el("ghStatus").className="pill "+(ghReady()?"ok":"warn"); }
+  function result(msg, kind){ const r=el("ghResult"); if(!r) return; r.hidden=false; r.textContent=msg; r.className="gh-result "+(kind||""); }
   el("ghSave").addEventListener("click",()=>{ persist(); logActivity("settings","","github config"); toast(t("settings_saved")); status(); });
   el("ghTest").addEventListener("click", async ()=>{
-    persist(); el("ghStatus").textContent=t("testing"); el("ghStatus").className="pill";
+    persist(); status(); result(t("testing"), "");
     try{ const r=await ghVerify();
-      el("ghStatus").textContent="✓ "+r.full_name+(r.permissions&&r.permissions.push?" · write":" · read-only");
-      el("ghStatus").className="pill "+(r.permissions&&r.permissions.push?"ok":"warn"); }
-    catch(e){ el("ghStatus").textContent="✕ "+e.message; el("ghStatus").className="pill warn"; }
+      const canPush=!!(r.permissions&&r.permissions.push);
+      const line=(canPush?"✓ ":"✕ ")+r.full_name+(canPush?" · "+t("gh_can_write"):" · "+t("gh_read_only"));
+      result(line, canPush?"ok":"warn");
+      el("ghStatus").textContent=canPush?t("gh_connected"):t("gh_read_only"); el("ghStatus").className="pill "+(canPush?"ok":"warn");
+    }
+    catch(e){ result("✕ "+t("gh_test_fail")+": "+e.message, "warn"); }
   });
   el("epSave2").addEventListener("click",()=>{ setEndpoint(el("ep2").value.trim()); toast(t("ins_saved")); });
   window.onLangApplied=status; status();
