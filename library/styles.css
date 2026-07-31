@@ -304,3 +304,14 @@ html.tab-hidden .brand img,html.tab-hidden .gate-logo{animation-play-state:pause
 .mprev{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5;overflow-wrap:anywhere}
 html[dir="rtl"] .th-side{justify-content:flex-start}
 html[dir="rtl"] .mdir.out,html[dir="rtl"] .mdir.in{transform:scaleX(-1);display:inline-block}
+
+/* ---------- Resend free-tier send meter ---------- */
+.quota-meter{font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:999px;white-space:nowrap;align-self:center}
+.quota-meter:empty{display:none}
+.quota-meter.ok{background:rgba(113,191,204,.12);color:#8fd3de}
+.quota-meter.near{background:rgba(230,180,90,.15);color:#e6b45a}
+.quota-meter.full{background:rgba(224,110,110,.16);color:#e88}
+.quota-readout{font-size:14px;color:var(--ink);padding:12px 14px;border:1px solid var(--hair);border-radius:12px;margin:6px 0 14px;line-height:1.6}
+.quota-readout.near{border-color:rgba(230,180,90,.5)}
+.quota-readout.full{border-color:rgba(224,110,110,.5)}
+.quota-readout b{font-weight:800}

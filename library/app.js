@@ -713,6 +713,33 @@ function getEmailEndpoint(){ try{ return localStorage.getItem(EMAIL_EP)||""; }ca
 function setEmailEndpoint(u){ try{ u?localStorage.setItem(EMAIL_EP,u):localStorage.removeItem(EMAIL_EP); }catch(e){} }
 function getFromName(){ try{ return (localStorage.getItem(FROM_NAME_KEY)||"Thrive"); }catch(e){ return "Thrive"; } }
 function setFromName(v){ try{ v?localStorage.setItem(FROM_NAME_KEY, v):localStorage.removeItem(FROM_NAME_KEY); }catch(e){} }
+
+/* ---- Resend free-tier guard: a local, rolling-window send counter (no third party) ----
+   Resend's free plan allows 100 emails/day and 3,000/month. We keep a compact list of the
+   timestamps of real sends made from this browser, prune it to 31 days, and derive usage
+   over a rolling 24h window (each send frees exactly 24h later) and a rolling 30d window.
+   This only counts sends from THIS device — Resend's dashboard is the true source of truth;
+   this is a safety rail to stay comfortably under the free tier. */
+const QUOTA = "thrive_quota_v1";               // array of send timestamps (ms)
+const QUOTA_CFG = "thrive_quota_cfg_v1";       // { daily, monthly }
+const DAY_MS=86400000, MONTH_MS=30*86400000;
+function quotaCfg(){ try{ const c=JSON.parse(localStorage.getItem(QUOTA_CFG)||"{}"); return { daily:(c.daily>0?c.daily:100), monthly:(c.monthly>0?c.monthly:3000) }; }catch(e){ return { daily:100, monthly:3000 }; } }
+function setQuotaCfg(c){ try{ localStorage.setItem(QUOTA_CFG, JSON.stringify({ daily:Math.max(1,parseInt(c.daily,10)||100), monthly:Math.max(1,parseInt(c.monthly,10)||3000) })); }catch(e){} }
+function getSendStamps(){ try{ const a=JSON.parse(localStorage.getItem(QUOTA)||"[]"); return Array.isArray(a)?a.filter(n=>typeof n==="number"):[]; }catch(e){ return []; } }
+function recordSend(){ const now=Date.now(); const a=getSendStamps().filter(t=> now-t < MONTH_MS+DAY_MS); a.push(now); lsSet(QUOTA, JSON.stringify(a)); }
+// Current usage + remaining headroom against the configured caps.
+function quotaUsage(){
+  const now=Date.now(), st=getSendStamps(), c=quotaCfg();
+  const dayStamps=st.filter(t=> now-t < DAY_MS);
+  const day=dayStamps.length, month=st.filter(t=> now-t < MONTH_MS).length;
+  // when at the daily cap, the oldest in-window send is what frees a slot next
+  let freeInMs=0;
+  if(day>=c.daily && dayStamps.length){ const oldest=Math.min.apply(null,dayStamps); freeInMs=Math.max(0, DAY_MS-(now-oldest)); }
+  return { day, month, dailyCap:c.daily, monthlyCap:c.monthly,
+           dayLeft:Math.max(0,c.daily-day), monthLeft:Math.max(0,c.monthly-month),
+           dayFull:day>=c.daily, monthFull:month>=c.monthly, freeInMs };
+}
+function fmtDur(ms){ const h=Math.floor(ms/3600000), m=Math.round((ms%3600000)/60000); return (h>0? h+"h ":"")+m+"m"; }
 /* wrap the message with a branded header (logo) + footer for outgoing mail */
 // Wrap the message body for sending.
 //  branded=false (default): a clean, personal 1:1 email — no logo image, system font,
@@ -912,11 +939,29 @@ async function initCompose(){
     const to=el("eto").value.trim(), subject=el("esubject").value.trim();
     location.href="mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(plainText());
   });
+  // live Resend free-tier meter under the Send button
+  const meter=el("quotaMeter");
+  function renderQuota(){
+    if(!meter) return;
+    const u=quotaUsage();
+    const near = u.dayLeft<=Math.max(3, Math.ceil(u.dailyCap*0.1));
+    const cls = u.dayFull||u.monthFull ? "full" : (near ? "near" : "ok");
+    meter.className="quota-meter "+cls;
+    let txt=t("cmp_quota_today")+" "+u.day+" / "+u.dailyCap+" · "+t("cmp_quota_month")+" "+u.month+" / "+u.monthlyCap;
+    if(u.dayFull && u.freeInMs>0) txt+=" · "+t("cmp_quota_resets")+" "+fmtDur(u.freeInMs);
+    meter.textContent=txt;
+    meter.title=t("cmp_quota_hint");
+  }
+  renderQuota();
   el("eSend").addEventListener("click", async ()=>{
     const to=el("eto").value.trim();
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
     const ep=getEmailEndpoint();
     if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>location.href="settings.html",1100); return; }
+    // Resend free-tier guard — block before we would exceed the daily/monthly cap.
+    const q=quotaUsage();
+    if(q.dayFull){ toast(t("cmp_quota_day_hit")+(q.freeInMs>0?" "+t("cmp_quota_resets")+" "+fmtDur(q.freeInMs):"")); return; }
+    if(q.monthFull){ toast(t("cmp_quota_month_hit")); return; }
     const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to, subject:el("esubject").value.trim(), html:brandWrap(body.innerHTML, isBranded()), text:plainText() };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
@@ -927,6 +972,7 @@ async function initCompose(){
       if(parsed && parsed.ok===false) throw new Error(parsed.error||"send failed");
       if(parsed) id=parsed.id||"";
       const m=tplMeta();
+      recordSend(); renderQuota();
       logActivity("email", slug||"", to+" · "+payload.subject);
       logMail({ opp:slug||"", to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id });
       toast(t("cmp_sent"));
@@ -968,6 +1014,22 @@ function initSettings(){
       setEmailEndpoint(el("em_ep").value.trim());
       if(el("em_name")) setFromName(el("em_name").value.trim());
       logActivity("settings","","email"); toast(t("settings_saved"));
+    });
+  }
+  if(el("q_daily")){
+    const cfg=quotaCfg(); el("q_daily").value=cfg.daily; el("q_monthly").value=cfg.monthly;
+    const ro=el("quotaReadout");
+    function showUsage(){
+      if(!ro) return; const u=quotaUsage();
+      const cls=u.dayFull||u.monthFull?"full":(u.dayLeft<=Math.max(3,Math.ceil(u.dailyCap*0.1))?"near":"ok");
+      ro.className="quota-readout "+cls;
+      ro.innerHTML='<b>'+u.day+' / '+u.dailyCap+'</b> '+t("cmp_quota_today_l")+' · <b>'+u.month+' / '+u.monthlyCap+'</b> '+t("cmp_quota_month_l")+
+        (u.dayFull&&u.freeInMs>0? ' · '+t("cmp_quota_resets")+' '+fmtDur(u.freeInMs):'');
+    }
+    showUsage();
+    el("qSave").addEventListener("click",()=>{
+      setQuotaCfg({ daily:el("q_daily").value, monthly:el("q_monthly").value });
+      showUsage(); logActivity("settings","","quota"); toast(t("settings_saved"));
     });
   }
   const bkExport=el("bkExport"), bkFile=el("bkFile");
