@@ -32,9 +32,16 @@
   <p class="sub" data-i18n="cmp_sub"></p>
 
   <section class="panel compose-panel">
-    <div class="grid2">
+    <div class="etpl-bar">
+      <label class="etpl-label" data-i18n="cmp_template">Template</label>
+      <select id="etpl" class="input"></select>
+      <button class="btn ghost sm" id="eSaveTpl" data-i18n="cmp_save_tpl">Save as template</button>
+      <a class="btn ghost sm" href="templates.html#email" data-i18n="cmp_manage_tpl">Manage</a>
+    </div>
+    <div class="grid3">
       <div class="field"><label data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
       <div class="field"><label data-i18n="cmp_to">To</label><input id="eto" class="input" type="email" autocomplete="off" placeholder="name@example.com"></div>
+      <div class="field"><label data-i18n="cmp_name">Recipient name</label><input id="ename" class="input" autocomplete="off" placeholder="Sideeq"></div>
     </div>
     <div class="field"><label data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off"></div>
 

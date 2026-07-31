@@ -171,14 +171,28 @@ html.gate-locked .top,html.gate-locked .wrap{display:none!important}
 
 /* pipeline summary */
 .pipeline{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
-.pl-pill{font-size:12px;font-weight:700;color:var(--ink-2);background:var(--panel);border:1px solid var(--hair);border-radius:999px;padding:6px 12px}
+.pl-pill{font-size:12px;font-weight:700;color:var(--ink-2);background:var(--panel);border:1px solid var(--hair);border-radius:999px;padding:6px 12px;cursor:pointer;font-family:inherit;transition:.15s}
 .pl-pill b{color:var(--ink);margin-inline-start:2px}
-.pl-opened{border-color:rgba(126,224,184,.35)} .pl-won b{color:#7ee0b8} .pl-lost b{color:var(--pink)}
-.pl-fu{cursor:pointer;border-color:rgba(246,207,91,.4);color:#F6CF5B}
-.pl-fu:hover{background:rgba(246,207,91,.1)}
+.pl-pill:hover{border-color:var(--purple);color:var(--ink)}
+.pl-pill.on{background:rgba(150,133,202,.18);border-color:var(--purple);color:var(--ink)}
+.pl-won b{color:#7ee0b8} .pl-lost b{color:var(--pink)}
+.pl-fu{border-color:rgba(246,207,91,.4);color:#F6CF5B}
+.pl-fu:hover{background:rgba(246,207,91,.1);border-color:#F6CF5B}
+.pl-fu.on{background:rgba(246,207,91,.16);border-color:#F6CF5B;color:#F6CF5B}
+.pl-clear{color:var(--ink-3)}
 
 /* email composer */
 .compose-panel{max-width:820px}
+.etpl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--hair-2)}
+.etpl-label{font-size:12.5px;font-weight:800;color:var(--ink-2)}
+.etpl-bar select{max-width:240px}
+.tile-sub{font-size:13px;font-weight:600;color:var(--ink-3)}
+.tag-cat-emails{background:rgba(150,133,202,.16);color:#cbb8ff}
+.tag-cat-pages{background:rgba(113,191,204,.14);color:#8fd3de}
+.tag-cat-templates{background:rgba(238,140,157,.14);color:#f3a9b6}
+.tag-cat-system{background:rgba(255,255,255,.06);color:var(--ink-3)}
+.tag-email,.tag-reply{background:rgba(150,133,202,.16);color:#cbb8ff}
+.tag-publish,.tag-unpublish{background:rgba(126,224,184,.12);color:#7ee0b8}
 .etoolbar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
 .etoolbar button{padding:7px 11px;border-radius:8px;border:1px solid var(--hair);background:transparent;color:var(--ink-2);font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;min-width:34px}
 .etoolbar button:hover{border-color:var(--purple);color:var(--ink)}

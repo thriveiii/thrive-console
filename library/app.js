@@ -180,7 +180,7 @@ async function allSlugs(){ return (await mergedOpps()).map(o=>o.slug); }
 
 /* ---------- dashboard ---------- */
 async function initDashboard(){
-  const state={ q:"", sort:"new", tmpl:"all", status:"active", data:[] };
+  const state={ q:"", sort:"new", tmpl:"all", status:"active", stage:null, data:[] };
   state.data = await mergedOpps();
 
   const search=document.getElementById("q");
@@ -208,6 +208,7 @@ async function initDashboard(){
     if(state.status==="active")   rows=rows.filter(o=>!o.archived);
     else if(state.status==="archived") rows=rows.filter(o=>o.archived);
     else if(state.status==="followup") rows=rows.filter(needsFollowup);
+    if(state.stage) rows=rows.filter(o=>effStage(o)===state.stage);
     if(state.tmpl!=="all") rows=rows.filter(o=>o.template===state.tmpl);
     if(state.q){ const q=state.q.toLowerCase();
       rows=rows.filter(o=>[o.business,o.location,o.template,o.slug].join(" ").toLowerCase().includes(q)); }
@@ -224,10 +225,28 @@ async function initDashboard(){
       const act=state.data.filter(o=>!o.archived); const counts={}; STAGES.forEach(s=>counts[s]=0);
       act.forEach(o=>{ const s=effStage(o); counts[s]=(counts[s]||0)+1; });
       const fu=act.filter(needsFollowup).length;
-      pipelineEl.innerHTML = STAGES.map(s=>`<span class="pl-pill pl-${s}">${t("stage_"+s)} <b>${counts[s]}</b></span>`).join("")
-        + (fu?`<span class="pl-pill pl-fu" data-fu="1">${t("followup")} <b>${fu}</b></span>`:"");
+      pipelineEl.innerHTML =
+        STAGES.map(s=>`<button class="pl-pill pl-${s}${state.stage===s?" on":""}" data-stage-f="${s}">${t("stage_"+s)} <b>${counts[s]}</b></button>`).join("")
+        + `<button class="pl-pill pl-fu${state.status==="followup"?" on":""}" data-fu="1">${t("followup")} <b>${fu}</b></button>`
+        + ((state.stage||state.status==="followup"||state.tmpl!=="all"||state.q)?`<button class="pl-pill pl-clear" data-clear="1">${t("clear_filters")}</button>`:"");
+      pipelineEl.querySelectorAll("[data-stage-f]").forEach(b=>b.addEventListener("click",()=>{
+        const s=b.getAttribute("data-stage-f");
+        state.stage = (state.stage===s)?null:s;
+        if(state.stage && state.status==="followup"){ state.status="active"; if(statusFilt) statusFilt.value="active"; }
+        render();
+      }));
       const fp=pipelineEl.querySelector("[data-fu]");
-      if(fp) fp.addEventListener("click",()=>{ state.status="followup"; if(statusFilt) statusFilt.value="followup"; render(); });
+      if(fp) fp.addEventListener("click",()=>{
+        if(state.status==="followup"){ state.status="active"; if(statusFilt) statusFilt.value="active"; }
+        else { state.status="followup"; state.stage=null; if(statusFilt) statusFilt.value="followup"; }
+        render();
+      });
+      const cl=pipelineEl.querySelector("[data-clear]");
+      if(cl) cl.addEventListener("click",()=>{
+        state.stage=null; state.status="active"; state.tmpl="all"; state.q="";
+        if(statusFilt) statusFilt.value="active"; if(filt) filt.value="all"; if(search) search.value="";
+        render();
+      });
     }
 
     function stageSel(o){
@@ -550,30 +569,68 @@ async function initEditor(){
   refresh();
 }
 
-/* ---------- activity log page ---------- */
+/* ---------- activity log page (categorised operations + campaigns) ---------- */
+const ACT_CAT={ email:"emails", email_copy:"emails", reply:"emails",
+  create:"pages", save:"pages", publish:"pages", unpublish:"pages", download:"pages",
+  archive:"pages", unarchive:"pages", remove:"pages", stage:"pages", copy:"pages",
+  upload:"templates", tpl_add:"templates", tpl_remove:"templates", tpl_publish:"templates",
+  etpl_add:"templates", etpl_remove:"templates",
+  login:"system", export:"system", backup:"system", restore:"system", settings:"system", clear:"system" };
+function actCat(a){ return ACT_CAT[a]||"system"; }
 function initActivity(){
   const el=id=>document.getElementById(id);
+  let cat="all";
   const actionLabel=a=>t("act_"+a) !== ("act_"+a) ? t("act_"+a) : a;
-  function fmt(ts){ try{ const d=new Date(ts); return d.toLocaleString(getLang()==="ar"?"ar":"en", {dateStyle:"medium", timeStyle:"short"}); }catch(e){ return ts; } }
+  function fmt(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts; } }
+
+  function renderChips(){
+    const cats=["all","pages","emails","templates","system"];
+    el("logCats").innerHTML=cats.map(c=>`<button class="pl-pill${cat===c?" on":""}" data-cat="${c}">${t("cat_"+c)}</button>`).join("");
+    el("logCats").querySelectorAll("[data-cat]").forEach(b=>b.addEventListener("click",()=>{ cat=b.getAttribute("data-cat"); renderChips(); render(); }));
+  }
+  function renderCampaigns(){
+    const wrap=el("campaigns"); if(!wrap) return;
+    const mail=getMailLog();
+    if(!mail.length){ wrap.innerHTML=""; return; }
+    const byOpp={};
+    mail.forEach(m=>{ const k=m.opp||"—"; (byOpp[k]=byOpp[k]||[]).push(m); });
+    const cards=Object.keys(byOpp).map(k=>{
+      const list=byOpp[k]; const sent=list.filter(m=>m.status==="sent").length;
+      const replied=list.filter(m=>m.status==="replied").length;
+      const last=list[list.length-1];
+      return `<div class="tile"><div class="tile-v">${sent}<span class="tile-sub"> ${t("cmp_sent_n")}${replied?" · "+replied+" "+t("cmp_replied_n"):""}</span></div>
+        <div class="tile-k">${esc(k)} · ${esc((last.to||"—"))}</div></div>`;
+    }).join("");
+    wrap.innerHTML='<h3 class="block-h">'+t("act_campaigns")+'</h3><div class="tiles">'+cards+'</div>';
+  }
   function render(){
-    const rows=getActivity().slice().reverse();
+    renderCampaigns();
+    let rows=getActivity().slice().reverse();
+    if(cat!=="all") rows=rows.filter(r=>actCat(r.action)===cat);
     const wrap=el("logBody");
     if(!rows.length){ wrap.innerHTML='<div class="empty">'+t("act_empty")+'</div>'; return; }
-    wrap.innerHTML='<table class="logtable"><thead><tr>'+
-      '<th>'+t("act_time")+'</th><th>'+t("act_action")+'</th><th>'+t("act_item")+'</th><th>'+t("act_detail")+'</th></tr></thead><tbody>'+
-      rows.map(r=>`<tr><td class="mono">${esc(fmt(r.ts))}</td><td><span class="tag tag-${esc(r.action)}">${esc(actionLabel(r.action))}</span></td><td class="mono">${esc(r.slug)||"—"}</td><td>${esc(r.detail)||"—"}</td></tr>`).join("")+
-      '</tbody></table>';
+    wrap.innerHTML='<div class="logwrap"><table class="logtable"><thead><tr>'+
+      '<th>'+t("act_time")+'</th><th>'+t("act_category")+'</th><th>'+t("act_action")+'</th><th>'+t("act_item")+'</th><th>'+t("act_detail")+'</th></tr></thead><tbody>'+
+      rows.map(r=>`<tr><td class="mono">${esc(fmt(r.ts))}</td><td><span class="tag tag-cat-${esc(actCat(r.action))}">${t("cat_"+actCat(r.action))}</span></td><td><span class="tag tag-${esc(r.action)}">${esc(actionLabel(r.action))}</span></td><td class="mono">${esc(r.slug)||"—"}</td><td>${esc(r.detail)||"—"}</td></tr>`).join("")+
+      '</tbody></table></div>';
   }
   el("logRefresh").addEventListener("click",render);
+  el("logReply").addEventListener("click",()=>{
+    const to=prompt(t("act_reply_who")); if(!to) return;
+    const opp=prompt(t("act_reply_opp"))||"";
+    logActivity("reply", opp.trim(), to.trim());
+    logMail({ opp:opp.trim(), to:to.trim(), subject:"(reply)", provider:"manual", status:"replied" });
+    toast(t("act_reply_logged")); render();
+  });
   el("logClear").addEventListener("click",()=>{
     if(!confirm(t("confirm_clear"))) return;
-    setActivity([]); logActivity("clear","",""); render();
+    setActivity([]); try{localStorage.removeItem(MAILLOG);}catch(e){} logActivity("clear","",""); render();
   });
   el("logExport").addEventListener("click",()=>{
-    download("thrive-activity.json", JSON.stringify(getActivity(),null,2), "application/json");
+    download("thrive-activity.json", JSON.stringify({ activity:getActivity(), mail:getMailLog() },null,2), "application/json");
   });
-  window.onLangApplied=render;
-  render();
+  window.onLangApplied=()=>{ renderChips(); render(); };
+  renderChips(); render();
 }
 
 /* ---------- email compose + send ---------- */
@@ -581,6 +638,30 @@ const EMAIL_EP = "thrive_email_ep";
 const FROM_EMAIL = "hi@thriveiii.com";
 function getEmailEndpoint(){ try{ return localStorage.getItem(EMAIL_EP)||""; }catch(e){ return ""; } }
 function setEmailEndpoint(u){ try{ u?localStorage.setItem(EMAIL_EP,u):localStorage.removeItem(EMAIL_EP); }catch(e){} }
+
+/* email templates (reusable subject + body with merge fields) */
+const ETPL = "thrive_email_templates_v1";
+function getEmailTemplates(){
+  let a; try{ a=JSON.parse(localStorage.getItem(ETPL)||"null"); }catch(e){ a=null; }
+  if(!a){ a=[{ id:"monthly", name:"Monthly update", subject:"{{BIZ}} · Thrive",
+    html:'Hi {{NAME}},<br><br>End of the month, so here is <a href="{{LINK}}">this month at Thrive</a>. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com' }]; }
+  return a;
+}
+function setEmailTemplates(a){ try{ localStorage.setItem(ETPL, JSON.stringify(a)); return true; }catch(e){ toast(t("storage_full")); return false; } }
+function saveEmailTemplate(rec){ const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
+function removeEmailTemplate(id){ setEmailTemplates(getEmailTemplates().filter(x=>x.id!==id)); }
+function mergeFields(str, o, name){
+  return (str||"").split("{{BIZ}}").join((o&&o.business)||"")
+    .split("{{LINK}}").join(o?liveUrl(o.slug):"")
+    .split("{{NAME}}").join(name||"there")
+    .split("{{SLUG}}").join(o?o.slug:"");
+}
+
+/* mail log — every send/copy/reply, per recipient (campaign documentation) */
+const MAILLOG = "thrive_mail_v1";
+function getMailLog(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)||"[]"); }catch(e){ return []; } }
+function setMailLog(a){ try{ localStorage.setItem(MAILLOG, JSON.stringify(a.slice(-1000))); }catch(e){} }
+function logMail(rec){ const a=getMailLog(); a.push(Object.assign({ ts:new Date().toISOString() }, rec)); setMailLog(a); }
 
 async function initCompose(){
   const el=id=>document.getElementById(id);
@@ -610,15 +691,31 @@ async function initCompose(){
   }
 
   el("efrom").value=FROM_EMAIL;
-  if(slug){
-    const all=await mergedOpps(); const o=all.find(x=>x.slug===slug);
-    if(!el("esubject").value) el("esubject").value=((o&&o.business)?o.business:slug)+" · Thrive";
+  let oppObj=null;
+  if(slug){ const all=await mergedOpps(); oppObj=all.find(x=>x.slug===slug)||null; }
+  const nameEl=el("ename"), tplSel=el("etpl");
+  function applyTemplate(tp){
+    if(!tp) return;
+    el("esubject").value = mergeFields(tp.subject, oppObj, nameEl?nameEl.value.trim():"");
+    body.innerHTML = mergeFields(tp.html, oppObj, nameEl?nameEl.value.trim():"");
   }
-  if(!body.innerHTML.trim()){
-    body.innerHTML='Hi ,<br><br>End of the month, so here is <a href="'+(oppUrl||"https://console.thriveiii.com/opp/")+
-      '">July at Thrive</a>. We take on the work we think we’ll be proud of. If that could be yours, just say hi.'+
-      '<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com';
+  if(tplSel){
+    getEmailTemplates().forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
+    const preT=params.get("etpl");
+    if(preT && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
+    tplSel.addEventListener("change",()=>applyTemplate(getEmailTemplates().find(x=>x.id===tplSel.value)));
   }
+  if(nameEl) nameEl.addEventListener("input",()=>applyTemplate(getEmailTemplates().find(x=>x.id===(tplSel?tplSel.value:"monthly"))));
+  applyTemplate(getEmailTemplates().find(x=>x.id===(tplSel?tplSel.value:"monthly")) || getEmailTemplates()[0]);
+  const saveT=el("eSaveTpl");
+  if(saveT) saveT.addEventListener("click",()=>{
+    const name=prompt(t("cmp_tpl_name")); if(!name) return;
+    const id=slugify(name)||("tpl"+getEmailTemplates().length);
+    saveEmailTemplate({ id, name, subject:el("esubject").value, html:body.innerHTML });
+    if(tplSel && ![...tplSel.options].some(o=>o.value===id)){ const op=document.createElement("option"); op.value=id; op.textContent=name; tplSel.appendChild(op); }
+    if(tplSel) tplSel.value=id;
+    logActivity("etpl_add", id, name); toast(t("cmp_tpl_saved"));
+  });
 
   function plainText(){ return body.innerText; }
   el("eCopy").addEventListener("click", async ()=>{
@@ -629,7 +726,10 @@ async function initCompose(){
           "text/html": new Blob([html],{type:"text/html"}),
           "text/plain": new Blob([text],{type:"text/plain"}) })]);
       } else { await navigator.clipboard.writeText(text); }
-      logActivity("email_copy", slug||"", ""); toast(t("cmp_copied"));
+      const to=el("eto").value.trim(), subject=el("esubject").value.trim();
+      logActivity("email_copy", slug||"", (to?to+" · ":"")+subject);
+      logMail({ opp:slug||"", to:to, subject:subject, provider:"gmail-copy", status:"copied" });
+      toast(t("cmp_copied"));
     }catch(e){ toast(t("cmp_copy_err")); }
   });
   el("eMail").addEventListener("click",()=>{
@@ -647,8 +747,12 @@ async function initCompose(){
       const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
       const txt=await r.text();
       if(!r.ok) throw new Error(r.status+" "+txt.slice(0,140));
-      let ok=true; try{ const j=JSON.parse(txt); if(j && j.ok===false) { ok=false; throw new Error(j.error||"send failed"); } }catch(_){}
-      logActivity("email", slug||"", to); toast(t("cmp_sent"));
+      let id="", parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
+      if(parsed && parsed.ok===false) throw new Error(parsed.error||"send failed");
+      if(parsed) id=parsed.id||"";
+      logActivity("email", slug||"", to+" · "+payload.subject);
+      logMail({ opp:slug||"", to:to, subject:payload.subject, provider:"endpoint", status:"sent", id:id });
+      toast(t("cmp_sent"));
     }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
     finally{ el("eSend").disabled=false; el("eSend").textContent=old; }
   });
@@ -796,8 +900,28 @@ function initTemplates(){
     toast(t("tpl_added")); renderCustom();
   });
 
-  window.onLangApplied=()=>{ renderBuiltin(); renderCustom(); };
-  renderBuiltin(); renderCustom();
+  function renderEmailTpls(){
+    const wrap=el("emailTplList"); if(!wrap) return;
+    wrap.innerHTML = getEmailTemplates().map(et=>`
+      <div class="item">
+        <div class="item-body">
+          <div class="id">EMAIL · ${esc(et.id)}</div>
+          <h3>${esc(et.name)}</h3>
+          <p class="meta-line">${esc(et.subject)}</p>
+          <div class="actions">
+            <a class="btn sm" href="compose.html?etpl=${encodeURIComponent(et.id)}">${t("cmp_compose_with")}</a>
+            ${et.id!=="monthly"?`<button class="btn ghost sm danger" data-etdel="${esc(et.id)}">${t("tpl_delete")}</button>`:""}
+          </div>
+        </div>
+      </div>`).join("");
+    wrap.querySelectorAll("[data-etdel]").forEach(b=>b.addEventListener("click",()=>{
+      const id=b.getAttribute("data-etdel");
+      if(!confirm(t("tpl_confirm_del"))) return;
+      removeEmailTemplate(id); logActivity("etpl_remove", id, ""); renderEmailTpls();
+    }));
+  }
+  window.onLangApplied=()=>{ renderBuiltin(); renderCustom(); renderEmailTpls(); };
+  renderBuiltin(); renderCustom(); renderEmailTpls();
 }
 
 /* ---------- insights (analytics) ---------- */
