@@ -106,9 +106,10 @@ async function renderOppHtml(rec){
 
 /* ---------- backup / restore (everything, minus the GitHub token) ---------- */
 function exportBackup(){
-  return { _type:"thrive-console-backup", v:1, exported:new Date().toISOString(),
+  return { _type:"thrive-console-backup", v:2, exported:new Date().toISOString(),
     opps:getDrafts(), templates:getCustomTemplates(), activity:getActivity(),
-    hits:getHits(), endpoint:getEndpoint() };
+    hits:getHits(), endpoint:getEndpoint(),
+    mail:getMailLog(), emailTemplates:getEmailTemplates(), fromName:getFromName() };
 }
 function importBackup(obj){
   if(!obj || obj._type!=="thrive-console-backup") throw new Error("Not a Thrive backup file");
@@ -117,6 +118,9 @@ function importBackup(obj){
   if(Array.isArray(obj.activity)) setActivity(obj.activity);
   if(Array.isArray(obj.hits)){ try{ localStorage.setItem(HITS, JSON.stringify(obj.hits)); }catch(e){} }
   if(typeof obj.endpoint==="string") setEndpoint(obj.endpoint);
+  if(Array.isArray(obj.mail)) setMailLog(obj.mail);               // restore the email ledger / threads
+  if(Array.isArray(obj.emailTemplates)) setEmailTemplates(obj.emailTemplates);
+  if(typeof obj.fromName==="string") setFromName(obj.fromName);
 }
 
 /* ---------- GitHub publishing (the console's backend = the repo itself) ---------- */
@@ -617,21 +621,59 @@ function initActivity(){
     el("logCats").innerHTML=cats.map(c=>`<button class="pl-pill${cat===c?" on":""}" data-cat="${c}">${t("cat_"+c)}</button>`).join("");
     el("logCats").querySelectorAll("[data-cat]").forEach(b=>b.addEventListener("click",()=>{ cat=b.getAttribute("data-cat"); renderChips(); render(); }));
   }
-  function renderCampaigns(){
-    const wrap=el("campaigns"); if(!wrap) return;
-    const mail=getMailLog();
-    if(!mail.length){ wrap.innerHTML=""; return; }
-    const byOpp={};
-    mail.forEach(m=>{ const k=m.opp||"—"; (byOpp[k]=byOpp[k]||[]).push(m); });
-    const cards=Object.keys(byOpp).map(k=>{
-      const list=byOpp[k]; const sent=list.filter(m=>m.status==="sent").length;
-      const replied=list.filter(m=>m.status==="replied").length;
-      const last=list[list.length-1];
-      return `<div class="tile"><div class="tile-v">${sent}<span class="tile-sub"> ${t("cmp_sent_n")}${replied?" · "+replied+" "+t("cmp_replied_n"):""}</span></div>
-        <div class="tile-k">${esc(k)} · ${esc((last.to||"—"))}</div></div>`;
-    }).join("");
-    wrap.innerHTML='<h3 class="block-h">'+t("act_campaigns")+'</h3><div class="tiles">'+cards+'</div>';
+  let threadQ="";
+  function statusLabel(m){
+    if(m.direction==="in"||m.status==="replied") return t("mst_reply");
+    if(m.status==="copied") return t("mst_copied");
+    if(m.status==="sent") return t("mst_sent");
+    return esc(m.status||"—");
   }
+  function renderThreads(){
+    const wrap=el("campaigns"); if(!wrap) return;
+    let threads=getThreads();
+    const total=threads.length;
+    if(threadQ){ const q=threadQ.toLowerCase();
+      threads=threads.filter(th=> (th.to+" "+th.toName+" "+th.opp+" "+th.templates.join(" ")).toLowerCase().includes(q)); }
+    const head='<div class="threads-head"><h3 class="block-h">'+t("act_threads")+' <span class="pill">'+total+'</span></h3>'+
+      '<input id="threadSearch" class="input sm" placeholder="'+esc(t("act_thread_search"))+'" value="'+esc(threadQ)+'"></div>';
+    if(!total){ wrap.innerHTML=head+'<div class="empty">'+t("act_no_threads")+'</div>'; bindSearch(); return; }
+    const cards=threads.map(th=>{
+      const who=esc(th.toName? (th.toName+" · "+th.to) : th.to);
+      const oppB=th.opp?'<span class="tag tag-cat-pages">'+esc(th.opp)+'</span>':'';
+      const tplB=th.templates.length? th.templates.map(n=>'<span class="tag tag-templates">'+esc(n)+'</span>').join('')
+                                    : '<span class="tag tag-plain">'+t("cmp_no_tpl")+'</span>';
+      const counts=th.sent+' '+t("cmp_sent_n")+(th.replied?' · '+th.replied+' '+t("cmp_replied_n"):'');
+      const rows=th.msgs.map(m=>{
+        const dir=(m.direction==="in")?'<span class="mdir in">←</span>':'<span class="mdir out">→</span>';
+        const tp=m.templateName?'<span class="tag tag-templates">'+esc(m.templateName)+'</span>':'<span class="tag tag-plain">'+t("cmp_no_tpl")+'</span>';
+        const br=m.branded?' <span class="tag">'+t("mst_branded")+'</span>':'';
+        const pv=m.preview?'<div class="mprev">'+esc(m.preview)+'</div>':'';
+        return '<div class="msg"><div class="msg-top">'+dir+'<span class="mono msg-time">'+esc(fmt(m.ts))+'</span>'+
+          '<span class="tag">'+statusLabel(m)+'</span>'+tp+br+'</div>'+
+          '<div class="msg-subj">'+esc(m.subject||"—")+'</div>'+pv+'</div>';
+      }).join("");
+      return '<details class="thread"><summary>'+
+        '<div class="th-main"><span class="th-who">'+who+'</span><span class="th-meta">'+oppB+tplB+'</span></div>'+
+        '<div class="th-side"><span class="th-counts">'+counts+'</span><span class="mono th-last">'+esc(fmt(th.last))+'</span>'+
+        '<button class="btn ghost sm th-reply" data-th="'+esc(th.id)+'" data-to="'+esc(th.to)+'" data-opp="'+esc(th.opp)+'">'+t("act_reply_btn")+'</button></div>'+
+        '</summary><div class="thread-body">'+rows+'</div></details>';
+    }).join("");
+    wrap.innerHTML=head+'<div class="threads">'+cards+'</div>';
+    bindSearch();
+    wrap.querySelectorAll(".th-reply").forEach(b=>b.addEventListener("click",e=>{
+      e.preventDefault(); e.stopPropagation();
+      const to=b.getAttribute("data-to"), opp=b.getAttribute("data-opp");
+      const note=prompt(t("act_reply_note")); if(note===null) return;
+      logMail({ opp:opp, to:to, subject:"Re: "+(opp||to), preview:(note||"").slice(0,600), provider:"manual", status:"replied", direction:"in" });
+      logActivity("reply", opp||"", to); toast(t("act_reply_logged")); render();
+    }));
+  }
+  function bindSearch(){
+    const s=el("threadSearch"); if(!s) return;
+    s.addEventListener("input",()=>{ threadQ=s.value; const pos=s.selectionStart; renderThreads();
+      const s2=el("threadSearch"); if(s2){ s2.focus(); try{ s2.setSelectionRange(pos,pos); }catch(_){} } });
+  }
+  const renderCampaigns=renderThreads;
   function render(){
     renderCampaigns();
     let rows=getActivity().slice().reverse();
@@ -647,8 +689,9 @@ function initActivity(){
   el("logReply").addEventListener("click",()=>{
     const to=prompt(t("act_reply_who")); if(!to) return;
     const opp=prompt(t("act_reply_opp"))||"";
+    const note=prompt(t("act_reply_note"))||"";
     logActivity("reply", opp.trim(), to.trim());
-    logMail({ opp:opp.trim(), to:to.trim(), subject:"(reply)", provider:"manual", status:"replied" });
+    logMail({ opp:opp.trim(), to:to.trim(), subject:"Re: "+(opp.trim()||to.trim()), preview:note.slice(0,600), provider:"manual", status:"replied", direction:"in" });
     toast(t("act_reply_logged")); render();
   });
   el("logClear").addEventListener("click",()=>{
@@ -714,8 +757,47 @@ function mergeFields(str, o, name){
 /* mail log — every send/copy/reply, per recipient (campaign documentation) */
 const MAILLOG = "thrive_mail_v1";
 function getMailLog(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)||"[]"); }catch(e){ return []; } }
-function setMailLog(a){ lsSet(MAILLOG, JSON.stringify(a.slice(-500))); }
-function logMail(rec){ const a=getMailLog(); a.push(Object.assign({ ts:new Date().toISOString() }, rec)); setMailLog(a); }
+function setMailLog(a){ lsSet(MAILLOG, JSON.stringify(a.slice(-800))); }
+// Normalise a subject into a stable conversation root (strip Re:/Fwd:/رد: prefixes).
+function subjRoot(s){ return (s||"").replace(/^\s*(re|fwd|fw|رد|إعادة\s*توجيه)\s*:\s*/i,"").replace(/^\s*(re|fwd|fw|رد)\s*:\s*/i,"").trim().toLowerCase().slice(0,80); }
+// A thread groups every message to one recipient about one opportunity (or, with no
+// opportunity, one subject line) — so template sends, plain sends, and replies chain together.
+function threadKey(to, opp, subject){
+  const person=(to||"").trim().toLowerCase();
+  const root=((opp||"").trim().toLowerCase()) || subjRoot(subject) || "(no-subject)";
+  return person+"|"+root;
+}
+function newMid(){ try{ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }catch(e){ return "m"+(getMailLog().length+1); } }
+// Central ledger writer: stamps a unique message id, resolves the thread, and fixes direction.
+function logMail(rec){
+  const a=getMailLog();
+  const r=Object.assign({ ts:new Date().toISOString() }, rec);
+  if(!r.mid) r.mid=newMid();
+  if(!r.thread) r.thread=threadKey(r.to, r.opp, r.subject);
+  if(!r.direction) r.direction=(r.status==="replied"||r.status==="received")?"in":"out";
+  if(r.templateId===undefined) r.templateId="";
+  if(r.templateName===undefined) r.templateName="";
+  a.push(r); setMailLog(a); return r;
+}
+// Roll the flat mail log up into thread objects, newest activity first.
+function getThreads(){
+  const mail=getMailLog(), map={};
+  mail.forEach(m=>{
+    const k=m.thread||threadKey(m.to,m.opp,m.subject);
+    const th=map[k]||(map[k]={ id:k, to:(m.to||"—"), toName:(m.toName||""), opp:(m.opp||""), msgs:[], templates:[], sent:0, replied:0, first:m.ts, last:m.ts });
+    th.msgs.push(m);
+    if(m.toName && !th.toName) th.toName=m.toName;
+    if(m.opp && !th.opp) th.opp=m.opp;
+    if(m.status==="sent"||m.status==="copied") th.sent++;
+    if(m.direction==="in"||m.status==="replied") th.replied++;
+    if(m.templateName && th.templates.indexOf(m.templateName)<0) th.templates.push(m.templateName);
+    if(m.ts<th.first) th.first=m.ts;
+    if(m.ts>th.last) th.last=m.ts;
+    map[k]=th;
+  });
+  return Object.values(map).map(th=>{ th.msgs.sort((a,b)=> (a.ts<b.ts?-1:1)); return th; })
+    .sort((a,b)=> (a.last<b.last?1:-1));
+}
 
 async function initCompose(){
   const el=id=>document.getElementById(id);
@@ -772,16 +854,19 @@ async function initCompose(){
     if(firstEl && firstEl.checked && n) return n.split(/\s+/)[0];
     return n;
   }
-  function currentTpl(){ return tplCache.find(x=>x.id===(tplSel?tplSel.value:"monthly")) || tplCache[0]; }
+  // Empty selection ("") is an intentional plain, template-less message — currentTpl() returns null.
+  function currentTpl(){ if(tplSel && tplSel.value==="") return null; return tplCache.find(x=>x.id===(tplSel?tplSel.value:"monthly")) || tplCache[0]; }
   function applyTemplate(tp){
-    if(!tp) return;
+    if(!tp) return;                                  // plain: leave whatever the user has typed
     el("esubject").value = mergeFields(tp.subject, oppObj, recipientName());
     body.innerHTML = mergeFields(tp.html, oppObj, recipientName());
   }
   if(tplSel){
+    const plainOpt=document.createElement("option"); plainOpt.value=""; plainOpt.textContent=t("cmp_no_tpl"); plainOpt.setAttribute("data-i18n","cmp_no_tpl"); tplSel.appendChild(plainOpt);
     tplCache.forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
+    if(tplCache[0]) tplSel.value=tplCache[0].id;      // default to first real template, not plain
     const preT=params.get("etpl");
-    if(preT && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
+    if(preT!==null && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
     tplSel.addEventListener("change",()=>applyTemplate(currentTpl()));
   }
   if(nameEl) nameEl.addEventListener("input",()=>applyTemplate(currentTpl()));
@@ -800,6 +885,15 @@ async function initCompose(){
   function plainText(){ return body.innerText; }
   const brandEl=el("ebrand");
   function isBranded(){ return !!(brandEl && brandEl.checked); }
+  // What template (if any) this message carries. Empty id => plain, template-less message.
+  function tplMeta(){
+    const id=tplSel?tplSel.value:"";
+    if(!id) return { templateId:"", templateName:"" };
+    const tp=tplCache.find(x=>x.id===id);
+    return { templateId:id, templateName:(tp?tp.name:id) };
+  }
+  function recName(){ return nameEl?nameEl.value.trim():""; }
+  function preview(){ return plainText().replace(/\s+/g," ").trim().slice(0,600); }
   el("eCopy").addEventListener("click", async ()=>{
     try{
       const html=brandWrap(body.innerHTML, isBranded()), text=plainText();
@@ -808,9 +902,9 @@ async function initCompose(){
           "text/html": new Blob([html],{type:"text/html"}),
           "text/plain": new Blob([text],{type:"text/plain"}) })]);
       } else { await navigator.clipboard.writeText(text); }
-      const to=el("eto").value.trim(), subject=el("esubject").value.trim();
+      const to=el("eto").value.trim(), subject=el("esubject").value.trim(), m=tplMeta();
       logActivity("email_copy", slug||"", (to?to+" · ":"")+subject);
-      logMail({ opp:slug||"", to:to, subject:subject, provider:"gmail-copy", status:"copied" });
+      logMail({ opp:slug||"", to:to, toName:recName(), subject:subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"gmail-copy", status:"copied" });
       toast(t("cmp_copied"));
     }catch(e){ toast(t("cmp_copy_err")); }
   });
@@ -832,8 +926,9 @@ async function initCompose(){
       let id="", parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
       if(parsed && parsed.ok===false) throw new Error(parsed.error||"send failed");
       if(parsed) id=parsed.id||"";
+      const m=tplMeta();
       logActivity("email", slug||"", to+" · "+payload.subject);
-      logMail({ opp:slug||"", to:to, subject:payload.subject, provider:"endpoint", status:"sent", id:id });
+      logMail({ opp:slug||"", to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id });
       toast(t("cmp_sent"));
     }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
     finally{ el("eSend").disabled=false; el("eSend").textContent=old; }
