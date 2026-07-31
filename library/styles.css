@@ -177,6 +177,17 @@ html.gate-locked .top,html.gate-locked .wrap{display:none!important}
 .pl-fu{cursor:pointer;border-color:rgba(246,207,91,.4);color:#F6CF5B}
 .pl-fu:hover{background:rgba(246,207,91,.1)}
 
+/* email composer */
+.compose-panel{max-width:820px}
+.etoolbar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.etoolbar button{padding:7px 11px;border-radius:8px;border:1px solid var(--hair);background:transparent;color:var(--ink-2);font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;min-width:34px}
+.etoolbar button:hover{border-color:var(--purple);color:var(--ink)}
+.etoolbar .tb-accent{margin-inline-start:auto;color:#15121b;background:var(--grad);border:0}
+.ebody{min-height:240px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;color:var(--ink);font-size:15px;line-height:1.7;outline:none}
+.ebody:focus{border-color:var(--purple)}
+.ebody a{color:var(--teal);text-decoration:underline}
+.ebody:empty::before{content:attr(data-ph);color:var(--ink-3)}
+
 /* QR modal */
 .qr-modal{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.6)}
 .qr-card{background:var(--panel);border:1px solid var(--hair);border-radius:18px;padding:22px;text-align:center;max-width:340px;width:100%}

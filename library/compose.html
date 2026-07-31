@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Thrive · Compose</title>
+<link rel="icon" href="../assets/thrive-logo.png">
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<script>(function(){try{if(sessionStorage.getItem('thrive_gate_v1')!=='e00475a9bf66c48e332882a90f2638d0bf2f37272572f60ff0ca41e49f6e7c06')document.documentElement.classList.add('gate-locked');}catch(e){document.documentElement.classList.add('gate-locked');}})();</script>
+<script src="gate.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <nav class="nav">
+    <a href="index.html" data-i18n="nav_library">Library</a>
+    <a href="editor.html" data-i18n="nav_editor">Editor</a>
+    <a href="compose.html" class="active" data-i18n="nav_compose">Email</a>
+    <a href="templates.html" data-i18n="nav_templates">Templates</a>
+    <a href="insights.html" data-i18n="nav_insights">Insights</a>
+    <a href="activity.html" data-i18n="nav_activity">Activity</a>
+    <a href="settings.html" data-i18n="nav_settings">Settings</a>
+    <button id="langbtn" class="langbtn">العربية</button>
+    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="page-h"><h1 class="title" data-i18n="cmp_title">Compose email</h1></div>
+  <p class="sub" data-i18n="cmp_sub"></p>
+
+  <section class="panel compose-panel">
+    <div class="grid2">
+      <div class="field"><label data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
+      <div class="field"><label data-i18n="cmp_to">To</label><input id="eto" class="input" type="email" autocomplete="off" placeholder="name@example.com"></div>
+    </div>
+    <div class="field"><label data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off"></div>
+
+    <div class="field"><label data-i18n="cmp_message">Message</label>
+      <div class="etoolbar">
+        <button type="button" id="tbBold" title="Bold"><b>B</b></button>
+        <button type="button" id="tbItalic" title="Italic"><i>I</i></button>
+        <button type="button" id="tbList" title="List">•</button>
+        <button type="button" id="tbLink" data-i18n="cmp_tb_link">Link</button>
+        <button type="button" id="tbUnlink" data-i18n="cmp_tb_unlink">Unlink</button>
+        <button type="button" id="tbOpp" class="tb-accent" hidden data-i18n="cmp_insert_opp">Insert opportunity link</button>
+      </div>
+      <div id="ebody" class="ebody" contenteditable="true"></div>
+      <div class="hint" data-i18n="cmp_link_hint"></div>
+    </div>
+
+    <div class="bar bar-actions">
+      <button class="btn" id="eSend" data-i18n="cmp_send">Send</button>
+      <button class="btn ghost" id="eCopy" data-i18n="cmp_copy">Copy for Gmail</button>
+      <button class="btn ghost" id="eMail" data-i18n="cmp_mailto">Open in mail app</button>
+    </div>
+  </section>
+</main>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initCompose(); });</script>
+</body>
+</html>

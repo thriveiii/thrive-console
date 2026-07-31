@@ -262,7 +262,7 @@ async function initDashboard(){
         </div>
         <div class="actions actions-wrap">
           ${o.html?`<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>`:""}
-          ${live?`<button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:""}
+          ${live?`<a class="btn ghost sm" href="compose.html?slug=${enc}">${t("email_btn")}</a><button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:""}
           <a class="btn ghost sm" href="editor.html?slug=${enc}">${t("edit")}</a>
           <button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>
           ${live?`<button class="btn ghost sm danger" data-unpub="${esc(o.slug)}">${t("unpublish")}</button>`:""}
@@ -576,6 +576,84 @@ function initActivity(){
   render();
 }
 
+/* ---------- email compose + send ---------- */
+const EMAIL_EP = "thrive_email_ep";
+const FROM_EMAIL = "hi@thriveiii.com";
+function getEmailEndpoint(){ try{ return localStorage.getItem(EMAIL_EP)||""; }catch(e){ return ""; } }
+function setEmailEndpoint(u){ try{ u?localStorage.setItem(EMAIL_EP,u):localStorage.removeItem(EMAIL_EP); }catch(e){} }
+
+async function initCompose(){
+  const el=id=>document.getElementById(id);
+  const body=el("ebody");
+  const params=new URLSearchParams(location.search);
+  const slug=params.get("slug");
+  const oppUrl = slug ? liveUrl(slug) : "";
+
+  function cmd(c,v){ body.focus(); document.execCommand(c,false,v||null); }
+  el("tbBold").addEventListener("click",()=>cmd("bold"));
+  el("tbItalic").addEventListener("click",()=>cmd("italic"));
+  el("tbList").addEventListener("click",()=>cmd("insertUnorderedList"));
+  el("tbUnlink").addEventListener("click",()=>cmd("unlink"));
+  el("tbLink").addEventListener("click",()=>{
+    const sel=window.getSelection();
+    if(!sel.rangeCount || sel.isCollapsed){ toast(t("cmp_select_first")); return; }
+    const url=prompt(t("cmp_link_prompt"), oppUrl||"https://");
+    if(url) cmd("createLink", url);
+  });
+  const tbOpp=el("tbOpp");
+  if(slug && tbOpp){ tbOpp.hidden=false;
+    tbOpp.addEventListener("click",()=>{
+      const sel=window.getSelection();
+      if(!sel.rangeCount || sel.isCollapsed){ toast(t("cmp_select_first")); return; }
+      cmd("createLink", oppUrl);
+    });
+  }
+
+  el("efrom").value=FROM_EMAIL;
+  if(slug){
+    const all=await mergedOpps(); const o=all.find(x=>x.slug===slug);
+    if(!el("esubject").value) el("esubject").value=((o&&o.business)?o.business:slug)+" · Thrive";
+  }
+  if(!body.innerHTML.trim()){
+    body.innerHTML='Hi ,<br><br>End of the month, so here is <a href="'+(oppUrl||"https://console.thriveiii.com/opp/")+
+      '">July at Thrive</a>. We take on the work we think we’ll be proud of. If that could be yours, just say hi.'+
+      '<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com';
+  }
+
+  function plainText(){ return body.innerText; }
+  el("eCopy").addEventListener("click", async ()=>{
+    try{
+      const html=body.innerHTML, text=plainText();
+      if(navigator.clipboard && window.ClipboardItem){
+        await navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([html],{type:"text/html"}),
+          "text/plain": new Blob([text],{type:"text/plain"}) })]);
+      } else { await navigator.clipboard.writeText(text); }
+      logActivity("email_copy", slug||"", ""); toast(t("cmp_copied"));
+    }catch(e){ toast(t("cmp_copy_err")); }
+  });
+  el("eMail").addEventListener("click",()=>{
+    const to=el("eto").value.trim(), subject=el("esubject").value.trim();
+    location.href="mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(plainText());
+  });
+  el("eSend").addEventListener("click", async ()=>{
+    const to=el("eto").value.trim();
+    if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
+    const ep=getEmailEndpoint();
+    if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>location.href="settings.html",1100); return; }
+    const payload={ from:FROM_EMAIL, to:to, subject:el("esubject").value.trim(), html:body.innerHTML, text:plainText() };
+    el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
+    try{
+      const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
+      const txt=await r.text();
+      if(!r.ok) throw new Error(r.status+" "+txt.slice(0,140));
+      let ok=true; try{ const j=JSON.parse(txt); if(j && j.ok===false) { ok=false; throw new Error(j.error||"send failed"); } }catch(_){}
+      logActivity("email", slug||"", to); toast(t("cmp_sent"));
+    }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
+    finally{ el("eSend").disabled=false; el("eSend").textContent=old; }
+  });
+}
+
 /* ---------- settings (GitHub publishing + analytics endpoint) ---------- */
 function initSettings(){
   const el=id=>document.getElementById(id);
@@ -602,6 +680,8 @@ function initSettings(){
     catch(e){ result("✕ "+t("gh_test_fail")+": "+e.message, "warn"); }
   });
   el("epSave2").addEventListener("click",()=>{ setEndpoint(el("ep2").value.trim()); toast(t("ins_saved")); });
+  if(el("em_ep")){ el("em_ep").value=getEmailEndpoint();
+    el("emSave").addEventListener("click",()=>{ setEmailEndpoint(el("em_ep").value.trim()); logActivity("settings","","email endpoint"); toast(t("settings_saved")); }); }
   const bkExport=el("bkExport"), bkFile=el("bkFile");
   if(bkExport) bkExport.addEventListener("click",()=>{
     download("thrive-console-backup.json", JSON.stringify(exportBackup(),null,2), "application/json"); logActivity("backup","","");
