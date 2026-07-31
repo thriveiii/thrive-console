@@ -51,6 +51,26 @@ const ENDPT = "thrive_endpoint";
 function getHits(){ try{ return JSON.parse(localStorage.getItem(HITS)||"[]"); }catch(e){ return []; } }
 function getEndpoint(){ try{ return localStorage.getItem(ENDPT)||""; }catch(e){ return ""; } }
 function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.removeItem(ENDPT); }catch(e){} }
+function opensForSlug(slug){ let n=0; getHits().forEach(e=>{ if((e.type==="open"||!e.type)&&e.slug===slug) n++; }); return n; }
+
+/* ---------- pipeline stages (mini CRM) ---------- */
+const STAGES=["sent","opened","replied","won","lost"];
+function daysSince(d){ if(!d) return 0; const ms=Date.parse(d+"T00:00:00Z"); if(isNaN(ms)) return 0; return Math.floor((Date.now()-ms)/86400000); }
+
+/* ---------- backup / restore (everything, minus the GitHub token) ---------- */
+function exportBackup(){
+  return { _type:"thrive-console-backup", v:1, exported:new Date().toISOString(),
+    opps:getDrafts(), templates:getCustomTemplates(), activity:getActivity(),
+    hits:getHits(), endpoint:getEndpoint() };
+}
+function importBackup(obj){
+  if(!obj || obj._type!=="thrive-console-backup") throw new Error("Not a Thrive backup file");
+  if(Array.isArray(obj.opps)) setDrafts(obj.opps);
+  if(Array.isArray(obj.templates)) setCustomTemplates(obj.templates);
+  if(Array.isArray(obj.activity)) setActivity(obj.activity);
+  if(Array.isArray(obj.hits)){ try{ localStorage.setItem(HITS, JSON.stringify(obj.hits)); }catch(e){} }
+  if(typeof obj.endpoint==="string") setEndpoint(obj.endpoint);
+}
 
 /* ---------- GitHub publishing (the console's backend = the repo itself) ---------- */
 const GH = "thrive_gh_v1";
@@ -112,12 +132,23 @@ async function unpublishOpp(slug){
     man.updated=new Date().toISOString().slice(0,10);
     await ghPutFile("library/manifest.json", JSON.stringify(man,null,2)+"\n", "Remove "+slug+" from manifest"); }
 }
+async function publishTemplate(ct){
+  await ghPutFile("templates/"+ct.id+"/template.html", ct.html||"", "Publish template "+ct.id);
+  const meta={ id:ct.id, name:ct.name||ct.id, lang:ct.lang||"EN", source:"console", created:ct.created||new Date().toISOString() };
+  await ghPutFile("templates/"+ct.id+"/meta.json", JSON.stringify(meta,null,2)+"\n", "Template meta "+ct.id);
+}
+async function setManifestArchived(slug, archived){
+  const mf=await ghGetFile("library/manifest.json"); if(!mf) return;
+  const man=JSON.parse(unb64(mf.content))||{}; const o=(man.opportunities||[]).find(x=>x.slug===slug);
+  if(!o) return; if(archived) o.archived=true; else delete o.archived;
+  man.updated=new Date().toISOString().slice(0,10);
+  await ghPutFile("library/manifest.json", JSON.stringify(man,null,2)+"\n", (archived?"Archive ":"Unarchive ")+slug);
+}
 function openLocalPreview(html){
   const blob=new Blob([html||"<!doctype html><meta charset=utf-8><p style='font-family:sans-serif;color:#888;padding:40px'>No saved content.</p>"],{type:"text/html;charset=utf-8"});
   const url=URL.createObjectURL(blob); const w=window.open(url,"_blank");
   setTimeout(()=>URL.revokeObjectURL(url), 60000); return w;
 }
-
 /* ---------- data (manifest = committed, overlay = local edits) ---------- */
 async function loadManifest(){
   try{ const r=await fetch("./manifest.json",{cache:"no-store"}); const j=await r.json();
@@ -163,10 +194,11 @@ async function initDashboard(){
   });
 
   function isLive(o){ return !o._local || !!o.published; }
+  function effStage(o){ const op=opensForSlug(o.slug); if((!o.stage||o.stage==="sent")&&op>0) return "opened"; return o.stage||"sent"; }
+  function needsFollowup(o){ return isLive(o) && !o.archived && effStage(o)==="sent" && opensForSlug(o.slug)===0 && daysSince(o.sent_on)>=3; }
   function badgeFor(o){
     if(o.archived) return '<span class="badge arch">'+t("badge_archived")+'</span>';
     if(o._local && !o.published) return '<span class="badge draft">'+t("draft")+'</span>';
-    if(o._edited) return '<span class="badge edit">'+t("badge_edited")+'</span>';
     return '<span class="badge sent">'+t("badge_live")+'</span>';
   }
 
@@ -175,6 +207,7 @@ async function initDashboard(){
     let rows=state.data.slice();
     if(state.status==="active")   rows=rows.filter(o=>!o.archived);
     else if(state.status==="archived") rows=rows.filter(o=>o.archived);
+    else if(state.status==="followup") rows=rows.filter(needsFollowup);
     if(state.tmpl!=="all") rows=rows.filter(o=>o.template===state.tmpl);
     if(state.q){ const q=state.q.toLowerCase();
       rows=rows.filter(o=>[o.business,o.location,o.template,o.slug].join(" ").toLowerCase().includes(q)); }
@@ -185,16 +218,33 @@ async function initDashboard(){
     });
     if(!rows.length){ grid.className="empty-wrap"; grid.innerHTML='<div class="empty">'+t("empty")+'</div>'; return; }
     grid.className="grid";
+    // pipeline summary
+    const pipelineEl=document.getElementById("pipeline");
+    if(pipelineEl){
+      const act=state.data.filter(o=>!o.archived); const counts={}; STAGES.forEach(s=>counts[s]=0);
+      act.forEach(o=>{ const s=effStage(o); counts[s]=(counts[s]||0)+1; });
+      const fu=act.filter(needsFollowup).length;
+      pipelineEl.innerHTML = STAGES.map(s=>`<span class="pl-pill pl-${s}">${t("stage_"+s)} <b>${counts[s]}</b></span>`).join("")
+        + (fu?`<span class="pl-pill pl-fu" data-fu="1">${t("followup")} <b>${fu}</b></span>`:"");
+      const fp=pipelineEl.querySelector("[data-fu]");
+      if(fp) fp.addEventListener("click",()=>{ state.status="followup"; if(statusFilt) statusFilt.value="followup"; render(); });
+    }
+
+    function stageSel(o){
+      if(!isLive(o)) return "";
+      const cur=effStage(o);
+      return `<select class="stage-sel" data-stage="${esc(o.slug)}" title="${t("stage")}">`+
+        STAGES.map(s=>`<option value="${s}"${s===cur?" selected":""}>${t("stage_"+s)}</option>`).join("")+`</select>`;
+    }
     grid.innerHTML = rows.map(o=>{
-      const arch=o.archived, live=isLive(o), enc=encodeURIComponent(o.slug);
+      const arch=o.archived, live=isLive(o), enc=encodeURIComponent(o.slug), fu=needsFollowup(o);
       const linkRow = live
         ? `<a class="link" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${esc(liveUrl(o.slug))}</a>`
         : `<span class="link muted">${esc(liveUrl(o.slug))} · ${t("not_published")}</span>`;
       const primary = live
         ? `<a class="btn sm" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${t("open_page")}</a>`
         : `<button class="btn sm" data-pub="${esc(o.slug)}">${t("publish")}</button>`;
-      const preview = o.html ? `<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>` : "";
-      return `<div class="card${arch?" is-arch":""}${live?"":" is-draft"}">
+      return `<div class="card${arch?" is-arch":""}${live?"":" is-draft"}${fu?" needs-fu":""}">
         <div class="card-top">
           <div class="card-id"><p class="biz">${esc(o.business)||esc(o.slug)}</p>${linkRow}</div>
           ${badgeFor(o)}
@@ -202,21 +252,48 @@ async function initDashboard(){
         <div class="meta">
           <span class="chip tmpl">${esc(o.template)||t("none")}</span>
           <span class="chip">${t("col_sent")}: ${esc(o.sent_on)||t("none")}</span>
+          ${live?`<span class="chip">${t("ins_opens")}: ${opensForSlug(o.slug)}</span>`:""}
           <span class="chip">${t("col_location")}: ${esc(o.location)||t("none")}</span>
-          <span class="chip">${t("col_phone")}: ${esc(o.phone)||t("none")}</span>
+          ${fu?`<span class="chip fu-chip">${t("followup")}</span>`:""}
         </div>
         <div class="row">
           ${primary}
-          <div class="actions">
-            ${preview}
-            <a class="btn ghost sm" href="editor.html?slug=${enc}">${t("edit")}</a>
-            <button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>
-            ${(o._local&&!o._edited)?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:""}
-          </div>
+          ${stageSel(o)}
+        </div>
+        <div class="actions actions-wrap">
+          ${o.html?`<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>`:""}
+          ${live?`<button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:""}
+          <a class="btn ghost sm" href="editor.html?slug=${enc}">${t("edit")}</a>
+          <button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>
+          ${live?`<button class="btn ghost sm danger" data-unpub="${esc(o.slug)}">${t("unpublish")}</button>`:""}
+          ${(o._local&&!o.published)?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:""}
         </div>
       </div>`;
     }).join("");
 
+    grid.querySelectorAll(".stage-sel").forEach(sel=>sel.addEventListener("change",()=>{
+      const slug=sel.getAttribute("data-stage"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
+      o.stage=sel.value; saveDraft({slug, stage:sel.value}); logActivity("stage", slug, sel.value);
+      if(state.status==="followup") render();
+    }));
+    grid.querySelectorAll("[data-pdf]").forEach(b=>b.addEventListener("click",()=>{
+      const o=state.data.find(x=>x.slug===b.getAttribute("data-pdf")); if(!o) return;
+      if(isLive(o)){ const w=window.open(relOpp(o.slug),"_blank"); if(w) w.addEventListener("load",()=>setTimeout(()=>w.print(),300)); }
+      else { const w=openLocalPreview(o.html); if(w) setTimeout(()=>{ try{w.print();}catch(e){} },500); }
+    }));
+    grid.querySelectorAll("[data-unpub]").forEach(b=>b.addEventListener("click", async ()=>{
+      const slug=b.getAttribute("data-unpub"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
+      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
+      if(!confirm(t("confirm_unpublish"))) return;
+      b.disabled=true; b.textContent=t("publishing");
+      try{
+        await unpublishOpp(slug);
+        // keep a local draft copy so it can be re-published/edited
+        saveDraft({slug, business:o.business, template:o.template, sent_on:o.sent_on, location:o.location, phone:o.phone, status:o.status||"sent", published:false, html:o.html||"", mode:o.mode||"upload"});
+        logActivity("unpublish", slug, o.business); toast(t("unpublished_ok"));
+        state.data=await mergedOpps(); render();
+      }catch(e){ toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("unpublish"); }
+    }));
     grid.querySelectorAll("[data-prev]").forEach(b=>b.addEventListener("click",()=>{
       const o=state.data.find(x=>x.slug===b.getAttribute("data-prev")); if(o) openLocalPreview(o.html);
     }));
@@ -242,7 +319,8 @@ async function initDashboard(){
       // carry the summary into the overlay so manifest-only items keep rendering
       saveDraft({ slug, business:o.business, template:o.template, sent_on:o.sent_on,
                   location:o.location, phone:o.phone, status:o.status||"sent", archived:val });
-      o.archived=val; o._edited = o._edited || !o._local;
+      o.archived=val;
+      if(isLive(o) && ghReady()) setManifestArchived(slug, val).catch(()=>{}); // sync across devices
       logActivity(val?"archive":"unarchive", slug, "");
       toast(val?t("archived_toast"):t("unarchived_toast"));
       render();
@@ -524,6 +602,15 @@ function initSettings(){
     catch(e){ result("✕ "+t("gh_test_fail")+": "+e.message, "warn"); }
   });
   el("epSave2").addEventListener("click",()=>{ setEndpoint(el("ep2").value.trim()); toast(t("ins_saved")); });
+  const bkExport=el("bkExport"), bkFile=el("bkFile");
+  if(bkExport) bkExport.addEventListener("click",()=>{
+    download("thrive-console-backup.json", JSON.stringify(exportBackup(),null,2), "application/json"); logActivity("backup","","");
+  });
+  if(bkFile) bkFile.addEventListener("change",e=>{ const f=e.target.files[0]; if(!f) return;
+    const fr=new FileReader();
+    fr.onload=()=>{ try{ importBackup(JSON.parse(fr.result)); logActivity("restore","",""); toast(t("restored_ok")); setTimeout(()=>location.reload(),1200); }
+      catch(ex){ toast(t("restore_err")+": "+ex.message); } bkFile.value=""; };
+    fr.readAsText(f); });
   window.onLangApplied=status; status();
 }
 
@@ -574,6 +661,7 @@ function initTemplates(){
           <div class="actions">
             <a class="btn sm" href="editor.html?t=${encodeURIComponent(ct.id)}">${t("use_template")}</a>
             <button class="btn ghost sm" data-dl="${esc(ct.id)}">${t("dl_template")}</button>
+            ${ghReady()?`<button class="btn ghost sm" data-pubtpl="${esc(ct.id)}">${t("tpl_publish")}</button>`:""}
             <button class="btn ghost sm danger" data-del="${esc(ct.id)}">${t("tpl_delete")}</button>
           </div>
         </div>
@@ -585,6 +673,13 @@ function initTemplates(){
     }));
     el("customList").querySelectorAll("[data-dl]").forEach(b=>b.addEventListener("click",()=>{
       const ct=getCustomTemplate(b.getAttribute("data-dl")); if(ct) download(ct.id+".html", ct.html||"");
+    }));
+    el("customList").querySelectorAll("[data-pubtpl]").forEach(b=>b.addEventListener("click", async ()=>{
+      const ct=getCustomTemplate(b.getAttribute("data-pubtpl")); if(!ct) return;
+      b.disabled=true; const old=b.textContent; b.textContent=t("publishing");
+      try{ await publishTemplate(ct); logActivity("tpl_publish", ct.id, ""); toast(t("tpl_published")); }
+      catch(e){ toast(t("gh_err")+": "+e.message); }
+      finally{ b.disabled=false; b.textContent=old; }
     }));
   }
 

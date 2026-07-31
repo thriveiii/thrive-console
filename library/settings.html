@@ -54,6 +54,16 @@
     <div class="field"><input id="ep2" class="input" type="url" data-i18n-ph="ins_endpoint_ph"></div>
     <button class="btn ghost" id="epSave2" data-i18n="ep_save">Save endpoint</button>
   </section>
+
+  <section class="panel settings-panel">
+    <h3 class="block-h" data-i18n="set_backup_h">Backup &amp; restore</h3>
+    <p class="sub" data-i18n="set_backup_sub"></p>
+    <div class="bar">
+      <button class="btn" id="bkExport" data-i18n="bk_export">Export backup</button>
+      <label class="btn ghost" for="bkFile" data-i18n="bk_import">Restore from file</label>
+      <input id="bkFile" type="file" accept="application/json,.json" hidden>
+    </div>
+  </section>
 </main>
 
 <script src="i18n.js"></script>

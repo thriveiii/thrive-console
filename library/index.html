@@ -38,8 +38,9 @@
       <option value="az" data-i18n="sort_az">Business A–Z</option>
     </select>
     <select id="filter" style="max-width:170px"><option value="all" data-i18n="filter_all">All templates</option></select>
-    <select id="statusFilter" style="max-width:150px">
+    <select id="statusFilter" style="max-width:160px">
       <option value="active" data-i18n="statusf_active">Active</option>
+      <option value="followup" data-i18n="statusf_followup">Needs follow-up</option>
       <option value="archived" data-i18n="statusf_archived">Archived</option>
       <option value="all" data-i18n="statusf_all">All statuses</option>
     </select>
@@ -47,6 +48,7 @@
     <button class="btn ghost" id="exportManifest" data-i18n="export_manifest">Export manifest.json</button>
   </div>
 
+  <div id="pipeline" class="pipeline"></div>
   <div id="grid" class="grid"></div>
 </main>
 
