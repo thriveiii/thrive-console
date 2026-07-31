@@ -1,7 +1,7 @@
 {
   "site": "console.thriveiii.com",
   "base_path": "/opp/",
-  "updated": "2026-07-30",
+  "updated": "2026-07-31",
   "opportunities": [
     {
       "slug": "ludic-lillian",
@@ -27,6 +27,15 @@
       "template": "en-opp1",
       "sent_on": "2026-07-30",
       "location": "Fairfax, VA",
+      "phone": "",
+      "status": "sent"
+    },
+    {
+      "slug": "thrive-july",
+      "business": "thrive-july",
+      "template": "custom",
+      "sent_on": "2026-07-31",
+      "location": "",
       "phone": "",
       "status": "sent"
     }
