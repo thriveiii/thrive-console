@@ -202,8 +202,25 @@ html.gate-locked .top,html.gate-locked .wrap{display:none!important}
 .ebody a{color:var(--teal);text-decoration:underline}
 .ebody:empty::before{content:attr(data-ph);color:var(--ink-3)}
 .etoolbar button u{text-decoration:underline}
-.elinkbar{display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap}
-.elinkbar .input{flex:1 1 240px;min-width:160px;direction:ltr}
+.elinkbar{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;padding:12px;border:1px solid var(--hair);border-radius:12px;background:var(--panel-2,rgba(255,255,255,.02))}
+.elinkrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.elinkrow .input{flex:1 1 200px;min-width:140px}
+.elinkbar #elinkurl{direction:ltr}
+.elinkrow-actions{justify-content:flex-end}
+.elinkpresets{display:flex;gap:6px;flex-wrap:wrap}
+.elinkpresets .lp{font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;border:1px solid var(--hair);background:transparent;color:var(--ink-2);cursor:pointer}
+.elinkpresets .lp:hover{border-color:var(--purple);color:var(--ink)}
+/* links manager: every link in the message, editable & removable */
+.elinks{margin:10px 0 4px;border:1px solid var(--hair);border-radius:12px;padding:10px 12px;background:var(--panel)}
+.elinks-h{font-weight:700;color:var(--ink);font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.elink-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px dashed var(--hair);flex-wrap:wrap}
+.elink-item:first-of-type{border-top:0}
+.elink-info{min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.elink-text{font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.elink-url{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere;direction:ltr}
+.elink-acts{display:flex;gap:6px;flex-shrink:0}
+.btn.sm.danger,.elink-acts .danger{color:#e88}
+html[dir="rtl"] .elink-url{text-align:start}
 .chk{display:inline-flex;align-items:center;gap:8px;margin:0 0 16px;font-size:13px;color:var(--ink-2);cursor:pointer;font-weight:600}
 .chk input{width:16px;height:16px;accent-color:var(--purple);cursor:pointer}
 

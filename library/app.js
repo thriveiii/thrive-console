@@ -843,32 +843,119 @@ async function initCompose(){
   el("tbList").addEventListener("click",()=>cmd("insertUnorderedList"));
   el("tbUnlink").addEventListener("click",()=>cmd("unlink"));
 
-  // inline link bar (no browser prompt)
-  const linkBar=el("elinkbar"), linkUrl=el("elinkurl");
-  let savedRange=null;
-  function openLinkBar(def){
-    if(!hasSel()){ toast(t("cmp_select_first")); return; }
-    savedRange=window.getSelection().getRangeAt(0).cloneRange();
-    let href=def||"https://";
-    const node=window.getSelection().anchorNode;
-    const a=node && node.parentElement ? node.parentElement.closest("a") : null;
-    if(a && a.getAttribute("href")) href=a.getAttribute("href");
-    linkUrl.value=href; linkBar.hidden=false; setTimeout(()=>linkUrl.focus(),30);
+  // ---- robust multi-link engine (DOM-based; reliable on touch/iPad, no execCommand) ----
+  const linkBar=el("elinkbar"), linkUrl=el("elinkurl"), linkText=el("elinktext"),
+        linksBox=el("elinks"), presetsBox=el("elinkpresets");
+  let savedRange=null, editingAnchor=null;
+  // Keep the last real selection inside the editor alive across taps into the URL field.
+  document.addEventListener("selectionchange",()=>{
+    const s=window.getSelection(); if(!s.rangeCount) return;
+    const r=s.getRangeAt(0);
+    if(body.contains(r.commonAncestorContainer) && !r.collapsed) savedRange=r.cloneRange();
+  });
+  // Accept bare domains, emails, and phone numbers — turn them into valid hrefs.
+  function normalizeUrl(u){
+    u=(u||"").trim(); if(!u) return "";
+    if(/^(https?:|mailto:|tel:|#|\/)/i.test(u)) return u;
+    if(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(u)) return "mailto:"+u;
+    if(/^\+?[\d][\d\s()\-]{5,}$/.test(u)) return "tel:"+u.replace(/[^\d+]/g,"");
+    return "https://"+u.replace(/^\/+/,"");
+  }
+  function presetList(){
+    const a=[];
+    if(oppUrl) a.push({label:t("cmp_lp_opp"), url:oppUrl});
+    a.push({label:t("cmp_lp_site"), url:"https://thriveiii.com"});
+    a.push({label:t("cmp_lp_email"), url:"mailto:hi@thriveiii.com"});
+    a.push({label:t("cmp_lp_whatsapp"), url:"https://wa.me/"});
+    a.push({label:t("cmp_lp_call"), url:"tel:+"});
+    return a;
+  }
+  function renderPresets(){
+    if(!presetsBox) return;
+    presetsBox.innerHTML=presetList().map(p=>'<button type="button" class="lp" data-url="'+esc(p.url)+'">'+esc(p.label)+'</button>').join("");
+    presetsBox.querySelectorAll(".lp").forEach(b=>{
+      b.addEventListener("mousedown",e=>e.preventDefault());
+      b.addEventListener("click",()=>{ linkUrl.value=b.getAttribute("data-url"); linkUrl.focus(); });
+    });
+  }
+  function openLinkBar(preset, forceAnchor){
+    const a=forceAnchor || null;
+    editingAnchor=a;
+    linkUrl.value = a ? (a.getAttribute("href")||"") : (preset||"");
+    linkText.value = a ? a.textContent : (savedRange && !savedRange.collapsed ? savedRange.toString() : "");
+    linkBar.hidden=false; renderPresets(); setTimeout(()=>{ (linkUrl.value?linkText:linkUrl).focus(); },30);
   }
   function applyLink(){
-    const url=(linkUrl.value||"").trim();
-    if(url && savedRange){ const s=window.getSelection(); s.removeAllRanges(); s.addRange(savedRange); document.execCommand("createLink",false,url); }
-    linkBar.hidden=true; savedRange=null;
+    const url=normalizeUrl(linkUrl.value);
+    if(!url){ toast(t("cmp_link_need_url")); return; }
+    const text=(linkText.value||"").trim();
+    const selText = (savedRange && !savedRange.collapsed) ? savedRange.toString().trim() : "";
+    if(editingAnchor){                                   // editing an existing link
+      editingAnchor.setAttribute("href",url);
+      if(text) editingAnchor.textContent=text;
+      if(!editingAnchor.getAttribute("data-origin")) editingAnchor.setAttribute("data-origin","custom");
+    } else if(selText && (!text || text===selText)){     // wrap the selected words (keeps formatting)
+      const a=document.createElement("a"); a.href=url; a.setAttribute("data-origin","custom");
+      try{ a.appendChild(savedRange.extractContents()); savedRange.insertNode(a); }catch(e){}
+    } else {                                             // insert a brand-new link (text or url)
+      const a=document.createElement("a"); a.href=url; a.setAttribute("data-origin","custom"); a.textContent=text||url;
+      if(savedRange){ try{ savedRange.deleteContents(); savedRange.insertNode(a); }catch(e){ body.appendChild(a); } }
+      else body.appendChild(a);
+    }
+    linkBar.hidden=true; editingAnchor=null; savedRange=null;
+    refreshLinks();
   }
-  el("tbLink").addEventListener("click",()=>openLinkBar(oppUrl||"https://"));
+  // "Links in this message" manager — every link is visible, editable, removable.
+  function refreshLinks(){
+    if(!linksBox) return;
+    const anchors=[].slice.call(body.querySelectorAll("a"));
+    if(!anchors.length){ linksBox.hidden=true; linksBox.innerHTML=""; return; }
+    linksBox.hidden=false;
+    linksBox.innerHTML='<div class="elinks-h">'+t("cmp_links_h")+' <span class="pill">'+anchors.length+'</span></div>'+
+      anchors.map((a,i)=>{
+        const tpl=a.getAttribute("data-origin")==="template";
+        const badge=tpl?'<span class="tag tag-templates">'+t("cmp_link_tpl")+'</span>':'<span class="tag tag-plain">'+t("cmp_link_custom")+'</span>';
+        return '<div class="elink-item"><div class="elink-info"><span class="elink-text">'+esc(a.textContent||"—")+'</span>'+badge+
+          '<span class="elink-url mono">'+esc(a.getAttribute("href")||"")+'</span></div>'+
+          '<div class="elink-acts"><button type="button" class="btn ghost sm" data-edit="'+i+'">'+t("cmp_link_edit")+'</button>'+
+          '<button type="button" class="btn ghost sm danger" data-del="'+i+'">'+t("cmp_link_remove")+'</button></div></div>';
+      }).join("");
+    linksBox.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>{
+      const a=anchors[+b.getAttribute("data-edit")]; if(!a) return; openLinkBar(null, a);
+    }));
+    linksBox.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
+      const a=anchors[+b.getAttribute("data-del")]; if(!a||!a.parentNode) return;
+      const p=a.parentNode; while(a.firstChild) p.insertBefore(a.firstChild,a); p.removeChild(a); refreshLinks();
+    }));
+  }
+  el("tbLink").addEventListener("click",()=>openLinkBar(""));
+  el("tbUnlink").addEventListener("click",()=>{ cmd("unlink"); refreshLinks(); });
   el("elinkApply").addEventListener("click",applyLink);
-  el("elinkCancel").addEventListener("click",()=>{ linkBar.hidden=true; savedRange=null; });
+  el("elinkCancel").addEventListener("click",()=>{ linkBar.hidden=true; editingAnchor=null; });
   linkUrl.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); applyLink(); } if(e.key==="Escape"){ linkBar.hidden=true; } });
+  linkText.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); applyLink(); } });
   const tbOpp=el("tbOpp");
   if(slug && tbOpp){ tbOpp.hidden=false;
     tbOpp.addEventListener("mousedown",e=>e.preventDefault());
-    tbOpp.addEventListener("click",()=>{ if(!hasSel()){ toast(t("cmp_select_first")); return; } cmd("createLink", oppUrl); });
+    tbOpp.addEventListener("click",()=>{
+      if(savedRange && !savedRange.collapsed){
+        const a=document.createElement("a"); a.href=oppUrl; a.setAttribute("data-origin","custom");
+        try{ a.appendChild(savedRange.extractContents()); savedRange.insertNode(a); savedRange=null; refreshLinks(); }
+        catch(e){ openLinkBar(oppUrl); }
+      } else openLinkBar(oppUrl);
+    });
   }
+  // Paste a URL over selected words → auto-link them.
+  body.addEventListener("paste",e=>{
+    const txt=((e.clipboardData||window.clipboardData)||{getData:()=>""}).getData("text")||"";
+    const s=window.getSelection();
+    if(/^https?:\/\/\S+$/i.test(txt.trim()) && s.rangeCount && !s.isCollapsed){
+      e.preventDefault();
+      const r=s.getRangeAt(0), a=document.createElement("a"); a.href=txt.trim(); a.setAttribute("data-origin","custom");
+      try{ a.appendChild(r.extractContents()); r.insertNode(a); refreshLinks(); }catch(_){}
+    }
+  });
+  body.addEventListener("input", debounce(refreshLinks, 250));
 
   el("efrom").value=getFromName()+" <"+FROM_EMAIL+">";
   let oppObj=null;
@@ -887,6 +974,9 @@ async function initCompose(){
     if(!tp) return;                                  // plain: leave whatever the user has typed
     el("esubject").value = mergeFields(tp.subject, oppObj, recipientName());
     body.innerHTML = mergeFields(tp.html, oppObj, recipientName());
+    // Mark the template's own links so the manager can tell them apart from links you add.
+    body.querySelectorAll("a").forEach(a=>{ if(!a.getAttribute("data-origin")) a.setAttribute("data-origin","template"); });
+    refreshLinks();
   }
   if(tplSel){
     const plainOpt=document.createElement("option"); plainOpt.value=""; plainOpt.textContent=t("cmp_no_tpl"); plainOpt.setAttribute("data-i18n","cmp_no_tpl"); tplSel.appendChild(plainOpt);
@@ -899,6 +989,7 @@ async function initCompose(){
   if(nameEl) nameEl.addEventListener("input",()=>applyTemplate(currentTpl()));
   if(firstEl) firstEl.addEventListener("change",()=>applyTemplate(currentTpl()));
   applyTemplate(currentTpl());
+  refreshLinks();
   const saveT=el("eSaveTpl");
   if(saveT) saveT.addEventListener("click",()=>{
     const name=prompt(t("cmp_tpl_name")); if(!name) return;

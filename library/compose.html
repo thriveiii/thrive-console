@@ -60,12 +60,19 @@
         <button type="button" id="tbOpp" class="tb-accent" hidden data-i18n="cmp_insert_opp">Link to opportunity</button>
       </div>
       <div id="elinkbar" class="elinkbar" hidden>
-        <input id="elinkurl" class="input" type="url" data-i18n-ph="cmp_link_ph">
-        <button type="button" class="btn sm" id="elinkApply" data-i18n="cmp_link_apply">Apply</button>
-        <button type="button" class="btn ghost sm" id="elinkCancel" data-i18n="close">Close</button>
+        <div class="elinkrow">
+          <input id="elinktext" class="input" data-i18n-ph="cmp_link_text_ph">
+          <input id="elinkurl" class="input" type="text" inputmode="url" data-i18n-ph="cmp_link_ph">
+        </div>
+        <div id="elinkpresets" class="elinkpresets"></div>
+        <div class="elinkrow elinkrow-actions">
+          <button type="button" class="btn sm" id="elinkApply" data-i18n="cmp_link_apply">Apply</button>
+          <button type="button" class="btn ghost sm" id="elinkCancel" data-i18n="close">Close</button>
+        </div>
       </div>
       <div id="ebody" class="ebody" contenteditable="true" spellcheck="true"></div>
       <div class="hint" data-i18n="cmp_link_hint"></div>
+      <div id="elinks" class="elinks" hidden></div>
     </div>
 
     <div class="bar bar-actions">
