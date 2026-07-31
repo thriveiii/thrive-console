@@ -172,7 +172,8 @@ async function publishOpp(rec){
   let man = mf ? (JSON.parse(unb64(mf.content))||{}) : {};
   man.site=man.site||SITE; man.base_path=man.base_path||OPP_PATH; man.opportunities=man.opportunities||[];
   const e=manifestEntry(rec); const i=man.opportunities.findIndex(o=>o.slug===rec.slug);
-  if(i>=0) man.opportunities[i]=e; else man.opportunities.push(e);
+  if(i>=0){ if(man.opportunities[i].archived) e.archived=true; man.opportunities[i]=e; }  // keep an archived flag across re-publish
+  else man.opportunities.push(e);
   man.updated=new Date().toISOString().slice(0,10);
   await ghPutFile("library/manifest.json", JSON.stringify(man,null,2)+"\n", "Update manifest: "+rec.slug);
 }
@@ -268,9 +269,8 @@ async function initDashboard(){
       const da=(a.sent_on||""), db=(b.sent_on||"");
       return state.sort==="old" ? da.localeCompare(db) : db.localeCompare(da);
     });
-    if(!rows.length){ grid.className="empty-wrap"; grid.innerHTML='<div class="empty">'+t("empty")+'</div>'; return; }
-    grid.className="grid";
-    // pipeline summary
+    // pipeline summary — rendered BEFORE the empty-grid guard so the pills, active-filter
+    // highlight, and clear button stay correct even when a filter yields zero cards.
     const pipelineEl=document.getElementById("pipeline");
     if(pipelineEl){
       const act=state.data.filter(o=>!o.archived); const counts={}; STAGES.forEach(s=>counts[s]=0);
@@ -299,6 +299,8 @@ async function initDashboard(){
         render();
       });
     }
+    if(!rows.length){ grid.className="empty-wrap"; grid.innerHTML='<div class="empty">'+t("empty")+'</div>'; return; }
+    grid.className="grid";
 
     function stageSel(o){
       if(!isLive(o)) return "";
@@ -344,7 +346,7 @@ async function initDashboard(){
     grid.querySelectorAll(".stage-sel").forEach(sel=>sel.addEventListener("change",()=>{
       const slug=sel.getAttribute("data-stage"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
       o.stage=sel.value; saveDraft({slug, stage:sel.value}); logActivity("stage", slug, sel.value);
-      if(state.status==="followup") render();
+      render();   // always re-render so pipeline counts + any active stage filter reflect the change
     }));
     grid.querySelectorAll("[data-pdf]").forEach(b=>b.addEventListener("click", async ()=>{
       const o=state.data.find(x=>x.slug===b.getAttribute("data-pdf")); if(!o) return;
@@ -357,10 +359,15 @@ async function initDashboard(){
       if(!confirm(t("confirm_unpublish"))) return;
       b.disabled=true; b.textContent=t("publishing");
       try{
+        // Capture the live page BEFORE deleting — for opps published on another device we have no
+        // local fields to regenerate from, so keep the real HTML so re-publishing isn't blank.
+        const hasFields=o.fields && Object.keys(o.fields).some(k=>o.fields[k]);
+        let liveHtml=(o.mode==="upload" && o.html)?o.html:"";
+        if(!liveHtml && !hasFields){ try{ const cur=await ghGetFile("opp/"+slug+"/index.html"); if(cur&&cur.content) liveHtml=unb64(cur.content); }catch(_){} }
         await unpublishOpp(slug);
-        // keep a local draft copy so it can be re-published/edited (html only if it was an upload)
-        const back={slug, business:o.business, template:o.template, sent_on:o.sent_on, location:o.location, phone:o.phone, status:o.status||"sent", published:false, mode:o.mode||(o.template&&o.template!=="custom"?"fill":"upload"), fields:o.fields||{}};
-        if(o.mode==="upload" && o.html) back.html=o.html;
+        const useUpload = !!liveHtml && !hasFields;   // no fields to regenerate from → keep verbatim HTML
+        const back={slug, business:o.business, template:o.template, sent_on:o.sent_on, location:o.location, phone:o.phone, status:o.status||"sent", published:false, mode:useUpload?"upload":(o.mode||(o.template&&o.template!=="custom"?"fill":"upload")), fields:o.fields||{}};
+        if(liveHtml) back.html=liveHtml;
         saveDraft(back);
         logActivity("unpublish", slug, o.business); toast(t("unpublished_ok"));
         state.data=await mergedOpps(); render();
@@ -432,6 +439,9 @@ async function initDashboard(){
 async function initEditor(){
   const el=id=>document.getElementById(id);
   const existing = await allSlugs();
+  // The slug currently being edited (null for a brand-new opp). Advances on first save so an
+  // opp never collides with itself, and lets save/publish block collisions with OTHER opps.
+  let editingSlug = new URLSearchParams(location.search).get("slug");
 
   // add custom templates to the picker, then honor ?t=
   const tsel=el("f_template");
@@ -454,10 +464,10 @@ async function initEditor(){
     return fillTemplate(tpl, values());
   }
   function curSlug(){ return (el("f_slug").value.trim() || slugify(el("f_biz").value)); }
+  function collides(){ const s=curSlug(); return !!(s && s!==editingSlug && existing.indexOf(s)>=0); }
   function checkCollision(){
-    const s=curSlug(); const warn=el("slugWarn"); if(!warn) return;
-    const editing=new URLSearchParams(location.search).get("slug");
-    warn.hidden = !(s && s!==editing && existing.indexOf(s)>=0);
+    const warn=el("slugWarn"); if(!warn) return;
+    warn.hidden = !collides();
   }
   function refreshMeta(){ el("urlpill").textContent = liveUrl(curSlug()||"<name>"); checkCollision(); }
   async function refreshPreview(){ const html=await currentHTML(); el("frame").srcdoc = html || "<!doctype html><meta charset='utf-8'>"; }
@@ -539,9 +549,11 @@ async function initEditor(){
   });
   el("saveLib").addEventListener("click", async ()=>{
     if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
+    if(collides()){ toast(t("slug_taken")); return; }   // never clobber another opp's record
     const rec=await fullRecord(); const isNew = existing.indexOf(rec.slug)<0;
     saveDraft(rec);
     if(isNew) existing.push(rec.slug);
+    editingSlug = rec.slug;                              // this opp is now the one we're editing
     logActivity(isNew?"create":"save", rec.slug, rec.business);
     toast(t("saved_toast"));
   });
@@ -549,6 +561,7 @@ async function initEditor(){
   if(pubBtn) pubBtn.addEventListener("click", async ()=>{
     if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
     if(missingRequired().length){ toast(t("need_fields")); return; }
+    if(collides()){ toast(t("slug_taken")); return; }   // never overwrite another opp's live page
     if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
     const rec=await fullRecord();
     const pubRec=Object.assign({}, rec, { html: await currentHTML() });
@@ -582,12 +595,24 @@ async function initEditor(){
       el("f_biz").value=d.business||""; el("f_slug").value=d.slug; el("f_slug").dataset.touched="1";
       el("f_sent").value=d.sent_on||el("f_sent").value; el("f_location").value=d.location||""; el("f_phone").value=d.phone||"";
       if(d.template && d.template!=="custom"){ el("f_template").value=d.template; }
+      const hasFields = d.fields && Object.keys(d.fields).some(k=>d.fields[k]);
       // restore an uploaded/custom page so editing keeps its content
       if((d.mode==="upload" || d.template==="custom") && d.html){
         mode="upload"; uploadedHTML=d.html; uploadedName=(d.slug||"page")+".html";
         el("mode_upload").classList.add("on"); el("mode_fill").classList.remove("on");
         el("fillFields").hidden=true; el("uploadBox").hidden=false;
         dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>";
+      } else if(editingLive && !hasFields && !d._local){
+        // Live opp published elsewhere (manifest-only, no local fields): pull the real page so a
+        // save/publish can't overwrite it with a blank template regeneration.
+        try{ const r=await fetch(relOpp(d.slug)+"index.html",{cache:"no-store"});
+          if(r.ok){ const html=await r.text();
+            mode="upload"; uploadedHTML=html; uploadedName=(d.slug||"page")+".html";
+            el("mode_upload").classList.add("on"); el("mode_fill").classList.remove("on");
+            el("fillFields").hidden=true; el("uploadBox").hidden=false;
+            dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>";
+          }
+        }catch(_){}
       }
       const F=d.fields||{};
       if("QUOTE" in F) el("f_quote").value=F.QUOTE||"";
@@ -634,7 +659,9 @@ function initActivity(){
     const total=threads.length;
     if(threadQ){ const q=threadQ.toLowerCase();
       threads=threads.filter(th=> (th.to+" "+th.toName+" "+th.opp+" "+th.templates.join(" ")).toLowerCase().includes(q)); }
-    const head='<div class="threads-head"><h3 class="block-h">'+t("act_threads")+' <span class="pill">'+total+'</span></h3>'+
+    const shown=threads.length;
+    const pill=(threadQ && shown!==total) ? (shown+" / "+total) : String(total);   // pill matches the visible cards
+    const head='<div class="threads-head"><h3 class="block-h">'+t("act_threads")+' <span class="pill">'+pill+'</span></h3>'+
       '<input id="threadSearch" class="input sm" placeholder="'+esc(t("act_thread_search"))+'" value="'+esc(threadQ)+'"></div>';
     if(!total){ wrap.innerHTML=head+'<div class="empty">'+t("act_no_threads")+'</div>'; bindSearch(); return; }
     const cards=threads.map(th=>{
@@ -662,9 +689,10 @@ function initActivity(){
     bindSearch();
     wrap.querySelectorAll(".th-reply").forEach(b=>b.addEventListener("click",e=>{
       e.preventDefault(); e.stopPropagation();
-      const to=b.getAttribute("data-to"), opp=b.getAttribute("data-opp");
+      const to=b.getAttribute("data-to"), opp=b.getAttribute("data-opp"), thread=b.getAttribute("data-th");
       const note=prompt(t("act_reply_note")); if(note===null) return;
-      logMail({ opp:opp, to:to, subject:"Re: "+(opp||to), preview:(note||"").slice(0,600), provider:"manual", status:"replied", direction:"in" });
+      // Attach to THIS exact thread (opp-less threads can't be re-derived from to+subject alone).
+      logMail({ thread:thread, opp:opp, to:to, subject:"Re: "+(opp||to), preview:(note||"").slice(0,600), provider:"manual", status:"replied", direction:"in" });
       logActivity("reply", opp||"", to); toast(t("act_reply_logged")); render();
     }));
   }
@@ -688,10 +716,11 @@ function initActivity(){
   el("logRefresh").addEventListener("click",render);
   el("logReply").addEventListener("click",()=>{
     const to=prompt(t("act_reply_who")); if(!to) return;
-    const opp=prompt(t("act_reply_opp"))||"";
+    const oppIn=prompt(t("act_reply_opp"))||"";
+    const opp=oppIn.trim()?slugify(oppIn):"";   // match compose's slug convention so the reply joins the real thread
     const note=prompt(t("act_reply_note"))||"";
-    logActivity("reply", opp.trim(), to.trim());
-    logMail({ opp:opp.trim(), to:to.trim(), subject:"Re: "+(opp.trim()||to.trim()), preview:note.slice(0,600), provider:"manual", status:"replied", direction:"in" });
+    logActivity("reply", opp, to.trim());
+    logMail({ opp:opp, to:to.trim(), subject:"Re: "+(opp||to.trim()), preview:note.slice(0,600), provider:"manual", status:"replied", direction:"in" });
     toast(t("act_reply_logged")); render();
   });
   el("logClear").addEventListener("click",()=>{
@@ -775,10 +804,12 @@ function setEmailTemplates(a){ return lsSet(ETPL, JSON.stringify(a)); }
 function saveEmailTemplate(rec){ const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
 function removeEmailTemplate(id){ setEmailTemplates(getEmailTemplates().filter(x=>x.id!==id)); }
 function mergeFields(str, o, name){
-  return (str||"").split("{{BIZ}}").join((o&&o.business)||"")
+  // Text-position values are escaped before they reach body.innerHTML (a name like
+  // "<img onerror=…>" must never execute in the console origin); {{LINK}} stays a raw URL.
+  return (str||"").split("{{BIZ}}").join(esc((o&&o.business)||""))
     .split("{{LINK}}").join(o?liveUrl(o.slug):"")
-    .split("{{NAME}}").join(name||"there")
-    .split("{{SLUG}}").join(o?o.slug:"");
+    .split("{{NAME}}").join(esc(name||"there"))
+    .split("{{SLUG}}").join(esc(o?o.slug:""));
 }
 
 /* mail log — every send/copy/reply, per recipient (campaign documentation) */
@@ -829,6 +860,7 @@ function getThreads(){
 async function initCompose(){
   const el=id=>document.getElementById(id);
   const body=el("ebody");
+  let composeDirty=false;   // true once the writer edits body/subject — guards against template re-render wiping their work
   const params=new URLSearchParams(location.search);
   const slug=params.get("slug");
   const oppUrl = slug ? liveUrl(slug) : "";
@@ -841,7 +873,7 @@ async function initCompose(){
   el("tbItalic").addEventListener("click",()=>cmd("italic"));
   el("tbUnder").addEventListener("click",()=>cmd("underline"));
   el("tbList").addEventListener("click",()=>cmd("insertUnorderedList"));
-  el("tbUnlink").addEventListener("click",()=>cmd("unlink"));
+  // tbUnlink is wired once, below, together with the links-manager refresh
 
   // ---- robust multi-link engine (DOM-based; reliable on touch/iPad, no execCommand) ----
   const linkBar=el("elinkbar"), linkUrl=el("elinkurl"), linkText=el("elinktext"),
@@ -1038,12 +1070,17 @@ async function initCompose(){
     const preT=params.get("etpl");
     if(preT!==null && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
     tplSel.addEventListener("change",()=>{
+      composeDirty=false;                                // a fresh template choice replaces the draft
       if(tplSel.value===""){ el("esubject").value=""; body.innerHTML=""; refreshLinks(); }  // plain: start from an empty editor
       else applyTemplate(currentTpl());
     });
   }
-  if(nameEl) nameEl.addEventListener("input",()=>applyTemplate(currentTpl()));
-  if(firstEl) firstEl.addEventListener("change",()=>applyTemplate(currentTpl()));
+  // Once the writer edits the body or subject, stop auto-rewriting from the template — otherwise
+  // typing the recipient's name (a common last step) would wipe the whole composed message.
+  body.addEventListener("input",()=>{ composeDirty=true; });
+  el("esubject").addEventListener("input",()=>{ composeDirty=true; });
+  if(nameEl) nameEl.addEventListener("input",()=>{ if(!composeDirty) applyTemplate(currentTpl()); });
+  if(firstEl) firstEl.addEventListener("change",()=>{ if(!composeDirty) applyTemplate(currentTpl()); });
   applyTemplate(currentTpl());
   refreshLinks();
   const saveT=el("eSaveTpl");
@@ -1366,8 +1403,10 @@ async function initInsights(){
     el("insSource").className = "pill "+(source==="remote"?"ok":"warn");
     const totOpens=rows.reduce((s,r)=>s+r.opens,0);
     const uniq=new Set(); events.forEach(e=>e.vid&&uniq.add(e.vid));
-    const dwellVals=rows.filter(r=>r.dwellN).map(r=>r.dwellMs/r.dwellN);
-    const avgDwell=dwellVals.length? dwellVals.reduce((a,b)=>a+b,0)/dwellVals.length : 0;
+    // Average dwell PER VIEW (pool all views), not the mean of per-page means — otherwise a
+    // one-view page skews the headline as much as a hundred-view page.
+    const dw=rows.reduce((a,r)=>{ a.ms+=r.dwellMs; a.n+=r.dwellN; return a; }, {ms:0,n:0});
+    const avgDwell=dw.n? dw.ms/dw.n : 0;
     el("tiles").innerHTML = [
       [t("ins_total_opens"), totOpens],
       [t("ins_unique"), uniq.size],
