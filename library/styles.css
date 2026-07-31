@@ -201,6 +201,11 @@ html.gate-locked .top,html.gate-locked .wrap{display:none!important}
 .ebody:focus{border-color:var(--purple)}
 .ebody a{color:var(--teal);text-decoration:underline}
 .ebody:empty::before{content:attr(data-ph);color:var(--ink-3)}
+.etoolbar button u{text-decoration:underline}
+.elinkbar{display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap}
+.elinkbar .input{flex:1 1 240px;min-width:160px;direction:ltr}
+.chk{display:inline-flex;align-items:center;gap:8px;margin:0 0 16px;font-size:13px;color:var(--ink-2);cursor:pointer;font-weight:600}
+.chk input{width:16px;height:16px;accent-color:var(--purple);cursor:pointer}
 
 /* QR modal */
 .qr-modal{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.6)}
@@ -242,6 +247,21 @@ html.gate-locked .top,html.gate-locked .wrap{display:none!important}
 
 /* RTL */
 html[dir="rtl"] body,html[dir="rtl"] input,html[dir="rtl"] textarea,html[dir="rtl"] select,html[dir="rtl"] button{font-family:var(--font-ar)}
+
+/* Arabic typography: no letter-spacing (breaks joined letters), no uppercase, lighter weights */
+html[dir="rtl"] body{font-weight:400}
+html[dir="rtl"] .brand b,html[dir="rtl"] .nav a,html[dir="rtl"] .badge,html[dir="rtl"] .sec-h,
+html[dir="rtl"] .id,html[dir="rtl"] .tag,html[dir="rtl"] .pl-pill,html[dir="rtl"] .chip,
+html[dir="rtl"] .block-h,html[dir="rtl"] h1.title,html[dir="rtl"] .tile-k,html[dir="rtl"] .pill,
+html[dir="rtl"] .brand b,html[dir="rtl"] label,html[dir="rtl"] .logtable thead th{letter-spacing:normal;text-transform:none}
+html[dir="rtl"] h1.title{font-weight:700}
+html[dir="rtl"] .block-h,html[dir="rtl"] .card .biz,html[dir="rtl"] .tpl h3,html[dir="rtl"] .tile-v,
+html[dir="rtl"] .gate-title{font-weight:600}
+html[dir="rtl"] .brand b,html[dir="rtl"] .nav a,html[dir="rtl"] .btn,html[dir="rtl"] .badge,
+html[dir="rtl"] .chip,html[dir="rtl"] .seg button,html[dir="rtl"] .langbtn,html[dir="rtl"] .pl-pill,
+html[dir="rtl"] .tag,html[dir="rtl"] .id,html[dir="rtl"] .sec-h,html[dir="rtl"] label,
+html[dir="rtl"] .field label,html[dir="rtl"] .etpl-label,html[dir="rtl"] .devtoggle button{font-weight:500}
+html[dir="rtl"] .sub,html[dir="rtl"] .hint,html[dir="rtl"] .note,html[dir="rtl"] .meta-line{font-weight:400}
 html[dir="rtl"] .card .link,html[dir="rtl"] .urlpill{direction:ltr;text-align:start}
 html[dir="rtl"] .tpl .thumb iframe{transform-origin:top right}
 html[dir="rtl"] #thriveGate .gate-input{text-align:center}

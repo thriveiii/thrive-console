@@ -41,20 +41,27 @@
     <div class="grid3">
       <div class="field"><label data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
       <div class="field"><label data-i18n="cmp_to">To</label><input id="eto" class="input" type="email" autocomplete="off" placeholder="name@example.com"></div>
-      <div class="field"><label data-i18n="cmp_name">Recipient name</label><input id="ename" class="input" autocomplete="off" placeholder="Sideeq"></div>
+      <div class="field"><label data-i18n="cmp_name">Recipient name</label><input id="ename" class="input" autocomplete="off" data-i18n-ph="cmp_name_ph"></div>
     </div>
+    <label class="chk"><input type="checkbox" id="efirst"> <span data-i18n="cmp_firstname">Greet by first name only (Hi Ahmed)</span></label>
     <div class="field"><label data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off"></div>
 
     <div class="field"><label data-i18n="cmp_message">Message</label>
       <div class="etoolbar">
         <button type="button" id="tbBold" title="Bold"><b>B</b></button>
         <button type="button" id="tbItalic" title="Italic"><i>I</i></button>
+        <button type="button" id="tbUnder" title="Underline"><u>U</u></button>
         <button type="button" id="tbList" title="List">•</button>
         <button type="button" id="tbLink" data-i18n="cmp_tb_link">Link</button>
         <button type="button" id="tbUnlink" data-i18n="cmp_tb_unlink">Unlink</button>
-        <button type="button" id="tbOpp" class="tb-accent" hidden data-i18n="cmp_insert_opp">Insert opportunity link</button>
+        <button type="button" id="tbOpp" class="tb-accent" hidden data-i18n="cmp_insert_opp">Link to opportunity</button>
       </div>
-      <div id="ebody" class="ebody" contenteditable="true"></div>
+      <div id="elinkbar" class="elinkbar" hidden>
+        <input id="elinkurl" class="input" type="url" data-i18n-ph="cmp_link_ph">
+        <button type="button" class="btn sm" id="elinkApply" data-i18n="cmp_link_apply">Apply</button>
+        <button type="button" class="btn ghost sm" id="elinkCancel" data-i18n="close">Close</button>
+      </div>
+      <div id="ebody" class="ebody" contenteditable="true" spellcheck="true"></div>
       <div class="hint" data-i18n="cmp_link_hint"></div>
     </div>
 

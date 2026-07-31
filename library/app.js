@@ -26,10 +26,21 @@ function download(name, text, type){
   a.href=url; a.download=name; document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 100);
 }
+/* quota-safe localStorage: on overflow, reclaim space from transient logs and retry once */
+function lsSet(key, str){
+  try{ localStorage.setItem(key, str); return true; }
+  catch(e){
+    try{
+      const h=JSON.parse(localStorage.getItem("thrive_hits_v1")||"[]"); if(h.length>150) localStorage.setItem("thrive_hits_v1", JSON.stringify(h.slice(-150)));
+      const a=JSON.parse(localStorage.getItem("thrive_activity_v1")||"[]"); if(a.length>200) localStorage.setItem("thrive_activity_v1", JSON.stringify(a.slice(-200)));
+      localStorage.setItem(key, str); return true;
+    }catch(e2){ try{ toast(t("storage_full")); }catch(_){} return false; }
+  }
+}
 
 /* ---------- activity log ---------- */
 function getActivity(){ try{ return JSON.parse(localStorage.getItem(LOG)||"[]"); }catch(e){ return []; } }
-function setActivity(a){ try{ localStorage.setItem(LOG, JSON.stringify(a.slice(-800))); }catch(e){} }
+function setActivity(a){ lsSet(LOG, JSON.stringify(a.slice(-500))); }
 function logActivity(action, slug, detail){
   const a=getActivity();
   a.push({ ts:new Date().toISOString(), action:action||"", slug:slug||"", detail:detail||"" });
@@ -40,7 +51,7 @@ window.logActivity = logActivity;
 /* ---------- custom templates (local registry) ---------- */
 const TPLSTORE = "thrive_templates_v1";
 function getCustomTemplates(){ try{ return JSON.parse(localStorage.getItem(TPLSTORE)||"[]"); }catch(e){ return []; } }
-function setCustomTemplates(a){ try{ localStorage.setItem(TPLSTORE, JSON.stringify(a)); return true; }catch(e){ toast(t("storage_full")); return false; } }
+function setCustomTemplates(a){ return lsSet(TPLSTORE, JSON.stringify(a)); }
 function getCustomTemplate(id){ return getCustomTemplates().find(x=>x.id===id); }
 function saveCustomTemplate(rec){ const a=getCustomTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setCustomTemplates(a); }
 function removeCustomTemplate(id){ setCustomTemplates(getCustomTemplates().filter(x=>x.id!==id)); }
@@ -56,6 +67,33 @@ function opensForSlug(slug){ let n=0; getHits().forEach(e=>{ if((e.type==="open"
 /* ---------- pipeline stages (mini CRM) ---------- */
 const STAGES=["sent","opened","replied","won","lost"];
 function daysSince(d){ if(!d) return 0; const ms=Date.parse(d+"T00:00:00Z"); if(isNaN(ms)) return 0; return Math.floor((Date.now()-ms)/86400000); }
+
+/* ---------- opportunity HTML (regenerated on demand — not stored, to save space) ---------- */
+const __tplCache={};
+async function fetchTemplateHtml(idT){
+  if(__tplCache[idT]) return __tplCache[idT];
+  const custom=getCustomTemplate(idT);
+  if(custom){ __tplCache[idT]=custom.html||""; return __tplCache[idT]; }
+  const r=await fetch("../templates/"+idT+"/template.html",{cache:"no-store"});
+  const txt=await r.text(); __tplCache[idT]=txt; return txt;
+}
+function fillTemplate(tpl, v){
+  let h=tpl;
+  if(!v.QUOTE || !v.QUOTE.trim()) h=h.replace(/<!--QUOTE_START-->[\s\S]*?<!--QUOTE_END-->/,"");
+  const subject=encodeURIComponent((v.BIZ||"Opportunity")+" x Thrive");
+  const map={ BIZ:esc(v.BIZ), QUOTE:esc(v.QUOTE), QUOTE_BY:esc(v.QUOTE_BY),
+    PROOF1:esc(v.PROOF1), PROOF2:esc(v.PROOF2), PROOF3:esc(v.PROOF3), WANT:esc(v.WANT), SUBJECT:subject };
+  Object.keys(map).forEach(k=>{ h=h.split("{{"+k+"}}").join(map[k]); });
+  return h;
+}
+/* returns the full page HTML for an opportunity record (upload keeps its html; template drafts regenerate) */
+async function renderOppHtml(rec){
+  if(!rec) return "";
+  if(rec.mode==="upload") return rec.html||"";
+  if(!rec.template || rec.template==="custom") return rec.html||"";
+  const tpl=await fetchTemplateHtml(rec.template);
+  return fillTemplate(tpl, Object.assign({BIZ:rec.business}, rec.fields||{}));
+}
 
 /* ---------- backup / restore (everything, minus the GitHub token) ---------- */
 function exportBackup(){
@@ -156,7 +194,7 @@ async function loadManifest(){
   catch(e){ return {site:SITE, list:[]}; }
 }
 function getDrafts(){ try{ return JSON.parse(localStorage.getItem(STORE)||"[]"); }catch(e){ return []; } }
-function setDrafts(a){ try{ localStorage.setItem(STORE, JSON.stringify(a)); }catch(e){} }
+function setDrafts(a){ return lsSet(STORE, JSON.stringify(a)); }
 function getDraft(slug){ return getDrafts().find(x=>x.slug===slug); }
 function saveDraft(rec){
   const a=getDrafts(); const i=a.findIndex(x=>x.slug===rec.slug);
@@ -280,7 +318,7 @@ async function initDashboard(){
           ${stageSel(o)}
         </div>
         <div class="actions actions-wrap">
-          ${o.html?`<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>`:""}
+          ${!live?`<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>`:""}
           ${live?`<a class="btn ghost sm" href="compose.html?slug=${enc}">${t("email_btn")}</a><button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:""}
           <a class="btn ghost sm" href="editor.html?slug=${enc}">${t("edit")}</a>
           <button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>
@@ -295,10 +333,10 @@ async function initDashboard(){
       o.stage=sel.value; saveDraft({slug, stage:sel.value}); logActivity("stage", slug, sel.value);
       if(state.status==="followup") render();
     }));
-    grid.querySelectorAll("[data-pdf]").forEach(b=>b.addEventListener("click",()=>{
+    grid.querySelectorAll("[data-pdf]").forEach(b=>b.addEventListener("click", async ()=>{
       const o=state.data.find(x=>x.slug===b.getAttribute("data-pdf")); if(!o) return;
       if(isLive(o)){ const w=window.open(relOpp(o.slug),"_blank"); if(w) w.addEventListener("load",()=>setTimeout(()=>w.print(),300)); }
-      else { const w=openLocalPreview(o.html); if(w) setTimeout(()=>{ try{w.print();}catch(e){} },500); }
+      else { const w=openLocalPreview(await renderOppHtml(o)); if(w) setTimeout(()=>{ try{w.print();}catch(e){} },500); }
     }));
     grid.querySelectorAll("[data-unpub]").forEach(b=>b.addEventListener("click", async ()=>{
       const slug=b.getAttribute("data-unpub"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
@@ -307,22 +345,25 @@ async function initDashboard(){
       b.disabled=true; b.textContent=t("publishing");
       try{
         await unpublishOpp(slug);
-        // keep a local draft copy so it can be re-published/edited
-        saveDraft({slug, business:o.business, template:o.template, sent_on:o.sent_on, location:o.location, phone:o.phone, status:o.status||"sent", published:false, html:o.html||"", mode:o.mode||"upload"});
+        // keep a local draft copy so it can be re-published/edited (html only if it was an upload)
+        const back={slug, business:o.business, template:o.template, sent_on:o.sent_on, location:o.location, phone:o.phone, status:o.status||"sent", published:false, mode:o.mode||(o.template&&o.template!=="custom"?"fill":"upload"), fields:o.fields||{}};
+        if(o.mode==="upload" && o.html) back.html=o.html;
+        saveDraft(back);
         logActivity("unpublish", slug, o.business); toast(t("unpublished_ok"));
         state.data=await mergedOpps(); render();
       }catch(e){ toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("unpublish"); }
     }));
-    grid.querySelectorAll("[data-prev]").forEach(b=>b.addEventListener("click",()=>{
-      const o=state.data.find(x=>x.slug===b.getAttribute("data-prev")); if(o) openLocalPreview(o.html);
+    grid.querySelectorAll("[data-prev]").forEach(b=>b.addEventListener("click", async ()=>{
+      const o=state.data.find(x=>x.slug===b.getAttribute("data-prev")); if(o) openLocalPreview(await renderOppHtml(o));
     }));
     grid.querySelectorAll("[data-pub]").forEach(b=>b.addEventListener("click", async ()=>{
       const slug=b.getAttribute("data-pub"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
-      if(!o.html){ toast(t("no_content_publish")); return; }
       if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
       b.disabled=true; b.textContent=t("publishing");
       try{
-        await publishOpp(o); saveDraft({slug, published:true}); o.published=true;
+        const html=await renderOppHtml(o);
+        if(!html){ toast(t("no_content_publish")); b.disabled=false; b.textContent=t("publish"); return; }
+        await publishOpp(Object.assign({}, o, {html})); saveDraft({slug, published:true}); o.published=true;
         logActivity("publish", slug, o.business); toast(t("published_live")); render();
       }catch(e){ toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("publish"); }
     }));
@@ -375,7 +416,6 @@ async function initDashboard(){
 
 /* ---------- editor ---------- */
 async function initEditor(){
-  let templateCache={};
   const el=id=>document.getElementById(id);
   const existing = await allSlugs();
 
@@ -388,27 +428,6 @@ async function initEditor(){
   const tParam=new URLSearchParams(location.search).get("t");
   if(tParam && [...tsel.options].some(o=>o.value===tParam)) tsel.value=tParam;
 
-  async function getTemplate(idT){
-    if(templateCache[idT]) return templateCache[idT];
-    const custom=getCustomTemplate(idT);
-    if(custom){ templateCache[idT]=custom.html||""; return templateCache[idT]; }
-    const r=await fetch("../templates/"+idT+"/template.html",{cache:"no-store"});
-    const txt=await r.text(); templateCache[idT]=txt; return txt;
-  }
-  function fill(tpl, v){
-    let h=tpl;
-    if(!v.QUOTE || !v.QUOTE.trim()){
-      h=h.replace(/<!--QUOTE_START-->[\s\S]*?<!--QUOTE_END-->/,"");
-    }
-    const subject=encodeURIComponent((v.BIZ||"Opportunity")+" x Thrive");
-    const map={
-      BIZ:esc(v.BIZ), QUOTE:esc(v.QUOTE), QUOTE_BY:esc(v.QUOTE_BY),
-      PROOF1:esc(v.PROOF1), PROOF2:esc(v.PROOF2), PROOF3:esc(v.PROOF3),
-      WANT:esc(v.WANT), SUBJECT:subject
-    };
-    Object.keys(map).forEach(k=>{ h=h.split("{{"+k+"}}").join(map[k]); });
-    return h;
-  }
   function values(){
     return { BIZ:el("f_biz").value, QUOTE:el("f_quote").value, QUOTE_BY:el("f_quoteby").value,
       PROOF1:el("f_proof1").value, PROOF2:el("f_proof2").value, PROOF3:el("f_proof3").value,
@@ -417,8 +436,8 @@ async function initEditor(){
   let mode="fill", uploadedHTML=null, uploadedName="";
   async function currentHTML(){
     if(mode==="upload") return uploadedHTML||"";
-    const tpl=await getTemplate(el("f_template").value);
-    return fill(tpl, values());
+    const tpl=await fetchTemplateHtml(el("f_template").value);
+    return fillTemplate(tpl, values());
   }
   function curSlug(){ return (el("f_slug").value.trim() || slugify(el("f_biz").value)); }
   function checkCollision(){
@@ -442,7 +461,8 @@ async function initEditor(){
       phone:el("f_phone").value.trim(), status:"sent", mode:mode, published:editingLive,
       fields:{ QUOTE:v.QUOTE, QUOTE_BY:v.QUOTE_BY, PROOF1:v.PROOF1, PROOF2:v.PROOF2, PROOF3:v.PROOF3, WANT:v.WANT } };
   }
-  async function fullRecord(){ const r=record(); r.html=await currentHTML(); return r; }
+  // store the page HTML only for uploads (template drafts regenerate on demand — saves storage)
+  async function fullRecord(){ const r=record(); if(mode==="upload") r.html=uploadedHTML||""; else delete r.html; return r; }
 
   // mode switch
   el("mode_fill").addEventListener("click",()=>{ mode="fill"; el("mode_fill").classList.add("on"); el("mode_upload").classList.remove("on");
@@ -519,9 +539,10 @@ async function initEditor(){
     if(missingRequired().length){ toast(t("need_fields")); return; }
     if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
     const rec=await fullRecord();
+    const pubRec=Object.assign({}, rec, { html: await currentHTML() });
     pubBtn.disabled=true; const old=pubBtn.textContent; pubBtn.textContent=t("publishing");
     try{
-      await publishOpp(rec);
+      await publishOpp(pubRec);
       editingLive=true; rec.published=true; saveDraft(rec);
       if(existing.indexOf(rec.slug)<0) existing.push(rec.slug);
       logActivity("publish", rec.slug, rec.business);
@@ -647,7 +668,7 @@ function getEmailTemplates(){
     html:'Hi {{NAME}},<br><br>End of the month, so here is <a href="{{LINK}}">this month at Thrive</a>. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com' }]; }
   return a;
 }
-function setEmailTemplates(a){ try{ localStorage.setItem(ETPL, JSON.stringify(a)); return true; }catch(e){ toast(t("storage_full")); return false; } }
+function setEmailTemplates(a){ return lsSet(ETPL, JSON.stringify(a)); }
 function saveEmailTemplate(rec){ const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
 function removeEmailTemplate(id){ setEmailTemplates(getEmailTemplates().filter(x=>x.id!==id)); }
 function mergeFields(str, o, name){
@@ -660,7 +681,7 @@ function mergeFields(str, o, name){
 /* mail log — every send/copy/reply, per recipient (campaign documentation) */
 const MAILLOG = "thrive_mail_v1";
 function getMailLog(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)||"[]"); }catch(e){ return []; } }
-function setMailLog(a){ try{ localStorage.setItem(MAILLOG, JSON.stringify(a.slice(-1000))); }catch(e){} }
+function setMailLog(a){ lsSet(MAILLOG, JSON.stringify(a.slice(-500))); }
 function logMail(rec){ const a=getMailLog(); a.push(Object.assign({ ts:new Date().toISOString() }, rec)); setMailLog(a); }
 
 async function initCompose(){
@@ -670,43 +691,67 @@ async function initCompose(){
   const slug=params.get("slug");
   const oppUrl = slug ? liveUrl(slug) : "";
 
-  function cmd(c,v){ body.focus(); document.execCommand(c,false,v||null); }
+  // rich editor: keep the selection alive when clicking toolbar buttons
+  document.querySelectorAll(".etoolbar button").forEach(b=>b.addEventListener("mousedown",e=>e.preventDefault()));
+  function cmd(c,v){ document.execCommand(c,false,v||null); }
+  function hasSel(){ const s=window.getSelection(); return s.rangeCount && !s.isCollapsed; }
   el("tbBold").addEventListener("click",()=>cmd("bold"));
   el("tbItalic").addEventListener("click",()=>cmd("italic"));
+  el("tbUnder").addEventListener("click",()=>cmd("underline"));
   el("tbList").addEventListener("click",()=>cmd("insertUnorderedList"));
   el("tbUnlink").addEventListener("click",()=>cmd("unlink"));
-  el("tbLink").addEventListener("click",()=>{
-    const sel=window.getSelection();
-    if(!sel.rangeCount || sel.isCollapsed){ toast(t("cmp_select_first")); return; }
-    const url=prompt(t("cmp_link_prompt"), oppUrl||"https://");
-    if(url) cmd("createLink", url);
-  });
+
+  // inline link bar (no browser prompt)
+  const linkBar=el("elinkbar"), linkUrl=el("elinkurl");
+  let savedRange=null;
+  function openLinkBar(def){
+    if(!hasSel()){ toast(t("cmp_select_first")); return; }
+    savedRange=window.getSelection().getRangeAt(0).cloneRange();
+    let href=def||"https://";
+    const node=window.getSelection().anchorNode;
+    const a=node && node.parentElement ? node.parentElement.closest("a") : null;
+    if(a && a.getAttribute("href")) href=a.getAttribute("href");
+    linkUrl.value=href; linkBar.hidden=false; setTimeout(()=>linkUrl.focus(),30);
+  }
+  function applyLink(){
+    const url=(linkUrl.value||"").trim();
+    if(url && savedRange){ const s=window.getSelection(); s.removeAllRanges(); s.addRange(savedRange); document.execCommand("createLink",false,url); }
+    linkBar.hidden=true; savedRange=null;
+  }
+  el("tbLink").addEventListener("click",()=>openLinkBar(oppUrl||"https://"));
+  el("elinkApply").addEventListener("click",applyLink);
+  el("elinkCancel").addEventListener("click",()=>{ linkBar.hidden=true; savedRange=null; });
+  linkUrl.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); applyLink(); } if(e.key==="Escape"){ linkBar.hidden=true; } });
   const tbOpp=el("tbOpp");
   if(slug && tbOpp){ tbOpp.hidden=false;
-    tbOpp.addEventListener("click",()=>{
-      const sel=window.getSelection();
-      if(!sel.rangeCount || sel.isCollapsed){ toast(t("cmp_select_first")); return; }
-      cmd("createLink", oppUrl);
-    });
+    tbOpp.addEventListener("mousedown",e=>e.preventDefault());
+    tbOpp.addEventListener("click",()=>{ if(!hasSel()){ toast(t("cmp_select_first")); return; } cmd("createLink", oppUrl); });
   }
 
   el("efrom").value=FROM_EMAIL;
   let oppObj=null;
   if(slug){ const all=await mergedOpps(); oppObj=all.find(x=>x.slug===slug)||null; }
-  const nameEl=el("ename"), tplSel=el("etpl");
+  const nameEl=el("ename"), tplSel=el("etpl"), firstEl=el("efirst");
+  function recipientName(){
+    const n=(nameEl?nameEl.value.trim():"");
+    if(firstEl && firstEl.checked && n) return n.split(/\s+/)[0];
+    return n;
+  }
+  function currentTpl(){ return getEmailTemplates().find(x=>x.id===(tplSel?tplSel.value:"monthly")) || getEmailTemplates()[0]; }
   function applyTemplate(tp){
     if(!tp) return;
-    el("esubject").value = mergeFields(tp.subject, oppObj, nameEl?nameEl.value.trim():"");
-    body.innerHTML = mergeFields(tp.html, oppObj, nameEl?nameEl.value.trim():"");
+    el("esubject").value = mergeFields(tp.subject, oppObj, recipientName());
+    body.innerHTML = mergeFields(tp.html, oppObj, recipientName());
   }
   if(tplSel){
     getEmailTemplates().forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
     const preT=params.get("etpl");
     if(preT && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
-    tplSel.addEventListener("change",()=>applyTemplate(getEmailTemplates().find(x=>x.id===tplSel.value)));
+    tplSel.addEventListener("change",()=>applyTemplate(currentTpl()));
   }
-  if(nameEl) nameEl.addEventListener("input",()=>applyTemplate(getEmailTemplates().find(x=>x.id===(tplSel?tplSel.value:"monthly"))));
-  applyTemplate(getEmailTemplates().find(x=>x.id===(tplSel?tplSel.value:"monthly")) || getEmailTemplates()[0]);
+  if(nameEl) nameEl.addEventListener("input",()=>applyTemplate(currentTpl()));
+  if(firstEl) firstEl.addEventListener("change",()=>applyTemplate(currentTpl()));
+  applyTemplate(currentTpl());
   const saveT=el("eSaveTpl");
   if(saveT) saveT.addEventListener("click",()=>{
     const name=prompt(t("cmp_tpl_name")); if(!name) return;
