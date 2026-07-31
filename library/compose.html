@@ -70,8 +70,23 @@
           <button type="button" class="btn ghost sm" id="elinkCancel" data-i18n="close">Close</button>
         </div>
       </div>
+      <div id="eoppbar" class="elinkbar eoppbar" hidden>
+        <div class="eopp-preview" id="eoppPreview"></div>
+        <label class="eopp-l" data-i18n="cmp_opp_which">Which words in your message should link to the opportunity?</label>
+        <div class="elinkrow">
+          <input id="eopptext" class="input" data-i18n-ph="cmp_opp_text_ph">
+        </div>
+        <div class="elinkrow elinkrow-actions">
+          <button type="button" class="btn sm" id="eoppInsert" data-i18n="cmp_opp_insert">Insert linked text</button>
+          <button type="button" class="btn ghost sm" id="eoppLine" data-i18n="cmp_opp_line">Insert as a link line</button>
+          <button type="button" class="btn ghost sm" id="eoppCancel" data-i18n="close">Close</button>
+        </div>
+      </div>
       <div id="ebody" class="ebody" contenteditable="true" spellcheck="true"></div>
-      <div class="hint" data-i18n="cmp_link_hint"></div>
+      <div class="cmp-belowbody">
+        <div class="hint" data-i18n="cmp_link_hint"></div>
+        <div id="eoppstatus" class="eoppstatus" hidden></div>
+      </div>
       <div id="elinks" class="elinks" hidden></div>
     </div>
 

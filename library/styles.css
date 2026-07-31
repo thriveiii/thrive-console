@@ -332,3 +332,20 @@ html[dir="rtl"] .mdir.out,html[dir="rtl"] .mdir.in{transform:scaleX(-1);display:
 .quota-readout.near{border-color:rgba(230,180,90,.5)}
 .quota-readout.full{border-color:rgba(224,110,110,.5)}
 .quota-readout b{font-weight:800}
+
+/* ---------- guided "Link to opportunity" panel + status ---------- */
+.eoppbar{gap:10px}
+.eopp-l{font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.eopp-preview{display:flex;gap:12px;align-items:flex-start}
+.eopp-thumb{width:132px;height:92px;border:1px solid var(--hair);border-radius:8px;background:#fff;overflow:hidden;flex-shrink:0;pointer-events:none;transform:scale(1);transform-origin:top left}
+.eopp-info{min-width:0;display:flex;flex-direction:column;gap:4px}
+.eopp-title{font-weight:700;color:var(--ink);overflow-wrap:anywhere}
+.eopp-tag{font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
+.eopp-open{font-size:11.5px;color:var(--teal);overflow-wrap:anywhere;direction:ltr;text-decoration:none}
+.eopp-open:hover{text-decoration:underline}
+.eopp-note{font-size:12.5px;color:var(--muted)}
+.cmp-belowbody{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.eoppstatus{font-size:12.5px;font-weight:700;padding:5px 12px;border-radius:999px;white-space:nowrap}
+.eoppstatus.ok{background:rgba(142,207,154,.16);color:#8ecf9a}
+.eoppstatus.todo{background:rgba(150,160,170,.14);color:#aab2bd}
+html[dir="rtl"] .eopp-thumb{transform-origin:top right}

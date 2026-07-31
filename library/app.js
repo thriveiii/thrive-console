@@ -909,7 +909,7 @@ async function initCompose(){
   function refreshLinks(){
     if(!linksBox) return;
     const anchors=[].slice.call(body.querySelectorAll("a"));
-    if(!anchors.length){ linksBox.hidden=true; linksBox.innerHTML=""; return; }
+    if(!anchors.length){ linksBox.hidden=true; linksBox.innerHTML=""; renderOppStatus(); return; }
     linksBox.hidden=false;
     linksBox.innerHTML='<div class="elinks-h">'+t("cmp_links_h")+' <span class="pill">'+anchors.length+'</span></div>'+
       anchors.map((a,i)=>{
@@ -927,24 +927,77 @@ async function initCompose(){
       const a=anchors[+b.getAttribute("data-del")]; if(!a||!a.parentNode) return;
       const p=a.parentNode; while(a.firstChild) p.insertBefore(a.firstChild,a); p.removeChild(a); refreshLinks();
     }));
+    renderOppStatus();
   }
-  el("tbLink").addEventListener("click",()=>openLinkBar(""));
+  el("tbLink").addEventListener("click",()=>{ closeBars(); openLinkBar(""); });
   el("tbUnlink").addEventListener("click",()=>{ cmd("unlink"); refreshLinks(); });
   el("elinkApply").addEventListener("click",applyLink);
   el("elinkCancel").addEventListener("click",()=>{ linkBar.hidden=true; editingAnchor=null; });
   linkUrl.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); applyLink(); } if(e.key==="Escape"){ linkBar.hidden=true; } });
   linkText.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); applyLink(); } });
+
+  // ---- guided "Link to opportunity" flow ----
+  const oppBar=el("eoppbar"), oppText=el("eopptext"), oppStatus=el("eoppstatus"), oppPreview=el("eoppPreview");
+  function closeBars(){ if(linkBar) linkBar.hidden=true; if(oppBar) oppBar.hidden=true; editingAnchor=null; }
+  // Is the opportunity linked anywhere in the body? — as an <a>, or pasted as a raw URL line.
+  function oppLinked(){
+    if(!oppUrl) return false;
+    const anchors=[].slice.call(body.querySelectorAll("a"));
+    if(anchors.some(a=>{ const h=a.getAttribute("href")||""; return h===oppUrl || (slug && h.indexOf("/opp/"+slug)>=0); })) return true;
+    const text=body.innerText||"";
+    return text.indexOf(oppUrl)>=0 || (slug && text.indexOf("/opp/"+slug)>=0);
+  }
+  function renderOppStatus(){
+    if(!oppStatus || !oppUrl) return;
+    const ok=oppLinked();
+    oppStatus.hidden=false; oppStatus.className="eoppstatus "+(ok?"ok":"todo");
+    oppStatus.textContent=(ok?"✓ ":"○ ")+(ok?t("cmp_opp_added"):t("cmp_opp_missing"));
+  }
+  function buildOppPreview(){
+    if(!oppPreview) return;
+    if(!oppObj){ oppPreview.innerHTML='<div class="eopp-note">'+esc(t("cmp_opp_nopreview"))+'</div>'; return; }
+    const title=esc(oppObj.business||slug||""), want=esc((oppObj.fields&&oppObj.fields.WANT)||"");
+    oppPreview.innerHTML=
+      '<iframe class="eopp-thumb" src="'+esc(oppUrl)+'" loading="lazy" referrerpolicy="no-referrer" tabindex="-1" title="preview"></iframe>'+
+      '<div class="eopp-info"><div class="eopp-title">'+title+'</div>'+
+      (want?'<div class="eopp-tag">'+want+'</div>':'')+
+      '<a class="eopp-open mono" href="'+esc(oppUrl)+'" target="_blank" rel="noopener">'+esc(oppUrl)+'</a></div>';
+  }
+  function openOppBar(){
+    closeBars(); buildOppPreview();
+    oppText.value = (savedRange && !savedRange.collapsed) ? savedRange.toString().trim() : "";
+    oppBar.hidden=false; setTimeout(()=>oppText.focus(),30);
+  }
+  function insertOppAnchor(text){
+    const a=document.createElement("a"); a.href=oppUrl; a.setAttribute("data-origin","custom"); a.textContent=text;
+    if(savedRange){ try{ savedRange.deleteContents(); savedRange.insertNode(a); }catch(e){ body.appendChild(a); } }
+    else body.appendChild(a);
+    savedRange=null;
+  }
   const tbOpp=el("tbOpp");
   if(slug && tbOpp){ tbOpp.hidden=false;
     tbOpp.addEventListener("mousedown",e=>e.preventDefault());
     tbOpp.addEventListener("click",()=>{
-      if(savedRange && !savedRange.collapsed){
+      if(savedRange && !savedRange.collapsed){          // words already selected → link them right away
         const a=document.createElement("a"); a.href=oppUrl; a.setAttribute("data-origin","custom");
         try{ a.appendChild(savedRange.extractContents()); savedRange.insertNode(a); savedRange=null; refreshLinks(); }
-        catch(e){ openLinkBar(oppUrl); }
-      } else openLinkBar(oppUrl);
+        catch(e){ openOppBar(); }
+      } else openOppBar();                              // otherwise guide the writer
     });
+    el("eoppInsert").addEventListener("click",()=>{
+      const txt=(oppText.value||"").trim(); if(!txt){ toast(t("cmp_opp_need_text")); return; }
+      insertOppAnchor(txt); oppBar.hidden=true; refreshLinks();
+    });
+    el("eoppLine").addEventListener("click",()=>{
+      const label=(oppText.value||"").trim() || (oppObj&&oppObj.business) || oppUrl;
+      const p=document.createElement("div"); const a=document.createElement("a");
+      a.href=oppUrl; a.setAttribute("data-origin","custom"); a.textContent=label; p.appendChild(a);
+      body.appendChild(p); oppBar.hidden=true; refreshLinks();
+    });
+    el("eoppCancel").addEventListener("click",()=>{ oppBar.hidden=true; });
+    oppText.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); el("eoppInsert").click(); } });
   }
+
   // Paste a URL over selected words → auto-link them.
   body.addEventListener("paste",e=>{
     const txt=((e.clipboardData||window.clipboardData)||{getData:()=>""}).getData("text")||"";
@@ -955,7 +1008,7 @@ async function initCompose(){
       try{ a.appendChild(r.extractContents()); r.insertNode(a); refreshLinks(); }catch(_){}
     }
   });
-  body.addEventListener("input", debounce(refreshLinks, 250));
+  body.addEventListener("input", debounce(()=>{ refreshLinks(); }, 250));
 
   el("efrom").value=getFromName()+" <"+FROM_EMAIL+">";
   let oppObj=null;
@@ -984,7 +1037,10 @@ async function initCompose(){
     if(tplCache[0]) tplSel.value=tplCache[0].id;      // default to first real template, not plain
     const preT=params.get("etpl");
     if(preT!==null && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
-    tplSel.addEventListener("change",()=>applyTemplate(currentTpl()));
+    tplSel.addEventListener("change",()=>{
+      if(tplSel.value===""){ el("esubject").value=""; body.innerHTML=""; refreshLinks(); }  // plain: start from an empty editor
+      else applyTemplate(currentTpl());
+    });
   }
   if(nameEl) nameEl.addEventListener("input",()=>applyTemplate(currentTpl()));
   if(firstEl) firstEl.addEventListener("change",()=>applyTemplate(currentTpl()));
