@@ -671,9 +671,22 @@ function setEmailEndpoint(u){ try{ u?localStorage.setItem(EMAIL_EP,u):localStora
 function getFromName(){ try{ return (localStorage.getItem(FROM_NAME_KEY)||"Thrive"); }catch(e){ return "Thrive"; } }
 function setFromName(v){ try{ v?localStorage.setItem(FROM_NAME_KEY, v):localStorage.removeItem(FROM_NAME_KEY); }catch(e){} }
 /* wrap the message with a branded header (logo) + footer for outgoing mail */
-function brandWrap(inner){
-  const logo="https://"+SITE+"/assets/thrive-logo.png", name=esc(getFromName());
-  return '<div style="font-family:Lato,Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;padding:10px 4px">'
+// Wrap the message body for sending.
+//  branded=false (default): a clean, personal 1:1 email — no logo image, system font,
+//    plain text signature. Reads like a real person wrote it, so it lands in the inbox
+//    instead of Gmail's Promotions tab.
+//  branded=true (opt-in): adds the Thrive logo header for known contacts / announcements.
+function brandWrap(inner, branded){
+  const name=esc(getFromName());
+  const font='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
+  if(!branded){
+    return '<div style="font-family:'+font+';font-size:15px;line-height:1.6;color:#222">'
+      +inner
+      +'<div style="margin-top:18px;color:#444">— '+name+'<br><a href="https://thriveiii.com" style="color:#444;text-decoration:none">thriveiii.com</a></div>'
+      +'</div>';
+  }
+  const logo="https://"+SITE+"/assets/thrive-logo.png";
+  return '<div style="font-family:'+font+';max-width:600px;margin:0 auto;padding:10px 4px">'
     +'<img src="'+logo+'" width="42" height="42" alt="'+name+'" style="display:block;border-radius:10px;margin-bottom:16px">'
     +'<div style="font-size:15px;line-height:1.7;color:#111827">'+inner+'</div>'
     +'<div style="margin-top:24px;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#9aa0aa">'+name+' · thriveiii.com</div>'
@@ -785,9 +798,11 @@ async function initCompose(){
   });
 
   function plainText(){ return body.innerText; }
+  const brandEl=el("ebrand");
+  function isBranded(){ return !!(brandEl && brandEl.checked); }
   el("eCopy").addEventListener("click", async ()=>{
     try{
-      const html=brandWrap(body.innerHTML), text=plainText();
+      const html=brandWrap(body.innerHTML, isBranded()), text=plainText();
       if(navigator.clipboard && window.ClipboardItem){
         await navigator.clipboard.write([new ClipboardItem({
           "text/html": new Blob([html],{type:"text/html"}),
@@ -808,7 +823,7 @@ async function initCompose(){
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
     const ep=getEmailEndpoint();
     if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>location.href="settings.html",1100); return; }
-    const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to, subject:el("esubject").value.trim(), html:brandWrap(body.innerHTML), text:plainText() };
+    const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to, subject:el("esubject").value.trim(), html:brandWrap(body.innerHTML, isBranded()), text:plainText() };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
       const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
