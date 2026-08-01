@@ -68,18 +68,26 @@ const RHITS="thrive_hits_remote_v1";
 function getRemoteHits(){ try{ return JSON.parse(localStorage.getItem(RHITS)||"[]"); }catch(e){ return []; } }
 function setRemoteHits(a){ try{ localStorage.setItem(RHITS, JSON.stringify(a.slice(-2000))); }catch(e){} }
 function hitKey(e){ return (e.type||"open")+"|"+(e.slug||"")+"|"+(e.ts||"")+"|"+(e.vid||""); }
-/* All page events, local + collected, de-duplicated. `opts.includeSelf` keeps your own
-   previews (tagged self:true by the beacon); by default they are excluded so campaign
-   numbers reflect recipients only. */
+/* Which page events count.
+
+   Once collection is live, ONLY collected events count. The local bucket is this browser's
+   own history — it was written before self-visits were tagged, so it is full of the
+   operator's own previews that are indistinguishable from recipient opens. Mixing it in is
+   precisely what made a page nobody was emailed show 3 "opens" while a real campaign showed 0.
+   Local events are the fallback when nothing is being collected, and are labelled as such. */
+function legacyLocalHits(){ return getHits().filter(e=>e && e.self===undefined); }
+function usingCollected(){ return hitsState()==="live"; }
 function allHits(opts){
+  const src = usingCollected() ? getRemoteHits() : getHits();
   const seen={}, out=[];
-  getRemoteHits().concat(getHits()).forEach(e=>{
+  src.forEach(e=>{
     if(!e || (!(opts&&opts.includeSelf) && e.self)) return;
     const k=hitKey(e); if(seen[k]) return; seen[k]=1; out.push(e);
   });
   return out;
 }
-function selfHitCount(){ return getRemoteHits().concat(getHits()).filter(e=>e&&e.self).length; }
+function selfHitCount(){ return (usingCollected()?getRemoteHits():getHits()).filter(e=>e&&e.self).length; }
+function clearLocalHits(){ try{ localStorage.removeItem(HITS); }catch(e){} __opensCache=null; }
 /* Is collection actually working? Distinguishes three states that look identical otherwise:
    "off" (no relay), "stale" (relay answered but doesn't understand analytics — old script),
    "live" (collecting, even if nobody has opened a page yet). */
@@ -184,7 +192,11 @@ const SYNC_EP="thrive_sync_ep", SYNC_AUTH="thrive_sync_auth", SYNC_LAST="thrive_
 let __syncBusy=false, __syncApplying=false, __syncPushT=null, __syncBootstrapped=false;
 function getSyncEndpoint(){ try{ return localStorage.getItem(SYNC_EP)||""; }catch(e){ return ""; } }
 function setSyncEndpoint(u){ try{ u?localStorage.setItem(SYNC_EP,u):localStorage.removeItem(SYNC_EP); }catch(e){} }
-function syncAuth(){ try{ return sessionStorage.getItem(SYNC_AUTH)||""; }catch(e){ return ""; } }
+// Session first, then the device-level copy (see gate.js) so an already-unlocked tab still syncs.
+function syncAuth(){
+  try{ return sessionStorage.getItem(SYNC_AUTH) || localStorage.getItem(SYNC_AUTH) || ""; }
+  catch(e){ return ""; }
+}
 function syncLast(){ try{ return localStorage.getItem(SYNC_LAST)||""; }catch(e){ return ""; } }
 function scalarsUp(){ try{ return parseInt(localStorage.getItem(SCAL_UP)||"0",10)||0; }catch(e){ return 0; } }
 function touchScalars(){ try{ localStorage.setItem(SCAL_UP, String(Date.now())); }catch(e){} }
@@ -1859,7 +1871,15 @@ async function initHome(){
       else if(st==="stale"){ cls="note warn-note"; msg=t("home_data_stale"); }
       else { cls="note warn-note"; msg=t("home_data_local"); }
       note.className=cls;
-      note.innerHTML=msg+(mine? " "+t("home_data_self").replace("{n}", mine) : "");
+      let extra = mine? " "+t("home_data_self").replace("{n}", mine) : "";
+      // Old local events predate self-tagging, so they cannot be told apart from real opens.
+      // While collection is live they are ignored — say so, and offer to clear them.
+      const legacy=legacyLocalHits().length;
+      if(legacy && st==="live") extra+=' '+t("home_data_legacy").replace("{n}", legacy)+
+        ' <button type="button" class="btn ghost sm" id="clrLegacy">'+t("home_clear_legacy")+'</button>';
+      note.innerHTML=msg+extra;
+      const cl=document.getElementById("clrLegacy");
+      if(cl) cl.addEventListener("click",()=>{ clearLocalHits(); toast(t("home_legacy_cleared")); render(); });
     }
 
     /* ---- per-campaign performance ----
@@ -1959,8 +1979,10 @@ async function initHome(){
   window.onLangApplied=render;
   window.onThriveSync=render;                            // live refresh when another device's data arrives
   render();
-  // Collected analytics arrive a moment later; re-render when they land.
-  if(syncAuth()) fetchRemoteHits().then(ok=>{ if(ok) render(); });
+  // Collected analytics arrive a moment later. Re-render either way: a FAILED fetch is also
+  // information (it tells the banner the relay isn't answering) and must not leave a stale
+  // "not collecting" message on screen after the relay has been updated.
+  if(syncAuth()) fetchRemoteHits().finally(()=>render());
 }
 
 /* ---------- insights (analytics) ---------- */

@@ -102,7 +102,14 @@
       busy = false; input.disabled = false;
       if (h === HASH) {
         clearFails();
-        try { sessionStorage.setItem(KEY, HASH); if (sync) sessionStorage.setItem(SYNC_KEY, sync); } catch (ex) {}
+        // The gate token is per-session (locking must really lock). The SYNC credential is a
+        // device capability — derived from the passcode, never the passcode itself — so it is
+        // also kept in localStorage; otherwise a session that reveals from a stored token has
+        // no way to sync or read analytics, and everything silently degrades to "not collecting".
+        try {
+          sessionStorage.setItem(KEY, HASH);
+          if (sync) { sessionStorage.setItem(SYNC_KEY, sync); localStorage.setItem(SYNC_KEY, sync); }
+        } catch (ex) {}
         if (typeof window.logActivity === "function") {
           try { window.logActivity("login", "", "console unlocked"); } catch (ex) {}
         }
