@@ -1,8 +1,8 @@
-/* Thrive Console — access gate (client-side, hardened).
+/* Thrive Console access gate (client-side, hardened).
    The passcode is verified with PBKDF2-SHA256 at 120,000 iterations (offline guessing
    against the public verifier is ~120,000× costlier than a plain hash), and repeated
    wrong attempts trigger an escalating lockout. Unlocking also derives the cross-device
-   sync credential — so the passcode alone opens the full live console on any device.
+   sync credential, so the passcode alone opens the full live console on any device.
    NOTE: a static site on a public repo is still not a server-side boundary; the public
    opp/ result pages are intentionally open so prospects can view shared links. */
 (function () {
@@ -19,11 +19,11 @@
     en: { title: "Thrive Console", sub: "Private workspace. Enter the passcode to continue.",
           ph: "Passcode", go: "Unlock", err: "Incorrect passcode. Try again.",
           wait: "Too many attempts. Try again in ",
-          note: "Prospect result pages stay public — only the console is protected." },
+          note: "Prospect result pages stay public. Only the console is protected." },
     ar: { title: "كونسول ثرايف", sub: "مساحة خاصة. أدخل رمز الدخول للمتابعة.",
           ph: "رمز الدخول", go: "فتح", err: "رمز غير صحيح. حاول مجددًا.",
           wait: "محاولات كثيرة. حاول مجددًا بعد ",
-          note: "صفحات نتائج العملاء تبقى عامة — الكونسول وحده محميّ." }
+          note: "صفحات نتائج العملاء تبقى عامة. الكونسول وحده محميّ." }
   };
   function lang() { try { return localStorage.getItem("thrive_lang") === "ar" ? "ar" : "en"; } catch (e) { return "en"; } }
 
@@ -38,7 +38,7 @@
   }
   function authed() { try { return sessionStorage.getItem(KEY) === HASH; } catch (e) { return false; } }
 
-  /* escalating lockout: after 5 wrong tries, 30s — doubling each further failure (cap 15 min) */
+  /* escalating lockout: after 5 wrong tries, 30s, doubling each further failure (cap 15 min) */
   function failState() { try { return JSON.parse(localStorage.getItem(FAILS) || "{}") || {}; } catch (e) { return {}; } }
   function lockedForMs() {
     var f = failState();
@@ -103,7 +103,7 @@
       if (h === HASH) {
         clearFails();
         // The gate token is per-session (locking must really lock). The SYNC credential is a
-        // device capability — derived from the passcode, never the passcode itself — so it is
+        // device capability (derived from the passcode, never the passcode itself), so it is
         // also kept in localStorage; otherwise a session that reveals from a stored token has
         // no way to sync or read analytics, and everything silently degrades to "not collecting".
         try {

@@ -1,4 +1,4 @@
-/* Thrive Opportunity Library — shared client logic (vanilla JS, no build step) */
+/* Thrive Opportunity Library: shared client logic (vanilla JS, no build step) */
 const SITE = "console.thriveiii.com";  // live host for opp/ result pages
 const OPP_PATH = "/opp/";
 const STORE = "thrive_opps_v1";     // local overlay (drafts + edits + archive flags)
@@ -71,7 +71,7 @@ function hitKey(e){ return (e.type||"open")+"|"+(e.slug||"")+"|"+(e.ts||"")+"|"+
 /* Which page events count.
 
    Once collection is live, ONLY collected events count. The local bucket is this browser's
-   own history — it was written before self-visits were tagged, so it is full of the
+   own history: it was written before self-visits were tagged, so it is full of the
    operator's own previews that are indistinguishable from recipient opens. Mixing it in is
    precisely what made a page nobody was emailed show 3 "opens" while a real campaign showed 0.
    Local events are the fallback when nothing is being collected, and are labelled as such. */
@@ -89,13 +89,13 @@ function allHits(opts){
 function selfHitCount(){ return (usingCollected()?getRemoteHits():getHits()).filter(e=>e&&e.self).length; }
 function clearLocalHits(){ try{ localStorage.removeItem(HITS); }catch(e){} __opensCache=null; }
 /* Is collection actually working? Distinguishes three states that look identical otherwise:
-   "off" (no relay), "stale" (relay answered but doesn't understand analytics — old script),
+   "off" (no relay), "stale" (relay answered but doesn't understand analytics, an old script),
    "live" (collecting, even if nobody has opened a page yet). */
 let __hitsState="off", __hitsErr="";
 function hitsState(){ return __hitsState; }
 function hitsError(){ return __hitsErr; }
 /* Ask the relay what it actually is. Saving the script is not the same as deploying it, and a
-   second deployment serves the OLD code from a different URL — this reports, verbatim, which
+   second deployment serves the OLD code from a different URL. This reports, verbatim, which
    URL the console calls and what that URL answers, so the question is settled in one click. */
 async function relayProbe(){
   await syncBootstrap();
@@ -108,7 +108,7 @@ async function relayProbe(){
   }catch(e){ out.version="(unreachable: "+e.message+")"; }
   out.v4=/v4/.test(out.version);
   const auth=syncAuth();
-  if(!auth){ out.state=out.hits="(not unlocked — no sync credential)"; return out; }
+  if(!auth){ out.state=out.hits="(not unlocked, no sync credential)"; return out; }
   try{
     const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({op:"state_get",auth:auth})});
@@ -118,7 +118,7 @@ async function relayProbe(){
     const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({op:"hits_get",auth:auth})});
     const j=await r.json();
-    out.hits = j.ok? ("ok — "+((j.events||[]).length)+" events") : ("✕ "+(j.error||"failed"));
+    out.hits = j.ok? ("ok: "+((j.events||[]).length)+" events") : ("✕ "+(j.error||"failed"));
   }catch(e){ out.hits="✕ "+e.message; }
   return out;
 }
@@ -165,7 +165,7 @@ function isLive(o){ return !o._local || !!o.published; }
 function effStage(o){ const op=opensForSlug(o.slug); if((!o.stage||o.stage==="sent")&&op>0) return "opened"; return o.stage||"sent"; }
 function needsFollowup(o){ return isLive(o) && !o.archived && effStage(o)==="sent" && opensForSlug(o.slug)===0 && daysSince(o.sent_on)>=3; }
 
-/* ---------- opportunity HTML (regenerated on demand — not stored, to save space) ---------- */
+/* ---------- opportunity HTML (regenerated on demand, not stored, to save space) ---------- */
 const __tplCache={};
 async function fetchTemplateHtml(idT){
   if(__tplCache[idT]) return __tplCache[idT];
@@ -213,10 +213,10 @@ function importBackup(obj){
 
 /* ---------- live cross-device sync ----------
    One shared state document, stored by the same Apps Script relay that sends email.
-   Unlocking the gate derives the sync credential (PBKDF2 of the passcode — gate.js), so the
+   Unlocking the gate derives the sync credential (PBKDF2 of the passcode, see gate.js), so the
    passcode alone opens the SAME live console on every device: send counter, mail ledger,
    threads, drafts, email templates, settings. The endpoint bootstraps from library/sync.json
-   (committed once from a configured device) — zero setup on each new device.
+   (committed once from a configured device): zero setup on each new device.
    Merge is union-based: sends/replies/activity dedupe by id, drafts+templates newest-wins.
    The GitHub token is deliberately NEVER synced. Page html stays device-local (repo has it). */
 const SYNC_EP="thrive_sync_ep", SYNC_AUTH="thrive_sync_auth", SYNC_LAST="thrive_sync_last", SCAL_UP="thrive_scalars_up";
@@ -309,7 +309,7 @@ async function doSyncRound(ep, auth){
     body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
   const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
   try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
-  // Analytics share this endpoint and credential — refresh them in the same round. Without
+  // Analytics share this endpoint and credential, so refresh them in the same round. Without
   // this, a page that syncs right after unlocking never re-checks collection and sits on a
   // stale "not collecting" message no matter how the relay is actually deployed.
   try{ await fetchRemoteHits(); }catch(e){}
@@ -336,7 +336,7 @@ async function syncNow(){
       if(fresh && fresh!==ep){
         try{ await doSyncRound(fresh, auth); setSyncEndpoint(fresh); __syncErr=""; return true; }
         // If the published endpoint fails too, the FIRST error is the actionable one (it describes
-        // the endpoint the user actually configured) — don't mask it with the fallback's error.
+        // the endpoint the user actually configured): don't mask it with the fallback's error.
         catch(e2){ __syncErr=classifySyncError(e1.message); return false; }
       }
       __syncErr=classifySyncError(e1.message); return false;
@@ -395,7 +395,7 @@ async function ghPutFile(path, text, message){
   const body={ message:message, content:b64(text), branch:(c.branch||"main") };
   if(existing && existing.sha) body.sha=existing.sha;
   const r=await ghApi("/contents/"+path, {method:"PUT", body:JSON.stringify(body)});
-  if(!r.ok) throw new Error("GitHub "+r.status+" — "+(await r.text()).slice(0,140));
+  if(!r.ok) throw new Error("GitHub "+r.status+": "+(await r.text()).slice(0,140));
   return r.json();
 }
 async function ghDeleteFile(path, message){
@@ -414,7 +414,7 @@ function manifestEntry(rec){
   return { slug:rec.slug, business:rec.business||"", template:rec.template||"", sent_on:rec.sent_on||"",
     location:rec.location||"", phone:rec.phone||"", status:rec.status||"sent" };
 }
-/* Every published page MUST carry the beacon, or it can never record an open — an uploaded
+/* Every published page MUST carry the beacon, or it can never record an open. An uploaded
    page authored elsewhere has no way to know that. Inject it at publish time when missing,
    so analytics are complete by construction instead of by luck. */
 const BEACON_TAG='<script src="/beacon.js" defer></'+'script>';
@@ -528,7 +528,7 @@ async function initDashboard(){
       const da=(a.sent_on||""), db=(b.sent_on||"");
       return state.sort==="old" ? da.localeCompare(db) : db.localeCompare(da);
     });
-    // pipeline summary — rendered BEFORE the empty-grid guard so the pills, active-filter
+    // pipeline summary, rendered BEFORE the empty-grid guard so the pills, active-filter
     // highlight, and clear button stay correct even when a filter yields zero cards.
     const pipelineEl=document.getElementById("pipeline");
     if(pipelineEl){
@@ -618,7 +618,7 @@ async function initDashboard(){
       if(!confirm(t("confirm_unpublish"))) return;
       b.disabled=true; b.textContent=t("publishing");
       try{
-        // Capture the live page BEFORE deleting — for opps published on another device we have no
+        // Capture the live page BEFORE deleting: for opps published on another device we have no
         // local fields to regenerate from, so keep the real HTML so re-publishing isn't blank.
         const hasFields=o.fields && Object.keys(o.fields).some(k=>o.fields[k]);
         let liveHtml=(o.mode==="upload" && o.html)?o.html:"";
@@ -752,7 +752,7 @@ async function initEditor(){
       phone:el("f_phone").value.trim(), status:"sent", mode:mode, published:editingLive,
       fields:{ QUOTE:v.QUOTE, QUOTE_BY:v.QUOTE_BY, PROOF1:v.PROOF1, PROOF2:v.PROOF2, PROOF3:v.PROOF3, WANT:v.WANT } };
   }
-  // store the page HTML only for uploads (template drafts regenerate on demand — saves storage)
+  // store the page HTML only for uploads (template drafts regenerate on demand, which saves storage)
   async function fullRecord(){ const r=record(); if(mode==="upload") r.html=uploadedHTML||""; else delete r.html; return r; }
 
   // mode switch
@@ -923,7 +923,7 @@ function initActivity(){
     if(m.direction==="in"||m.status==="replied") return t("mst_reply");
     if(m.status==="copied") return t("mst_copied");
     if(m.status==="sent") return t("mst_sent");
-    return esc(m.status||"—");
+    return esc(m.status||"–");
   }
   function renderThreads(){
     const wrap=el("campaigns"); if(!wrap) return;
@@ -949,7 +949,7 @@ function initActivity(){
         const pv=m.preview?'<div class="mprev">'+esc(m.preview)+'</div>':'';
         return '<div class="msg"><div class="msg-top">'+dir+'<span class="mono msg-time">'+esc(fmt(m.ts))+'</span>'+
           '<span class="tag">'+statusLabel(m)+'</span>'+tp+br+'</div>'+
-          '<div class="msg-subj">'+esc(m.subject||"—")+'</div>'+pv+'</div>';
+          '<div class="msg-subj">'+esc(m.subject||"–")+'</div>'+pv+'</div>';
       }).join("");
       return '<details class="thread"><summary>'+
         '<div class="th-main"><span class="th-who">'+who+'</span><span class="th-meta">'+oppB+tplB+'</span></div>'+
@@ -982,7 +982,7 @@ function initActivity(){
     if(!rows.length){ wrap.innerHTML='<div class="empty">'+t("act_empty")+'</div>'; return; }
     wrap.innerHTML='<div class="logwrap"><table class="logtable"><thead><tr>'+
       '<th>'+t("act_time")+'</th><th>'+t("act_category")+'</th><th>'+t("act_action")+'</th><th>'+t("act_item")+'</th><th>'+t("act_detail")+'</th></tr></thead><tbody>'+
-      rows.map(r=>`<tr><td class="mono">${esc(fmt(r.ts))}</td><td><span class="tag tag-cat-${esc(actCat(r.action))}">${t("cat_"+actCat(r.action))}</span></td><td><span class="tag tag-${esc(r.action)}">${esc(actionLabel(r.action))}</span></td><td class="mono">${esc(r.slug)||"—"}</td><td>${esc(r.detail)||"—"}</td></tr>`).join("")+
+      rows.map(r=>`<tr><td class="mono">${esc(fmt(r.ts))}</td><td><span class="tag tag-cat-${esc(actCat(r.action))}">${t("cat_"+actCat(r.action))}</span></td><td><span class="tag tag-${esc(r.action)}">${esc(actionLabel(r.action))}</span></td><td class="mono">${esc(r.slug)||"–"}</td><td>${esc(r.detail)||"–"}</td></tr>`).join("")+
       '</tbody></table></div>';
   }
   el("logRefresh").addEventListener("click",render);
@@ -1020,7 +1020,7 @@ function setFromName(v){ try{ v?localStorage.setItem(FROM_NAME_KEY, v):localStor
    Resend's free plan allows 100 emails/day and 3,000/month. We keep a compact list of the
    timestamps of real sends made from this browser, prune it to 31 days, and derive usage
    over a rolling 24h window (each send frees exactly 24h later) and a rolling 30d window.
-   This only counts sends from THIS device — Resend's dashboard is the true source of truth;
+   This only counts sends from THIS device. Resend's dashboard is the true source of truth;
    this is a safety rail to stay comfortably under the free tier. */
 const QUOTA = "thrive_quota_v1";               // array of send timestamps (ms)
 const QUOTA_CFG = "thrive_quota_cfg_v1";       // { daily, monthly }
@@ -1044,7 +1044,7 @@ function quotaUsage(){
 function fmtDur(ms){ const h=Math.floor(ms/3600000), m=Math.round((ms%3600000)/60000); return (h>0? h+"h ":"")+m+"m"; }
 /* wrap the message with a branded header (logo) + footer for outgoing mail */
 // Wrap the message body for sending.
-//  branded=false (default): a clean, personal 1:1 email — no logo image, system font,
+//  branded=false (default): a clean, personal 1:1 email, no logo image, system font,
 //    plain text signature. Reads like a real person wrote it, so it lands in the inbox
 //    instead of Gmail's Promotions tab.
 //  branded=true (opt-in): adds the Thrive logo header for known contacts / announcements.
@@ -1054,7 +1054,7 @@ function brandWrap(inner, branded){
   if(!branded){
     return '<div style="font-family:'+font+';font-size:15px;line-height:1.6;color:#222">'
       +inner
-      +'<div style="margin-top:18px;color:#444">— '+name+'<br><a href="https://thriveiii.com" style="color:#444;text-decoration:none">thriveiii.com</a></div>'
+      +'<div style="margin-top:18px;color:#444">– '+name+'<br><a href="https://thriveiii.com" style="color:#444;text-decoration:none">thriveiii.com</a></div>'
       +'</div>';
   }
   const logo="https://"+SITE+"/assets/thrive-logo.png";
@@ -1067,11 +1067,11 @@ function brandWrap(inner, branded){
 
 /* email templates (reusable subject + body with merge fields) */
 const ETPL = "thrive_email_templates_v1";
-/* The monthly template is month-aware ({{MONTH}} — the composer asks which month) and ships
+/* The monthly template is month-aware ({{MONTH}}: the composer asks which month) and ships
    with NO embedded opportunity link: the writer decides which words carry it (guided flow). */
 const ETPL_MONTHLY = { id:"monthly", name:"Monthly update", subject:"{{MONTH}} at Thrive",
   html:'Hi {{NAME}},<br><br>End of the month, so here is {{MONTH}} at Thrive. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com' };
-/* Arabic edition of the stock template — a real Arabic message, not a translation of labels
+/* Arabic edition of the stock template, a real Arabic message, not a translation of labels
    around English text. Greeting is «مرحبًا فلان،», not "Hi …". */
 const ETPL_MONTHLY_AR = { id:"monthly-ar", name:"التحديث الشهري", subject:"{{MONTH}} في ثرايف",
   html:'مرحبًا {{NAME}}،<br><br>مع نهاية الشهر، هذا هو {{MONTH}} في ثرايف. نحن نختار العمل الذي نفخر به. إن كان ذلك يناسبك، تكفي كلمة.<br><br>إلى الشهر القادم!<br><br>عبدالله ذياب<br>thriveiii.com' };
@@ -1095,11 +1095,11 @@ function getEmailTemplates(){
 function setEmailTemplates(a){ return lsSet(ETPL, JSON.stringify(a)); }
 function saveEmailTemplate(rec){ rec.up=Date.now(); const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
 function removeEmailTemplate(id){ setEmailTemplates(getEmailTemplates().filter(x=>x.id!==id)); }
-/* Merge fields — two variants:
+/* Merge fields, two variants:
    - mergeFieldsText: plain replacements for the subject input (.value, never HTML).
    - mergeFieldsHtml: for the body. Values are escaped (a name like "<img onerror=…>" must never
      execute in the console origin), and NAME/MONTH become tagged spans so the editor can keep
-     them in sync live — even after the writer has edited the rest of the message. */
+     them in sync live, even after the writer has edited the rest of the message. */
 function mergeFieldsText(str, o, name, month){
   return (str||"").split("{{BIZ}}").join((o&&o.business)||"")
     .split("{{LINK}}").join(o?liveUrl(o.slug):"")
@@ -1116,14 +1116,14 @@ function mergeFieldsHtml(str, o, name, month){
 }
 function tplUsesMonth(tp){ return !!tp && /\{\{MONTH\}\}/.test((tp.subject||"")+(tp.html||"")); }
 
-/* mail log — every send/copy/reply, per recipient (campaign documentation) */
+/* mail log: every send/copy/reply, per recipient (campaign documentation) */
 const MAILLOG = "thrive_mail_v1";
 function getMailLog(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)||"[]"); }catch(e){ return []; } }
 function setMailLog(a){ lsSet(MAILLOG, JSON.stringify(a.slice(-800))); }
 // Normalise a subject into a stable conversation root (strip Re:/Fwd:/رد: prefixes).
 function subjRoot(s){ return (s||"").replace(/^\s*(re|fwd|fw|رد|إعادة\s*توجيه)\s*:\s*/i,"").replace(/^\s*(re|fwd|fw|رد)\s*:\s*/i,"").trim().toLowerCase().slice(0,80); }
 // A thread groups every message to one recipient about one opportunity (or, with no
-// opportunity, one subject line) — so template sends, plain sends, and replies chain together.
+// opportunity, one subject line), so template sends, plain sends, and replies chain together.
 function threadKey(to, opp, subject){
   const person=(to||"").trim().toLowerCase();
   const root=((opp||"").trim().toLowerCase()) || subjRoot(subject) || "(no-subject)";
@@ -1146,7 +1146,7 @@ function getThreads(){
   const mail=getMailLog(), map={};
   mail.forEach(m=>{
     const k=m.thread||threadKey(m.to,m.opp,m.subject);
-    const th=map[k]||(map[k]={ id:k, to:(m.to||"—"), toName:(m.toName||""), opp:(m.opp||""), msgs:[], templates:[], sent:0, replied:0, first:m.ts, last:m.ts });
+    const th=map[k]||(map[k]={ id:k, to:(m.to||"–"), toName:(m.toName||""), opp:(m.opp||""), msgs:[], templates:[], sent:0, replied:0, first:m.ts, last:m.ts });
     th.msgs.push(m);
     if(m.toName && !th.toName) th.toName=m.toName;
     if(m.opp && !th.opp) th.opp=m.opp;
@@ -1188,7 +1188,7 @@ async function initCompose(){
     const r=s.getRangeAt(0);
     if(body.contains(r.commonAncestorContainer) && !r.collapsed) savedRange=r.cloneRange();
   });
-  // Accept bare domains, emails, and phone numbers — turn them into valid hrefs.
+  // Accept bare domains, emails, and phone numbers, turning them into valid hrefs.
   function normalizeUrl(u){
     u=(u||"").trim(); if(!u) return "";
     if(/^(https?:|mailto:|tel:|#|\/)/i.test(u)) return u;
@@ -1240,7 +1240,7 @@ async function initCompose(){
     linkBar.hidden=true; editingAnchor=null; savedRange=null;
     refreshLinks();
   }
-  // "Links in this message" manager — every link is visible, editable, removable.
+  // "Links in this message" manager: every link is visible, editable, removable.
   function refreshLinks(){
     if(!linksBox) return;
     const anchors=[].slice.call(body.querySelectorAll("a"));
@@ -1250,7 +1250,7 @@ async function initCompose(){
       anchors.map((a,i)=>{
         const tpl=a.getAttribute("data-origin")==="template";
         const badge=tpl?'<span class="tag tag-templates">'+t("cmp_link_tpl")+'</span>':'<span class="tag tag-plain">'+t("cmp_link_custom")+'</span>';
-        return '<div class="elink-item"><div class="elink-info"><span class="elink-text">'+esc(a.textContent||"—")+'</span>'+badge+
+        return '<div class="elink-item"><div class="elink-info"><span class="elink-text">'+esc(a.textContent||"–")+'</span>'+badge+
           '<span class="elink-url mono">'+esc(a.getAttribute("href")||"")+'</span></div>'+
           '<div class="elink-acts"><button type="button" class="btn ghost sm" data-edit="'+i+'">'+t("cmp_link_edit")+'</button>'+
           '<button type="button" class="btn ghost sm danger" data-del="'+i+'">'+t("cmp_link_remove")+'</button></div></div>';
@@ -1274,7 +1274,7 @@ async function initCompose(){
   // ---- guided "Link to opportunity" flow ----
   const oppBar=el("eoppbar"), oppText=el("eopptext"), oppStatus=el("eoppstatus"), oppPreview=el("eoppPreview");
   function closeBars(){ if(linkBar) linkBar.hidden=true; if(oppBar) oppBar.hidden=true; editingAnchor=null; }
-  // Is the opportunity linked anywhere in the body? — as an <a>, or pasted as a raw URL line.
+  // Is the opportunity linked anywhere in the body? As an <a>, or pasted as a raw URL line.
   function oppLinked(){
     if(!oppUrl) return false;
     const anchors=[].slice.call(body.querySelectorAll("a"));
@@ -1352,7 +1352,7 @@ async function initCompose(){
         monthEl=el("emonth"), monthWrap=el("emonthWrap");
   let tplCache=getEmailTemplates();                       // parse localStorage once, not on every keystroke
   const refreshTplCache=()=>{ tplCache=getEmailTemplates(); };
-  let subjectDirty=false;                                 // writer edited the subject by hand — stop recomputing it
+  let subjectDirty=false;                                 // writer edited the subject by hand, so stop recomputing it
   function recipientName(){
     const n=(nameEl?nameEl.value.trim():"");
     if(firstEl && firstEl.checked && n) return n.split(/\s+/)[0];
@@ -1367,10 +1367,10 @@ async function initCompose(){
     catch(e){ return new Date().toLocaleString("en",{month:"long"}); }
   }
   if(monthEl && !monthEl.value) monthEl.value=defaultMonth(null);
-  // Empty selection ("") is an intentional plain, template-less message — currentTpl() returns null.
+  // Empty selection ("") is an intentional plain, template-less message: currentTpl() returns null.
   function currentTpl(){ if(tplSel && tplSel.value==="") return null; return tplCache.find(x=>x.id===(tplSel?tplSel.value:"monthly")) || tplCache[0]; }
   // Live merge sync: NAME/MONTH live in tagged spans, so typing the recipient's name or the month
-  // updates them IN PLACE — it never re-renders (and can never wipe) the writer's edited message.
+  // updates them IN PLACE: it never re-renders (and can never wipe) the writer's edited message.
   function syncMerge(){
     const nm=recipientName()||"there", mo=monthVal();
     body.querySelectorAll('[data-m="name"]').forEach(s=>{ s.textContent=nm; });
@@ -1381,7 +1381,7 @@ async function initCompose(){
   function applyTemplate(tp){
     if(monthWrap) monthWrap.hidden=!tplUsesMonth(tp);
     if(!tp) return;                                  // plain: leave whatever the user has typed
-    // Put the month in the template's own language (an Arabic template wants «أغسطس») — but
+    // Put the month in the template's own language (an Arabic template wants «أغسطس»), but
     // never discard a month the writer typed: only fill it when empty or when the script
     // doesn't match the template (e.g. an English month left over on an Arabic template).
     if(monthEl && tplUsesMonth(tp)){
@@ -1507,7 +1507,7 @@ async function initCompose(){
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
     const ep=getEmailEndpoint();
     if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>location.href="settings.html",1100); return; }
-    // Resend free-tier guard — block before we would exceed the daily/monthly cap.
+    // Resend free-tier guard: block before we would exceed the daily/monthly cap.
     const q=quotaUsage();
     if(q.dayFull){ toast(t("cmp_quota_day_hit")+(q.freeInMs>0?" "+t("cmp_quota_resets")+" "+fmtDur(q.freeInMs):"")); return; }
     if(q.monthFull){ toast(t("cmp_quota_month_hit")); return; }
@@ -1570,7 +1570,7 @@ function initSettings(){
     el("sy_ep").value=getSyncEndpoint()||getEmailEndpoint();
     const syStatus=el("syStatus");
     function syShow(msg, cls){ syStatus.hidden=false; syStatus.textContent=msg; syStatus.className="gh-result "+(cls||""); }
-    // What this device actually holds — so "where did my sends go?" is answerable at a glance.
+    // What this device actually holds, so "where did my sends go?" is answerable at a glance.
     function syCounts(){
       const c=el("syCounts"); if(!c) return;
       const mail=getMailLog(), sent=mail.filter(m=>m.status==="sent").length;
@@ -1589,7 +1589,7 @@ function initSettings(){
       syShow(t("sy_syncing"),"");
       const ok=await syncPush();
       if(ok){ sySummary(); toast(t("sy_pushed")); }
-      else syShow("✕ "+t("sy_fail")+(syncErrHint()?" — "+syncErrHint():""),"warn");
+      else syShow("✕ "+t("sy_fail")+(syncErrHint()?": "+syncErrHint():""),"warn");
     });
     // Check a URL BEFORE trusting it. Apps Script hands out a new URL per deployment, so it is
     // easy to end up calling an old one that still serves the previous code.
@@ -1606,14 +1606,14 @@ function initSettings(){
       if(!ep){ toast(t("sy_need_ep")); return; }
       syShow(t("testing"),"");
       const v=await verifyUrl(ep);
-      syShow((v.ok?"✓ ":"✕ ")+(v.version||"—")+(v.ok?"":" — "+v.msg), v.ok?"ok":"warn");
+      syShow((v.ok?"✓ ":"✕ ")+(v.version||"–")+(v.ok?"":": "+v.msg), v.ok?"ok":"warn");
     });
     el("syEnable").addEventListener("click", async ()=>{
       const ep=el("sy_ep").value.trim();
       if(!ep){ toast(t("sy_need_ep")); return; }
-      // Refuse to publish a URL that isn't a v4 relay — publishing a stale one breaks every device.
+      // Refuse to publish a URL that isn't a v4 relay: publishing a stale one breaks every device.
       const v=await verifyUrl(ep);
-      if(!v.ok){ syShow("✕ "+(v.version||"—")+" — "+v.msg+" "+t("sy_v_howto"), "warn"); return; }
+      if(!v.ok){ syShow("✕ "+(v.version||"–")+": "+v.msg+" "+t("sy_v_howto"), "warn"); return; }
       setSyncEndpoint(ep); setEmailEndpoint(ep);        // one relay serves email, sync and analytics
       touchScalars();
       // commit library/sync.json so every device that unlocks the gate finds the endpoint itself
@@ -1623,12 +1623,12 @@ function initSettings(){
       } else syShow(t("sy_local_only"),"warn");
       logActivity("settings","","sync");
       const ok=await syncNow();
-      if(ok) sySummary(); else if(syncErrHint()) syShow("✕ "+t("sy_fail")+" — "+syncErrHint(),"warn");
+      if(ok) sySummary(); else if(syncErrHint()) syShow("✕ "+t("sy_fail")+": "+syncErrHint(),"warn");
     });
     el("syNow").addEventListener("click", async ()=>{
       syShow(t("sy_syncing"),"");
       const ok=await syncNow();
-      if(ok) sySummary(); else syShow("✕ "+t("sy_fail")+(syncErrHint()?" — "+syncErrHint():""),"warn");
+      if(ok) sySummary(); else syShow("✕ "+t("sy_fail")+(syncErrHint()?": "+syncErrHint():""),"warn");
     });
   }
   if(el("q_daily")){
@@ -1754,7 +1754,7 @@ function initTemplates(){
     if(!id){ toast(t("tpl_need_id")); return; }
     const reserved=APPROVED_TEMPLATES.some(t2=>t2.id===id);
     if(reserved){ toast(t("tpl_id_taken")); return; }
-    // An existing custom id would be silently overwritten — ask first.
+    // An existing custom id would be silently overwritten, so ask first.
     if(getCustomTemplate(id) && !confirm(t("tpl_confirm_overwrite"))) return;
     const ok=saveCustomTemplate({ id, name:el("tpl_name").value.trim()||id, lang:el("tpl_lang").value||"EN",
       html:pendingHTML, created:new Date().toISOString() });
@@ -1818,7 +1818,7 @@ function initTemplates(){
             ${usesMonth?`<span class="chip tmpl">${t("et_asks_month")}</span>`:""}
             ${/\{\{LINK\}\}/.test(et.html||"")?`<span class="chip">${t("et_has_link")}</span>`:""}
           </div>
-          <p class="meta-line"><b>${esc(et.subject||"—")}</b></p>
+          <p class="meta-line"><b>${esc(et.subject||"–")}</b></p>
           <p class="meta-line">${esc(etPreview(et.html))}</p>
           <div class="actions">
             <a class="btn sm" href="compose.html?etpl=${encodeURIComponent(et.id)}">${t("cmp_compose_with")}</a>
@@ -1849,8 +1849,8 @@ function initTemplates(){
 }
 
 /* ---------- Overview home: outreach + page performance in one room ---------- */
-function fmtMs(ms){ if(!ms) return "—"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
-function fmtWhen(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||"—"; } }
+function fmtMs(ms){ if(!ms) return "–"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
+function fmtWhen(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||"–"; } }
 /* roll raw beacon events into per-slug page stats */
 function aggregateHits(events){
   const bySlug={};
@@ -1866,8 +1866,8 @@ function aggregateHits(events){
 }
 async function initHome(){
   const el=id=>document.getElementById(id);
-  // Every metric carries its own explanation. The ⓘ is pinned to the tile's top corner —
-  // trailing edge, so top-right in English and top-left in Arabic — never inline with the
+  // Every metric carries its own explanation. The ⓘ is pinned to the tile's top corner,
+  // trailing edge, so top-right in English and top-left in Arabic, never inline with the
   // label (which made it wrap onto a second line and look scattered).
   const tile=(v,k,cls,tip)=>'<div class="tile'+(cls?" "+cls:"")+'">'+
     (tip?'<button type="button" class="info tile-info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button>':'')+
@@ -1885,7 +1885,7 @@ async function initHome(){
   async function render(){
     syncPill();
     const mail=getMailLog(), q=quotaUsage(), opps=await mergedOpps();
-    const hits=allHits(), pages=aggregateHits(hits);     // recipients only — own previews excluded
+    const hits=allHits(), pages=aggregateHits(hits);     // recipients only, own previews excluded
 
     // ---- outreach ----
     const sent=mail.filter(m=>m.status==="sent").length;
@@ -1916,7 +1916,7 @@ async function initHome(){
       tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("ins_avg_dwell"), "", t("tip_dwell"))+
       tile(fu, t("followup"), fu?"t-warn":"", t("tip_followup"));
     // Honest note about where these numbers come from. "No opens yet" is a healthy state and
-    // must not be reported as "not collecting" — those are different problems.
+    // must not be reported as "not collecting": those are different problems.
     const note=el("homeDataNote");
     if(note){
       const st=hitsState(), mine=selfHitCount();
@@ -1929,7 +1929,7 @@ async function initHome(){
       note.className=cls;
       let extra = mine? " "+t("home_data_self").replace("{n}", mine) : "";
       // Old local events predate self-tagging, so they cannot be told apart from real opens.
-      // While collection is live they are ignored — say so, and offer to clear them.
+      // While collection is live they are ignored, so say so, and offer to clear them.
       const legacy=legacyLocalHits().length;
       if(legacy && st==="live") extra+=' '+t("home_data_legacy").replace("{n}", legacy)+
         ' <button type="button" class="btn ghost sm" id="clrLegacy">'+t("home_clear_legacy")+'</button>';
@@ -1947,7 +1947,7 @@ async function initHome(){
         box.hidden=false; box.className="note "+(p.v4?"":"warn-note");
         box.innerHTML='<b>'+t("home_probe_h")+'</b><br>'+
           t("home_probe_url")+' <span class="mono">…'+esc(p.tail)+'/exec</span><br>'+
-          t("home_probe_ver")+' <span class="mono">'+esc(p.version||"—")+'</span><br>'+
+          t("home_probe_ver")+' <span class="mono">'+esc(p.version||"–")+'</span><br>'+
           t("home_probe_sync")+' <span class="mono">'+esc(p.state)+'</span><br>'+
           t("home_probe_hits")+' <span class="mono">'+esc(p.hits)+'</span>'+
           (p.v4? '' : '<br><br>'+t("home_probe_notv4"));
@@ -1987,9 +1987,9 @@ async function initHome(){
         rows.map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.biz)+'</a>'+
           (r.live?'':' <span class="tag tag-plain">'+t("draft")+'</span>')+'</td>'+
           '<td>'+num(r.sent)+'</td><td>'+num(r.opens)+'</td><td>'+num(r.uniq)+'</td>'+
-          '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):'<span class="zero">—</span>')+'</td>'+
+          '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):'<span class="zero">–</span>')+'</td>'+
           '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
-          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">—</span>')+'</td></tr>').join("")+
+          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">–</span>')+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_no_campaigns")+'</div>';
 
@@ -2001,8 +2001,8 @@ async function initHome(){
         hth(t("ins_dwell"),t("tip_dwell"))+hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
         opened.slice(0,10).map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.slug)+'</a></td>'+
           '<td><b>'+r.opens+'</b></td><td>'+r.vids.size+'</td>'+
-          '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):"—")+'</td>'+
-          '<td class="mono">'+(r.lastTs?esc(fmtWhen(r.lastTs)):"—")+'</td></tr>').join("")+
+          '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):"–")+'</td>'+
+          '<td class="mono">'+(r.lastTs?esc(fmtWhen(r.lastTs)):"–")+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_no_opens")+'</div>';
   }
@@ -2012,7 +2012,7 @@ async function initHome(){
     render(); checkBeacons();
   });
 
-  /* A page published from an uploaded file may have no beacon — it then records zero opens
+  /* A page published from an uploaded file may have no beacon: it then records zero opens
      forever, which is exactly how a real campaign ends up showing 0. Detect those live pages
      and offer a one-click repair that re-publishes them with the beacon added. */
   let unmeasured=[];
@@ -2062,8 +2062,8 @@ async function initInsights(){
   const el=id=>document.getElementById(id);
   el("epInput").value = getEndpoint();
 
-  function fmtDur(ms){ if(!ms) return "—"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
-  function fmtDate(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||"—"; } }
+  function fmtDur(ms){ if(!ms) return "–"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
+  function fmtDate(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||"–"; } }
 
   async function fetchData(){
     const ep=getEndpoint();
@@ -2106,7 +2106,7 @@ async function initInsights(){
     el("insSource").className = "pill "+(source==="remote"?"ok":"warn");
     const totOpens=rows.reduce((s,r)=>s+r.opens,0);
     const uniq=new Set(); events.forEach(e=>e.vid&&uniq.add(e.vid));
-    // Average dwell PER VIEW (pool all views), not the mean of per-page means — otherwise a
+    // Average dwell PER VIEW (pool all views), not the mean of per-page means, because otherwise a
     // one-view page skews the headline as much as a hundred-view page.
     const dw=rows.reduce((a,r)=>{ a.ms+=r.dwellMs; a.n+=r.dwellN; return a; }, {ms:0,n:0});
     const avgDwell=dw.n? dw.ms/dw.n : 0;
@@ -2122,8 +2122,8 @@ async function initInsights(){
       `<th>${t("ins_item")}</th><th>${t("ins_opens")}</th><th>${t("ins_unique")}</th><th>${t("ins_ips")}</th><th>${t("ins_dwell")}</th><th>${t("ins_last")}</th><th>${t("ins_trend")}</th></tr></thead><tbody>`+
       rows.map(r=>`<tr>
         <td><a class="link" href="${relOpp(r.slug)}" target="_blank" rel="noopener">${esc(r.slug)}</a></td>
-        <td><b>${r.opens}</b></td><td>${r.vids.size}</td><td>${r.ips.size||"—"}</td>
-        <td>${r.dwellN?fmtDur(r.dwellMs/r.dwellN):"—"}</td><td class="mono">${r.lastTs?esc(fmtDate(r.lastTs)):"—"}</td>
+        <td><b>${r.opens}</b></td><td>${r.vids.size}</td><td>${r.ips.size||"–"}</td>
+        <td>${r.dwellN?fmtDur(r.dwellMs/r.dwellN):"–"}</td><td class="mono">${r.lastTs?esc(fmtDate(r.lastTs)):"–"}</td>
         <td>${spark(r.days)}</td></tr>`).join("")+'</tbody></table></div>';
   }
 

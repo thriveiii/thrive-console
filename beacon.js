@@ -1,12 +1,12 @@
-/* Thrive prospect-page beacon — privacy-first, self-contained.
+/* Thrive prospect-page beacon: privacy-first, self-contained.
    Records an "open" event and dwell time for opp/<slug> pages.
 
    Where the data goes:
      • Always to same-origin localStorage (so a page you open yourself is visible instantly).
-     • And, when live sync is configured, to the Thrive relay — the SAME Apps Script that sends
+     • And, when live sync is configured, to the Thrive relay, the SAME Apps Script that sends
        your email. That is what makes recipient opens real: without it an open only ever exists
        in the visitor's own browser and never reaches your console.
-   The endpoint is discovered automatically from /library/sync.json — nothing to configure here.
+   The endpoint is discovered automatically from /library/sync.json, so there is nothing to configure here.
 
    Self-visits are tagged (self:true) when the viewer is the console operator (their browser
    holds an unlocked console session), so your own previews never inflate campaign numbers.
@@ -19,7 +19,7 @@
   var HITS = "thrive_hits_v1";
   var EP_CACHE = "thrive_beacon_ep";
 
-  // Only count real, top-level opp/ page views — never editor/template previews,
+  // Only count real, top-level opp/ page views, never editor/template previews,
   // gallery thumbnails, or any embedded iframe.
   try { if (window.top !== window.self) return; } catch (e) { return; }
   var m = location.pathname.match(/\/opp\/([^\/]+)/);
@@ -27,7 +27,7 @@
   var slug = decodeURIComponent(m[1]);
 
   // Is this the console operator previewing their own page? Their browser holds an unlocked
-  // console session on this same origin. Tagged, not dropped — the console filters it.
+  // console session on this same origin. Tagged, not dropped: the console filters it.
   function isSelf() {
     try { return !!sessionStorage.getItem("thrive_gate_v2"); } catch (e) { return false; }
   }

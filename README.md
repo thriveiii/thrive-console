@@ -19,8 +19,23 @@ No Netlify, no per-deploy credits. Just a GitHub repo served by GitHub Pages, wi
 /templates/en-opp1/    the approved "Signal Brief" template (tokenized)
 /opp/<slug>/index.html one live page per prospect  ->  console.thriveiii.com/opp/<slug>
 /assets/               the Thrive logo
+/Brain/                the deep-knowledge archive behind this work, plus the pre-publish checklist
+/tools/verify.js       the verify gate: run it before every push
 CNAME                  thriveiii.com
 ```
+
+### Before every push
+
+```bash
+node tools/verify.js
+```
+
+It parses every script, refuses any secret-shaped string, asserts EN/AR key parity and that
+every `data-i18n` key exists in both languages, and enforces the house copy rules (no em
+dash, Western numerals, straight quotes in English, guillemets in Arabic, tanwin on the
+letter). It also checks that every console page carries the boot failsafe and that every
+published prospect page carries the analytics beacon. `Brain/CHECKLIST.md` covers the rest,
+the part that still needs a person.
 
 Approved templates today: **en-opp1** (English, Lato) and **ar-opp1** (Arabic RTL, Alyamama). Both fonts are embedded inside each page as base64, so the pages render identically on Windows, macOS, iOS and Android with nothing to install.
 

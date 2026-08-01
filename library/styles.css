@@ -111,7 +111,7 @@ select{cursor:pointer}
 .card .row{flex-wrap:wrap}
 .card .actions{flex-wrap:wrap}
 
-/* toast — keep on-screen on small viewports */
+/* toast: keep on-screen on small viewports */
 .toast{max-width:min(360px,calc(100vw - 40px));overflow-wrap:anywhere}
 
 /* activity log */
@@ -382,7 +382,7 @@ html[dir="rtl"] .eopp-thumb{transform-origin:top right}
 
 /* ---------- RTL numeric integrity ----------
    Ratios, counters and timestamps are LTR sequences. Without isolation the bidi algorithm
-   reorders "15 / 100" into "100 / 15" and mangles dates — the numbers then read as wrong. */
+   reorders "15 / 100" into "100 / 15" and mangles dates, and the numbers then read as wrong. */
 .tile-v,.th-counts,.quota-meter,.quota-readout,.elink-url,.msg-time,.th-last,
 .logtable td.mono,.mono,.spark,.urlpill{unicode-bidi:isolate}
 html[dir="rtl"] .tile-v,html[dir="rtl"] .quota-meter,html[dir="rtl"] .quota-readout,
@@ -403,10 +403,17 @@ html[dir="rtl"] #sy_ep,html[dir="rtl"] #em_ep,html[dir="rtl"] #ep2,html[dir="rtl
 .tile-info{position:absolute;top:10px;inset-inline-end:10px;opacity:.55;transition:opacity .15s}
 .tile:hover .tile-info,.tile-info:focus-visible{opacity:1}
 .tile-v{padding-inline-end:22px}                 /* keep big numbers clear of the badge */
-.tile-k{display:block;text-align:inherit}        /* label is plain again — badge lives in the corner */
+.tile-k{display:block;text-align:inherit}        /* label is plain again, the badge lives in the corner */
 .zero{color:var(--ink-3);font-weight:600}
 /* header badges stay inline but never wrap away from their label */
 .logtable th .info{margin-inline-start:6px;vertical-align:middle}
 .logtable th{white-space:nowrap}
 .relay-err{display:inline-block;margin-inline-start:6px;color:#e6b45a;font-size:11.5px}
 #homeProbe .mono{color:var(--teal)}
+
+/* Boot failsafe: shown only when the console scripts never ran (no JS, a failed load, a
+   parse error). Content trapped behind a gate that never rendered is the worst failure a
+   private page can have, so it says what happened instead of showing a blank screen. */
+.bootfail{max-width:520px;margin:80px auto;padding:16px 18px;border:1px solid var(--hair);
+  border-radius:12px;background:var(--panel);color:var(--ink-2);font-size:14px;line-height:1.6;
+  text-align:center;font-family:var(--font)}
