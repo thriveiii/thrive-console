@@ -63,6 +63,7 @@ that breaks one is recognised as a regression rather than a preference.
 | A boot failsafe so a script failure can never leave a blank locked page | 01 §12 | inline watchdog in every `library/*.html`, `.bootfail` in `library/styles.css` |
 | A `<noscript>` statement instead of an empty screen | 01 §12 | every `library/*.html` |
 | The pre-hand-off checklist, adapted to this repository | 01 §9, 04 §7 | `Brain/CHECKLIST.md` |
+| The operating manual for the one moving part, written after the relay cost three days | 02 §2.1, 02 §6.10, 02 §10 | `Brain/RUNBOOK-sync.md` |
 
 ## Deliberately not applied
 

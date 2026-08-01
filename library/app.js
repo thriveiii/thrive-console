@@ -220,7 +220,7 @@ function importBackup(obj){
    Merge is union-based: sends/replies/activity dedupe by id, drafts+templates newest-wins.
    The GitHub token is deliberately NEVER synced. Page html stays device-local (repo has it). */
 const SYNC_EP="thrive_sync_ep", SYNC_AUTH="thrive_sync_auth", SYNC_LAST="thrive_sync_last", SCAL_UP="thrive_scalars_up";
-const SYNC_EP_UP="thrive_sync_ep_up";
+const SYNC_EP_UP="thrive_sync_ep_up", SYNC_EP_FILE="thrive_sync_ep_file";
 let __syncBusy=false, __syncApplying=false, __syncPushT=null, __syncBootstrapped=false;
 function getSyncEndpoint(){ try{ return localStorage.getItem(SYNC_EP)||""; }catch(e){ return ""; } }
 function setSyncEndpoint(u){ try{ u?localStorage.setItem(SYNC_EP,u):localStorage.removeItem(SYNC_EP); }catch(e){} }
@@ -237,6 +237,20 @@ function syncAuth(){
 function syncLast(){ try{ return localStorage.getItem(SYNC_LAST)||""; }catch(e){ return ""; } }
 function scalarsUp(){ try{ return parseInt(localStorage.getItem(SCAL_UP)||"0",10)||0; }catch(e){ return 0; } }
 function touchScalars(){ try{ localStorage.setItem(SCAL_UP, String(Date.now())); }catch(e){} }
+/* Adopting the published relay is one operation, used by the bootstrap AND by the sync
+   fallback. Doing it in one place is why email, the stamp and the file marker can no longer
+   drift apart: an endpoint adopted through one path used to leave the others stale. */
+function adoptPublishedEndpoint(ep, up, cur, ee){
+  if(!ep) return;
+  if(cur===undefined) cur=getSyncEndpoint();
+  if(ee===undefined) ee=getEmailEndpoint();
+  let prevFile=""; try{ prevFile=localStorage.getItem(SYNC_EP_FILE)||""; }catch(e){}
+  setSyncEndpoint(ep); stampSyncEp(up||0);
+  try{ localStorage.setItem(SYNC_EP_FILE, ep); }catch(e){}
+  // Email follows the published relay when it was empty, or when it is only there because an
+  // earlier publish put it there. An address typed into the Email box is never overwritten.
+  if(!ee || ee===cur || ee===prevFile) setEmailEndpoint(ep);
+}
 /* The endpoint every device must agree on lives in library/sync.json, served from this same
    origin. Reconcile with it on every load, not only when the device has nothing: a phone that
    was configured by hand months ago would otherwise keep calling a URL nobody chose again, and
@@ -252,10 +266,7 @@ async function syncBootstrap(){
   // only moved by a STAMPED file that is at least as new as its own choice: a file written before
   // stamps existed can never yank a working device onto a relay it already moved away from.
   if(cur && !(j.up && j.up >= syncEpStamp())) return;
-  setSyncEndpoint(j.ep); stampSyncEp(j.up||0);
-  // Email follows the published relay only when it was empty or was pointing at the endpoint we
-  // just replaced. An address saved deliberately in the Email box is never overwritten here.
-  if(!ee || ee===cur) setEmailEndpoint(j.ep);
+  adoptPublishedEndpoint(j.ep, j.up||0, cur, ee);
 }
 function syncSnapshot(){
   // drafts travel WITHOUT page html (uploads can be hundreds of KB; the repo holds live pages)
@@ -348,15 +359,15 @@ async function syncNow(){
       // The saved URL may point at a superseded deployment (it answers, but with the old script).
       // Re-read the committed sync.json and retry once with the published URL. Time-boxed so a
       // blocked or slow lookup can never leave the button spinning.
-      let fresh="";
+      let fresh="", freshUp=0;
       try{
         const ac=new AbortController(); const to=setTimeout(()=>ac.abort(), 6000);
         const r=await fetch("./sync.json",{cache:"no-store", signal:ac.signal});
         clearTimeout(to);
-        if(r.ok){ const j=await r.json(); fresh=(j&&j.ep)||""; }
+        if(r.ok){ const j=await r.json(); fresh=(j&&j.ep)||""; freshUp=(j&&j.up)||0; }
       }catch(_){}
       if(fresh && fresh!==ep){
-        try{ await doSyncRound(fresh, auth); setSyncEndpoint(fresh); __syncErr=""; return true; }
+        try{ await doSyncRound(fresh, auth); adoptPublishedEndpoint(fresh, freshUp); __syncErr=""; return true; }
         // If the published endpoint fails too, the FIRST error is the actionable one (it describes
         // the endpoint the user actually configured): don't mask it with the fallback's error.
         catch(e2){ __syncErr=classifySyncError(e1.message); return false; }
@@ -1558,6 +1569,51 @@ async function initCompose(){
 }
 
 /* ---------- settings (GitHub publishing + analytics endpoint) ---------- */
+/* ---------- connection health ----------
+   The console depends on one chain: a relay URL, that URL serving v4, the passcode credential,
+   a sync round trip, analytics, and the URL being published in the repo so every other device
+   finds it. When any link broke, the failure surfaced somewhere else entirely (a phone showing
+   zeros, a banner that would not clear), and the missing link was never the one being fixed.
+   This checks every link in order, names the one that is broken, and repairs what it can. */
+async function connCheck(candidate){
+  const steps=[];
+  const add=(k,ok,detail)=>{ steps.push({k, ok, detail:detail||""}); return ok; };
+  await syncBootstrap();
+  const ep=(candidate||"").trim()||getSyncEndpoint();
+  const tail=u=>String(u||"").replace(/\/exec.*$/,"").slice(-12);
+
+  if(!add("conn_url", !!ep, tail(ep))) return steps;
+
+  let version="";
+  try{ const r=await fetch(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }catch(e){ version=""; }
+  if(!add("conn_v4", /Thrive relay/i.test(version) && /v4/.test(version), version||t("sy_err_net"))) return steps;
+
+  const auth=syncAuth();
+  if(!add("conn_key", !!auth)) return steps;
+
+  const post=async body=>{
+    const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify(body)});
+    return r.json();
+  };
+  let getj=null;
+  try{ getj=await post({op:"state_get", auth:auth}); }catch(e){ getj={ok:false,error:String(e.message||e)}; }
+  if(!add("conn_sync", !!(getj&&getj.ok), (getj&&getj.error)||"")) return steps;
+
+  try{ const pj=await post({op:"state_put", auth:auth, data:syncSnapshot()});
+       add("conn_push", !!(pj&&pj.ok), (pj&&pj.error)||""); }
+  catch(e){ add("conn_push", false, String(e.message||e)); }
+
+  try{ const hj=await post({op:"hits_get", auth:auth});
+       add("conn_hits", !!(hj&&hj.ok), (hj&&hj.ok)? ((hj.events||[]).length+" "+t("conn_events")) : (hj&&hj.error)||""); }
+  catch(e){ add("conn_hits", false, String(e.message||e)); }
+
+  // The link that was invisible until now: is this URL the one the repo publishes to every device?
+  let filed="";
+  try{ const r=await fetch("./sync.json",{cache:"no-store"}); if(r.ok){ const j=await r.json(); filed=(j&&j.ep)||""; } }catch(e){}
+  add("conn_repo", !!filed && filed===ep, filed? tail(filed) : t("conn_no_file"));
+  return steps;
+}
+
 function initSettings(){
   const el=id=>document.getElementById(id);
   const c=ghConfig();
@@ -1571,6 +1627,69 @@ function initSettings(){
   function status(){ el("ghStatus").textContent = ghReady()?t("gh_connected"):t("gh_not_connected");
     el("ghStatus").className="pill "+(ghReady()?"ok":"warn"); }
   function result(msg, kind){ const r=el("ghResult"); if(!r) return; r.hidden=false; r.textContent=msg; r.className="gh-result "+(kind||""); }
+
+  /* ---- connection health panel ---- */
+  const CONN_STEPS=["conn_url","conn_v4","conn_key","conn_sync","conn_push","conn_hits","conn_repo"];
+  function connRender(steps, running){
+    const list=el("connList"); if(!list) return;
+    const byKey={}; (steps||[]).forEach(s=>{ byKey[s.k]=s; });
+    list.innerHTML=CONN_STEPS.map(k=>{
+      const s=byKey[k];
+      const mark=!s? '<span class="conn-i conn-wait">·</span>'
+                   : (s.ok? '<span class="conn-i conn-ok">✓</span>' : '<span class="conn-i conn-bad">✕</span>');
+      const det=s&&s.detail? '<span class="conn-d">'+esc(s.detail)+'</span>' : "";
+      const fix=(s&&!s.ok)? '<span class="conn-fix">'+esc(t(k+"_fix"))+'</span>' : "";
+      return '<li class="conn-row'+(s&&!s.ok?" bad":"")+'">'+mark+'<span class="conn-t">'+esc(t(k))+'</span>'+det+fix+'</li>';
+    }).join("");
+    const note=el("connNote"); if(!note) return;
+    if(running){ note.hidden=false; note.textContent=t("testing"); note.className="gh-result"; return; }
+    const all=CONN_STEPS.every(k=>byKey[k]&&byKey[k].ok);
+    note.hidden=false;
+    note.textContent = all? "✓ "+t("conn_all_ok") : "⚠ "+t("conn_broken");
+    note.className="gh-result "+(all?"ok":"warn");
+  }
+  async function connRun(candidate){
+    connRender([], true);
+    const steps=await connCheck(candidate);
+    connRender(steps, false);
+    return steps;
+  }
+  if(el("connRun")) el("connRun").addEventListener("click", ()=> connRun(el("sy_ep")?el("sy_ep").value:""));
+  if(el("connFix")) el("connFix").addEventListener("click", async ()=>{
+    const note=el("connNote");
+    const ep=((el("sy_ep")&&el("sy_ep").value)||getSyncEndpoint()||"").trim();
+    if(!ep){ note.hidden=false; note.className="gh-result warn"; note.textContent="⚠ "+t("sy_need_ep"); return; }
+    connRender([], true);
+    // 1. never adopt a URL that is not a v4 relay
+    let version="";
+    try{ const r=await fetch(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }catch(e){}
+    if(!(/Thrive relay/i.test(version) && /v4/.test(version))){
+      connRender(await connCheck(ep), false);
+      note.hidden=false; note.className="gh-result warn";
+      note.textContent="✕ "+(version||t("sy_err_net"))+": "+t("sy_v_howto");
+      return;
+    }
+    // 2. one relay for email, sync and analytics on this device
+    const now=Date.now();
+    setSyncEndpoint(ep); setEmailEndpoint(ep); stampSyncEp(now); touchScalars();
+    if(el("sy_ep")) el("sy_ep").value=ep;
+    if(el("em_ep")) el("em_ep").value=ep;
+    // 3. publish it to the repo so every other device finds it with nothing to type
+    let repoMsg="";
+    if(ghReady()){
+      try{ await ghPutFile("library/sync.json", JSON.stringify({ep:ep, up:now})+"\n", "Publish relay endpoint"); }
+      catch(e){ repoMsg=t("gh_err")+": "+e.message; }
+    } else repoMsg=t("sy_no_repo");
+    // 4. put this device's data in the shared store, then pull analytics back
+    try{ await syncPush(); }catch(e){}
+    try{ await syncNow(); }catch(e){}
+    logActivity("settings","","relay repair");
+    const steps=await connCheck(ep);
+    connRender(steps, false);
+    if(repoMsg){ note.hidden=false; note.className="gh-result warn"; note.textContent="⚠ "+t("sy_local_only")+" "+repoMsg; }
+  });
+  connRun("");
+
   el("ghSave").addEventListener("click",()=>{ persist(); logActivity("settings","","github config"); toast(t("settings_saved")); status(); });
   el("ghTest").addEventListener("click", async ()=>{
     persist(); status(); result(t("testing"), "");
