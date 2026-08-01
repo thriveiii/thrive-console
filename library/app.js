@@ -1615,6 +1615,9 @@ function initSettings(){
       const v=await verifyUrl(ep);
       if(!v.ok){ syShow("✕ "+(v.version||"–")+": "+v.msg+" "+t("sy_v_howto"), "warn"); return; }
       setSyncEndpoint(ep); setEmailEndpoint(ep);        // one relay serves email, sync and analytics
+      // and the email box above must show it too, or the page looks like it holds two
+      // different relays and the reader goes back to pasting the URL twice.
+      if(el("em_ep")) el("em_ep").value=ep;
       touchScalars();
       // commit library/sync.json so every device that unlocks the gate finds the endpoint itself
       if(ghReady()){
