@@ -52,6 +52,26 @@ const I18N = {
     et_has_link: "has an opportunity link",
     et_confirm_del_default: "Delete the stock monthly template? You can always create a new one.",
     tpl_confirm_overwrite: "A template with this id already exists. Replace it?",
+    tip_sent_today: "Emails sent in the last 24 hours, against your daily cap. A rolling window: each send frees up again exactly 24h later.",
+    tip_sent_month: "Emails sent in the last 30 days, against your monthly cap. Keeps you inside Resend's free plan.",
+    tip_sent_total: "Every email ever sent from this console with the Send button. Copy-for-Gmail messages are logged separately and not counted here.",
+    tip_contacts: "How many distinct email addresses you have written to.",
+    tip_replies: "Replies you received — logged automatically when you record one on a conversation.",
+    tip_reply_rate: "Share of conversations that got at least one reply. Conversations with a reply ÷ all conversations.",
+    tip_live_pages: "Opportunity pages that are published and reachable at their public link.",
+    tip_total_opps: "Every opportunity in the library, published or still a draft.",
+    tip_opens: "Times a prospect opened an opportunity page. Your own previews are excluded.",
+    tip_unique: "Distinct visitors, counted per browser. One person opening a page five times counts once.",
+    tip_dwell: "Average time a visitor stayed on the page, pooled across all visits.",
+    tip_followup: "Live pages sent 3+ days ago that still have no open and no reply — worth a nudge.",
+    home_data_live: "Page numbers below come from real visitors, collected through your relay.",
+    home_data_local: "⚠ Recipient opens are not being collected yet — the numbers below only reflect pages opened in this browser. Update the relay script to v4 and press Refresh to start collecting real opens.",
+    home_data_self: "({n} of your own previews are excluded.)",
+    tip_c_sent: "Emails sent about this opportunity. A row can show 0 sent but still have opens — someone reached the page another way (a shared link, or your own earlier preview).",
+    tip_c_last: "The most recent activity on this opportunity: a send, a reply, or a page open.",
+    home_repair: "Fix analytics on live pages",
+    home_unmeasured: "⚠ {n} live page(s) cannot record opens because they were published without the analytics beacon: {list}. Press “Fix analytics on live pages” to add it — the page content is untouched.",
+    home_repaired: "Analytics restored on {n} page(s). Opens will start recording from now on.",
     nav_library: "Library",
     nav_editor: "Editor",
     nav_templates: "Templates",
@@ -326,7 +346,7 @@ const I18N = {
     cmp_manage_tpl: "Manage",
     cmp_name: "Recipient name",
     cmp_name_ph: "name",
-    cmp_firstname: "Greet by first name only (Hi Ahmed)",
+    cmp_firstname: "Greet by first name only (Hi Majd)",
     cmp_branded: "Add logo header (for known contacts — a plain personal email reaches the inbox better)",
     cmp_link_ph: "Paste or type a URL (or email / phone)",
     cmp_link_text_ph: "Text to show (optional)",
@@ -445,6 +465,26 @@ const I18N = {
     et_has_link: "يحوي رابط فرصة",
     et_confirm_del_default: "حذف القالب الشهري الأصلي؟ يمكنك إنشاء غيره دائمًا.",
     tpl_confirm_overwrite: "يوجد قالب بهذا المعرّف. هل تستبدله؟",
+    tip_sent_today: "الرسائل المُرسَلة خلال آخر ٢٤ ساعة، مقابل سقفك اليومي. نافذة متحركة: كل رسالة تتحرر بعد ٢٤ ساعة بالضبط.",
+    tip_sent_month: "الرسائل المُرسَلة خلال آخر ٣٠ يومًا، مقابل سقفك الشهري. تُبقيك ضمن باقة Resend المجانية.",
+    tip_sent_total: "كل رسالة أُرسلت من هذا الكونسول بزر «إرسال». رسائل «نسخ للـ Gmail» تُسجَّل منفصلة ولا تُحتسب هنا.",
+    tip_contacts: "عدد عناوين البريد المختلفة التي راسلتها.",
+    tip_replies: "الردود التي وصلتك — تُسجَّل حين تدوّن ردًا على محادثة.",
+    tip_reply_rate: "نسبة المحادثات التي حظيت بردٍّ واحد على الأقل. المحادثات التي ردّت ÷ كل المحادثات.",
+    tip_live_pages: "صفحات الفرص المنشورة والمتاحة على روابطها العامة.",
+    tip_total_opps: "كل الفرص في المكتبة، منشورة كانت أو مسودّة.",
+    tip_opens: "عدد مرات فتح المستقبِلين لصفحة الفرصة. معايناتك الشخصية مستثناة.",
+    tip_unique: "الزوّار المختلفون، يُحسب كل متصفح مرة واحدة. من يفتح الصفحة خمس مرات يُحسب واحدًا.",
+    tip_dwell: "متوسط المدة التي قضاها الزائر في الصفحة، محسوبًا على كل الزيارات.",
+    tip_followup: "صفحات حيّة مضى على إرسالها ٣ أيام فأكثر بلا فتح ولا رد — تستحق تذكيرًا.",
+    home_data_live: "أرقام الصفحات أدناه من زوّار حقيقيين، مُجمَّعة عبر الوسيط.",
+    home_data_local: "⚠ لا يتم تجميع فتحات المستقبِلين بعد — الأرقام أدناه تعكس ما فُتح في هذا المتصفح فقط. حدّث سكربت الوسيط إلى v4 ثم اضغط «تحديث» ليبدأ تجميع الفتحات الحقيقية.",
+    home_data_self: "(استُثنيت {n} من معايناتك الشخصية.)",
+    tip_c_sent: "الرسائل المُرسَلة بخصوص هذه الفرصة. قد يظهر صفر مُرسَل مع وجود فتحات — أي أن أحدهم وصل للصفحة بطريق آخر (رابط مُشارَك، أو معاينة سابقة منك).",
+    tip_c_last: "آخر نشاط على هذه الفرصة: إرسال، أو رد، أو فتح للصفحة.",
+    home_repair: "إصلاح التحليلات في الصفحات الحيّة",
+    home_unmeasured: "⚠ {n} من الصفحات الحيّة لا تستطيع تسجيل الفتحات لأنها نُشرت بدون مِجَسّ التحليلات: {list}. اضغط «إصلاح التحليلات في الصفحات الحيّة» لإضافته — محتوى الصفحة لا يُمَس.",
+    home_repaired: "أُعيدت التحليلات إلى {n} صفحة. ستُسجَّل الفتحات من الآن فصاعدًا.",
     nav_library: "المكتبة",
     nav_editor: "المحرر",
     nav_templates: "القوالب",
@@ -719,7 +759,7 @@ const I18N = {
     cmp_manage_tpl: "إدارة",
     cmp_name: "اسم المستلِم",
     cmp_name_ph: "الاسم",
-    cmp_firstname: "التحية بالاسم الأول فقط (Hi Ahmed)",
+    cmp_firstname: "التحية بالاسم الأول فقط (مرحبًا مجد)",
     cmp_branded: "إضافة ترويسة الشعار (لمن تعرفهم — الرسالة الشخصية النظيفة تصل إلى Inbox بشكل أفضل)",
     cmp_link_ph: "الصق أو اكتب رابطًا (أو بريدًا / هاتفًا)",
     cmp_link_text_ph: "النص الظاهر (اختياري)",
@@ -802,9 +842,55 @@ function applyLang(){
   if(lb) lb.textContent = (l==="en") ? "العربية" : "English";
   if(window.onLangApplied) window.onLangApplied();
 }
+/* Explanations for metrics: hover on a pointer device, tap the ⓘ on touch.
+   One floating bubble, positioned near the trigger and kept inside the viewport. */
+function initTips(){
+  let bub=null;
+  function hide(){ if(bub){ bub.remove(); bub=null; } }
+  function show(btn){
+    hide();
+    const txt=btn.getAttribute("data-tip"); if(!txt) return;
+    bub=document.createElement("div"); bub.className="tipbubble"; bub.textContent=txt;
+    bub.setAttribute("dir", document.documentElement.dir||"ltr");
+    document.body.appendChild(bub);
+    const r=btn.getBoundingClientRect(), b=bub.getBoundingClientRect();
+    let left=r.left+r.width/2-b.width/2;
+    left=Math.max(10, Math.min(left, window.innerWidth-b.width-10));
+    let top=r.top-b.height-10;
+    if(top<8) top=r.bottom+10;                       // flip below when there is no room above
+    bub.style.left=Math.round(left)+"px";
+    bub.style.top=Math.round(top+window.scrollY)+"px";
+    bub.classList.add("show");
+  }
+  document.addEventListener("click",e=>{
+    const btn=e.target.closest && e.target.closest("[data-tip]");
+    if(btn){ e.preventDefault(); e.stopPropagation();
+      // On a device with BOTH pointer and touch, hover may have opened this already. Clicking
+      // then pins it open — only a second click on a pinned bubble closes it.
+      if(bub && bub.__for===btn && bub.__pinned){ hide(); return; }
+      if(!(bub && bub.__for===btn)) show(btn);
+      if(bub){ bub.__for=btn; bub.__pinned=true; }
+      return; }
+    hide();
+  });
+  document.addEventListener("mouseover",e=>{
+    if(!window.matchMedia || !window.matchMedia("(hover:hover)").matches) return;
+    const btn=e.target.closest && e.target.closest("[data-tip]");
+    if(btn && !(bub && bub.__for===btn)){ show(btn); if(bub){ bub.__for=btn; bub.__pinned=false; } }
+  });
+  document.addEventListener("mouseout",e=>{
+    if(!window.matchMedia || !window.matchMedia("(hover:hover)").matches) return;
+    const btn=e.target.closest && e.target.closest("[data-tip]");
+    if(btn && bub && bub.__for===btn && !bub.__pinned) hide();   // pinned bubbles survive mouse-out
+  });
+  window.addEventListener("scroll", hide, {passive:true});
+  window.addEventListener("resize", hide);
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape") hide(); });
+}
 function initLang(){
   const lb = document.getElementById("langbtn");
   if(lb) lb.addEventListener("click", ()=> setLang(getLang()==="en"?"ar":"en"));
+  initTips();
   // perf: pause the spinning logo when the tab is hidden (saves CPU/battery)
   document.addEventListener("visibilitychange", ()=> document.documentElement.classList.toggle("tab-hidden", document.hidden));
   applyLang();

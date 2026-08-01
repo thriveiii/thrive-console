@@ -62,6 +62,43 @@ function removeCustomTemplate(id){ setCustomTemplates(getCustomTemplates().filte
 const HITS = "thrive_hits_v1";
 const ENDPT = "thrive_endpoint";
 function getHits(){ try{ return JSON.parse(localStorage.getItem(HITS)||"[]"); }catch(e){ return []; } }
+/* Real analytics come from the relay (a prospect's open only ever exists in THEIR browser
+   otherwise). We keep them in their own bucket and merge on read, de-duplicated. */
+const RHITS="thrive_hits_remote_v1";
+function getRemoteHits(){ try{ return JSON.parse(localStorage.getItem(RHITS)||"[]"); }catch(e){ return []; } }
+function setRemoteHits(a){ try{ localStorage.setItem(RHITS, JSON.stringify(a.slice(-2000))); }catch(e){} }
+function hitKey(e){ return (e.type||"open")+"|"+(e.slug||"")+"|"+(e.ts||"")+"|"+(e.vid||""); }
+/* All page events, local + collected, de-duplicated. `opts.includeSelf` keeps your own
+   previews (tagged self:true by the beacon); by default they are excluded so campaign
+   numbers reflect recipients only. */
+function allHits(opts){
+  const seen={}, out=[];
+  getRemoteHits().concat(getHits()).forEach(e=>{
+    if(!e || (!(opts&&opts.includeSelf) && e.self)) return;
+    const k=hitKey(e); if(seen[k]) return; seen[k]=1; out.push(e);
+  });
+  return out;
+}
+function selfHitCount(){ return getRemoteHits().concat(getHits()).filter(e=>e&&e.self).length; }
+// Pull collected analytics from the relay (same endpoint as sync/email).
+async function fetchRemoteHits(){
+  const auth=syncAuth(); if(!auth) return false;
+  await syncBootstrap();
+  const ep=getSyncEndpoint(); if(!ep) return false;
+  try{
+    const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({ op:"hits_get", auth:auth }) });
+    const j=await r.json();
+    if(!j.ok || !Array.isArray(j.events)) return false;
+    // union with what we already have, so nothing collected earlier is lost when the relay rolls
+    const seen={}, merged=[];
+    j.events.concat(getRemoteHits()).forEach(e=>{ const k=hitKey(e); if(seen[k]) return; seen[k]=1; merged.push(e); });
+    merged.sort((a,b)=> (String(a.ts)<String(b.ts)?-1:1));
+    setRemoteHits(merged);
+    __opensCache=null;                                   // opens map must be recomputed
+    return true;
+  }catch(e){ return false; }
+}
 function getEndpoint(){ try{ return localStorage.getItem(ENDPT)||""; }catch(e){ return ""; } }
 function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.removeItem(ENDPT); }catch(e){} }
 /* perf: memoise the opens-per-slug map (avoids re-parsing hits for every card each render) */
@@ -69,7 +106,7 @@ let __opensCache=null, __opensTs=0;
 function opensMap(){
   const now=Date.now();
   if(__opensCache && (now-__opensTs)<3000) return __opensCache;
-  const m={}; getHits().forEach(e=>{ if(e.type==="open"||!e.type){ m[e.slug]=(m[e.slug]||0)+1; } });
+  const m={}; allHits().forEach(e=>{ if(e.type==="open"||!e.type){ m[e.slug]=(m[e.slug]||0)+1; } });
   __opensCache=m; __opensTs=now; return m;
 }
 function opensForSlug(slug){ return opensMap()[slug]||0; }
@@ -324,8 +361,21 @@ function manifestEntry(rec){
   return { slug:rec.slug, business:rec.business||"", template:rec.template||"", sent_on:rec.sent_on||"",
     location:rec.location||"", phone:rec.phone||"", status:rec.status||"sent" };
 }
+/* Every published page MUST carry the beacon, or it can never record an open — an uploaded
+   page authored elsewhere has no way to know that. Inject it at publish time when missing,
+   so analytics are complete by construction instead of by luck. */
+const BEACON_TAG='<script src="/beacon.js" defer></'+'script>';
+function withBeacon(html){
+  const h=String(html||"");
+  if(!h.trim()) return h;
+  if(/beacon\.js/.test(h)) return h;
+  if(/<\/body\s*>/i.test(h)) return h.replace(/<\/body\s*>/i, BEACON_TAG+"\n</body>");
+  if(/<\/html\s*>/i.test(h)) return h.replace(/<\/html\s*>/i, BEACON_TAG+"\n</html>");
+  return h+"\n"+BEACON_TAG;
+}
+function hasBeacon(html){ return /beacon\.js/.test(String(html||"")); }
 async function publishOpp(rec){
-  await ghPutFile("opp/"+rec.slug+"/index.html", rec.html||"", "Publish opp/"+rec.slug);
+  await ghPutFile("opp/"+rec.slug+"/index.html", withBeacon(rec.html||""), "Publish opp/"+rec.slug);
   const mf=await ghGetFile("library/manifest.json");
   let man = mf ? (JSON.parse(unb64(mf.content))||{}) : {};
   man.site=man.site||SITE; man.base_path=man.base_path||OPP_PATH; man.opportunities=man.opportunities||[];
@@ -602,9 +652,18 @@ async function initEditor(){
 
   // add custom templates to the picker, then honor ?t=
   const tsel=el("f_template");
+  // Built-in option labels follow the UI language (they are the only hard-coded ones in the markup).
+  function relabelBuiltins(){
+    const L=getLang();
+    [...tsel.options].forEach(o=>{
+      const tp=APPROVED_TEMPLATES.find(x=>x.id===o.value);
+      if(tp) o.textContent=tp.id+" · "+(L==="ar"?tp.name_ar:tp.name_en)+" ("+tp.lang+")";
+    });
+  }
+  relabelBuiltins();
   getCustomTemplates().forEach(ct=>{
     if([...tsel.options].some(o=>o.value===ct.id)) return;
-    const o=document.createElement("option"); o.value=ct.id; o.textContent=ct.id+" · "+(ct.name||ct.id)+" (custom)"; tsel.appendChild(o);
+    const o=document.createElement("option"); o.value=ct.id; o.textContent=ct.id+" · "+(ct.name||ct.id)+" ("+t("tpl_badge_custom")+")"; tsel.appendChild(o);
   });
   const tParam=new URLSearchParams(location.search).get("t");
   if(tParam && [...tsel.options].some(o=>o.value===tParam)) tsel.value=tParam;
@@ -780,7 +839,10 @@ async function initEditor(){
       if("WANT" in F) el("f_want").value=F.WANT||"";
     }
   }
-  window.onLangApplied=()=>{ if(mode==="upload" && uploadedName) dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>"; };
+  window.onLangApplied=()=>{
+    relabelBuiltins();                                   // template names follow the language switch
+    if(mode==="upload" && uploadedName) dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>";
+  };
   refresh();
 }
 
@@ -956,13 +1018,24 @@ const ETPL = "thrive_email_templates_v1";
    with NO embedded opportunity link: the writer decides which words carry it (guided flow). */
 const ETPL_MONTHLY = { id:"monthly", name:"Monthly update", subject:"{{MONTH}} at Thrive",
   html:'Hi {{NAME}},<br><br>End of the month, so here is {{MONTH}} at Thrive. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com' };
+/* Arabic edition of the stock template — a real Arabic message, not a translation of labels
+   around English text. Greeting is «مرحبًا فلان،», not "Hi …". */
+const ETPL_MONTHLY_AR = { id:"monthly-ar", name:"التحديث الشهري", subject:"{{MONTH}} في ثرايف",
+  html:'مرحبًا {{NAME}}،<br><br>مع نهاية الشهر، هذا هو {{MONTH}} في ثرايف. نحن نختار العمل الذي نفخر به. إن كان ذلك يناسبك، تكفي كلمة.<br><br>إلى الشهر القادم!<br><br>عبدالله ذياب<br>thriveiii.com' };
 function getEmailTemplates(){
   let a; try{ a=JSON.parse(localStorage.getItem(ETPL)||"null"); }catch(e){ a=null; }
-  if(!a) return [Object.assign({},ETPL_MONTHLY)];
-  // migrate the two OLD stock defaults (hard-wired month / auto-embedded link) to the new one
-  const i=a.findIndex(x=>x.id==="monthly");
-  if(i>=0 && /<a href="\{\{LINK\}\}">(this month|July) at Thrive<\/a>/.test(a[i].html||"")){
-    a[i]=Object.assign({},ETPL_MONTHLY); try{ localStorage.setItem(ETPL, JSON.stringify(a)); }catch(e){}
+  if(!a) a=[Object.assign({},ETPL_MONTHLY), Object.assign({},ETPL_MONTHLY_AR)];
+  else{
+    // migrate the two OLD stock defaults (hard-wired month / auto-embedded link) to the new one
+    const i=a.findIndex(x=>x.id==="monthly");
+    if(i>=0 && /<a href="\{\{LINK\}\}">(this month|July) at Thrive<\/a>/.test(a[i].html||"")){
+      a[i]=Object.assign({},ETPL_MONTHLY); try{ localStorage.setItem(ETPL, JSON.stringify(a)); }catch(e){}
+    }
+    // add the Arabic stock template once, for consoles created before it existed
+    if(!a.some(x=>x.id==="monthly-ar")){
+      a=a.concat([Object.assign({},ETPL_MONTHLY_AR)]);
+      try{ localStorage.setItem(ETPL, JSON.stringify(a)); }catch(e){}
+    }
   }
   return a;
 }
@@ -1233,7 +1306,14 @@ async function initCompose(){
     return n;
   }
   function monthVal(){ return monthEl ? monthEl.value.trim() : ""; }
-  if(monthEl && !monthEl.value) monthEl.value=new Date().toLocaleString("en",{month:"long"});  // asks for the month; defaults to the current one
+  // The month is written in the language of the template being used, not the UI language:
+  // an Arabic template needs «أغسطس», an English one needs "August".
+  function defaultMonth(forTpl){
+    const ar = forTpl ? /[؀-ۿ]/.test((forTpl.subject||"")+(forTpl.html||"")) : (getLang()==="ar");
+    try{ return new Date().toLocaleString(ar?"ar":"en",{month:"long"}); }
+    catch(e){ return new Date().toLocaleString("en",{month:"long"}); }
+  }
+  if(monthEl && !monthEl.value) monthEl.value=defaultMonth(null);
   // Empty selection ("") is an intentional plain, template-less message — currentTpl() returns null.
   function currentTpl(){ if(tplSel && tplSel.value==="") return null; return tplCache.find(x=>x.id===(tplSel?tplSel.value:"monthly")) || tplCache[0]; }
   // Live merge sync: NAME/MONTH live in tagged spans, so typing the recipient's name or the month
@@ -1248,6 +1328,15 @@ async function initCompose(){
   function applyTemplate(tp){
     if(monthWrap) monthWrap.hidden=!tplUsesMonth(tp);
     if(!tp) return;                                  // plain: leave whatever the user has typed
+    // Put the month in the template's own language (an Arabic template wants «أغسطس») — but
+    // never discard a month the writer typed: only fill it when empty or when the script
+    // doesn't match the template (e.g. an English month left over on an Arabic template).
+    if(monthEl && tplUsesMonth(tp)){
+      const cur=monthEl.value.trim();
+      const tplAr=/[؀-ۿ]/.test((tp.subject||"")+(tp.html||""));
+      const curAr=/[؀-ۿ]/.test(cur);
+      if(!cur || curAr!==tplAr) monthEl.value=defaultMonth(tp);
+    }
     subjectDirty=false;
     el("esubject").value = mergeFieldsText(tp.subject, oppObj, recipientName()||"there", monthVal());
     body.innerHTML = mergeFieldsHtml(tp.html, oppObj, recipientName(), monthVal());
@@ -1704,7 +1793,10 @@ function aggregateHits(events){
 }
 async function initHome(){
   const el=id=>document.getElementById(id);
-  const tile=(v,k,cls)=>'<div class="tile'+(cls?" "+cls:"")+'"><div class="tile-v">'+esc(String(v))+'</div><div class="tile-k">'+k+'</div></div>';
+  // Every metric carries its own explanation. Hover on desktop, tap the ⓘ on touch.
+  const tile=(v,k,cls,tip)=>'<div class="tile'+(cls?" "+cls:"")+'">'+
+    '<div class="tile-v">'+esc(String(v))+'</div>'+
+    '<div class="tile-k">'+k+(tip?'<button type="button" class="info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button>':'')+'</div></div>';
 
   function syncPill(){
     const p=el("homeSync"); if(!p) return;
@@ -1717,7 +1809,7 @@ async function initHome(){
   async function render(){
     syncPill();
     const mail=getMailLog(), q=quotaUsage(), opps=await mergedOpps();
-    const hits=getHits(), pages=aggregateHits(hits);
+    const hits=allHits(), pages=aggregateHits(hits);     // recipients only — own previews excluded
 
     // ---- outreach ----
     const sent=mail.filter(m=>m.status==="sent").length;
@@ -1727,12 +1819,12 @@ async function initHome(){
     const answered=threads.filter(th=>th.replied>0).length;
     const rate=threads.length? Math.round(answered/threads.length*100) : 0;
     el("tilesOutreach").innerHTML=
-      tile(q.day+" / "+q.dailyCap, t("home_sent_today"), q.dayFull?"t-warn":"")+
-      tile(q.month+" / "+q.monthlyCap, t("home_sent_month"))+
-      tile(sent, t("home_sent_total"))+
-      tile(contacted, t("home_contacts"))+
-      tile(replies, t("home_replies"))+
-      tile(rate+"%", t("home_reply_rate"), rate>0?"t-good":"");
+      tile(q.day+" / "+q.dailyCap, t("home_sent_today"), q.dayFull?"t-warn":"", t("tip_sent_today"))+
+      tile(q.month+" / "+q.monthlyCap, t("home_sent_month"), "", t("tip_sent_month"))+
+      tile(sent, t("home_sent_total"), "", t("tip_sent_total"))+
+      tile(contacted, t("home_contacts"), "", t("tip_contacts"))+
+      tile(replies, t("home_replies"), "", t("tip_replies"))+
+      tile(rate+"%", t("home_reply_rate"), rate>0?"t-good":"", t("tip_reply_rate"));
 
     // ---- pages ----
     const live=opps.filter(o=>isLive(o)).length;
@@ -1741,12 +1833,20 @@ async function initHome(){
     const dw=pages.reduce((a,r)=>{ a.ms+=r.dwellMs; a.n+=r.dwellN; return a; }, {ms:0,n:0});
     const fu=opps.filter(o=>!o.archived&&needsFollowup(o)).length;
     el("tilesPages").innerHTML=
-      tile(live, t("home_live_pages"))+
-      tile(opps.length, t("home_total_opps"))+
-      tile(totalOpens, t("ins_total_opens"))+
-      tile(uniq.size, t("ins_unique"))+
-      tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("ins_avg_dwell"))+
-      tile(fu, t("followup"), fu?"t-warn":"");
+      tile(live, t("home_live_pages"), "", t("tip_live_pages"))+
+      tile(opps.length, t("home_total_opps"), "", t("tip_total_opps"))+
+      tile(totalOpens, t("ins_total_opens"), "", t("tip_opens"))+
+      tile(uniq.size, t("ins_unique"), "", t("tip_unique"))+
+      tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("ins_avg_dwell"), "", t("tip_dwell"))+
+      tile(fu, t("followup"), fu?"t-warn":"", t("tip_followup"));
+    // Honest note: are we actually collecting recipient opens, or only seeing our own device?
+    const note=el("homeDataNote");
+    if(note){
+      const collecting=getRemoteHits().length>0, mine=selfHitCount();
+      note.className="note "+(collecting?"":"warn-note");
+      note.innerHTML=(collecting? t("home_data_live") : t("home_data_local"))+
+        (mine? " "+t("home_data_self").replace("{n}", mine) : "");
+    }
 
     // ---- per-campaign performance (one row per opportunity that has outreach or opens) ----
     const byOpp={};
@@ -1761,10 +1861,12 @@ async function initHome(){
     pages.forEach(p=>{ const r=byOpp[p.slug]; if(r){ r.opens=p.opens; r.uniq=p.vids.size; if(p.lastTs>r.last) r.last=p.lastTs; } });
     const rows=Object.values(byOpp).filter(r=>r.sent||r.opens||r.replies)
       .sort((a,b)=> (b.sent+b.opens)-(a.sent+a.opens));
+    const hth=(label,tip)=>'<th>'+label+'<button type="button" class="info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button></th>';
     el("homeCampaigns").innerHTML = rows.length
       ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
-        '<th>'+t("home_c_opp")+'</th><th>'+t("cmp_sent_n")+'</th><th>'+t("ins_opens")+'</th>'+
-        '<th>'+t("ins_unique")+'</th><th>'+t("cmp_replied_n")+'</th><th>'+t("ins_last")+'</th></tr></thead><tbody>'+
+        '<th>'+t("home_c_opp")+'</th>'+hth(t("cmp_sent_n"),t("tip_c_sent"))+hth(t("ins_opens"),t("tip_opens"))+
+        hth(t("ins_unique"),t("tip_unique"))+hth(t("cmp_replied_n"),t("tip_replies"))+
+        hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
         rows.map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.biz)+'</a></td>'+
           '<td><b>'+r.sent+'</b></td><td>'+r.opens+'</td><td>'+(r.uniq||"—")+'</td>'+
           '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':"—")+'</td>'+
@@ -1785,10 +1887,52 @@ async function initHome(){
       : '<div class="empty">'+t("home_no_opens")+'</div>';
   }
 
-  el("homeRefresh").addEventListener("click", async ()=>{ if(syncAuth()) await syncNow(); render(); });
+  el("homeRefresh").addEventListener("click", async ()=>{
+    if(syncAuth()){ await syncNow(); await fetchRemoteHits(); }
+    render(); checkBeacons();
+  });
+
+  /* A page published from an uploaded file may have no beacon — it then records zero opens
+     forever, which is exactly how a real campaign ends up showing 0. Detect those live pages
+     and offer a one-click repair that re-publishes them with the beacon added. */
+  let unmeasured=[];
+  async function checkBeacons(){
+    const btn=el("homeRepair"), note=el("homeRepairNote");
+    if(!btn) return;
+    const opps=(await mergedOpps()).filter(o=>isLive(o) && !o.archived);
+    unmeasured=[];
+    for(const o of opps){
+      try{
+        const r=await fetch(relOpp(o.slug)+"index.html",{cache:"no-store"});
+        if(!r.ok) continue;
+        const html=await r.text();
+        if(!hasBeacon(html)) unmeasured.push({slug:o.slug, business:o.business||o.slug, html});
+      }catch(e){}
+    }
+    if(!unmeasured.length){ btn.hidden=true; if(note) note.hidden=true; return; }
+    btn.hidden=false;
+    if(note){ note.hidden=false;
+      note.textContent=t("home_unmeasured").replace("{n}", unmeasured.length)
+        .replace("{list}", unmeasured.map(u=>u.business).join("، ")); }
+  }
+  if(el("homeRepair")) el("homeRepair").addEventListener("click", async ()=>{
+    if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
+    const btn=el("homeRepair"); btn.disabled=true; const old=btn.textContent; btn.textContent=t("publishing");
+    let done=0;
+    for(const u of unmeasured){
+      try{ await ghPutFile("opp/"+u.slug+"/index.html", withBeacon(u.html), "Add analytics beacon to opp/"+u.slug);
+        logActivity("publish", u.slug, "beacon repair"); done++; }catch(e){}
+    }
+    btn.disabled=false; btn.textContent=old;
+    toast(done? t("home_repaired").replace("{n}", done) : t("gh_err"));
+    setTimeout(checkBeacons, 1500);
+  });
+  checkBeacons();
   window.onLangApplied=render;
   window.onThriveSync=render;                            // live refresh when another device's data arrives
   render();
+  // Collected analytics arrive a moment later; re-render when they land.
+  if(syncAuth()) fetchRemoteHits().then(ok=>{ if(ok) render(); });
 }
 
 /* ---------- insights (analytics) ---------- */

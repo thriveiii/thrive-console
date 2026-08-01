@@ -155,4 +155,5 @@ var f=document.querySelector('.item');if(f)so.observe(f);
 var sm=document.getElementById('svcmenu');if(sm){var mo=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){sm.classList.add('play');mo.unobserve(sm)}})},{threshold:.55});mo.observe(sm)}
 var sh=document.getElementById('share');if(sh){sh.href=sh.href+'%20'+encodeURIComponent(location.href)}
 })();
-</script></body></html>
+</script><script src="/beacon.js" defer></script>
+</body></html>

@@ -366,3 +366,32 @@ html[dir="rtl"] .eopp-thumb{transform-origin:top right}
 .ok-n{color:#8ecf9a}
 .et-body{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.6;resize:vertical;min-height:180px}
 #etEditor{border-color:rgba(150,133,202,.45)}
+
+/* ---------- metric explanations (hover on desktop, tap on touch) ---------- */
+.tile-k{display:flex;align-items:center;gap:6px;justify-content:center;flex-wrap:wrap}
+.info{width:16px;height:16px;flex:0 0 16px;border-radius:50%;border:1px solid var(--hair);
+  background:transparent;color:var(--ink-3);font-size:10px;font-weight:800;line-height:1;
+  cursor:pointer;font-family:inherit;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.info:hover,.info:focus-visible{border-color:var(--purple);color:var(--ink)}
+.tipbubble{position:absolute;z-index:60;max-width:min(300px,84vw);background:#16161d;
+  border:1px solid var(--purple);color:var(--ink);padding:10px 13px;border-radius:10px;
+  font-size:12.5px;line-height:1.6;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.55);
+  opacity:0;transition:opacity .15s;pointer-events:none}
+.tipbubble.show{opacity:1}
+.warn-note{border-color:rgba(230,180,90,.45);color:var(--ink-2)}
+
+/* ---------- RTL numeric integrity ----------
+   Ratios, counters and timestamps are LTR sequences. Without isolation the bidi algorithm
+   reorders "15 / 100" into "100 / 15" and mangles dates — the numbers then read as wrong. */
+.tile-v,.th-counts,.quota-meter,.quota-readout,.elink-url,.msg-time,.th-last,
+.logtable td.mono,.mono,.spark,.urlpill{unicode-bidi:isolate}
+html[dir="rtl"] .tile-v,html[dir="rtl"] .quota-meter,html[dir="rtl"] .quota-readout,
+html[dir="rtl"] .th-counts,html[dir="rtl"] .logtable td.mono,html[dir="rtl"] .msg-time,
+html[dir="rtl"] .th-last{direction:ltr}
+html[dir="rtl"] .tile-v{text-align:center}
+html[dir="rtl"] .logtable td.mono,html[dir="rtl"] .th-last,html[dir="rtl"] .msg-time{text-align:start}
+/* numeric cells in tables stay LTR so counts never flip */
+html[dir="rtl"] .logtable td b,html[dir="rtl"] .logtable td .ok-n{unicode-bidi:isolate;direction:ltr}
+/* read-only identity fields (email addresses, URLs) are LTR regardless of UI language */
+html[dir="rtl"] #efrom,html[dir="rtl"] #em_from,html[dir="rtl"] #eto,
+html[dir="rtl"] #sy_ep,html[dir="rtl"] #em_ep,html[dir="rtl"] #ep2,html[dir="rtl"] #et_id{direction:ltr;text-align:start}
