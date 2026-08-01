@@ -408,3 +408,5 @@ html[dir="rtl"] #sy_ep,html[dir="rtl"] #em_ep,html[dir="rtl"] #ep2,html[dir="rtl
 /* header badges stay inline but never wrap away from their label */
 .logtable th .info{margin-inline-start:6px;vertical-align:middle}
 .logtable th{white-space:nowrap}
+.relay-err{display:inline-block;margin-inline-start:6px;color:#e6b45a;font-size:11.5px}
+#homeProbe .mono{color:var(--teal)}

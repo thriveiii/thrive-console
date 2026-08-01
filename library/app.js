@@ -91,8 +91,37 @@ function clearLocalHits(){ try{ localStorage.removeItem(HITS); }catch(e){} __ope
 /* Is collection actually working? Distinguishes three states that look identical otherwise:
    "off" (no relay), "stale" (relay answered but doesn't understand analytics — old script),
    "live" (collecting, even if nobody has opened a page yet). */
-let __hitsState="off";
+let __hitsState="off", __hitsErr="";
 function hitsState(){ return __hitsState; }
+function hitsError(){ return __hitsErr; }
+/* Ask the relay what it actually is. Saving the script is not the same as deploying it, and a
+   second deployment serves the OLD code from a different URL — this reports, verbatim, which
+   URL the console calls and what that URL answers, so the question is settled in one click. */
+async function relayProbe(){
+  await syncBootstrap();
+  const ep=getSyncEndpoint();
+  const out={ url:ep, tail:(ep||"").replace(/\/exec.*$/,"").slice(-12), version:"", state:"", hits:"", v4:false };
+  if(!ep){ out.version="(no endpoint configured)"; return out; }
+  try{
+    const r=await fetch(ep,{cache:"no-store"});
+    out.version=(await r.text()).slice(0,120).trim();
+  }catch(e){ out.version="(unreachable: "+e.message+")"; }
+  out.v4=/v4/.test(out.version);
+  const auth=syncAuth();
+  if(!auth){ out.state=out.hits="(not unlocked — no sync credential)"; return out; }
+  try{
+    const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({op:"state_get",auth:auth})});
+    const j=await r.json(); out.state = j.ok? "ok" : ("✕ "+(j.error||"failed"));
+  }catch(e){ out.state="✕ "+e.message; }
+  try{
+    const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({op:"hits_get",auth:auth})});
+    const j=await r.json();
+    out.hits = j.ok? ("ok — "+((j.events||[]).length)+" events") : ("✕ "+(j.error||"failed"));
+  }catch(e){ out.hits="✕ "+e.message; }
+  return out;
+}
 // Pull collected analytics from the relay (same endpoint as sync/email).
 async function fetchRemoteHits(){
   const auth=syncAuth(); if(!auth){ __hitsState="off"; return false; }
@@ -102,8 +131,10 @@ async function fetchRemoteHits(){
     const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"hits_get", auth:auth }) });
     const j=await r.json();
-    if(!j.ok || !Array.isArray(j.events)){ __hitsState="stale"; return false; }
-    __hitsState="live";
+    if(!j.ok || !Array.isArray(j.events)){
+      __hitsState="stale"; __hitsErr=String(j.error||"no events array"); return false;
+    }
+    __hitsState="live"; __hitsErr="";
     // union with what we already have, so nothing collected earlier is lost when the relay rolls
     const seen={}, merged=[];
     j.events.concat(getRemoteHits()).forEach(e=>{ const k=hitKey(e); if(seen[k]) return; seen[k]=1; merged.push(e); });
@@ -111,7 +142,7 @@ async function fetchRemoteHits(){
     setRemoteHits(merged);
     __opensCache=null;                                   // opens map must be recomputed
     return true;
-  }catch(e){ __hitsState="stale"; return false; }
+  }catch(e){ __hitsState="stale"; __hitsErr=String(e.message||e); return false; }
 }
 function getEndpoint(){ try{ return localStorage.getItem(ENDPT)||""; }catch(e){ return ""; } }
 function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.removeItem(ENDPT); }catch(e){} }
@@ -278,6 +309,10 @@ async function doSyncRound(ep, auth){
     body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
   const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
   try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
+  // Analytics share this endpoint and credential — refresh them in the same round. Without
+  // this, a page that syncs right after unlocking never re-checks collection and sits on a
+  // stale "not collecting" message no matter how the relay is actually deployed.
+  try{ await fetchRemoteHits(); }catch(e){}
   if(typeof window.onThriveSync==="function"){ try{ window.onThriveSync(); }catch(e){} }
 }
 async function syncNow(){
@@ -1868,7 +1903,8 @@ async function initHome(){
       let msg, cls;
       if(st==="live"){ cls="note";
         msg = getRemoteHits().length ? t("home_data_live") : t("home_data_none_yet"); }
-      else if(st==="stale"){ cls="note warn-note"; msg=t("home_data_stale"); }
+      else if(st==="stale"){ cls="note warn-note";
+        msg=t("home_data_stale")+(hitsError()? ' <span class="mono relay-err">'+esc(hitsError())+'</span>' : ''); }
       else { cls="note warn-note"; msg=t("home_data_local"); }
       note.className=cls;
       let extra = mine? " "+t("home_data_self").replace("{n}", mine) : "";
@@ -1877,9 +1913,25 @@ async function initHome(){
       const legacy=legacyLocalHits().length;
       if(legacy && st==="live") extra+=' '+t("home_data_legacy").replace("{n}", legacy)+
         ' <button type="button" class="btn ghost sm" id="clrLegacy">'+t("home_clear_legacy")+'</button>';
+      // Always offer the probe: it names the exact URL being called and what it answers.
+      extra+=' <button type="button" class="btn ghost sm" id="probeRelayBtn">'+t("home_probe")+'</button>';
       note.innerHTML=msg+extra;
       const cl=document.getElementById("clrLegacy");
       if(cl) cl.addEventListener("click",()=>{ clearLocalHits(); toast(t("home_legacy_cleared")); render(); });
+      const pb=document.getElementById("probeRelayBtn");
+      if(pb) pb.addEventListener("click", async ()=>{
+        pb.disabled=true; const o=pb.textContent; pb.textContent=t("testing");
+        const p=await relayProbe();
+        pb.disabled=false; pb.textContent=o;
+        const box=el("homeProbe"); if(!box) return;
+        box.hidden=false; box.className="note "+(p.v4?"":"warn-note");
+        box.innerHTML='<b>'+t("home_probe_h")+'</b><br>'+
+          t("home_probe_url")+' <span class="mono">…'+esc(p.tail)+'/exec</span><br>'+
+          t("home_probe_ver")+' <span class="mono">'+esc(p.version||"—")+'</span><br>'+
+          t("home_probe_sync")+' <span class="mono">'+esc(p.state)+'</span><br>'+
+          t("home_probe_hits")+' <span class="mono">'+esc(p.hits)+'</span>'+
+          (p.v4? '' : '<br><br>'+t("home_probe_notv4"));
+      });
     }
 
     /* ---- per-campaign performance ----
