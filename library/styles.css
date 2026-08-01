@@ -149,6 +149,12 @@ html.gate-locked .top,html.gate-locked .wrap{display:none!important}
 .block-h{font-size:16px;font-weight:800;color:var(--ink);margin:26px 0 12px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 14px}
+/* grid children must be allowed to shrink, or intrinsically-wide controls (Safari's date
+   input especially) overflow their cell and spill across the next field */
+.grid2>*,.grid3>*{min-width:0}
+.grid2 .input,.grid3 .input,.grid2 select,.grid3 select{max-width:100%}
+input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100%;text-align:start}
+@media(max-width:560px){.grid2,.grid3{grid-template-columns:1fr}}
 @media(max-width:560px){.grid2,.grid3{grid-template-columns:1fr}}
 
 /* editor preview */
@@ -353,3 +359,10 @@ html[dir="rtl"] .eopp-thumb{transform-origin:top right}
 /* ---------- live merge fields (compose) ---------- */
 .month-input{max-width:240px}
 .ebody [data-m]{border-bottom:1px dashed rgba(150,133,202,.55)}  /* editor-only cue; sent HTML has no spans */
+
+/* ---------- Overview home + email-template editor ---------- */
+.tile.t-warn{border-color:rgba(230,180,90,.45)}
+.tile.t-good{border-color:rgba(142,207,154,.45)}
+.ok-n{color:#8ecf9a}
+.et-body{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.6;resize:vertical;min-height:180px}
+#etEditor{border-color:rgba(150,133,202,.45)}

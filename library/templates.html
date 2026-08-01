@@ -17,11 +17,11 @@
 <header class="top">
   <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
   <nav class="nav">
-    <a href="index.html" data-i18n="nav_library">Library</a>
+    <a href="index.html" data-i18n="nav_home">Overview</a>
+    <a href="library.html" data-i18n="nav_library">Library</a>
     <a href="editor.html" data-i18n="nav_editor">Editor</a>
     <a href="compose.html" data-i18n="nav_compose">Email</a>
     <a href="templates.html" class="active" data-i18n="nav_templates">Templates</a>
-    <a href="insights.html" data-i18n="nav_insights">Insights</a>
     <a href="activity.html" data-i18n="nav_activity">Activity</a>
     <a href="settings.html" data-i18n="nav_settings">Settings</a>
     <button id="langbtn" class="langbtn">العربية</button>
@@ -55,6 +55,28 @@
 
   <h3 class="block-h" id="email" style="margin-top:26px" data-i18n="tpl_email_h">Email templates</h3>
   <p class="sub" data-i18n="tpl_email_sub"></p>
+  <div class="bar" style="margin-bottom:14px">
+    <button class="btn" id="etNew" data-i18n="et_new">New email template</button>
+  </div>
+
+  <section class="panel settings-panel" id="etEditor" hidden>
+    <h3 class="block-h" id="etEditorH" data-i18n="et_edit_h">Edit email template</h3>
+    <div class="grid2">
+      <div class="field"><label data-i18n="et_name_l">Name</label><input id="et_name" class="input" autocomplete="off"></div>
+      <div class="field"><label data-i18n="et_id_l">Id</label><input id="et_id" class="input" autocomplete="off" spellcheck="false"><div class="hint" data-i18n="et_id_hint"></div></div>
+    </div>
+    <div class="field"><label data-i18n="et_subject_l">Subject</label><input id="et_subject" class="input" autocomplete="off"></div>
+    <div class="field"><label data-i18n="et_body_l">Body</label>
+      <textarea id="et_body" class="input et-body" rows="10" spellcheck="false"></textarea>
+      <div class="hint" data-i18n="et_ph_hint"></div>
+    </div>
+    <div class="bar">
+      <button class="btn" id="etSave" data-i18n="et_save">Save template</button>
+      <button class="btn ghost" id="etCancel" data-i18n="close">Close</button>
+      <span class="pill" id="etHint"></span>
+    </div>
+  </section>
+
   <div class="tpl" id="emailTplList"></div>
 </main>
 

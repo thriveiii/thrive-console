@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Thrive · Opportunity Library</title>
+<title>Thrive · Overview</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="styles.css">
@@ -17,11 +17,11 @@
 <header class="top">
   <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
   <nav class="nav">
-    <a href="index.html" class="active" data-i18n="nav_library">Library</a>
+    <a href="index.html" class="active" data-i18n="nav_home">Overview</a>
+    <a href="library.html" data-i18n="nav_library">Library</a>
     <a href="editor.html" data-i18n="nav_editor">Editor</a>
     <a href="compose.html" data-i18n="nav_compose">Email</a>
     <a href="templates.html" data-i18n="nav_templates">Templates</a>
-    <a href="insights.html" data-i18n="nav_insights">Insights</a>
     <a href="activity.html" data-i18n="nav_activity">Activity</a>
     <a href="settings.html" data-i18n="nav_settings">Settings</a>
     <button id="langbtn" class="langbtn">العربية</button>
@@ -30,33 +30,31 @@
 </header>
 
 <main class="wrap">
-  <div class="page-h"><h1 class="title" data-i18n="lib_title">Opportunity Library</h1></div>
-  <p class="sub" data-i18n="lib_sub"></p>
+  <div class="page-h"><h1 class="title" data-i18n="home_title">Performance</h1><span class="pill" id="homeSync"></span></div>
+  <p class="sub" data-i18n="home_sub"></p>
 
   <div class="toolbar">
-    <div class="search"><input id="q" type="search" data-i18n-ph="search_ph"></div>
-    <select id="sort" style="max-width:180px">
-      <option value="new" data-i18n="sort_new">Newest sent</option>
-      <option value="old" data-i18n="sort_old">Oldest sent</option>
-      <option value="az" data-i18n="sort_az">Business A–Z</option>
-    </select>
-    <select id="filter" style="max-width:170px"><option value="all" data-i18n="filter_all">All templates</option></select>
-    <select id="statusFilter" style="max-width:160px">
-      <option value="active" data-i18n="statusf_active">Active</option>
-      <option value="followup" data-i18n="statusf_followup">Needs follow-up</option>
-      <option value="archived" data-i18n="statusf_archived">Archived</option>
-      <option value="all" data-i18n="statusf_all">All statuses</option>
-    </select>
-    <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
-    <button class="btn ghost" id="exportManifest" data-i18n="export_manifest">Export manifest.json</button>
+    <a class="btn" href="compose.html" data-i18n="home_send">Send an email</a>
+    <a class="btn ghost" href="editor.html" data-i18n="new_opp">New opportunity</a>
+    <a class="btn ghost" href="library.html" data-i18n="home_open_lib">Open library</a>
+    <button class="btn ghost" id="homeRefresh" data-i18n="ins_refresh">Refresh</button>
   </div>
 
-  <div id="pipeline" class="pipeline"></div>
-  <div id="grid" class="grid"></div>
+  <h3 class="block-h" data-i18n="home_outreach">Outreach</h3>
+  <div class="tiles" id="tilesOutreach"></div>
+
+  <h3 class="block-h" data-i18n="home_pages_h">Pages &amp; visitors</h3>
+  <div class="tiles" id="tilesPages"></div>
+
+  <h3 class="block-h" data-i18n="home_campaigns">Campaign performance</h3>
+  <div id="homeCampaigns"></div>
+
+  <h3 class="block-h" data-i18n="home_top">Most opened pages</h3>
+  <div id="homeTop"></div>
 </main>
 
 <script src="i18n.js" defer></script>
 <script src="app.js" defer></script>
-<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initDashboard(); });</script>
+<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initHome(); });</script>
 </body>
 </html>

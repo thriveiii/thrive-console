@@ -78,6 +78,10 @@ function debounce(fn, ms){ let h; return function(){ const a=arguments, c=this; 
 /* ---------- pipeline stages (mini CRM) ---------- */
 const STAGES=["sent","opened","replied","won","lost"];
 function daysSince(d){ if(!d) return 0; const ms=Date.parse(d+"T00:00:00Z"); if(isNaN(ms)) return 0; return Math.floor((Date.now()-ms)/86400000); }
+/* shared opportunity predicates (used by the library grid and the Overview dashboard) */
+function isLive(o){ return !o._local || !!o.published; }
+function effStage(o){ const op=opensForSlug(o.slug); if((!o.stage||o.stage==="sent")&&op>0) return "opened"; return o.stage||"sent"; }
+function needsFollowup(o){ return isLive(o) && !o.archived && effStage(o)==="sent" && opensForSlug(o.slug)===0 && daysSince(o.sent_on)>=3; }
 
 /* ---------- opportunity HTML (regenerated on demand — not stored, to save space) ---------- */
 const __tplCache={};
@@ -229,17 +233,40 @@ async function syncNow(){
   try{
     try{ await doSyncRound(ep, auth); __syncErr=""; return true; }
     catch(e1){
-      // A stale saved URL self-heals: re-read the committed sync.json and retry once with it.
+      // The saved URL may point at a superseded deployment (it answers, but with the old script).
+      // Re-read the committed sync.json and retry once with the published URL. Time-boxed so a
+      // blocked or slow lookup can never leave the button spinning.
       let fresh="";
-      try{ const r=await fetch("./sync.json",{cache:"no-store"}); if(r.ok){ const j=await r.json(); fresh=(j&&j.ep)||""; } }catch(_){}
+      try{
+        const ac=new AbortController(); const to=setTimeout(()=>ac.abort(), 6000);
+        const r=await fetch("./sync.json",{cache:"no-store", signal:ac.signal});
+        clearTimeout(to);
+        if(r.ok){ const j=await r.json(); fresh=(j&&j.ep)||""; }
+      }catch(_){}
       if(fresh && fresh!==ep){
         try{ await doSyncRound(fresh, auth); setSyncEndpoint(fresh); __syncErr=""; return true; }
-        catch(e2){ __syncErr=classifySyncError(e2.message); return false; }
+        // If the published endpoint fails too, the FIRST error is the actionable one (it describes
+        // the endpoint the user actually configured) — don't mask it with the fallback's error.
+        catch(e2){ __syncErr=classifySyncError(e1.message); return false; }
       }
       __syncErr=classifySyncError(e1.message); return false;
     }
   }
   finally{ __syncBusy=false; }
+}
+// Push-only: publish THIS device's data to the shared store without pulling first.
+// Recovery lever for "the device holding the campaign never got its data up".
+async function syncPush(){
+  const auth=syncAuth(); if(!auth) return false;
+  await syncBootstrap();
+  const ep=getSyncEndpoint(); if(!ep){ __syncErr=t("sy_need_ep"); return false; }
+  try{
+    const p=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
+    const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
+    try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
+    __syncErr=""; return true;
+  }catch(e){ __syncErr=classifySyncError(e.message); return false; }
 }
 function scheduleSyncPush(){
   if(__syncApplying) return;                              // merges must not re-trigger themselves
@@ -377,9 +404,6 @@ async function initDashboard(){
     const op=document.createElement("option"); op.value=tp; op.textContent=tp; filt.appendChild(op);
   });
 
-  function isLive(o){ return !o._local || !!o.published; }
-  function effStage(o){ const op=opensForSlug(o.slug); if((!o.stage||o.stage==="sent")&&op>0) return "opened"; return o.stage||"sent"; }
-  function needsFollowup(o){ return isLive(o) && !o.archived && effStage(o)==="sent" && opensForSlug(o.slug)===0 && daysSince(o.sent_on)>=3; }
   function badgeFor(o){
     if(o.archived) return '<span class="badge arch">'+t("badge_archived")+'</span>';
     if(o._local && !o.published) return '<span class="badge draft">'+t("draft")+'</span>';
@@ -1231,14 +1255,17 @@ async function initCompose(){
     body.querySelectorAll("a").forEach(a=>{ if(!a.getAttribute("data-origin")) a.setAttribute("data-origin","template"); });
     refreshLinks();
   }
+  function clearCompose(){ subjectDirty=false; el("esubject").value=""; body.innerHTML=""; if(monthWrap) monthWrap.hidden=true; refreshLinks(); }
   if(tplSel){
     const plainOpt=document.createElement("option"); plainOpt.value=""; plainOpt.textContent=t("cmp_no_tpl"); plainOpt.setAttribute("data-i18n","cmp_no_tpl"); tplSel.appendChild(plainOpt);
     tplCache.forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
-    if(tplCache[0]) tplSel.value=tplCache[0].id;      // default to first real template, not plain
+    // ALWAYS start blank: an empty editor with no template. A template is only pre-selected when
+    // the writer explicitly asked for one via ?etpl=<id> (e.g. "Compose with" from Templates).
+    tplSel.value="";
     const preT=params.get("etpl");
-    if(preT!==null && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
+    if(preT && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
     tplSel.addEventListener("change",()=>{
-      if(tplSel.value===""){ subjectDirty=false; el("esubject").value=""; body.innerHTML=""; if(monthWrap) monthWrap.hidden=true; refreshLinks(); }  // plain: start from an empty editor
+      if(tplSel.value===""){ clearCompose(); }        // plain: back to an empty editor
       else applyTemplate(currentTpl());
     });
   }
@@ -1401,12 +1428,27 @@ function initSettings(){
     el("sy_ep").value=getSyncEndpoint()||getEmailEndpoint();
     const syStatus=el("syStatus");
     function syShow(msg, cls){ syStatus.hidden=false; syStatus.textContent=msg; syStatus.className="gh-result "+(cls||""); }
+    // What this device actually holds — so "where did my sends go?" is answerable at a glance.
+    function syCounts(){
+      const c=el("syCounts"); if(!c) return;
+      const mail=getMailLog(), sent=mail.filter(m=>m.status==="sent").length;
+      c.innerHTML='<b>'+sent+'</b> '+t("sy_c_sent")+' · <b>'+getThreads().length+'</b> '+t("sy_c_threads")+
+        ' · <b>'+getSendStamps().length+'</b> '+t("sy_c_stamps")+' · <b>'+getDrafts().length+'</b> '+t("sy_c_opps");
+    }
     function sySummary(){
+      syCounts();
       const last=syncLast();
       if(last){ try{ syShow("✓ "+t("sy_last")+" "+new Date(last).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}), "ok"); return; }catch(e){} }
       if(getSyncEndpoint()) syShow(t("sy_ready"),"");
     }
     sySummary();
+    if(el("syPush")) el("syPush").addEventListener("click", async ()=>{
+      if(!syncAuth()){ toast(t("sy_need_unlock")); return; }
+      syShow(t("sy_syncing"),"");
+      const ok=await syncPush();
+      if(ok){ sySummary(); toast(t("sy_pushed")); }
+      else syShow("✕ "+t("sy_fail")+(syncErrHint()?" — "+syncErrHint():""),"warn");
+    });
     el("syEnable").addEventListener("click", async ()=>{
       const ep=el("sy_ep").value.trim();
       if(!ep){ toast(t("sy_need_ep")); return; }
@@ -1550,6 +1592,8 @@ function initTemplates(){
     if(!id){ toast(t("tpl_need_id")); return; }
     const reserved=APPROVED_TEMPLATES.some(t2=>t2.id===id);
     if(reserved){ toast(t("tpl_id_taken")); return; }
+    // An existing custom id would be silently overwritten — ask first.
+    if(getCustomTemplate(id) && !confirm(t("tpl_confirm_overwrite"))) return;
     const ok=saveCustomTemplate({ id, name:el("tpl_name").value.trim()||id, lang:el("tpl_lang").value||"EN",
       html:pendingHTML, created:new Date().toISOString() });
     if(!ok) return;
@@ -1558,28 +1602,193 @@ function initTemplates(){
     toast(t("tpl_added")); renderCustom();
   });
 
+  /* ---- email templates: full, explicit CRUD (new · edit · duplicate · delete) ---- */
+  const etBox=el("etEditor");
+  let etEditingId=null;                                    // null = creating a new template
+  function etOpen(id){
+    if(!etBox) return;
+    const list=getEmailTemplates(), rec=id?list.find(x=>x.id===id):null;
+    etEditingId = rec?rec.id:null;
+    el("etEditorH").textContent = rec?t("et_edit_h"):t("et_new_h");
+    el("et_name").value = rec?(rec.name||""):"";
+    el("et_id").value = rec?rec.id:"";
+    el("et_id").readOnly = !!rec;                          // ids are stable once created (compose links use them)
+    el("et_subject").value = rec?(rec.subject||""):"{{MONTH}} at Thrive";
+    el("et_body").value = rec?(rec.html||""):"Hi {{NAME}},\n\n\n\nAbdullah Thyab\nthriveiii.com";
+    el("etHint").textContent = rec && rec.id==="monthly" ? t("et_default_note") : "";
+    etBox.hidden=false;
+    etBox.scrollIntoView({behavior:"smooth", block:"nearest"});
+    setTimeout(()=>el("et_name").focus(), 60);
+  }
+  function etClose(){ if(etBox) etBox.hidden=true; etEditingId=null; }
+  if(el("etNew")) el("etNew").addEventListener("click",()=>etOpen(null));
+  if(el("etCancel")) el("etCancel").addEventListener("click", etClose);
+  if(el("etSave")) el("etSave").addEventListener("click",()=>{
+    const name=el("et_name").value.trim();
+    if(!name){ toast(t("et_need_name")); return; }
+    const body=el("et_body").value;
+    if(!body.trim()){ toast(t("et_need_body")); return; }
+    const id = etEditingId || slugify(el("et_id").value) || slugify(name);
+    if(!id){ toast(t("tpl_need_id")); return; }
+    if(!etEditingId && getEmailTemplates().some(x=>x.id===id)){ toast(t("et_id_taken")); return; }
+    saveEmailTemplate({ id, name, subject:el("et_subject").value, html:body });
+    logActivity("etpl_add", id, name);
+    toast(t("cmp_tpl_saved")); etClose(); renderEmailTpls();
+  });
+  // Plain-text preview of a template body (tags stripped) so the card shows what it actually says.
+  function etPreview(html){
+    const d=document.createElement("div"); d.innerHTML=String(html||"");
+    return (d.textContent||"").replace(/\s+/g," ").trim().slice(0,180);
+  }
   function renderEmailTpls(){
     const wrap=el("emailTplList"); if(!wrap) return;
-    wrap.innerHTML = getEmailTemplates().map(et=>`
+    const list=getEmailTemplates();
+    if(!list.length){ wrap.innerHTML='<div class="empty">'+t("et_none")+'</div>'; return; }
+    wrap.innerHTML = list.map(et=>{
+      const usesMonth=tplUsesMonth(et);
+      return `
       <div class="item">
         <div class="item-body">
           <div class="id">EMAIL · ${esc(et.id)}</div>
-          <h3>${esc(et.name)}</h3>
-          <p class="meta-line">${esc(et.subject)}</p>
+          <h3>${esc(et.name||et.id)}</h3>
+          <div class="meta">
+            ${et.id==="monthly"?`<span class="chip">${t("et_default")}</span>`:""}
+            ${usesMonth?`<span class="chip tmpl">${t("et_asks_month")}</span>`:""}
+            ${/\{\{LINK\}\}/.test(et.html||"")?`<span class="chip">${t("et_has_link")}</span>`:""}
+          </div>
+          <p class="meta-line"><b>${esc(et.subject||"—")}</b></p>
+          <p class="meta-line">${esc(etPreview(et.html))}</p>
           <div class="actions">
             <a class="btn sm" href="compose.html?etpl=${encodeURIComponent(et.id)}">${t("cmp_compose_with")}</a>
-            ${et.id!=="monthly"?`<button class="btn ghost sm danger" data-etdel="${esc(et.id)}">${t("tpl_delete")}</button>`:""}
+            <button class="btn ghost sm" data-etedit="${esc(et.id)}">${t("cmp_link_edit")}</button>
+            <button class="btn ghost sm" data-etdup="${esc(et.id)}">${t("et_duplicate")}</button>
+            <button class="btn ghost sm danger" data-etdel="${esc(et.id)}">${t("tpl_delete")}</button>
           </div>
         </div>
-      </div>`).join("");
+      </div>`;}).join("");
+    wrap.querySelectorAll("[data-etedit]").forEach(b=>b.addEventListener("click",()=>etOpen(b.getAttribute("data-etedit"))));
+    wrap.querySelectorAll("[data-etdup]").forEach(b=>b.addEventListener("click",()=>{
+      const src=getEmailTemplates().find(x=>x.id===b.getAttribute("data-etdup")); if(!src) return;
+      let id=src.id+"-copy", n=2; while(getEmailTemplates().some(x=>x.id===id)) id=src.id+"-copy-"+(n++);
+      saveEmailTemplate({ id, name:(src.name||src.id)+" (copy)", subject:src.subject, html:src.html });
+      logActivity("etpl_add", id, "duplicate"); toast(t("et_duplicated")); renderEmailTpls();
+    }));
     wrap.querySelectorAll("[data-etdel]").forEach(b=>b.addEventListener("click",()=>{
       const id=b.getAttribute("data-etdel");
-      if(!confirm(t("tpl_confirm_del"))) return;
-      removeEmailTemplate(id); logActivity("etpl_remove", id, ""); renderEmailTpls();
+      // The stock "monthly" template is restorable, so deleting it is safe and allowed.
+      if(!confirm(id==="monthly"? t("et_confirm_del_default") : t("tpl_confirm_del"))) return;
+      removeEmailTemplate(id); logActivity("etpl_remove", id, "");
+      if(etEditingId===id) etClose();
+      renderEmailTpls();
     }));
   }
   window.onLangApplied=()=>{ renderBuiltin(); renderCustom(); renderEmailTpls(); };
   renderBuiltin(); renderCustom(); renderEmailTpls();
+}
+
+/* ---------- Overview home: outreach + page performance in one room ---------- */
+function fmtMs(ms){ if(!ms) return "—"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
+function fmtWhen(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||"—"; } }
+/* roll raw beacon events into per-slug page stats */
+function aggregateHits(events){
+  const bySlug={};
+  (events||[]).forEach(ev=>{
+    const slug=ev.slug||"(unknown)";
+    const o=bySlug[slug]||(bySlug[slug]={slug, opens:0, vids:new Set(), ips:new Set(), lastTs:"", dwellMs:0, dwellN:0});
+    if(ev.type==="open" || !ev.type){ o.opens++; if(ev.ts>o.lastTs)o.lastTs=ev.ts; }
+    if(ev.vid) o.vids.add(ev.vid);
+    if(ev.ip) o.ips.add(ev.ip);
+    if(ev.type==="dwell" && ev.ms){ o.dwellMs+=ev.ms; o.dwellN++; }
+  });
+  return Object.values(bySlug).sort((a,b)=>b.opens-a.opens);
+}
+async function initHome(){
+  const el=id=>document.getElementById(id);
+  const tile=(v,k,cls)=>'<div class="tile'+(cls?" "+cls:"")+'"><div class="tile-v">'+esc(String(v))+'</div><div class="tile-k">'+k+'</div></div>';
+
+  function syncPill(){
+    const p=el("homeSync"); if(!p) return;
+    const last=syncLast();
+    if(!getSyncEndpoint()){ p.textContent=t("home_sync_off"); p.className="pill warn"; return; }
+    if(!last){ p.textContent=t("sy_ready"); p.className="pill"; return; }
+    p.textContent=t("sy_last")+" "+fmtWhen(last); p.className="pill ok";
+  }
+
+  async function render(){
+    syncPill();
+    const mail=getMailLog(), q=quotaUsage(), opps=await mergedOpps();
+    const hits=getHits(), pages=aggregateHits(hits);
+
+    // ---- outreach ----
+    const sent=mail.filter(m=>m.status==="sent").length;
+    const replies=mail.filter(m=>m.direction==="in"||m.status==="replied").length;
+    const threads=getThreads();
+    const contacted=new Set(mail.filter(m=>m.to).map(m=>String(m.to).toLowerCase())).size;
+    const answered=threads.filter(th=>th.replied>0).length;
+    const rate=threads.length? Math.round(answered/threads.length*100) : 0;
+    el("tilesOutreach").innerHTML=
+      tile(q.day+" / "+q.dailyCap, t("home_sent_today"), q.dayFull?"t-warn":"")+
+      tile(q.month+" / "+q.monthlyCap, t("home_sent_month"))+
+      tile(sent, t("home_sent_total"))+
+      tile(contacted, t("home_contacts"))+
+      tile(replies, t("home_replies"))+
+      tile(rate+"%", t("home_reply_rate"), rate>0?"t-good":"");
+
+    // ---- pages ----
+    const live=opps.filter(o=>isLive(o)).length;
+    const totalOpens=pages.reduce((s,r)=>s+r.opens,0);
+    const uniq=new Set(); hits.forEach(e=>e.vid&&uniq.add(e.vid));
+    const dw=pages.reduce((a,r)=>{ a.ms+=r.dwellMs; a.n+=r.dwellN; return a; }, {ms:0,n:0});
+    const fu=opps.filter(o=>!o.archived&&needsFollowup(o)).length;
+    el("tilesPages").innerHTML=
+      tile(live, t("home_live_pages"))+
+      tile(opps.length, t("home_total_opps"))+
+      tile(totalOpens, t("ins_total_opens"))+
+      tile(uniq.size, t("ins_unique"))+
+      tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("ins_avg_dwell"))+
+      tile(fu, t("followup"), fu?"t-warn":"");
+
+    // ---- per-campaign performance (one row per opportunity that has outreach or opens) ----
+    const byOpp={};
+    opps.forEach(o=>{ byOpp[o.slug]={ slug:o.slug, biz:o.business||o.slug, sent:0, replies:0, opens:0, uniq:0, last:"" }; });
+    mail.forEach(m=>{
+      const k=m.opp||""; if(!k) return;
+      const r=byOpp[k]||(byOpp[k]={ slug:k, biz:k, sent:0, replies:0, opens:0, uniq:0, last:"" });
+      if(m.status==="sent") r.sent++;
+      if(m.direction==="in"||m.status==="replied") r.replies++;
+      if(m.ts>r.last) r.last=m.ts;
+    });
+    pages.forEach(p=>{ const r=byOpp[p.slug]; if(r){ r.opens=p.opens; r.uniq=p.vids.size; if(p.lastTs>r.last) r.last=p.lastTs; } });
+    const rows=Object.values(byOpp).filter(r=>r.sent||r.opens||r.replies)
+      .sort((a,b)=> (b.sent+b.opens)-(a.sent+a.opens));
+    el("homeCampaigns").innerHTML = rows.length
+      ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
+        '<th>'+t("home_c_opp")+'</th><th>'+t("cmp_sent_n")+'</th><th>'+t("ins_opens")+'</th>'+
+        '<th>'+t("ins_unique")+'</th><th>'+t("cmp_replied_n")+'</th><th>'+t("ins_last")+'</th></tr></thead><tbody>'+
+        rows.map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.biz)+'</a></td>'+
+          '<td><b>'+r.sent+'</b></td><td>'+r.opens+'</td><td>'+(r.uniq||"—")+'</td>'+
+          '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':"—")+'</td>'+
+          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):"—")+'</td></tr>').join("")+
+        '</tbody></table></div>'
+      : '<div class="empty">'+t("home_no_campaigns")+'</div>';
+
+    // ---- most opened pages ----
+    el("homeTop").innerHTML = pages.length
+      ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
+        '<th>'+t("ins_item")+'</th><th>'+t("ins_opens")+'</th><th>'+t("ins_unique")+'</th>'+
+        '<th>'+t("ins_dwell")+'</th><th>'+t("ins_last")+'</th></tr></thead><tbody>'+
+        pages.slice(0,10).map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.slug)+'</a></td>'+
+          '<td><b>'+r.opens+'</b></td><td>'+r.vids.size+'</td>'+
+          '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):"—")+'</td>'+
+          '<td class="mono">'+(r.lastTs?esc(fmtWhen(r.lastTs)):"—")+'</td></tr>').join("")+
+        '</tbody></table></div>'
+      : '<div class="empty">'+t("home_no_opens")+'</div>';
+  }
+
+  el("homeRefresh").addEventListener("click", async ()=>{ if(syncAuth()) await syncNow(); render(); });
+  window.onLangApplied=render;
+  window.onThriveSync=render;                            // live refresh when another device's data arrives
+  render();
 }
 
 /* ---------- insights (analytics) ---------- */
