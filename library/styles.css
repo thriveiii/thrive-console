@@ -417,3 +417,5 @@ html[dir="rtl"] #sy_ep,html[dir="rtl"] #em_ep,html[dir="rtl"] #ep2,html[dir="rtl
 .bootfail{max-width:520px;margin:80px auto;padding:16px 18px;border:1px solid var(--hair);
   border-radius:12px;background:var(--panel);color:var(--ink-2);font-size:14px;line-height:1.6;
   text-align:center;font-family:var(--font)}
+.ok-line{color:#7fd1a3;font-weight:700}
+.warn-line{color:#e0b24a;font-weight:700}

@@ -220,9 +220,15 @@ function importBackup(obj){
    Merge is union-based: sends/replies/activity dedupe by id, drafts+templates newest-wins.
    The GitHub token is deliberately NEVER synced. Page html stays device-local (repo has it). */
 const SYNC_EP="thrive_sync_ep", SYNC_AUTH="thrive_sync_auth", SYNC_LAST="thrive_sync_last", SCAL_UP="thrive_scalars_up";
+const SYNC_EP_UP="thrive_sync_ep_up";
 let __syncBusy=false, __syncApplying=false, __syncPushT=null, __syncBootstrapped=false;
 function getSyncEndpoint(){ try{ return localStorage.getItem(SYNC_EP)||""; }catch(e){ return ""; } }
 function setSyncEndpoint(u){ try{ u?localStorage.setItem(SYNC_EP,u):localStorage.removeItem(SYNC_EP); }catch(e){} }
+// When was this device's relay URL last chosen by a person who verified it here? A published
+// sync.json only replaces the local URL if it is at least as new, so a device that just proved
+// its URL serves v4 is never dragged back onto an older one by a stale file.
+function syncEpStamp(){ try{ return parseInt(localStorage.getItem(SYNC_EP_UP)||"0",10)||0; }catch(e){ return 0; } }
+function stampSyncEp(t){ try{ localStorage.setItem(SYNC_EP_UP, String(t||Date.now())); }catch(e){} }
 // Session first, then the device-level copy (see gate.js) so an already-unlocked tab still syncs.
 function syncAuth(){
   try{ return sessionStorage.getItem(SYNC_AUTH) || localStorage.getItem(SYNC_AUTH) || ""; }
@@ -231,18 +237,35 @@ function syncAuth(){
 function syncLast(){ try{ return localStorage.getItem(SYNC_LAST)||""; }catch(e){ return ""; } }
 function scalarsUp(){ try{ return parseInt(localStorage.getItem(SCAL_UP)||"0",10)||0; }catch(e){ return 0; } }
 function touchScalars(){ try{ localStorage.setItem(SCAL_UP, String(Date.now())); }catch(e){} }
+/* The endpoint every device must agree on lives in library/sync.json, served from this same
+   origin. Reconcile with it on every load, not only when the device has nothing: a phone that
+   was configured by hand months ago would otherwise keep calling a URL nobody chose again, and
+   publishing a new relay would silently reach no one. */
 async function syncBootstrap(){
   if(__syncBootstrapped) return; __syncBootstrapped=true;
-  if(getSyncEndpoint()) return;
-  try{ const r=await fetch("./sync.json",{cache:"no-store"});
-    if(r.ok){ const j=await r.json(); if(j && j.ep){ setSyncEndpoint(j.ep); if(!getEmailEndpoint()) setEmailEndpoint(j.ep); } } }catch(e){}
+  let j=null;
+  try{ const r=await fetch("./sync.json",{cache:"no-store"}); if(r.ok) j=await r.json(); }catch(e){}
+  if(!j || !j.ep) return;
+  const cur=getSyncEndpoint(), ee=getEmailEndpoint();
+  if(cur===j.ep) return;
+  // A device with nothing takes whatever is published. A device that already has an endpoint is
+  // only moved by a STAMPED file that is at least as new as its own choice: a file written before
+  // stamps existed can never yank a working device onto a relay it already moved away from.
+  if(cur && !(j.up && j.up >= syncEpStamp())) return;
+  setSyncEndpoint(j.ep); stampSyncEp(j.up||0);
+  // Email follows the published relay only when it was empty or was pointing at the endpoint we
+  // just replaced. An address saved deliberately in the Email box is never overwritten here.
+  if(!ee || ee===cur) setEmailEndpoint(j.ep);
 }
 function syncSnapshot(){
   // drafts travel WITHOUT page html (uploads can be hundreds of KB; the repo holds live pages)
   const opps=getDrafts().map(d=>{ const c=Object.assign({},d); delete c.html; return c; });
+  // The relay URL is deliberately NOT in here. It used to travel with the state, and a device
+  // holding an old URL could push it back over a freshly verified one, which is how two devices
+  // ended up calling two different deployments. The published truth is library/sync.json.
   return { v:1, updated:Date.now(), scalarsUp:scalarsUp(),
     opps, mail:getMailLog(), quota:getSendStamps(), activity:getActivity(),
-    etpl:getEmailTemplates(), fromName:getFromName(), emailEp:getEmailEndpoint(), quotaCfg:quotaCfg() };
+    etpl:getEmailTemplates(), fromName:getFromName(), quotaCfg:quotaCfg() };
 }
 function syncMergeApply(remote){
   if(!remote || typeof remote!=="object") return false;
@@ -281,7 +304,6 @@ function syncMergeApply(remote){
     }
     if((remote.scalarsUp||0) > scalarsUp()){              // settings scalars: newest device wins
       if(typeof remote.fromName==="string") setFromName(remote.fromName);
-      if(typeof remote.emailEp==="string" && remote.emailEp) setEmailEndpoint(remote.emailEp);
       if(remote.quotaCfg) setQuotaCfg(remote.quotaCfg);
       try{ localStorage.setItem(SCAL_UP, String(remote.scalarsUp||0)); }catch(e){}
     }
@@ -996,8 +1018,13 @@ function initActivity(){
     toast(t("act_reply_logged")); render();
   });
   el("logClear").addEventListener("click",()=>{
-    if(!confirm(t("confirm_clear"))) return;
+    // This button deletes the campaign ledger, not just the operations list, and one mis-tap used
+    // to be unrecoverable. Say what is going, and hand over a restorable file before deleting it.
+    const mail=getMailLog(), acts=getActivity();
+    if(!confirm(t("confirm_clear").replace("{m}", String(mail.length)).replace("{a}", String(acts.length)))) return;
+    download("thrive-ledger-backup.json", JSON.stringify({ activity:acts, mail:mail },null,2), "application/json");
     setActivity([]); try{localStorage.removeItem(MAILLOG);}catch(e){} logActivity("clear","",""); render();
+    toast(t("clear_backed_up"));
   });
   el("logExport").addEventListener("click",()=>{
     download("thrive-activity.json", JSON.stringify({ activity:getActivity(), mail:getMailLog() },null,2), "application/json");
@@ -1574,8 +1601,14 @@ function initSettings(){
     function syCounts(){
       const c=el("syCounts"); if(!c) return;
       const mail=getMailLog(), sent=mail.filter(m=>m.status==="sent").length;
+      // Two URLs on one settings page is the single most expensive confusion this console has
+      // produced, so the page states plainly whether they are the same relay.
+      const se=getSyncEndpoint(), ee=getEmailEndpoint();
+      const agree=(se&&ee)? (se===ee?'<span class="ok-line">✓ '+esc(t("sy_one_relay"))+'</span>'
+                                    :'<span class="warn-line">⚠ '+esc(t("sy_two_relays"))+'</span>') : "";
       c.innerHTML='<b>'+sent+'</b> '+t("sy_c_sent")+' · <b>'+getThreads().length+'</b> '+t("sy_c_threads")+
-        ' · <b>'+getSendStamps().length+'</b> '+t("sy_c_stamps")+' · <b>'+getDrafts().length+'</b> '+t("sy_c_opps");
+        ' · <b>'+getSendStamps().length+'</b> '+t("sy_c_stamps")+' · <b>'+getDrafts().length+'</b> '+t("sy_c_opps")+
+        (agree?'<br>'+agree:"");
     }
     function sySummary(){
       syCounts();
@@ -1614,18 +1647,23 @@ function initSettings(){
       // Refuse to publish a URL that isn't a v4 relay: publishing a stale one breaks every device.
       const v=await verifyUrl(ep);
       if(!v.ok){ syShow("✕ "+(v.version||"–")+": "+v.msg+" "+t("sy_v_howto"), "warn"); return; }
-      setSyncEndpoint(ep); setEmailEndpoint(ep);        // one relay serves email, sync and analytics
+      const now=Date.now();
+      setSyncEndpoint(ep); setEmailEndpoint(ep); stampSyncEp(now);   // one relay: email, sync, analytics
       // and the email box above must show it too, or the page looks like it holds two
       // different relays and the reader goes back to pasting the URL twice.
       if(el("em_ep")) el("em_ep").value=ep;
       touchScalars();
       // commit library/sync.json so every device that unlocks the gate finds the endpoint itself
+      let published=false, epErr="";
       if(ghReady()){
-        try{ await ghPutFile("library/sync.json", JSON.stringify({ep:ep})+"\n", "Enable live sync"); syShow("✓ "+t("sy_published"),"ok"); }
-        catch(e){ syShow("✕ "+t("gh_err")+": "+e.message,"warn"); }
-      } else syShow(t("sy_local_only"),"warn");
+        try{ await ghPutFile("library/sync.json", JSON.stringify({ep:ep, up:now})+"\n", "Enable live sync"); published=true; }
+        catch(e){ epErr=t("gh_err")+": "+e.message; }
+      } else epErr=t("sy_no_repo");
       logActivity("settings","","sync");
       const ok=await syncNow();
+      // A relay saved on one device only is not "published to all devices". Saying so in green
+      // is how a phone kept calling a dead URL while the iPad reported success.
+      if(!published){ syCounts(); syShow("⚠ "+t("sy_local_only")+" "+epErr, "warn"); return; }
       if(ok) sySummary(); else if(syncErrHint()) syShow("✕ "+t("sy_fail")+": "+syncErrHint(),"warn");
     });
     el("syNow").addEventListener("click", async ()=>{
