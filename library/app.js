@@ -198,24 +198,47 @@ function syncMergeApply(remote){
   } finally { __syncApplying=false; }
   return true;
 }
+let __syncErr="";
+function syncErrHint(){ return __syncErr; }
+// Turn the relay's raw error into an actionable diagnosis (old deployment vs missing/wrong key).
+function classifySyncError(msg){
+  msg=String(msg||"");
+  if(/missing "to"/i.test(msg)) return t("sy_err_old");         // old script answered a sync op as if it were an email
+  if(/SYNC_KEY not set/i.test(msg)) return t("sy_err_nokey");
+  if(/unauthorized/i.test(msg)) return t("sy_err_badkey");
+  if(/Failed to fetch|NetworkError|Load failed/i.test(msg)) return t("sy_err_net");
+  return msg;
+}
+async function doSyncRound(ep, auth){
+  const g=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    body:JSON.stringify({ op:"state_get", auth:auth }) });
+  const gj=await g.json();
+  if(!gj.ok) throw new Error(gj.error||"sync auth");
+  if(gj.data) syncMergeApply(gj.data);
+  const p=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
+  const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
+  try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
+  if(typeof window.onThriveSync==="function"){ try{ window.onThriveSync(); }catch(e){} }
+}
 async function syncNow(){
   const auth=syncAuth(); if(!auth) return false;
   await syncBootstrap();
-  const ep=getSyncEndpoint(); if(!ep) return false;
+  const ep=getSyncEndpoint(); if(!ep){ __syncErr=t("sy_need_ep"); return false; }
   if(__syncBusy) return false; __syncBusy=true;
   try{
-    const g=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
-      body:JSON.stringify({ op:"state_get", auth:auth }) });
-    const gj=await g.json();
-    if(!gj.ok) throw new Error(gj.error||"sync auth");
-    if(gj.data) syncMergeApply(gj.data);
-    const p=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
-      body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
-    const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
-    try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
-    if(typeof window.onThriveSync==="function"){ try{ window.onThriveSync(); }catch(e){} }
-    return true;
-  }catch(e){ return false; }
+    try{ await doSyncRound(ep, auth); __syncErr=""; return true; }
+    catch(e1){
+      // A stale saved URL self-heals: re-read the committed sync.json and retry once with it.
+      let fresh="";
+      try{ const r=await fetch("./sync.json",{cache:"no-store"}); if(r.ok){ const j=await r.json(); fresh=(j&&j.ep)||""; } }catch(_){}
+      if(fresh && fresh!==ep){
+        try{ await doSyncRound(fresh, auth); setSyncEndpoint(fresh); __syncErr=""; return true; }
+        catch(e2){ __syncErr=classifySyncError(e2.message); return false; }
+      }
+      __syncErr=classifySyncError(e1.message); return false;
+    }
+  }
   finally{ __syncBusy=false; }
 }
 function scheduleSyncPush(){
@@ -1395,12 +1418,13 @@ function initSettings(){
         catch(e){ syShow("✕ "+t("gh_err")+": "+e.message,"warn"); }
       } else syShow(t("sy_local_only"),"warn");
       logActivity("settings","","sync");
-      const ok=await syncNow(); if(ok) sySummary();
+      const ok=await syncNow();
+      if(ok) sySummary(); else if(syncErrHint()) syShow("✕ "+t("sy_fail")+" — "+syncErrHint(),"warn");
     });
     el("syNow").addEventListener("click", async ()=>{
       syShow(t("sy_syncing"),"");
       const ok=await syncNow();
-      if(ok) sySummary(); else syShow("✕ "+t("sy_fail"),"warn");
+      if(ok) sySummary(); else syShow("✕ "+t("sy_fail")+(syncErrHint()?" — "+syncErrHint():""),"warn");
     });
   }
   if(el("q_daily")){
