@@ -1591,10 +1591,30 @@ function initSettings(){
       if(ok){ sySummary(); toast(t("sy_pushed")); }
       else syShow("✕ "+t("sy_fail")+(syncErrHint()?" — "+syncErrHint():""),"warn");
     });
+    // Check a URL BEFORE trusting it. Apps Script hands out a new URL per deployment, so it is
+    // easy to end up calling an old one that still serves the previous code.
+    async function verifyUrl(ep){
+      let version="";
+      try{ const r=await fetch(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }
+      catch(e){ return { ok:false, version:"", msg:t("sy_err_net") }; }
+      if(!/Thrive relay/i.test(version)) return { ok:false, version, msg:t("sy_v_notrelay") };
+      if(!/v4/.test(version)) return { ok:false, version, msg:t("sy_v_old") };
+      return { ok:true, version };
+    }
+    if(el("syVerify")) el("syVerify").addEventListener("click", async ()=>{
+      const ep=el("sy_ep").value.trim();
+      if(!ep){ toast(t("sy_need_ep")); return; }
+      syShow(t("testing"),"");
+      const v=await verifyUrl(ep);
+      syShow((v.ok?"✓ ":"✕ ")+(v.version||"—")+(v.ok?"":" — "+v.msg), v.ok?"ok":"warn");
+    });
     el("syEnable").addEventListener("click", async ()=>{
       const ep=el("sy_ep").value.trim();
       if(!ep){ toast(t("sy_need_ep")); return; }
-      setSyncEndpoint(ep); if(!getEmailEndpoint()) setEmailEndpoint(ep);
+      // Refuse to publish a URL that isn't a v4 relay — publishing a stale one breaks every device.
+      const v=await verifyUrl(ep);
+      if(!v.ok){ syShow("✕ "+(v.version||"—")+" — "+v.msg+" "+t("sy_v_howto"), "warn"); return; }
+      setSyncEndpoint(ep); setEmailEndpoint(ep);        // one relay serves email, sync and analytics
       touchScalars();
       // commit library/sync.json so every device that unlocks the gate finds the endpoint itself
       if(ghReady()){
