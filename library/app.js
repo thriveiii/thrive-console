@@ -80,16 +80,22 @@ function allHits(opts){
   return out;
 }
 function selfHitCount(){ return getRemoteHits().concat(getHits()).filter(e=>e&&e.self).length; }
+/* Is collection actually working? Distinguishes three states that look identical otherwise:
+   "off" (no relay), "stale" (relay answered but doesn't understand analytics — old script),
+   "live" (collecting, even if nobody has opened a page yet). */
+let __hitsState="off";
+function hitsState(){ return __hitsState; }
 // Pull collected analytics from the relay (same endpoint as sync/email).
 async function fetchRemoteHits(){
-  const auth=syncAuth(); if(!auth) return false;
+  const auth=syncAuth(); if(!auth){ __hitsState="off"; return false; }
   await syncBootstrap();
-  const ep=getSyncEndpoint(); if(!ep) return false;
+  const ep=getSyncEndpoint(); if(!ep){ __hitsState="off"; return false; }
   try{
     const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"hits_get", auth:auth }) });
     const j=await r.json();
-    if(!j.ok || !Array.isArray(j.events)) return false;
+    if(!j.ok || !Array.isArray(j.events)){ __hitsState="stale"; return false; }
+    __hitsState="live";
     // union with what we already have, so nothing collected earlier is lost when the relay rolls
     const seen={}, merged=[];
     j.events.concat(getRemoteHits()).forEach(e=>{ const k=hitKey(e); if(seen[k]) return; seen[k]=1; merged.push(e); });
@@ -97,7 +103,7 @@ async function fetchRemoteHits(){
     setRemoteHits(merged);
     __opensCache=null;                                   // opens map must be recomputed
     return true;
-  }catch(e){ return false; }
+  }catch(e){ __hitsState="stale"; return false; }
 }
 function getEndpoint(){ try{ return localStorage.getItem(ENDPT)||""; }catch(e){ return ""; } }
 function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.removeItem(ENDPT); }catch(e){} }
@@ -1793,10 +1799,13 @@ function aggregateHits(events){
 }
 async function initHome(){
   const el=id=>document.getElementById(id);
-  // Every metric carries its own explanation. Hover on desktop, tap the ⓘ on touch.
+  // Every metric carries its own explanation. The ⓘ is pinned to the tile's top corner —
+  // trailing edge, so top-right in English and top-left in Arabic — never inline with the
+  // label (which made it wrap onto a second line and look scattered).
   const tile=(v,k,cls,tip)=>'<div class="tile'+(cls?" "+cls:"")+'">'+
+    (tip?'<button type="button" class="info tile-info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button>':'')+
     '<div class="tile-v">'+esc(String(v))+'</div>'+
-    '<div class="tile-k">'+k+(tip?'<button type="button" class="info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button>':'')+'</div></div>';
+    '<div class="tile-k">'+k+'</div></div>';
 
   function syncPill(){
     const p=el("homeSync"); if(!p) return;
@@ -1839,47 +1848,66 @@ async function initHome(){
       tile(uniq.size, t("ins_unique"), "", t("tip_unique"))+
       tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("ins_avg_dwell"), "", t("tip_dwell"))+
       tile(fu, t("followup"), fu?"t-warn":"", t("tip_followup"));
-    // Honest note: are we actually collecting recipient opens, or only seeing our own device?
+    // Honest note about where these numbers come from. "No opens yet" is a healthy state and
+    // must not be reported as "not collecting" — those are different problems.
     const note=el("homeDataNote");
     if(note){
-      const collecting=getRemoteHits().length>0, mine=selfHitCount();
-      note.className="note "+(collecting?"":"warn-note");
-      note.innerHTML=(collecting? t("home_data_live") : t("home_data_local"))+
-        (mine? " "+t("home_data_self").replace("{n}", mine) : "");
+      const st=hitsState(), mine=selfHitCount();
+      let msg, cls;
+      if(st==="live"){ cls="note";
+        msg = getRemoteHits().length ? t("home_data_live") : t("home_data_none_yet"); }
+      else if(st==="stale"){ cls="note warn-note"; msg=t("home_data_stale"); }
+      else { cls="note warn-note"; msg=t("home_data_local"); }
+      note.className=cls;
+      note.innerHTML=msg+(mine? " "+t("home_data_self").replace("{n}", mine) : "");
     }
 
-    // ---- per-campaign performance (one row per opportunity that has outreach or opens) ----
-    const byOpp={};
-    opps.forEach(o=>{ byOpp[o.slug]={ slug:o.slug, biz:o.business||o.slug, sent:0, replies:0, opens:0, uniq:0, last:"" }; });
+    /* ---- per-campaign performance ----
+       EVERY opportunity gets a row, including ones with no activity. Hiding quiet rows is what
+       made the table look wrong: on a device whose ledger hadn't synced, the only surviving row
+       was a page that had never been sent to anyone. A zero is information; an absent row is not. */
+    const byOpp={}, pageBySlug={};
+    pages.forEach(p=>{ pageBySlug[p.slug]=p; });
+    opps.forEach(o=>{ byOpp[o.slug]={ slug:o.slug, biz:o.business||o.slug, live:isLive(o), archived:!!o.archived,
+      sent:0, replies:0, opens:0, uniq:0, dwellMs:0, dwellN:0, last:"" }; });
     mail.forEach(m=>{
       const k=m.opp||""; if(!k) return;
-      const r=byOpp[k]||(byOpp[k]={ slug:k, biz:k, sent:0, replies:0, opens:0, uniq:0, last:"" });
+      const r=byOpp[k]||(byOpp[k]={ slug:k, biz:k, live:false, archived:false, sent:0, replies:0, opens:0, uniq:0, dwellMs:0, dwellN:0, last:"" });
       if(m.status==="sent") r.sent++;
       if(m.direction==="in"||m.status==="replied") r.replies++;
       if(m.ts>r.last) r.last=m.ts;
     });
-    pages.forEach(p=>{ const r=byOpp[p.slug]; if(r){ r.opens=p.opens; r.uniq=p.vids.size; if(p.lastTs>r.last) r.last=p.lastTs; } });
-    const rows=Object.values(byOpp).filter(r=>r.sent||r.opens||r.replies)
-      .sort((a,b)=> (b.sent+b.opens)-(a.sent+a.opens));
+    Object.keys(byOpp).forEach(k=>{
+      const p=pageBySlug[k], r=byOpp[k]; if(!p) return;
+      r.opens=p.opens; r.uniq=p.vids.size; r.dwellMs=p.dwellMs; r.dwellN=p.dwellN;
+      if(p.lastTs>r.last) r.last=p.lastTs;
+    });
+    const rows=Object.values(byOpp)
+      .filter(r=>!r.archived)                            // archived opportunities stay out of the active view
+      .sort((a,b)=> (b.sent+b.opens+b.replies)-(a.sent+a.opens+a.replies) || String(a.biz).localeCompare(String(b.biz)));
     const hth=(label,tip)=>'<th>'+label+'<button type="button" class="info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button></th>';
+    const num=v=>v?('<b>'+v+'</b>'):'<span class="zero">0</span>';
     el("homeCampaigns").innerHTML = rows.length
       ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
         '<th>'+t("home_c_opp")+'</th>'+hth(t("cmp_sent_n"),t("tip_c_sent"))+hth(t("ins_opens"),t("tip_opens"))+
-        hth(t("ins_unique"),t("tip_unique"))+hth(t("cmp_replied_n"),t("tip_replies"))+
-        hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
-        rows.map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.biz)+'</a></td>'+
-          '<td><b>'+r.sent+'</b></td><td>'+r.opens+'</td><td>'+(r.uniq||"—")+'</td>'+
-          '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':"—")+'</td>'+
-          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):"—")+'</td></tr>').join("")+
+        hth(t("ins_unique"),t("tip_unique"))+hth(t("ins_dwell"),t("tip_dwell"))+
+        hth(t("cmp_replied_n"),t("tip_replies"))+hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
+        rows.map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.biz)+'</a>'+
+          (r.live?'':' <span class="tag tag-plain">'+t("draft")+'</span>')+'</td>'+
+          '<td>'+num(r.sent)+'</td><td>'+num(r.opens)+'</td><td>'+num(r.uniq)+'</td>'+
+          '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):'<span class="zero">—</span>')+'</td>'+
+          '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
+          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">—</span>')+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_no_campaigns")+'</div>';
 
-    // ---- most opened pages ----
-    el("homeTop").innerHTML = pages.length
+    // ---- most opened pages (only pages that actually have opens; this list IS "top N") ----
+    const opened=pages.filter(p=>p.opens>0);
+    el("homeTop").innerHTML = opened.length
       ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
-        '<th>'+t("ins_item")+'</th><th>'+t("ins_opens")+'</th><th>'+t("ins_unique")+'</th>'+
-        '<th>'+t("ins_dwell")+'</th><th>'+t("ins_last")+'</th></tr></thead><tbody>'+
-        pages.slice(0,10).map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.slug)+'</a></td>'+
+        '<th>'+t("ins_item")+'</th>'+hth(t("ins_opens"),t("tip_opens"))+hth(t("ins_unique"),t("tip_unique"))+
+        hth(t("ins_dwell"),t("tip_dwell"))+hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
+        opened.slice(0,10).map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.slug)+'</a></td>'+
           '<td><b>'+r.opens+'</b></td><td>'+r.vids.size+'</td>'+
           '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):"—")+'</td>'+
           '<td class="mono">'+(r.lastTs?esc(fmtWhen(r.lastTs)):"—")+'</td></tr>').join("")+

@@ -395,3 +395,16 @@ html[dir="rtl"] .logtable td b,html[dir="rtl"] .logtable td .ok-n{unicode-bidi:i
 /* read-only identity fields (email addresses, URLs) are LTR regardless of UI language */
 html[dir="rtl"] #efrom,html[dir="rtl"] #em_from,html[dir="rtl"] #eto,
 html[dir="rtl"] #sy_ep,html[dir="rtl"] #em_ep,html[dir="rtl"] #ep2,html[dir="rtl"] #et_id{direction:ltr;text-align:start}
+
+/* ---------- tile info badge: pinned to the trailing top corner ----------
+   Top-right in LTR, top-left in RTL. Absolutely positioned so it can never reflow the
+   label onto a second line, and the tile reserves room for it. */
+.tile{position:relative}
+.tile-info{position:absolute;top:10px;inset-inline-end:10px;opacity:.55;transition:opacity .15s}
+.tile:hover .tile-info,.tile-info:focus-visible{opacity:1}
+.tile-v{padding-inline-end:22px}                 /* keep big numbers clear of the badge */
+.tile-k{display:block;text-align:inherit}        /* label is plain again — badge lives in the corner */
+.zero{color:var(--ink-3);font-weight:600}
+/* header badges stay inline but never wrap away from their label */
+.logtable th .info{margin-inline-start:6px;vertical-align:middle}
+.logtable th{white-space:nowrap}
