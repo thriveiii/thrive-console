@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="styles.css">
 <link rel="preconnect" href="https://api.github.com" crossorigin>
 <link rel="dns-prefetch" href="https://api.github.com">
-<script>(function(){try{if(sessionStorage.getItem('thrive_gate_v1')!=='e00475a9bf66c48e332882a90f2638d0bf2f37272572f60ff0ca41e49f6e7c06')document.documentElement.classList.add('gate-locked');}catch(e){document.documentElement.classList.add('gate-locked');}})();</script>
+<script>(function(){try{if(sessionStorage.getItem('thrive_gate_v2')!=='0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8')document.documentElement.classList.add('gate-locked');}catch(e){document.documentElement.classList.add('gate-locked');}})();</script>
 <script src="gate.js" defer></script>
 </head>
 <body>
@@ -67,6 +67,18 @@
     </div>
     <div class="field"><label data-i18n="set_email_ep_l">Send endpoint</label><input id="em_ep" class="input" type="url" data-i18n-ph="set_email_ph"></div>
     <button class="btn" id="emSave" data-i18n="gh_save">Save</button>
+  </section>
+
+  <section class="panel settings-panel">
+    <h3 class="block-h" data-i18n="set_sync_h">Live sync across devices</h3>
+    <p class="sub" data-i18n="set_sync_sub"></p>
+    <div class="field"><label data-i18n="sy_ep_l">Sync endpoint (the same relay /exec URL)</label>
+      <input id="sy_ep" class="input" type="url" autocomplete="off"></div>
+    <div class="bar">
+      <button class="btn" id="syEnable" data-i18n="sy_enable">Save &amp; publish to all devices</button>
+      <button class="btn ghost" id="syNow" data-i18n="sy_now">Sync now</button>
+    </div>
+    <div class="gh-result" id="syStatus" hidden></div>
   </section>
 
   <section class="panel settings-panel">

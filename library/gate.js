@@ -1,32 +1,61 @@
-/* Thrive Console — access gate (client-side).
-   NOTE: This is a static site on a PUBLIC repo, so this gate deters casual
-   access to the console UI but is not a cryptographic boundary. For true
-   protection host the console behind server auth (private repo + Pages Pro,
-   Netlify Identity, or Cloudflare Access). The public opp/ result pages are
-   intentionally left open so prospects can view a shared link with no gate. */
+/* Thrive Console — access gate (client-side, hardened).
+   The passcode is verified with PBKDF2-SHA256 at 120,000 iterations (offline guessing
+   against the public verifier is ~120,000× costlier than a plain hash), and repeated
+   wrong attempts trigger an escalating lockout. Unlocking also derives the cross-device
+   sync credential — so the passcode alone opens the full live console on any device.
+   NOTE: a static site on a public repo is still not a server-side boundary; the public
+   opp/ result pages are intentionally open so prospects can view shared links. */
 (function () {
   "use strict";
-  var KEY = "thrive_gate_v1";
-  var HASH = "e00475a9bf66c48e332882a90f2638d0bf2f37272572f60ff0ca41e49f6e7c06"; // sha256("ConThrive2030")
+  var KEY = "thrive_gate_v2";
+  var SYNC_KEY = "thrive_sync_auth";
+  var FAILS = "thrive_gate_fails";
+  var ITER = 120000;
+  var GATE_SALT = "thrive-gate-v2";
+  var SYNC_SALT = "thrive-sync-v2";
+  var HASH = "0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8"; // PBKDF2(passcode, thrive-gate-v2, 120k)
 
   var STR = {
     en: { title: "Thrive Console", sub: "Private workspace. Enter the passcode to continue.",
           ph: "Passcode", go: "Unlock", err: "Incorrect passcode. Try again.",
+          wait: "Too many attempts. Try again in ",
           note: "Prospect result pages stay public — only the console is protected." },
     ar: { title: "كونسول ثرايف", sub: "مساحة خاصة. أدخل رمز الدخول للمتابعة.",
           ph: "رمز الدخول", go: "فتح", err: "رمز غير صحيح. حاول مجددًا.",
+          wait: "محاولات كثيرة. حاول مجددًا بعد ",
           note: "صفحات نتائج العملاء تبقى عامة — الكونسول وحده محميّ." }
   };
   function lang() { try { return localStorage.getItem("thrive_lang") === "ar" ? "ar" : "en"; } catch (e) { return "en"; } }
 
-  async function sha256Hex(str) {
-    var data = new TextEncoder().encode(str);
-    var buf = await crypto.subtle.digest("SHA-256", data);
-    return Array.prototype.map.call(new Uint8Array(buf), function (b) {
+  async function pbkdf2Hex(pass, salt) {
+    var enc = new TextEncoder();
+    var keyMat = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveBits"]);
+    var bits = await crypto.subtle.deriveBits(
+      { name: "PBKDF2", hash: "SHA-256", salt: enc.encode(salt), iterations: ITER }, keyMat, 256);
+    return Array.prototype.map.call(new Uint8Array(bits), function (b) {
       return b.toString(16).padStart(2, "0");
     }).join("");
   }
   function authed() { try { return sessionStorage.getItem(KEY) === HASH; } catch (e) { return false; } }
+
+  /* escalating lockout: after 5 wrong tries, 30s — doubling each further failure (cap 15 min) */
+  function failState() { try { return JSON.parse(localStorage.getItem(FAILS) || "{}") || {}; } catch (e) { return {}; } }
+  function lockedForMs() {
+    var f = failState();
+    return (f.until && f.until > Date.now()) ? (f.until - Date.now()) : 0;
+  }
+  function recordFail() {
+    var f = failState(); f.n = (f.n || 0) + 1;
+    if (f.n >= 5) f.until = Date.now() + Math.min(30000 * Math.pow(2, f.n - 5), 900000);
+    try { localStorage.setItem(FAILS, JSON.stringify(f)); } catch (e) {}
+    try { // failed attempts belong in the operations ledger
+      var a = JSON.parse(localStorage.getItem("thrive_activity_v1") || "[]");
+      a.push({ ts: new Date().toISOString(), action: "login_fail", slug: "", detail: "attempt " + f.n });
+      localStorage.setItem("thrive_activity_v1", JSON.stringify(a.slice(-500)));
+    } catch (e) {}
+  }
+  function clearFails() { try { localStorage.removeItem(FAILS); } catch (e) {} }
+  function fmtWait(ms) { var s = Math.ceil(ms / 1000); return s >= 60 ? Math.ceil(s / 60) + "m" : s + "s"; }
 
   function reveal() {
     document.documentElement.classList.remove("gate-locked");
@@ -57,22 +86,32 @@
     var form = wrap.querySelector("form");
     var input = wrap.querySelector("#gateInput");
     var err = wrap.querySelector("#gateErr");
+    var busy = false;
     setTimeout(function () { input.focus(); }, 50);
 
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
+      if (busy) return;
+      var lock = lockedForMs();
+      if (lock > 0) { err.textContent = s.wait + fmtWait(lock); err.hidden = false; return; }
       var val = input.value || "";
       if (!val) { return; }
-      var h;
-      try { h = await sha256Hex(val); } catch (ex) { h = null; }
+      busy = true; input.disabled = true;
+      var h = null, sync = null;
+      try { h = await pbkdf2Hex(val, GATE_SALT); if (h === HASH) sync = await pbkdf2Hex(val, SYNC_SALT); } catch (ex) {}
+      busy = false; input.disabled = false;
       if (h === HASH) {
-        try { sessionStorage.setItem(KEY, HASH); } catch (ex) {}
+        clearFails();
+        try { sessionStorage.setItem(KEY, HASH); if (sync) sessionStorage.setItem(SYNC_KEY, sync); } catch (ex) {}
         if (typeof window.logActivity === "function") {
           try { window.logActivity("login", "", "console unlocked"); } catch (ex) {}
         }
         reveal();
         if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) {} }
       } else {
+        recordFail();
+        var again = lockedForMs();
+        err.textContent = again > 0 ? (s.wait + fmtWait(again)) : s.err;
         err.hidden = false;
         input.value = "";
         input.classList.add("shake");
@@ -96,7 +135,7 @@
 
   // expose a manual lock (used by a "Lock" button in the console)
   window.thriveLock = function () {
-    try { sessionStorage.removeItem(KEY); } catch (e) {}
+    try { sessionStorage.removeItem(KEY); sessionStorage.removeItem(SYNC_KEY); } catch (e) {}
     location.reload();
   };
 })();

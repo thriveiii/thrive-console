@@ -26,14 +26,16 @@ function download(name, text, type){
   a.href=url; a.download=name; document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 100);
 }
-/* quota-safe localStorage: on overflow, reclaim space from transient logs and retry once */
+/* quota-safe localStorage: on overflow, reclaim space from transient logs and retry once.
+   Writes to synced keys also schedule a (debounced) cross-device sync push. */
+const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thrive_activity_v1:1, thrive_email_templates_v1:1 };
 function lsSet(key, str){
-  try{ localStorage.setItem(key, str); return true; }
+  try{ localStorage.setItem(key, str); if(SYNCED_KEYS[key]) try{ scheduleSyncPush(); }catch(_){} return true; }
   catch(e){
     try{
       const h=JSON.parse(localStorage.getItem("thrive_hits_v1")||"[]"); if(h.length>150) localStorage.setItem("thrive_hits_v1", JSON.stringify(h.slice(-150)));
       const a=JSON.parse(localStorage.getItem("thrive_activity_v1")||"[]"); if(a.length>200) localStorage.setItem("thrive_activity_v1", JSON.stringify(a.slice(-200)));
-      localStorage.setItem(key, str); return true;
+      localStorage.setItem(key, str); if(SYNCED_KEYS[key]) try{ scheduleSyncPush(); }catch(_){} return true;
     }catch(e2){ try{ toast(t("storage_full")); }catch(_){} return false; }
   }
 }
@@ -123,6 +125,112 @@ function importBackup(obj){
   if(typeof obj.fromName==="string") setFromName(obj.fromName);
 }
 
+/* ---------- live cross-device sync ----------
+   One shared state document, stored by the same Apps Script relay that sends email.
+   Unlocking the gate derives the sync credential (PBKDF2 of the passcode — gate.js), so the
+   passcode alone opens the SAME live console on every device: send counter, mail ledger,
+   threads, drafts, email templates, settings. The endpoint bootstraps from library/sync.json
+   (committed once from a configured device) — zero setup on each new device.
+   Merge is union-based: sends/replies/activity dedupe by id, drafts+templates newest-wins.
+   The GitHub token is deliberately NEVER synced. Page html stays device-local (repo has it). */
+const SYNC_EP="thrive_sync_ep", SYNC_AUTH="thrive_sync_auth", SYNC_LAST="thrive_sync_last", SCAL_UP="thrive_scalars_up";
+let __syncBusy=false, __syncApplying=false, __syncPushT=null, __syncBootstrapped=false;
+function getSyncEndpoint(){ try{ return localStorage.getItem(SYNC_EP)||""; }catch(e){ return ""; } }
+function setSyncEndpoint(u){ try{ u?localStorage.setItem(SYNC_EP,u):localStorage.removeItem(SYNC_EP); }catch(e){} }
+function syncAuth(){ try{ return sessionStorage.getItem(SYNC_AUTH)||""; }catch(e){ return ""; } }
+function syncLast(){ try{ return localStorage.getItem(SYNC_LAST)||""; }catch(e){ return ""; } }
+function scalarsUp(){ try{ return parseInt(localStorage.getItem(SCAL_UP)||"0",10)||0; }catch(e){ return 0; } }
+function touchScalars(){ try{ localStorage.setItem(SCAL_UP, String(Date.now())); }catch(e){} }
+async function syncBootstrap(){
+  if(__syncBootstrapped) return; __syncBootstrapped=true;
+  if(getSyncEndpoint()) return;
+  try{ const r=await fetch("./sync.json",{cache:"no-store"});
+    if(r.ok){ const j=await r.json(); if(j && j.ep){ setSyncEndpoint(j.ep); if(!getEmailEndpoint()) setEmailEndpoint(j.ep); } } }catch(e){}
+}
+function syncSnapshot(){
+  // drafts travel WITHOUT page html (uploads can be hundreds of KB; the repo holds live pages)
+  const opps=getDrafts().map(d=>{ const c=Object.assign({},d); delete c.html; return c; });
+  return { v:1, updated:Date.now(), scalarsUp:scalarsUp(),
+    opps, mail:getMailLog(), quota:getSendStamps(), activity:getActivity(),
+    etpl:getEmailTemplates(), fromName:getFromName(), emailEp:getEmailEndpoint(), quotaCfg:quotaCfg() };
+}
+function syncMergeApply(remote){
+  if(!remote || typeof remote!=="object") return false;
+  __syncApplying=true;
+  try{
+    // drafts: per-slug, newest `up` wins; a winner without html never erases local html
+    if(Array.isArray(remote.opps)){
+      const loc=getDrafts(), bySlug={};
+      loc.forEach(d=>{ bySlug[d.slug]=d; });
+      remote.opps.forEach(r=>{
+        const l=bySlug[r.slug];
+        if(!l){ bySlug[r.slug]=r; return; }
+        if((r.up||0)>(l.up||0)) bySlug[r.slug]=Object.assign({}, r, (!r.html&&l.html)?{html:l.html}:{});
+      });
+      setDrafts(Object.values(bySlug));
+    }
+    if(Array.isArray(remote.mail)){                       // ledger: union by message id
+      const seen={}, all=[];
+      getMailLog().concat(remote.mail).forEach(m=>{ const k=m.mid||JSON.stringify(m); if(!seen[k]){ seen[k]=1; all.push(m); } });
+      all.sort((a,b)=> (a.ts<b.ts?-1:1)); setMailLog(all);
+    }
+    if(Array.isArray(remote.quota)){                      // send stamps: union (counter = union of devices)
+      const s=new Set(getSendStamps()); remote.quota.forEach(n=>{ if(typeof n==="number") s.add(n); });
+      const now=Date.now(); lsSet(QUOTA, JSON.stringify([...s].filter(t=> now-t < MONTH_MS+DAY_MS).sort()));
+    }
+    if(Array.isArray(remote.activity)){                   // operations log: union by ts+action+slug
+      const seen={}, all=[];
+      getActivity().concat(remote.activity).forEach(a=>{ const k=a.ts+"|"+a.action+"|"+(a.slug||""); if(!seen[k]){ seen[k]=1; all.push(a); } });
+      all.sort((a,b)=> (a.ts<b.ts?-1:1)); setActivity(all);
+    }
+    if(Array.isArray(remote.etpl)){                       // email templates: per-id, newest wins
+      const loc=getEmailTemplates(), byId={};
+      loc.forEach(x=>{ byId[x.id]=x; });
+      remote.etpl.forEach(r=>{ const l=byId[r.id]; if(!l || (r.up||0)>(l.up||0)) byId[r.id]=r; });
+      setEmailTemplates(Object.values(byId));
+    }
+    if((remote.scalarsUp||0) > scalarsUp()){              // settings scalars: newest device wins
+      if(typeof remote.fromName==="string") setFromName(remote.fromName);
+      if(typeof remote.emailEp==="string" && remote.emailEp) setEmailEndpoint(remote.emailEp);
+      if(remote.quotaCfg) setQuotaCfg(remote.quotaCfg);
+      try{ localStorage.setItem(SCAL_UP, String(remote.scalarsUp||0)); }catch(e){}
+    }
+  } finally { __syncApplying=false; }
+  return true;
+}
+async function syncNow(){
+  const auth=syncAuth(); if(!auth) return false;
+  await syncBootstrap();
+  const ep=getSyncEndpoint(); if(!ep) return false;
+  if(__syncBusy) return false; __syncBusy=true;
+  try{
+    const g=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({ op:"state_get", auth:auth }) });
+    const gj=await g.json();
+    if(!gj.ok) throw new Error(gj.error||"sync auth");
+    if(gj.data) syncMergeApply(gj.data);
+    const p=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
+    const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
+    try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
+    if(typeof window.onThriveSync==="function"){ try{ window.onThriveSync(); }catch(e){} }
+    return true;
+  }catch(e){ return false; }
+  finally{ __syncBusy=false; }
+}
+function scheduleSyncPush(){
+  if(__syncApplying) return;                              // merges must not re-trigger themselves
+  if(!syncAuth()) return;
+  clearTimeout(__syncPushT); __syncPushT=setTimeout(syncNow, 4000);
+}
+function startLiveSync(){
+  if(!document.querySelector("header.top")) return;       // console pages only
+  if(syncAuth()) syncNow();
+  window.onGateUnlocked=function(){ syncNow(); };
+  setInterval(()=>{ if(!document.hidden && syncAuth()) syncNow(); }, 60000);
+}
+document.addEventListener("DOMContentLoaded", startLiveSync);
+
 /* ---------- GitHub publishing (the console's backend = the repo itself) ---------- */
 const GH = "thrive_gh_v1";
 function ghConfig(){ try{ return JSON.parse(localStorage.getItem(GH)||"{}"); }catch(e){ return {}; } }
@@ -211,6 +319,7 @@ function getDrafts(){ try{ return JSON.parse(localStorage.getItem(STORE)||"[]");
 function setDrafts(a){ return lsSet(STORE, JSON.stringify(a)); }
 function getDraft(slug){ return getDrafts().find(x=>x.slug===slug); }
 function saveDraft(rec){
+  rec.up=Date.now();                                     // freshness stamp for cross-device merge
   const a=getDrafts(); const i=a.findIndex(x=>x.slug===rec.slug);
   if(i>=0) a[i]={...a[i], ...rec}; else a.push(rec); setDrafts(a);
 }
@@ -408,6 +517,7 @@ async function initDashboard(){
   }
 
   const debRender=debounce(render,140);
+  window.onThriveSync=async ()=>{ state.data=await mergedOpps(); render(); };   // live refresh on sync
   search.addEventListener("input",e=>{ state.q=e.target.value; debRender(); });
   sort.addEventListener("change",e=>{ state.sort=e.target.value; render(); });
   filt.addEventListener("change",e=>{ state.tmpl=e.target.value; render(); });
@@ -731,6 +841,7 @@ function initActivity(){
     download("thrive-activity.json", JSON.stringify({ activity:getActivity(), mail:getMailLog() },null,2), "application/json");
   });
   window.onLangApplied=()=>{ renderChips(); render(); };
+  window.onThriveSync=render;                            // ledger/threads refresh live after a sync
   renderChips(); render();
 }
 
@@ -809,7 +920,7 @@ function getEmailTemplates(){
   return a;
 }
 function setEmailTemplates(a){ return lsSet(ETPL, JSON.stringify(a)); }
-function saveEmailTemplate(rec){ const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
+function saveEmailTemplate(rec){ rec.up=Date.now(); const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
 function removeEmailTemplate(id){ setEmailTemplates(getEmailTemplates().filter(x=>x.id!==id)); }
 /* Merge fields — two variants:
    - mergeFieldsText: plain replacements for the subject input (.value, never HTML).
@@ -1198,6 +1309,7 @@ async function initCompose(){
     meter.title=t("cmp_quota_hint");
   }
   renderQuota();
+  window.onThriveSync=renderQuota;                       // counter refreshes live when another device's sends arrive
   el("eSend").addEventListener("click", async ()=>{
     const to=el("eto").value.trim();
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
@@ -1258,7 +1370,37 @@ function initSettings(){
     el("emSave").addEventListener("click",()=>{
       setEmailEndpoint(el("em_ep").value.trim());
       if(el("em_name")) setFromName(el("em_name").value.trim());
+      touchScalars(); scheduleSyncPush();
       logActivity("settings","","email"); toast(t("settings_saved"));
+    });
+  }
+  if(el("sy_ep")){
+    el("sy_ep").value=getSyncEndpoint()||getEmailEndpoint();
+    const syStatus=el("syStatus");
+    function syShow(msg, cls){ syStatus.hidden=false; syStatus.textContent=msg; syStatus.className="gh-result "+(cls||""); }
+    function sySummary(){
+      const last=syncLast();
+      if(last){ try{ syShow("✓ "+t("sy_last")+" "+new Date(last).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}), "ok"); return; }catch(e){} }
+      if(getSyncEndpoint()) syShow(t("sy_ready"),"");
+    }
+    sySummary();
+    el("syEnable").addEventListener("click", async ()=>{
+      const ep=el("sy_ep").value.trim();
+      if(!ep){ toast(t("sy_need_ep")); return; }
+      setSyncEndpoint(ep); if(!getEmailEndpoint()) setEmailEndpoint(ep);
+      touchScalars();
+      // commit library/sync.json so every device that unlocks the gate finds the endpoint itself
+      if(ghReady()){
+        try{ await ghPutFile("library/sync.json", JSON.stringify({ep:ep})+"\n", "Enable live sync"); syShow("✓ "+t("sy_published"),"ok"); }
+        catch(e){ syShow("✕ "+t("gh_err")+": "+e.message,"warn"); }
+      } else syShow(t("sy_local_only"),"warn");
+      logActivity("settings","","sync");
+      const ok=await syncNow(); if(ok) sySummary();
+    });
+    el("syNow").addEventListener("click", async ()=>{
+      syShow(t("sy_syncing"),"");
+      const ok=await syncNow();
+      if(ok) sySummary(); else syShow("✕ "+t("sy_fail"),"warn");
     });
   }
   if(el("q_daily")){
@@ -1274,6 +1416,7 @@ function initSettings(){
     showUsage();
     el("qSave").addEventListener("click",()=>{
       setQuotaCfg({ daily:el("q_daily").value, monthly:el("q_monthly").value });
+      touchScalars(); scheduleSyncPush();
       showUsage(); logActivity("settings","","quota"); toast(t("settings_saved"));
     });
   }
