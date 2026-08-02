@@ -490,14 +490,52 @@ async function syncBootstrap(){
    few hundred kilobytes in total. So HTML travels while it fits, oldest dropped first, and
    anything that did not fit is NAMED on screen rather than silently missing. A mirror is
    allowed to have physical limits. It is not allowed to have quiet ones. */
+/* The relay rejects a state over 400,000 bytes outright, and a rejected push is not a smaller
+   mirror, it is no mirror at all. So the console knows the ceiling, measures what it is about
+   to send, and sheds in a fixed order rather than discovering the limit as a failure.
+
+   Nothing that is evidence is ever shed: the mail ledger, the opportunities, the removals, the
+   message templates and the vault always travel. Page html goes first because the repository
+   is its real home; the operations log goes next, oldest first, because it is a log and not a
+   fact anything is derived from. If even that is not enough, the console says so instead of
+   pretending. */
 const SYNC_HTML_BUDGET = 220000;      // total page html carried in one snapshot
 const SYNC_HTML_MAX    = 90000;       // and the most any single record may take of it
+const SYNC_STATE_MAX   = 400000;      // the relay's own hard cap, mirrored here so we never meet it
+const SYNC_STATE_SAFE  = 330000;      // and the size we stay under, leaving room to grow
 
 function syncSnapshot(){
+  let snap=buildSnapshot(SYNC_HTML_BUDGET);
+  let size=JSON.stringify(snap).length;
+  if(size<=SYNC_STATE_SAFE){ setSyncSize(size, ""); return snap; }
+
+  // 1. the pages go home to the repository
+  snap=buildSnapshot(0);
+  size=JSON.stringify(snap).length;
+  if(size<=SYNC_STATE_SAFE){ setSyncSize(size, "html"); return snap; }
+
+  // 2. the operations log is trimmed, oldest first, until it fits
+  let acts=snap.activity||[];
+  while(size>SYNC_STATE_SAFE && acts.length>50){
+    acts=acts.slice(Math.ceil(acts.length/4));           // drop the oldest quarter each pass
+    snap.activity=acts;
+    size=JSON.stringify(snap).length;
+  }
+  setSyncSize(size, size<=SYNC_STATE_SAFE ? "html+log" : "over");
+  return snap;
+}
+/* Size and headroom, read by Settings, so a store filling up is a number you watch rather than
+   a sync that stops one day. */
+let __syncSize=0, __syncShed="";
+function setSyncSize(n, shed){ __syncSize=n; __syncShed=shed; }
+function syncSize(){ return { bytes:__syncSize, max:SYNC_STATE_MAX, shed:__syncShed,
+  pct: Math.min(100, Math.round(__syncSize/SYNC_STATE_MAX*100)) }; }
+
+function buildSnapshot(htmlBudget){
   /* A draft that was never published exists nowhere else, so its page travels while there is
      room. A published one does not need to: the repo already holds it, and every device can
      read it from there. */
-  let budget=SYNC_HTML_BUDGET;
+  let budget=htmlBudget;
   const left=[];
   const opps=getDrafts()
     .slice()
@@ -612,6 +650,7 @@ function classifySyncError(msg){
   if(/SYNC_KEY not set/i.test(msg)) return t("sy_err_nokey");
   if(/unauthorized/i.test(msg)) return t("sy_err_badkey");
   if(/Failed to fetch|NetworkError|Load failed/i.test(msg)) return t("sy_err_net");
+  if(/state too large/i.test(msg)) return t("sy_err_toobig");
   return msg;
 }
 async function doSyncRound(ep, auth){
@@ -1362,7 +1401,7 @@ async function initEditor(slugArg){
 /* ---------- activity log page (categorised operations + campaigns) ---------- */
 const ACT_CAT={ email:"emails", email_copy:"emails", reply:"emails",
   create:"pages", save:"pages", publish:"pages", unpublish:"pages", download:"pages",
-  archive:"pages", unarchive:"pages", remove:"pages", stage:"pages", copy:"pages",
+  archive:"pages", unarchive:"pages", remove:"pages", stage:"pages", copy:"pages", reassign:"emails",
   upload:"templates", tpl_add:"templates", tpl_remove:"templates", tpl_publish:"templates",
   etpl_add:"templates", etpl_remove:"templates",
   login:"system", export:"system", backup:"system", restore:"system", settings:"system", clear:"system" };
@@ -1385,6 +1424,8 @@ function initActivity(){
     if(m.status==="sent") return t("mst_sent");
     return esc(m.status||"–");
   }
+  let slugs=[];
+  mergedOpps().then(o=>{ slugs=o.filter(x=>!x.archived).map(x=>({slug:x.slug, business:x.business})); renderThreads(); });
   function renderThreads(){
     const wrap=el("campaigns"); if(!wrap) return;
     let threads=getThreads();
@@ -1411,14 +1452,35 @@ function initActivity(){
           '<span class="tag">'+statusLabel(m)+'</span>'+tp+br+'</div>'+
           '<div class="msg-subj">'+esc(m.subject||"–")+'</div>'+pv+'</div>';
       }).join("");
+      /* Which opportunity this conversation is about, as a decision you can correct. The
+         composer used to keep one slug for a whole session, so a run of newsletters written in
+         one sitting was filed against whichever page you happened to open it from. That is
+         fixed going forward, and the console cannot know which old rows carried a link, so it
+         does not guess: it hands you the correction instead. */
+      const oppSel='<select class="th-opp" data-th="'+esc(th.id)+'" title="'+esc(t("act_which_opp"))+'">'+
+        '<option value=""'+(th.opp?"":" selected")+'>'+esc(t("act_no_opp"))+'</option>'+
+        slugs.map(sg=>'<option value="'+esc(sg.slug)+'"'+(sg.slug===th.opp?" selected":"")+'>'+
+          esc(sg.business||sg.slug)+'</option>').join("")+'</select>';
       return '<details class="thread"><summary>'+
         '<div class="th-main"><span class="th-who">'+who+'</span><span class="th-meta">'+oppB+tplB+'</span></div>'+
         '<div class="th-side"><span class="th-counts">'+counts+'</span><span class="mono th-last">'+esc(fmt(th.last))+'</span>'+
         '<button class="btn ghost sm th-reply" data-th="'+esc(th.id)+'" data-to="'+esc(th.to)+'" data-opp="'+esc(th.opp)+'">'+t("act_reply_btn")+'</button></div>'+
-        '</summary><div class="thread-body">'+rows+'</div></details>';
+        '</summary><div class="thread-body"><div class="th-fix"><label>'+esc(t("act_which_opp"))+'</label>'+oppSel+'</div>'+rows+'</div></details>';
     }).join("");
     wrap.innerHTML=head+'<div class="threads">'+cards+'</div>';
     bindSearch();
+    wrap.querySelectorAll(".th-opp").forEach(sel=>{
+      sel.addEventListener("click", e=>e.stopPropagation());
+      sel.addEventListener("change", ()=>{
+        const id=sel.getAttribute("data-th"), opp=sel.value;
+        const th=getThreads().find(x=>x.id===id); if(!th) return;
+        const ids={}; th.msgs.forEach(m=>{ if(m.mid) ids[m.mid]=1; });
+        const all=getMailLog().map(m=> (m.mid && ids[m.mid])? Object.assign({}, m, {opp:opp}) : m);
+        setMailLog(all);
+        logActivity("reassign", opp||"(none)", th.to+" · "+th.msgs.length+" messages");
+        toast(t("act_reassigned")); render();
+      });
+    });
     wrap.querySelectorAll(".th-reply").forEach(b=>b.addEventListener("click",e=>{
       e.preventDefault(); e.stopPropagation();
       const to=b.getAttribute("data-to"), opp=b.getAttribute("data-opp"), thread=b.getAttribute("data-th");
@@ -2361,6 +2423,18 @@ function initSettings(){
     const syStatus=el("syStatus");
     function syShow(msg, cls){ syStatus.hidden=false; syStatus.textContent=msg; syStatus.className="gh-result "+(cls||""); }
     // What this device actually holds, so "where did my sends go?" is answerable at a glance.
+    /* How full the shared store is, and what the console shed to keep it under the relay's
+       hard cap. A store that is filling up is a number you watch, not a sync that stops. */
+    function sizeLine(){
+      const z=syncSize();
+      if(!z.bytes) return "";
+      const warn=z.pct>=80 || z.shed;
+      const note = z.shed==="html" ? t("sy_shed_html")
+                 : z.shed==="html+log" ? t("sy_shed_log")
+                 : z.shed==="over" ? t("sy_shed_over") : "";
+      return '<br><span class="'+(warn?"warn-line":"ok-line")+'">'+
+        esc(t("sy_size").replace("{n}", z.pct))+(note? " "+esc(note) : "")+'</span>';
+    }
     function syCounts(){
       const c=el("syCounts"); if(!c) return;
       const mail=getMailLog(), sent=mail.filter(m=>m.status==="sent").length;
@@ -2381,7 +2455,8 @@ function initSettings(){
         ' · <b>'+Object.keys(tombs()).length+'</b> '+t("sy_c_removed")+
         (agree?'<br>'+agree:"")+
         (held.length? '<br><span class="warn-line">⚠ '+esc(t("sy_local_only").replace("{n}", held.length)
-          .replace("{list}", held.map(x=>String(x).replace(/^tpl:/,"")).join("، ")))+'</span>' : "");
+          .replace("{list}", held.map(x=>String(x).replace(/^tpl:/,"")).join("، ")))+'</span>' : "")+
+        sizeLine();
     }
     function sySummary(){
       syCounts();

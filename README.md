@@ -93,10 +93,13 @@ Everything the console holds is in exactly one of three classes:
 - **Local** on purpose: the collapsed tray, the language, the relay URL (which comes from
   `library/sync.json`), and the session key.
 
-Page HTML is the one thing that can run to hundreds of kilobytes, against a shared store
-measured in hundreds of kilobytes in total, so it travels while it fits, newest first. Anything
-that did not fit is named in Settings with the way to fix it: publish it, and every device reads
-it from the repository. A mirror is allowed a physical limit and never a quiet one.
+Page HTML is the one thing that can run to hundreds of kilobytes, against a shared store the
+relay caps at 400,000 bytes, so it travels while it fits, newest first. Beyond that the console
+sheds in a fixed order: page html, then the oldest operations entries, and then it says so.
+**Nothing that is evidence is ever shed**: the mail ledger, the opportunities, the removals, the
+message templates and the vault always travel. Settings reads back how full the store is and
+what was left behind, so a store filling up is a number you watch rather than a sync that stops
+one morning. A mirror is allowed a physical limit and never a quiet one.
 
 ### Two kinds of template, kept apart
 

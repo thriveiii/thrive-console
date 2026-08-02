@@ -264,6 +264,29 @@ of them carried a link, and guessing would be the same defect wearing a repair.
 An open rate also printed **200%**, because unique visitors were divided by people written to.
 A rate is a share of something and cannot exceed the whole.
 
+### The ceiling, and what happens at it
+
+The relay refuses a state over **400,000 bytes** outright, and a refused push is not a smaller
+mirror, it is no mirror at all. Carrying page html made that ceiling reachable, so the console
+now knows it, measures what it is about to send, and sheds in a fixed order:
+
+1. page html, because the repository is its real home;
+2. the operations log, oldest first, because it is a log and not something facts are derived from;
+3. and if that is still not enough, it says so instead of pretending.
+
+Nothing that is evidence is ever shed: the mail ledger, the opportunities, the removals, the
+message templates and the vault always travel. Settings reads back how full the store is and
+what was left behind, so a store filling up is a number you watch rather than a sync that stops
+one morning. `tools/mirror.py` fills a console past the ceiling and checks all of it.
+
+### Correcting what the console cannot know
+
+Fifteen conversations were filed against one page. Going forward that is fixed, and the console
+cannot know which of the old ones carried a link. Guessing would be the same defect wearing a
+repair, so it hands over the correction instead: every conversation on the Activity page names
+the opportunity it belongs to, and moving it rewrites every message in that conversation at
+once. A decision you make, never one the console makes for you.
+
 ---
 
 ## The five that were queued, now done

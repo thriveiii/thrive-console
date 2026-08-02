@@ -352,6 +352,25 @@ def gate4(b):
         return [...r.children].map(e=>e.innerText.trim());}""")
     ck("a page read but never written to reports views and no opens",
        row and row[1] == "0" and row[2] == "3" and row[3] == "0", row)
+    # A conversation filed against the wrong opportunity is correctable, because the console
+    # cannot know which one it belonged to and must not guess.
+    pg.evaluate("()=>location.hash='#activity'")
+    pg.wait_for_timeout(2400)
+    # the control lives inside the conversation, which you open to look at it first
+    pg.evaluate("()=>{const d=document.querySelector('details.thread'); if(d) d.open=true;}")
+    pg.wait_for_timeout(500)
+    sel = pg.query_selector(".th-opp")
+    ck("a conversation can be moved to the opportunity it is really about", sel is not None)
+    if sel:
+        opts = pg.evaluate("()=>[...document.querySelector('.th-opp').options].map(o=>o.value)")
+        ck("and every live opportunity is offered", len(opts) >= 2, opts)
+        target = [o for o in opts if o and o != "ludic-lillian"]
+        if target:
+            pg.select_option(".th-opp", target[0])
+            pg.wait_for_timeout(1400)
+            moved = pg.evaluate("(s)=>getMailLog().some(m=>m.opp===s)", target[0])
+            ck("moving it rewrites every message in that conversation", moved, target[0])
+
     ck("nothing threw", not errs, errs[:4])
     ctx.close()
 
