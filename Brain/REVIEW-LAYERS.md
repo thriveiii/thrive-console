@@ -160,12 +160,14 @@ and the gates exist because things got through them.
 | 5 | **Bilingual** | Both languages complete, no key on screen, plural forms correct at 1, 2, 3, 11, 100 | |
 | 6 | **Typography** | One Latin face and one Arabic face, everywhere, measured rather than assumed | Alyamama's serif Latin |
 | 7 | **Layout** | Nothing scrolls sideways, everything a finger uses clears 40px, at six widths | Two heights in one bar |
-| 8 | **Forms** | Is every control labelled, reachable, and does it do what it says? | 35 labels pointing at nothing |
-| 9 | **Resilience** | Relay down, relay old, no data: a designed state, never a blank or an endless spinner | |
+| 8 | **Forms** | Is every control labelled and reachable, and does sending actually send? | 35 labels pointing at nothing |
+| 9 | **Resilience** | Relay down, relay old, no data, and does a backup round trip? | |
 | 10 | **Build** | The verify gate passes, the shell is what its source produces, the offline file is whole | |
 
 Gate 6 asks Chromium which font it actually drew, through `CSS.getPlatformFontsForNode`. No
 computed style would have answered it: the stack said Alyamama and the stack was being honoured.
+
+Gate 8 ends by sending a real message through a relay that answers and remembers what it was handed, then watching the opportunity move from Ready to Sent, the quota count it, and the message it went out with become measurable. Gate 9 takes that same session, exports a backup, wipes the device and restores it. Those two are the loops the console exists for, and until now neither had been proven end to end by anything but use.
 
 ### The five defects the gates found
 
