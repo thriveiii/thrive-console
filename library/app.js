@@ -1580,8 +1580,14 @@ async function initCompose(){
 /* Nothing here waits forever. A hung request used to leave the whole panel on "Testing..."
    with no result at all, which is the same sin as a blank page. */
 async function fetchT(url, opts, ms){
-  const ac=new AbortController(); const to=setTimeout(()=>ac.abort(), ms||9000);
+  const ac=new AbortController(); const to=setTimeout(()=>ac.abort(), ms||15000);
   try{ return await fetch(url, Object.assign({signal:ac.signal}, opts||{})); }
+  catch(e){
+    // A relay that is merely slow (Apps Script cold start on a phone network) must never be
+    // reported as a wrong key. Mark the timeout so the diagnosis can tell them apart.
+    if(e && (e.name==="AbortError" || /abort/i.test(e.message||""))){ const err=new Error(t("conn_timeout")); err.timeout=true; throw err; }
+    throw e;
+  }
   finally{ clearTimeout(to); }
 }
 /* What a relay URL actually answered. An Apps Script deployment whose access is not "Anyone"
@@ -1620,23 +1626,33 @@ async function connCheck(candidate, onStep){
   const auth=syncAuth();
   if(!add("conn_key", !!auth)) return steps;
 
-  const post=async body=>{
-    const r=await fetchT(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify(body)},12000);
-    const txt=await r.text();
-    try{ return JSON.parse(txt); }
-    catch(e){ return { ok:false, error: classifyRelayBody(txt).kind==="signin"? t("sy_v_signin") : txt.slice(0,90) }; }
+  // Apps Script cold-starts, and a phone on a weak network makes that worse, so one slow round
+  // is not a verdict. Try twice before calling a link broken.
+  const post=async (body, tries)=>{
+    let last=null;
+    for(let i=0;i<(tries||2);i++){
+      try{
+        const r=await fetchT(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify(body)},25000);
+        const txt=await r.text();
+        try{ return JSON.parse(txt); }
+        catch(e){ return { ok:false, error: classifyRelayBody(txt).kind==="signin"? t("sy_v_signin") : txt.slice(0,90) }; }
+      }catch(e){ last=e; }
+    }
+    return { ok:false, error:String((last&&last.message)||last||"failed"), timeout:!!(last&&last.timeout) };
   };
-  let getj=null;
-  try{ getj=await post({op:"state_get", auth:auth}); }catch(e){ getj={ok:false,error:String(e.message||e)}; }
-  if(!add("conn_sync", !!(getj&&getj.ok), (getj&&getj.error)||"")) return steps;
+  // The fix printed under a failed link must match the failure that actually happened. A
+  // timeout is not a wrong key, and saying so sent us hunting for a key that was correct.
+  const why=j=> (j&&j.timeout)? t("conn_slow_fix")
+              : (j&&/SYNC_KEY not set/i.test(j.error||""))? t("conn_nokey_fix") : "";
 
-  try{ const pj=await post({op:"state_put", auth:auth, data:syncSnapshot()});
-       add("conn_push", !!(pj&&pj.ok), (pj&&pj.error)||""); }
-  catch(e){ add("conn_push", false, String(e.message||e)); }
+  const getj=await post({op:"state_get", auth:auth});
+  if(!add("conn_sync", !!(getj&&getj.ok), (getj&&getj.error)||"", why(getj))) return steps;
 
-  try{ const hj=await post({op:"hits_get", auth:auth});
-       add("conn_hits", !!(hj&&hj.ok), (hj&&hj.ok)? ((hj.events||[]).length+" "+t("conn_events")) : (hj&&hj.error)||""); }
-  catch(e){ add("conn_hits", false, String(e.message||e)); }
+  const pj=await post({op:"state_put", auth:auth, data:syncSnapshot()});
+  add("conn_push", !!(pj&&pj.ok), (pj&&pj.error)||"", why(pj));
+
+  const hj=await post({op:"hits_get", auth:auth});
+  add("conn_hits", !!(hj&&hj.ok), (hj&&hj.ok)? ((hj.events||[]).length+" "+t("conn_events")) : (hj&&hj.error)||"", why(hj));
 
   // The link that was invisible until now: is this URL the one the repo publishes to every device?
   let filed="";
@@ -1694,6 +1710,18 @@ function initSettings(){
     return steps;
   }
   if(el("connRun")) el("connRun").addEventListener("click", ()=> connRun(el("sy_ep")?el("sy_ep").value:""));
+  // SYNC_KEY is derived from the passcode at unlock, so an unlocked device already holds the
+  // exact value Script properties needs. Hunting for it in a file was never necessary.
+  if(el("connKey")) el("connKey").addEventListener("click", async ()=>{
+    const k=syncAuth();
+    if(!k){ toast(t("sy_need_unlock")); return; }
+    let done=false;
+    try{ await navigator.clipboard.writeText(k); done=true; }catch(e){}
+    if(!done){ try{ const ta=document.createElement("textarea"); ta.value=k;
+      ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta);
+      ta.select(); done=document.execCommand("copy"); document.body.removeChild(ta); }catch(e){} }
+    toast(done? t("conn_key_copied") : t("cmp_copy_err"));
+  });
   if(el("connFix")) el("connFix").addEventListener("click", async ()=>{
     const note=el("connNote");
     const ep=((el("sy_ep")&&el("sy_ep").value)||getSyncEndpoint()||"").trim();

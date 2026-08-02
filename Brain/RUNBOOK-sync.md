@@ -41,7 +41,14 @@ Do this on the iPad or a laptop, never on the phone. Apps Script is not usable o
 2. Replace the whole file with `thrive-email-resend.gs` (relay v4). Save.
 3. `Project Settings → Script properties`, confirm both exist:
    - `RESEND_KEY` = the Resend API key
-   - `SYNC_KEY` = the console's sync credential (derived from the passcode, not the passcode)
+   - `SYNC_KEY` = the console's sync credential. Do not go looking for it in a file: on any
+     unlocked device, `Settings → Connection health → Copy the sync key` puts the exact value
+     on the clipboard. It is derived from the passcode, and it is not the passcode.
+
+   Alongside them the relay writes its own properties as it runs: `state_meta`, `state_0`,
+   `state_1`, ..., `hits_meta`, `hits_0`. Those are the shared console state and the collected
+   page opens, written by the script itself. They are not secrets and not something you added
+   by mistake. Leave them alone. Deleting them empties the shared store.
 4. `Deploy → Manage deployments`. If a deployment exists: `Edit → Version: New version →
    Deploy`. If none exists: `New deployment → Web app → Execute as: Me → Access: Anyone →
    Deploy`. Copy the `/exec` URL.
@@ -108,6 +115,10 @@ Two symptoms and what they always mean:
      because the sender identity belongs to Resend, not to the Google account.
 - **A device shows zeros while another shows real numbers**: the two devices are calling two
   different URLs. Check line 7 on both.
+- **`the relay did not answer in time`**: a timeout, not a wrong key. Apps Script cold-starts,
+  and a phone network makes it slower. Run the checks again; open the URL in a tab first to
+  wake the relay if it keeps timing out. The console retries once on its own before it calls
+  the link broken.
 
 ## What is deliberately not automatic
 
