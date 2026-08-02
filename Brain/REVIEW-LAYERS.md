@@ -47,6 +47,21 @@ purpose is unclear is the most expensive way to waste a day.
 
 ---
 
+### The shell and the drawer (`library/console.html`)
+
+- **Purpose.** One document, seven views, three destinations in the bar. The console stopped
+  being a set of pages and became an application, which is what makes it bearable on a phone.
+- **Story.** The work opens beside the board rather than instead of it. You never lose your
+  place, because your place never went anywhere.
+- **Truth.** The drawer *moves* the existing editor and composer nodes rather than copying
+  them, so the document holds exactly one of each and one set of listeners. Two copies would
+  mean duplicate ids and a send button belonging to whichever loaded last.
+- **Craft.** On a phone the drawer stops at 92vw, leaving a strip of the board visible and a
+  scrim to tap. A full-width sheet leaves only a button a thumb cannot always reach.
+- **Resilience.** Escape closes it, the scrim closes it, focus moves to the close control on
+  open and returns to the token on close. The single pages still work with no drawer at all:
+  the layer stays dormant when `#drawer` is absent.
+
 ## Queued, in this order
 
 1. **Compose** (`compose.html`): the densest screen and the one used most under pressure.

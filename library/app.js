@@ -818,7 +818,7 @@ async function initDashboard(){
 }
 
 /* ---------- editor ---------- */
-async function initEditor(){
+async function initEditor(slugArg){
   const el=id=>document.getElementById(id);
   const existing = await allSlugs();
   // The slug currently being edited (null for a brand-new opp). Advances on first save so an
@@ -977,7 +977,7 @@ async function initEditor(){
   // prefill from ?slug= (edit any existing opp) or default date today
   const params=new URLSearchParams(location.search);
   el("f_sent").value = new Date().toISOString().slice(0,10);
-  const editSlug=params.get("slug");
+  const editSlug=(slugArg!==undefined&&slugArg!==null&&slugArg!=="")?slugArg:params.get("slug");
   if(editSlug){
     const all=await mergedOpps();
     const d=all.find(x=>x.slug===editSlug);
@@ -1288,11 +1288,11 @@ function getThreads(){
     .sort((a,b)=> (a.last<b.last?1:-1));
 }
 
-async function initCompose(){
+async function initCompose(slugArg){
   const el=id=>document.getElementById(id);
   const body=el("ebody");
   const params=new URLSearchParams(location.search);
-  const slug=params.get("slug");
+  const slug=(slugArg!==undefined&&slugArg!==null&&slugArg!=="")?slugArg:params.get("slug");
   const oppUrl = slug ? liveUrl(slug) : "";
 
   // rich editor: keep the selection alive when clicking toolbar buttons
@@ -2667,7 +2667,11 @@ async function initBoard(){
     // it is an honest page change rather than a half-built panel.
     document.querySelectorAll(".tok").forEach(tk=>tk.addEventListener("click",()=>{
       const slug=tk.getAttribute("data-slug");
-      location.href="compose.html?slug="+encodeURIComponent(slug);
+      const name=(tk.querySelector(".tok-name")||{}).textContent||slug;
+      // In the shell the work opens beside you. On a single page there is no drawer, and an
+      // honest page change beats a panel that is not there.
+      if(window.thriveDrawer) window.thriveDrawer.open(slug, "compose", name);
+      else location.href="compose.html?slug="+encodeURIComponent(slug);
     }));
   }
 
@@ -2696,4 +2700,65 @@ async function initBoard(){
   window.onThriveSync=render;
   window.onGateUnlocked=render;
   await render();
+}
+
+/* ---------- the drawer ----------
+   The editor and the composer open from the token that needs them, without a view change and
+   without losing your place. It MOVES the existing #view-editor and #view-compose nodes into
+   the drawer host rather than duplicating their markup, so the document keeps exactly one
+   editor, one composer, and one set of listeners. Duplicating them would mean two elements
+   with the same ids and a composer whose send button belongs to whichever copy loaded last.
+   Only the shell has a #drawer, so on a single page this whole layer stays dormant. */
+function initDrawer(){
+  const el=id=>document.getElementById(id);
+  const drawer=el("drawer"), scrim=el("drawerScrim"), body=el("drawerBody");
+  if(!drawer || !body) return null;
+  let opener=null, current="";
+
+  function host(tab){
+    const id = tab==="edit" ? "view-editor" : "view-compose";
+    const view=document.getElementById(id);
+    if(!view) return false;
+    // park every other view back where it belongs before adopting this one
+    Array.prototype.forEach.call(body.children, n=>{ n.hidden=true; });
+    if(view.parentNode!==body) body.appendChild(view);
+    view.hidden=false; view.classList.remove("wrap");
+    return true;
+  }
+  function tabs(active){
+    drawer.querySelectorAll(".drawer-tab").forEach(b=>b.classList.toggle("on", b.getAttribute("data-tab")===active));
+  }
+
+  async function open(slug, tab, title){
+    tab=tab||"compose";
+    opener=document.activeElement;
+    current=slug||"";
+    el("drawerTitle").textContent=title||slug||"";
+    if(!host(tab)) return;
+    tabs(tab);
+    drawer.hidden=false; scrim.hidden=false;
+    // let the browser paint the closed state before the transition starts
+    requestAnimationFrame(()=>{ drawer.classList.add("on"); scrim.classList.add("on"); });
+    document.body.style.overflow="hidden";
+    try{ if(tab==="edit") await initEditor(slug); else await initCompose(slug); }catch(e){}
+    const close=el("drawerClose"); if(close) close.focus();
+  }
+  function close(){
+    drawer.classList.remove("on"); scrim.classList.remove("on");
+    document.body.style.overflow="";
+    setTimeout(()=>{ drawer.hidden=true; scrim.hidden=true; }, 200);
+    if(opener && opener.focus) try{ opener.focus(); }catch(e){}
+    opener=null;
+  }
+  el("drawerClose").addEventListener("click", close);
+  scrim.addEventListener("click", close);
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !drawer.hidden) close(); });
+  drawer.querySelectorAll(".drawer-tab").forEach(b=>b.addEventListener("click", ()=>{
+    const tab=b.getAttribute("data-tab");
+    if(!host(tab)) return;
+    tabs(tab);
+    try{ if(tab==="edit") initEditor(current); else initCompose(current); }catch(e){}
+  }));
+  window.thriveDrawer={ open:open, close:close };
+  return window.thriveDrawer;
 }

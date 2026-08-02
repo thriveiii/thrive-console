@@ -24,11 +24,18 @@ No Netlify, no per-deploy credits. Just a GitHub repo served by GitHub Pages, wi
 CNAME                  thriveiii.com
 ```
 
-### The console as one downloadable file
+### One document, built twice
 
 ```bash
-node tools/bundle.js      # -> dist/thrive-console.html
+node tools/bundle.js
+#  -> library/console.html      the served shell: assets linked and cached
+#  -> dist/thrive-console.html  the offline copy: everything inlined, opens from a file
 ```
+
+`library/*.html` remain the source of every view. Both outputs are generated from them, so the
+served console and the downloadable file can never drift. One document is also what lets the
+drawer host the editor and the composer by moving the existing nodes instead of duplicating
+them. Regenerate and commit both whenever a view changes.
 
 One self-contained file: every page becomes a view, styles, fonts, scripts and the logo are
 inlined, and it carries the published relay URL inside itself. It opens from a phone's
