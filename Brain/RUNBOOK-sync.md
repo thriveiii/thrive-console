@@ -45,6 +45,9 @@ Do this on the iPad or a laptop, never on the phone. Apps Script is not usable o
 4. `Deploy → Manage deployments`. If a deployment exists: `Edit → Version: New version →
    Deploy`. If none exists: `New deployment → Web app → Execute as: Me → Access: Anyone →
    Deploy`. Copy the `/exec` URL.
+   **`Who has access` must read `Anyone`, not `Anyone with a Google account`.** They look
+   almost identical in the menu and only one of them works. The second one turns every call
+   from a prospect, a phone, or the console itself into a Google login page.
 5. **Archive every other deployment** in that list. This is the step that has bitten us three
    times.
 6. In the console: `Settings → GitHub publishing`, fill owner `thriveiii`, repo
@@ -87,6 +90,11 @@ Two symptoms and what they always mean:
 
 - **`Error: missing "to"`** anywhere: the URL being called is running the old email-only
   script. It is not a key problem and not a console problem. Rule 1.
+- **The URL answers with a Google sign-in page**: the deployment's `Who has access` is not
+  `Anyone`. Every unauthenticated caller gets Google's login page instead of the relay, so
+  sync, analytics and email all fail at once and nothing is ever saved. Prospects have no
+  Google account, so a restricted deployment can never record a single page open. Fix:
+  `Deploy → Manage deployments → Edit → Who has access: Anyone → Deploy`.
 - **A device shows zeros while another shows real numbers**: the two devices are calling two
   different URLs. Check line 7 on both.
 

@@ -103,8 +103,10 @@ async function relayProbe(){
   const out={ url:ep, tail:(ep||"").replace(/\/exec.*$/,"").slice(-12), version:"", state:"", hits:"", v4:false };
   if(!ep){ out.version="(no endpoint configured)"; return out; }
   try{
-    const r=await fetch(ep,{cache:"no-store"});
-    out.version=(await r.text()).slice(0,120).trim();
+    const r=await fetchT(ep,{cache:"no-store"},9000);
+    const v=classifyRelayBody(await r.text());
+    out.version = v.kind==="signin"? t("sy_v_signin") : (v.version||"(empty answer)");
+    out.signin  = v.kind==="signin";
   }catch(e){ out.version="(unreachable: "+e.message+")"; }
   out.v4=/v4/.test(out.version);
   const auth=syncAuth();
@@ -1575,25 +1577,54 @@ async function initCompose(){
    finds it. When any link broke, the failure surfaced somewhere else entirely (a phone showing
    zeros, a banner that would not clear), and the missing link was never the one being fixed.
    This checks every link in order, names the one that is broken, and repairs what it can. */
-async function connCheck(candidate){
+/* Nothing here waits forever. A hung request used to leave the whole panel on "Testing..."
+   with no result at all, which is the same sin as a blank page. */
+async function fetchT(url, opts, ms){
+  const ac=new AbortController(); const to=setTimeout(()=>ac.abort(), ms||9000);
+  try{ return await fetch(url, Object.assign({signal:ac.signal}, opts||{})); }
+  finally{ clearTimeout(to); }
+}
+/* What a relay URL actually answered. An Apps Script deployment whose access is not "Anyone"
+   returns a Google sign-in page to every unauthenticated caller, which is HTML, not JSON. That
+   is a completely different fault from a stale deployment and it needs its own name: prospects
+   have no Google account, so a restricted deployment can never collect a single page open. */
+function classifyRelayBody(body){
+  const s=String(body||"").trim();
+  if(!s) return { kind:"net" };
+  if(/Thrive relay/i.test(s)) return { kind:/v4/.test(s)? "v4":"old", version:s.slice(0,90) };
+  // Only a Google page counts as "not open to Anyone". Any other HTML is simply the wrong URL.
+  if(/accounts\.google\.com|ServiceLogin|Web word processing|Google Drive|Google Accounts|google\.com\/accounts/i.test(s))
+    return { kind:"signin" };
+  return { kind:"other", version:(/^<!doctype|^<html/i.test(s)? t("sy_v_html") : s.slice(0,90)) };
+}
+async function connCheck(candidate, onStep){
   const steps=[];
-  const add=(k,ok,detail)=>{ steps.push({k, ok, detail:detail||""}); return ok; };
-  await syncBootstrap();
+  const add=(k,ok,detail,fix)=>{
+    const s={k, ok, detail:detail||"", fix:fix||""};
+    steps.push(s); if(typeof onStep==="function"){ try{ onStep(steps); }catch(e){} }
+    return ok;
+  };
+  try{ await syncBootstrap(); }catch(e){}
   const ep=(candidate||"").trim()||getSyncEndpoint();
   const tail=u=>String(u||"").replace(/\/exec.*$/,"").slice(-12);
 
   if(!add("conn_url", !!ep, tail(ep))) return steps;
 
-  let version="";
-  try{ const r=await fetch(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }catch(e){ version=""; }
-  if(!add("conn_v4", /Thrive relay/i.test(version) && /v4/.test(version), version||t("sy_err_net"))) return steps;
+  let body="";
+  try{ const r=await fetchT(ep,{cache:"no-store"},9000); body=await r.text(); }catch(e){ body=""; }
+  const v=classifyRelayBody(body);
+  if(!add("conn_v4", v.kind==="v4",
+          v.kind==="signin"? t("sy_v_signin") : (v.version||t("sy_err_net")),
+          v.kind==="signin"? t("conn_v4_fix_access") : "")) return steps;
 
   const auth=syncAuth();
   if(!add("conn_key", !!auth)) return steps;
 
   const post=async body=>{
-    const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify(body)});
-    return r.json();
+    const r=await fetchT(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify(body)},12000);
+    const txt=await r.text();
+    try{ return JSON.parse(txt); }
+    catch(e){ return { ok:false, error: classifyRelayBody(txt).kind==="signin"? t("sy_v_signin") : txt.slice(0,90) }; }
   };
   let getj=null;
   try{ getj=await post({op:"state_get", auth:auth}); }catch(e){ getj={ok:false,error:String(e.message||e)}; }
@@ -1609,7 +1640,7 @@ async function connCheck(candidate){
 
   // The link that was invisible until now: is this URL the one the repo publishes to every device?
   let filed="";
-  try{ const r=await fetch("./sync.json",{cache:"no-store"}); if(r.ok){ const j=await r.json(); filed=(j&&j.ep)||""; } }catch(e){}
+  try{ const r=await fetchT("./sync.json",{cache:"no-store"},8000); if(r.ok){ const j=await r.json(); filed=(j&&j.ep)||""; } }catch(e){}
   add("conn_repo", !!filed && filed===ep, filed? tail(filed) : t("conn_no_file"));
   return steps;
 }
@@ -1638,7 +1669,7 @@ function initSettings(){
       const mark=!s? '<span class="conn-i conn-wait">·</span>'
                    : (s.ok? '<span class="conn-i conn-ok">✓</span>' : '<span class="conn-i conn-bad">✕</span>');
       const det=s&&s.detail? '<span class="conn-d">'+esc(s.detail)+'</span>' : "";
-      const fix=(s&&!s.ok)? '<span class="conn-fix">'+esc(t(k+"_fix"))+'</span>' : "";
+      const fix=(s&&!s.ok)? '<span class="conn-fix">'+esc(s.fix||t(k+"_fix"))+'</span>' : "";
       return '<li class="conn-row'+(s&&!s.ok?" bad":"")+'">'+mark+'<span class="conn-t">'+esc(t(k))+'</span>'+det+fix+'</li>';
     }).join("");
     const note=el("connNote"); if(!note) return;
@@ -1648,10 +1679,14 @@ function initSettings(){
     note.textContent = all? "✓ "+t("conn_all_ok") : "⚠ "+t("conn_broken");
     note.className="gh-result "+(all?"ok":"warn");
   }
+  // Rows fill in as each check answers, and a throw still ends with a verdict on screen
+  // rather than a panel stuck on "Testing..." forever.
   async function connRun(candidate){
     connRender([], true);
-    const steps=await connCheck(candidate);
-    connRender(steps, false);
+    let steps=[];
+    try{ steps=await connCheck(candidate, s=>connRender(s, true)); }
+    catch(e){ steps=steps||[]; }
+    finally{ connRender(steps, false); }
     return steps;
   }
   if(el("connRun")) el("connRun").addEventListener("click", ()=> connRun(el("sy_ep")?el("sy_ep").value:""));
@@ -1746,12 +1781,15 @@ function initSettings(){
     // Check a URL BEFORE trusting it. Apps Script hands out a new URL per deployment, so it is
     // easy to end up calling an old one that still serves the previous code.
     async function verifyUrl(ep){
-      let version="";
-      try{ const r=await fetch(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }
+      let body="";
+      try{ const r=await fetchT(ep,{cache:"no-store"},9000); body=await r.text(); }
       catch(e){ return { ok:false, version:"", msg:t("sy_err_net") }; }
-      if(!/Thrive relay/i.test(version)) return { ok:false, version, msg:t("sy_v_notrelay") };
-      if(!/v4/.test(version)) return { ok:false, version, msg:t("sy_v_old") };
-      return { ok:true, version };
+      const v=classifyRelayBody(body);
+      if(v.kind==="signin") return { ok:false, version:t("sy_v_signin"), msg:t("conn_v4_fix_access") };
+      if(v.kind==="net")    return { ok:false, version:"", msg:t("sy_err_net") };
+      if(v.kind==="other")  return { ok:false, version:v.version, msg:t("sy_v_notrelay") };
+      if(v.kind==="old")    return { ok:false, version:v.version, msg:t("sy_v_old") };
+      return { ok:true, version:v.version };
     }
     if(el("syVerify")) el("syVerify").addEventListener("click", async ()=>{
       const ep=el("sy_ep").value.trim();
