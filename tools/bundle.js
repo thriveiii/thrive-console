@@ -176,9 +176,9 @@ ${body}
     initLang();
     if(typeof initDrawer === "function") initDrawer();
     show(current());
-    // A fresh unlock lands on the first view with its data already pulled.
-    var prev = window.onGateUnlocked;
-    window.onGateUnlocked = function(){ if(typeof prev==="function") try{ prev(); }catch(e){} show(current()); };
+    // A fresh unlock lands on the first view with its data already pulled. Registered like
+    // every other listener, so it cannot displace the sync round or a view's own refresh.
+    if(typeof onThrive === "function") onThrive("unlock","shell",function(){ show(current()); });
   });
 })();
 </script>

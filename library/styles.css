@@ -674,7 +674,9 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 }
 .chip{
   font-size:var(--fs-xs); font-weight:var(--w-head);
-  padding:5px 12px; border-radius:var(--r-pill);
+  /* Each chip is a filter, so it is a control before it is a label and needs to be worth
+     aiming at with a mouse as well as a finger. */
+  padding:7px 13px; min-height:30px; display:inline-flex; align-items:center; border-radius:var(--r-pill);
   border:1px solid var(--hair); background:var(--panel); color:var(--ink-3);
   cursor:pointer;
 }
@@ -774,3 +776,14 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
    heads are sticky, so without this the token would travel underneath them. */
 .tok.is-moving{ position:relative; z-index:3; box-shadow:var(--el-raised); will-change:transform }
 .lane-count{ transition:color var(--t-quick) var(--e-standard) }
+
+/* Touch targets. The three destinations in the bar, the lock, the language switch and the
+   board chips measured 24 to 33px tall, and they are the most-tapped controls in the console.
+   A pointer keeps the tighter density; a finger gets 40. */
+@media (pointer:coarse){
+  .nav a,.langbtn{min-height:40px;display:inline-flex;align-items:center}
+  .chip{min-height:40px;display:inline-flex;align-items:center}
+  .tok{min-height:44px}
+  .drawer-tab,.drawer-close{min-height:40px}
+  .tray-toggle{min-height:40px}
+}

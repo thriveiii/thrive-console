@@ -227,6 +227,22 @@ function importBackup(obj){
   if(typeof obj.fromName==="string") setFromName(obj.fromName);
 }
 
+/* ---------- one document, many listeners ----------
+   Every view used to own its page, so assigning window.onThriveSync was safe. In one shell
+   they all share one window, and the view that initialises last silently unsubscribes every
+   view that ran before it: open Activity once and the board stops refreshing on sync, and the
+   board's own handler had already displaced the sync round that runs on unlock. Listeners are
+   registered by key now. A view replaces only its own, and all of them run. */
+const __hooks={ sync:{}, lang:{}, unlock:{} };
+function onThrive(kind, key, fn){ (__hooks[kind]||(__hooks[kind]={}))[key]=fn; }
+function fireThrive(kind){
+  const h=__hooks[kind]||{};
+  Object.keys(h).forEach(k=>{ try{ h[k](); }catch(e){} });
+}
+window.onThriveSync  = function(){ fireThrive("sync"); };
+window.onLangApplied = function(){ fireThrive("lang"); };
+window.onGateUnlocked= function(){ fireThrive("unlock"); };
+
 /* ---------- live cross-device sync ----------
    One shared state document, stored by the same Apps Script relay that sends email.
    Unlocking the gate derives the sync credential (PBKDF2 of the passcode, see gate.js), so the
@@ -422,7 +438,7 @@ function scheduleSyncPush(){
 function startLiveSync(){
   if(!document.querySelector("header.top")) return;       // console pages only
   if(syncAuth()) syncNow();
-  window.onGateUnlocked=function(){ syncNow(); };
+  onThrive("unlock","sync",function(){ syncNow(); });
   setInterval(()=>{ if(!document.hidden && syncAuth()) syncNow(); }, 60000);
 }
 document.addEventListener("DOMContentLoaded", startLiveSync);
@@ -789,7 +805,7 @@ async function initDashboard(){
   }
 
   const debRender=debounce(render,140);
-  window.onThriveSync=async ()=>{ state.data=await mergedOpps(); render(); };   // live refresh on sync
+  onThrive("sync","library", async ()=>{ state.data=await mergedOpps(); render(); });
   search.addEventListener("input",e=>{ state.q=e.target.value; debRender(); });
   sort.addEventListener("change",e=>{ state.sort=e.target.value; render(); });
   filt.addEventListener("change",e=>{ state.tmpl=e.target.value; render(); });
@@ -813,7 +829,7 @@ async function initDashboard(){
     toast(localCount? t("export_local_note").replace("{n}",localCount) : t("exported_toast"));
   });
 
-  window.onLangApplied=render;
+  onThrive("lang","dashboard",render);
   render();
 }
 
@@ -1014,10 +1030,10 @@ async function initEditor(slugArg){
       if("WANT" in F) el("f_want").value=F.WANT||"";
     }
   }
-  window.onLangApplied=()=>{
+  onThrive("lang","editor",()=>{
     relabelBuiltins();                                   // template names follow the language switch
     if(mode==="upload" && uploadedName) dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>";
-  };
+  });
   refresh();
 }
 
@@ -1129,8 +1145,8 @@ function initActivity(){
   el("logExport").addEventListener("click",()=>{
     download("thrive-activity.json", JSON.stringify({ activity:getActivity(), mail:getMailLog() },null,2), "application/json");
   });
-  window.onLangApplied=()=>{ renderChips(); render(); };
-  window.onThriveSync=render;                            // ledger/threads refresh live after a sync
+  onThrive("lang","activity",()=>{ renderChips(); render(); });
+  onThrive("sync","activity",render);
   renderChips(); render();
 }
 
@@ -1628,7 +1644,7 @@ async function initCompose(slugArg){
     meter.title=t("cmp_quota_hint");
   }
   renderQuota();
-  window.onThriveSync=renderQuota;                       // counter refreshes live when another device's sends arrive
+  onThrive("sync","compose",renderQuota);
   el("eSend").addEventListener("click", async ()=>{
     const to=el("eto").value.trim();
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
@@ -1852,7 +1868,7 @@ function initSettings(){
   // first sync round opens the vault. Refresh the page once when that lands, so the panel and
   // the fields show what the device actually holds instead of what it held at load.
   let __connRefreshed=false;
-  window.onThriveSync=function(){
+  onThrive("sync","settings",function(){
     try{ syCounts(); }catch(e){}
     if(!__connRefreshed && ghReady() && !el("gh_token").value){
       __connRefreshed=true;
@@ -1861,7 +1877,7 @@ function initSettings(){
       el("gh_branch").value=c2.branch||"main"; el("gh_token").value=c2.token||"";
       status(); connRun("");
     }
-  };
+  });
 
   el("ghSave").addEventListener("click", async ()=>{
     persist(); logActivity("settings","","github config"); status();
@@ -2000,7 +2016,7 @@ function initSettings(){
     fr.onload=()=>{ try{ importBackup(JSON.parse(fr.result)); logActivity("restore","",""); toast(t("restored_ok")); setTimeout(()=>location.reload(),1200); }
       catch(ex){ toast(t("restore_err")+": "+ex.message); } bkFile.value=""; };
     fr.readAsText(f); });
-  window.onLangApplied=status; status();
+  onThrive("lang","settings-gh",status); status();
 }
 
 /* ---------- templates gallery ---------- */
@@ -2187,7 +2203,7 @@ function initTemplates(){
       renderEmailTpls();
     }));
   }
-  window.onLangApplied=()=>{ renderBuiltin(); renderCustom(); renderEmailTpls(); };
+  onThrive("lang","templates",()=>{ renderBuiltin(); renderCustom(); renderEmailTpls(); });
   renderBuiltin(); renderCustom(); renderEmailTpls();
 }
 
@@ -2481,8 +2497,8 @@ async function initHome(){
     setTimeout(checkBeacons, 1500);
   });
   checkBeacons();
-  window.onLangApplied=render;
-  window.onThriveSync=render;                            // live refresh when another device's data arrives
+  onThrive("lang","home",render);
+  onThrive("sync","home",render);
   render();
   // Collected analytics arrive a moment later. Re-render either way: a FAILED fetch is also
   // information (it tells the banner the relay isn't answering) and must not leave a stale
@@ -2563,7 +2579,7 @@ async function initInsights(){
   el("epSave").addEventListener("click",()=>{ setEndpoint(el("epInput").value.trim()); toast(t("ins_saved")); render(); });
   el("insRefresh").addEventListener("click",render);
   el("insClear").addEventListener("click",()=>{ if(!confirm(t("ins_confirm_clear"))) return; try{localStorage.removeItem(HITS);}catch(e){} render(); });
-  window.onLangApplied=render;
+  onThrive("lang","insights",render);
   render();
 }
 
@@ -2731,9 +2747,9 @@ async function initBoard(){
     try{ await syncNow(); }catch(e){}
     render();
   });
-  window.onLangApplied=render;
-  window.onThriveSync=render;
-  window.onGateUnlocked=render;
+  onThrive("lang","board",render);
+  onThrive("sync","board",render);
+  onThrive("unlock","board",render);
   await render();
 }
 
@@ -2787,7 +2803,20 @@ function initDrawer(){
   }
   el("drawerClose").addEventListener("click", close);
   scrim.addEventListener("click", close);
-  document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !drawer.hidden) close(); });
+  document.addEventListener("keydown", e=>{
+    if(drawer.hidden) return;
+    if(e.key==="Escape"){ close(); return; }
+    // aria-modal is a promise to assistive technology, and a promise the keyboard has to keep
+    // too: without a trap, Tab walks out of the dialog into a board the reader cannot see.
+    if(e.key!=="Tab") return;
+    const f=drawer.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])');
+    const list=Array.prototype.filter.call(f, el=>el.offsetParent!==null);
+    if(!list.length) return;
+    const first=list[0], last=list[list.length-1];
+    if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+    else if(!drawer.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
+  });
   drawer.querySelectorAll(".drawer-tab").forEach(b=>b.addEventListener("click", ()=>{
     const tab=b.getAttribute("data-tab");
     if(!host(tab)) return;
