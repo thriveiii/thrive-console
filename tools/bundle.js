@@ -31,6 +31,7 @@ const logo = "data:image/png;base64," + fs.readFileSync(path.join(ROOT, "assets/
 const css = read(path.join(LIB, "fonts.css")) + "\n" + read(path.join(LIB, "styles.css"));
 const i18n = read(path.join(LIB, "i18n.js"));
 const gate = read(path.join(LIB, "gate.js"));
+const model = read(path.join(LIB, "stage-model.js"));
 const app = read(path.join(LIB, "app.js"));
 let published = {};
 try { published = JSON.parse(read(path.join(LIB, "sync.json"))); } catch (e) {}
@@ -107,6 +108,9 @@ ${i18n}
 </script>
 <script>
 ${gate}
+</script>
+<script>
+${model}
 </script>
 <script>
 ${app}
