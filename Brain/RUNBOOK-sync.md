@@ -90,11 +90,22 @@ Two symptoms and what they always mean:
 
 - **`Error: missing "to"`** anywhere: the URL being called is running the old email-only
   script. It is not a key problem and not a console problem. Rule 1.
-- **The URL answers with a Google sign-in page**: the deployment's `Who has access` is not
-  `Anyone`. Every unauthenticated caller gets Google's login page instead of the relay, so
-  sync, analytics and email all fail at once and nothing is ever saved. Prospects have no
-  Google account, so a restricted deployment can never record a single page open. Fix:
-  `Deploy → Manage deployments → Edit → Who has access: Anyone → Deploy`.
+- **The URL answers with a Google sign-in page**: the relay is not reachable anonymously, so
+  sync, analytics and email fail at once and nothing is ever saved. Prospects have no Google
+  account, so this state can never record a single page open. Work through it in this order:
+  1. `Who has access` is `Anyone`, not `Anyone with a Google account`.
+  2. `Execute as` is `Me`. With `User accessing the web app`, Google needs an identity and
+     will ask an anonymous caller to sign in.
+  3. The URL the console calls belongs to **that** deployment. Compare the tail shown in
+     Connection health against the deployment list.
+  4. Open the URL in a **private window**. This is the only test that settles it: signed in
+     as yourself, a restricted deployment looks perfectly fine.
+  5. If a private window still asks for a sign-in, the account is a Google Workspace account
+     and an admin policy is blocking anonymous access to Apps Script web apps. Either relax
+     it in the admin console (Drive and Docs sharing, allow outside the organisation), or
+     deploy the relay from a **personal Google account**. Nothing else about Thrive changes:
+     the relay calls Resend with the API key, and mail still leaves as hi@thriveiii.com,
+     because the sender identity belongs to Resend, not to the Google account.
 - **A device shows zeros while another shows real numbers**: the two devices are calling two
   different URLs. Check line 7 on both.
 

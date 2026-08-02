@@ -1599,8 +1599,8 @@ function classifyRelayBody(body){
 }
 async function connCheck(candidate, onStep){
   const steps=[];
-  const add=(k,ok,detail,fix)=>{
-    const s={k, ok, detail:detail||"", fix:fix||""};
+  const add=(k,ok,detail,fix,link)=>{
+    const s={k, ok, detail:detail||"", fix:fix||"", link:link||""};
     steps.push(s); if(typeof onStep==="function"){ try{ onStep(steps); }catch(e){} }
     return ok;
   };
@@ -1608,7 +1608,7 @@ async function connCheck(candidate, onStep){
   const ep=(candidate||"").trim()||getSyncEndpoint();
   const tail=u=>String(u||"").replace(/\/exec.*$/,"").slice(-12);
 
-  if(!add("conn_url", !!ep, tail(ep))) return steps;
+  if(!add("conn_url", !!ep, tail(ep), "", ep)) return steps;
 
   let body="";
   try{ const r=await fetchT(ep,{cache:"no-store"},9000); body=await r.text(); }catch(e){ body=""; }
@@ -1668,7 +1668,11 @@ function initSettings(){
       const s=byKey[k];
       const mark=!s? '<span class="conn-i conn-wait">·</span>'
                    : (s.ok? '<span class="conn-i conn-ok">✓</span>' : '<span class="conn-i conn-bad">✕</span>');
-      const det=s&&s.detail? '<span class="conn-d">'+esc(s.detail)+'</span>' : "";
+      // The URL is a real link: opening it in a private window is the one test that settles
+      // whether the deployment is truly public, and no amount of console code can do it for you.
+      const det=s&&s.detail? (s.link
+        ? '<a class="conn-d" href="'+esc(s.link)+'" target="_blank" rel="noopener">'+esc(s.detail)+'</a>'
+        : '<span class="conn-d">'+esc(s.detail)+'</span>') : "";
       const fix=(s&&!s.ok)? '<span class="conn-fix">'+esc(s.fix||t(k+"_fix"))+'</span>' : "";
       return '<li class="conn-row'+(s&&!s.ok?" bad":"")+'">'+mark+'<span class="conn-t">'+esc(t(k))+'</span>'+det+fix+'</li>';
     }).join("");
