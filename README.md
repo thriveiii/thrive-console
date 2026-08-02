@@ -21,6 +21,8 @@ No Netlify, no per-deploy credits. Just a GitHub repo served by GitHub Pages, wi
 /assets/               the Thrive logo
 /Brain/                the deep-knowledge archive behind this work, plus the pre-publish checklist
 /tools/verify.js       the verify gate: run it before every push
+/tools/lane-truth.py   the lane rule, held against the four real records
+/tools/audit-five-layers.py  the five review layers, walked in both languages
 CNAME                  thriveiii.com
 ```
 
@@ -35,7 +37,8 @@ node tools/bundle.js
 `library/*.html` remain the source of every view. Both outputs are generated from them, so the
 served console and the downloadable file can never drift. One document is also what lets the
 drawer host the editor and the composer by moving the existing nodes instead of duplicating
-them. Regenerate and commit both whenever a view changes.
+them. Regenerate whenever a view changes. `library/console.html` is committed because it is
+what the site serves; `dist/` is ignored and rebuilt on demand.
 
 One self-contained file: every page becomes a view, styles, fonts, scripts and the logo are
 inlined, and it carries the published relay URL inside itself. It opens from a phone's
@@ -49,7 +52,18 @@ is a working copy and a backup, not a second window onto the same device data.
 node tools/verify.js
 ```
 
-It parses every script, refuses any secret-shaped string, asserts EN/AR key parity and that
+Two browser gates go with it, and both are re-runnable on purpose:
+
+```bash
+python3 tools/lane-truth.py          # the lane rule, held against the four real records
+python3 tools/audit-five-layers.py   # the five review layers, 158 assertions, EN and AR
+```
+
+`lane-truth.py` is the regression: an opportunity reaches Sent or Opened only when the mail
+ledger proves a message went out, a page read before that first send keeps its views without
+being called an open, and the board, the library and the Insights tables all say the same
+thing. `verify.js` is the one that must pass before every push; it parses every script,
+refuses any secret-shaped string, asserts EN/AR key parity and that
 every `data-i18n` key exists in both languages, and enforces the house copy rules (no em
 dash, Western numerals, straight quotes in English, guillemets in Arabic, tanwin on the
 letter). It also checks that every console page carries the boot failsafe and that every
