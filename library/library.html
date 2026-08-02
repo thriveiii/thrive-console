@@ -18,13 +18,9 @@
 <header class="top">
   <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
   <nav class="nav">
-    <a href="index.html" data-i18n="nav_home">Overview</a>
-    <a href="library.html" class="active" data-i18n="nav_library">Library</a>
-    <a href="editor.html" data-i18n="nav_editor">Editor</a>
-    <a href="compose.html" data-i18n="nav_compose">Email</a>
-    <a href="templates.html" data-i18n="nav_templates">Templates</a>
-    <a href="activity.html" data-i18n="nav_activity">Activity</a>
-    <a href="settings.html" data-i18n="nav_settings">Settings</a>
+    <a href="console.html#board" data-i18n="nav_board">Board</a>
+    <a href="console.html#library" class="active" data-i18n="nav_library">Library</a>
+    <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
     <button id="langbtn" class="langbtn">العربية</button>
     <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
   </nav>
@@ -35,7 +31,10 @@
   <p class="sub" data-i18n="lib_sub"></p>
 
   <div class="toolbar">
-    <div class="search"><input id="q" type="search" data-i18n-ph="search_ph"></div>
+    <div class="search"><input id="q" type="search" data-i18n-ph="search_ph">      <a class="btn ghost" href="index.html" data-i18n="nav_home">Overview</a>
+      <a class="btn ghost" href="templates.html" data-i18n="nav_templates">Templates</a>
+      <a class="btn ghost" href="activity.html" data-i18n="nav_activity">Activity</a>
+</div>
     <select id="sort" style="max-width:180px">
       <option value="new" data-i18n="sort_new">Newest sent</option>
       <option value="old" data-i18n="sort_old">Oldest sent</option>
@@ -57,6 +56,7 @@
 </main>
 
 <script src="i18n.js" defer></script>
+<script src="stage-model.js" defer></script>
 <script src="app.js" defer></script>
 <script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initDashboard(); });</script>
 </body>

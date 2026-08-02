@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Thrive · Board</title>
+<link rel="icon" href="../assets/thrive-logo.png">
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<link rel="preconnect" href="https://api.github.com" crossorigin>
+<link rel="dns-prefetch" href="https://api.github.com">
+<script>(function(){var d=document.documentElement;function lock(){d.classList.add('gate-locked')}try{if(sessionStorage.getItem('thrive_gate_v2')!=='0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8')lock()}catch(e){lock()}/* boot failsafe: a script that never runs must not leave a blank locked page */setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;var ar=false;try{ar=localStorage.getItem('thrive_lang')==='ar'}catch(e){}var p=document.createElement('p');p.className='bootfail';p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل الصفحة، وتحقق من الاتصال إن تكرر الأمر.':'The console could not start. Reload the page, and check your connection if it happens again.';(document.body||d).appendChild(p)},6000)})();</script>
+<script src="gate.js" defer></script>
+</head>
+<body>
+<noscript><p class="bootfail">This console needs JavaScript to run. <span dir="rtl">يحتاج هذا الكونسول إلى تفعيل JavaScript.</span></p></noscript>
+<header class="top">
+  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <nav class="nav">
+    <a href="console.html#board" class="active" data-i18n="nav_board">Board</a>
+    <a href="console.html#library" data-i18n="nav_library">Library</a>
+    <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
+    <button id="langbtn" class="langbtn">العربية</button>
+    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
+  </nav>
+</header>
+
+<main class="wrap">
+
+  <div class="page-h">
+    <h1 class="title" data-i18n="board_title">Board</h1>
+    <span class="pill" id="boardSync"></span>
+  </div>
+  <p class="sub" data-i18n="board_sub"></p>
+
+  <!-- The one Syne moment on this screen. Filled by initBoard from
+       ThriveBoard.verdict(). IDENTITY §6.2 -->
+  <div class="board-head">
+    <div>
+      <div class="verdict" id="boardVerdict"></div>
+      <div class="verdict-sub" id="boardVerdictSub"></div>
+    </div>
+    <div class="toolbar" style="margin:0">
+      <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
+      <a class="btn ghost" href="compose.html" data-i18n="home_send">Send an email</a>
+      <a class="btn ghost" href="library.html" data-i18n="home_open_lib">Open library</a>
+      <button class="btn ghost" id="boardRefresh" data-i18n="ins_refresh">Refresh</button>
+    </div>
+  </div>
+
+  <!-- Lanes. Order is the order of the gradient, and the order is the journey. -->
+  <div class="board" id="boardLanes">
+    <section class="lane" data-lane="draft">
+      <header class="lane-head">
+        <span class="lane-title" data-i18n="lane_draft">Draft</span>
+        <span class="lane-count" data-count="draft">0</span>
+      </header>
+      <div class="lane-body" data-body="draft"></div>
+    </section>
+
+    <section class="lane" data-lane="live">
+      <header class="lane-head">
+        <span class="lane-title" data-i18n="lane_live">Live</span>
+        <span class="lane-count" data-count="live">0</span>
+      </header>
+      <div class="lane-body" data-body="live"></div>
+    </section>
+
+    <section class="lane" data-lane="sent">
+      <header class="lane-head">
+        <span class="lane-title" data-i18n="lane_sent">Sent</span>
+        <span class="lane-count" data-count="sent">0</span>
+      </header>
+      <div class="lane-body" data-body="sent"></div>
+    </section>
+
+    <section class="lane" data-lane="opened">
+      <header class="lane-head">
+        <span class="lane-title" data-i18n="lane_opened">Opened</span>
+        <span class="lane-count" data-count="opened">0</span>
+      </header>
+      <div class="lane-body" data-body="opened"></div>
+    </section>
+
+    <section class="lane" data-lane="replied">
+      <header class="lane-head">
+        <span class="lane-title" data-i18n="lane_replied">Replied</span>
+        <span class="lane-count" data-count="replied">0</span>
+      </header>
+      <div class="lane-body" data-body="replied"></div>
+    </section>
+  </div>
+
+  <!-- Summary chips. Each one is a filter, so every number on this screen is
+       also an action. IDENTITY §9.2 -->
+  <div class="board-note" id="boardChips"></div>
+
+  <!-- Finished work. Counted, not competing for width. IDENTITY §3.3 -->
+  <section class="tray" id="boardTray">
+    <button class="tray-toggle" id="trayToggle" aria-expanded="false" aria-controls="trayBody">
+      <svg class="tray-chev" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        <path d="M1 3.5 L5 7 L9 3.5" fill="none" stroke="currentColor" stroke-width="1.6"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span data-i18n="tray_closed">Closed</span>
+      <span class="lane-count" id="trayCount">0</span>
+    </button>
+    <div class="tray-body" id="trayBody">
+      <div class="tray-list" id="trayList"></div>
+    </div>
+  </section>
+
+  <!-- Empty state. A designed state, not a missing one. IDENTITY §9.3 -->
+  <div class="empty" id="boardEmpty" hidden>
+    <h3 class="block-h" data-i18n="board_empty_h">No opportunities yet.</h3>
+    <p class="sub" data-i18n="board_empty_p"></p>
+    <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
+  </div>
+</main>
+
+<script src="i18n.js" defer></script>
+<script src="stage-model.js" defer></script>
+<script src="app.js" defer></script>
+<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initBoard(); });</script>
+</body>
+</html>
