@@ -1,14 +1,45 @@
 :root{
+  /* ---- surfaces ---- */
   --bg:#0a0a0c; --panel:#111116; --panel-2:#16161d;
-  --ink:#fff; --ink-2:#d1d5db; --ink-3:#9ca3af;
+  --hair:rgba(255,255,255,.10); --hair-2:rgba(255,255,255,.06); --scrim:rgba(0,0,0,.58);
+  /* ---- ink ---- */
+  --ink:#fff; --ink-2:#d1d5db; --ink-3:#9ca3af; --ink-4:#6b7280;
+  /* ---- brand ---- */
   --purple:#9685CA; --pink:#EE8C9D; --teal:#71BFCC;
-  --hair:rgba(255,255,255,.10); --hair-2:rgba(255,255,255,.06);
   --grad:linear-gradient(120deg,#72BECE,#5D7FB7,#9685CA,#EE8C9D,#A78CA7,#71BFCC);
-  --ease:cubic-bezier(.2,.7,.2,1);
+  /* ---- lanes: colour as a scale, one hue per state of the journey ---- */
+  --lane-draft:#71BFCC; --lane-live:#7F9FD4; --lane-sent:#9685CA;
+  --lane-opened:#EE8C9D; --lane-replied:#7EE0B8; --lane-closed:#6b7280;
+  --lane-draft-t:rgba(113,191,204,.12); --lane-live-t:rgba(127,159,212,.12);
+  --lane-sent-t:rgba(150,133,202,.12); --lane-opened-t:rgba(238,140,157,.12);
+  --lane-replied-t:rgba(126,224,184,.12);
+  /* ---- states ---- */
+  --state-stall:#F6CF5B; --state-stall-t:rgba(246,207,91,.11); --state-stall-b:rgba(246,207,91,.55);
+  --state-good:#7EE0B8; --state-bad:#EE8C9D;
+  /* ---- radii: four values, nothing else ---- */
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:18px; --r-pill:999px;
+  /* ---- space: a 4px base scale ---- */
+  --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:20px; --s-6:26px; --s-7:34px; --s-8:48px;
+  /* ---- type ---- */
   --font:"Lato","Segoe UI",Roboto,-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,"Alyamama","Noto Sans Arabic",sans-serif;
   --font-ar:"Alyamama","Noto Sans Arabic","Segoe UI",Tahoma,sans-serif;
+  --fs-micro:10.5px; --fs-xs:11.5px; --fs-sm:12.5px; --fs-base:13.5px;
+  --fs-md:15px; --fs-lg:17px; --fs-xl:22px; --fs-2xl:30px;
+  --lh-tight:1.25; --lh-base:1.55; --lh-read:1.85;
+  /* ---- elevation: objects only, never surfaces ---- */
+  --el-raised:0 6px 18px rgba(0,0,0,.40); --el-drawer:0 0 60px rgba(0,0,0,.60);
+  --el-accent:0 8px 24px rgba(150,133,202,.28);
+  /* ---- motion: five durations, three easings, nothing outside the scale ---- */
+  --t-instant:90ms; --t-quick:160ms; --t-base:240ms; --t-slow:320ms; --t-page:420ms;
+  --e-standard:cubic-bezier(.2,.7,.2,1); --e-enter:cubic-bezier(.16,1,.3,1); --e-exit:cubic-bezier(.4,0,1,1);
+  --ease:var(--e-standard);                 /* the name the existing rules already use */
+  /* Direction sign, set once so no component branches on dir. */
+  --dir:1;
+  /* ---- board tuning ---- */
+  --stall-days:10; --lane-min:132px;
   color-scheme:dark; /* dark native date-picker, selects, scrollbars */
 }
+html[dir="rtl"]{ --dir:-1 }
 *{box-sizing:border-box}
 :focus-visible{outline:2px solid var(--purple);outline-offset:2px;border-radius:6px}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -292,8 +323,28 @@ html[dir="rtl"] .logtable td.mono{direction:ltr;text-align:start}
 
 /* ---- Performance: off-screen cards skip layout/paint; respect reduced-motion; pause logo spin on hidden tab ---- */
 .card{content-visibility:auto;contain-intrinsic-size:0 240px}
+
+/* ===========================================================================
+   Motion layer. Two properties move: transform and opacity. Plus border-color,
+   background-color and box-shadow on small objects, at --t-instant only.
+   Never width, height, top, left, margin, padding or font-size: they lay out
+   on every frame, drop frames on an iPad, and reflow text under a reader.
+   Exit is always shorter than enter, because waiting for something to finish
+   leaving is the most common way an interface feels slow.
+   =========================================================================== */
+.rv{opacity:0;transform:translateY(8px);transition:opacity var(--t-base) var(--e-enter),transform var(--t-base) var(--e-enter)}
+.rv.in{opacity:1;transform:none}
+.press{transition:transform var(--t-instant) var(--e-standard)}
+.press:active{transform:scale(.98)}
+/* An object that arrives, capped at 8px of travel: more reads as theatre. */
+@keyframes rise-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.enter{animation:rise-in var(--t-base) var(--e-enter) both}
+.enter-1{animation-delay:0ms} .enter-2{animation-delay:40ms} .enter-3{animation-delay:80ms}
+
 @media (prefers-reduced-motion:reduce){
   .brand img,.gate-logo,.card,.card:hover{animation:none!important;transition:none!important}
+  .rv{opacity:1;transform:none;transition:opacity var(--t-instant) linear}
+  .enter{animation:none}
   .card:hover{transform:none}
 }
 html.tab-hidden .brand img,html.tab-hidden .gate-logo{animation-play-state:paused}
