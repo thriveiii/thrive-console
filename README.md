@@ -21,6 +21,7 @@ No Netlify, no per-deploy credits. Just a GitHub repo served by GitHub Pages, wi
 /assets/               the Thrive logo
 /Brain/                the deep-knowledge archive behind this work, plus the pre-publish checklist
 /tools/verify.js       the verify gate: run it before every push
+/tools/gates.py        the ten review gates, walked in a browser in both languages
 /tools/lane-truth.py   the lane rule, held against the four real records
 /tools/audit-five-layers.py  the five review layers, walked in both languages
 CNAME                  thriveiii.com
@@ -52,12 +53,17 @@ is a working copy and a backup, not a second window onto the same device data.
 node tools/verify.js
 ```
 
-Two browser gates go with it, and both are re-runnable on purpose:
+Three browser gates go with it, and all are re-runnable on purpose:
 
 ```bash
+python3 tools/gates.py               # the ten review gates, 242 checks, EN and AR, 320 to 1440
 python3 tools/lane-truth.py          # the lane rule, held against the four real records
 python3 tools/audit-five-layers.py   # the five review layers, 158 assertions, EN and AR
 ```
+
+`gates.py` is the widest of the three: boot, doors, round trip, truth, bilingual, typography,
+layout, forms, resilience, build. Run one gate on its own with `python3 tools/gates.py 3`.
+`Brain/REVIEW-LAYERS.md` says what each gate asks and what it caught.
 
 `lane-truth.py` is the regression: an opportunity reaches Sent or Opened only when the mail
 ledger proves a message went out, a page read before that first send keeps its views without
@@ -70,7 +76,22 @@ letter). It also checks that every console page carries the boot failsafe and th
 published prospect page carries the analytics beacon. `Brain/CHECKLIST.md` covers the rest,
 the part that still needs a person.
 
-Approved templates today: **en-opp1** (English, Lato) and **ar-opp1** (Arabic RTL, Alyamama). Both fonts are embedded inside each page as base64, so the pages render identically on Windows, macOS, iOS and Android with nothing to install.
+### Two kinds of template, kept apart
+
+The Templates screen has two tabs, because it holds two different objects:
+
+- **Page templates (HTML)** are layouts. One HTML file, filled from the editor, published as a
+  prospect's page at `console.thriveiii.com/opp/<slug>`.
+- **Message templates (text)** are the words you send. Subject and body with merge fields
+  (`{{BIZ}}`, `{{NAME}}`, `{{LINK}}`, `{{MONTH}}`, `{{SLUG}}`), filled from the opportunity when
+  you compose.
+
+They were one list under three headings, so the difference had to be inferred. The composer now
+offers the message templates as one-tap choices while the message is still empty, so a page you
+have just published goes out without writing from nothing. It still opens blank: it offers, it
+does not decide.
+
+Approved page templates today: **en-opp1** (English, Lato) and **ar-opp1** (Arabic RTL, Alyamama). Both fonts are embedded inside each page as base64, so the pages render identically on Windows, macOS, iOS and Android with nothing to install.
 
 ---
 

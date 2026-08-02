@@ -201,29 +201,29 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       </div>
 
       <h4 class="sec-h" data-i18n="ed_sec_setup">Template &amp; mode</h4>
-      <div class="field" id="templateField"><label data-i18n="f_template">Template</label>
+      <div class="field" id="templateField"><label for="f_template" data-i18n="f_template">Template</label>
         <select id="f_template"><option value="en-opp1">en-opp1 · The Signal Brief (EN)</option><option value="ar-opp1">ar-opp1 · موجز الإشارة (AR)</option></select></div>
 
       <h4 class="sec-h" data-i18n="ed_sec_basics">Basics</h4>
-      <div class="field req"><label data-i18n="f_biz">Business name</label><input id="f_biz" class="input" autocomplete="off"></div>
-      <div class="field"><label data-i18n="f_slug">Link slug</label><input id="f_slug" class="input" autocomplete="off">
+      <div class="field req"><label for="f_biz" data-i18n="f_biz">Business name</label><input id="f_biz" class="input" autocomplete="off"></div>
+      <div class="field"><label for="f_slug" data-i18n="f_slug">Link slug</label><input id="f_slug" class="input" autocomplete="off">
         <div class="hint" data-i18n="f_slughint"></div>
         <div class="hint warn" id="slugWarn" data-i18n="slug_taken" hidden></div></div>
       <div class="grid2">
-        <div class="field"><label data-i18n="f_sent">Send date</label><input id="f_sent" class="input" type="date"></div>
-        <div class="field"><label data-i18n="f_location">Location</label><input id="f_location" class="input" autocomplete="off"></div>
+        <div class="field"><label for="f_sent" data-i18n="f_sent">Send date</label><input id="f_sent" class="input" type="date"></div>
+        <div class="field"><label for="f_location" data-i18n="f_location">Location</label><input id="f_location" class="input" autocomplete="off"></div>
       </div>
-      <div class="field"><label data-i18n="f_phone">Phone (if any)</label><input id="f_phone" class="input" autocomplete="off"></div>
+      <div class="field"><label for="f_phone" data-i18n="f_phone">Phone (if any)</label><input id="f_phone" class="input" autocomplete="off"></div>
 
       <div id="fillFields">
         <h4 class="sec-h" data-i18n="ed_sec_content">Content</h4>
-        <div class="field"><label data-i18n="f_quote">Quote</label><textarea id="f_quote" rows="2"></textarea>
+        <div class="field"><label for="f_quote" data-i18n="f_quote">Quote</label><textarea id="f_quote" rows="2"></textarea>
           <div class="hint" data-i18n="f_quotehint"></div></div>
-        <div class="field"><label data-i18n="f_quoteby">Quote attribution</label><input id="f_quoteby" class="input" autocomplete="off"></div>
-        <div class="field req"><label data-i18n="f_proof1">What you built · 1</label><textarea id="f_proof1" rows="2"></textarea></div>
-        <div class="field req"><label data-i18n="f_proof2">What you built · 2</label><textarea id="f_proof2" rows="2"></textarea></div>
-        <div class="field req"><label data-i18n="f_proof3">What you built · 3</label><textarea id="f_proof3" rows="2"></textarea></div>
-        <div class="field req"><label data-i18n="f_want">The busier-pair</label><input id="f_want" class="input" autocomplete="off">
+        <div class="field"><label for="f_quoteby" data-i18n="f_quoteby">Quote attribution</label><input id="f_quoteby" class="input" autocomplete="off"></div>
+        <div class="field req"><label for="f_proof1" data-i18n="f_proof1">What you built · 1</label><textarea id="f_proof1" rows="2"></textarea></div>
+        <div class="field req"><label for="f_proof2" data-i18n="f_proof2">What you built · 2</label><textarea id="f_proof2" rows="2"></textarea></div>
+        <div class="field req"><label for="f_proof3" data-i18n="f_proof3">What you built · 3</label><textarea id="f_proof3" rows="2"></textarea></div>
+        <div class="field req"><label for="f_want" data-i18n="f_want">The busier-pair</label><input id="f_want" class="input" autocomplete="off">
           <div class="hint" data-i18n="f_wanthint"></div></div>
       </div>
 
@@ -263,25 +263,28 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
   <section class="panel compose-panel">
     <div class="etpl-bar">
-      <label class="etpl-label" data-i18n="cmp_template">Template</label>
+      <label for="etpl" class="etpl-label" data-i18n="cmp_template">Template</label>
       <select id="etpl" class="input"></select>
       <button class="btn ghost sm" id="eSaveTpl" data-i18n="cmp_save_tpl">Save as template</button>
       <label class="btn ghost sm" for="eTplFile" data-i18n="cmp_tpl_upload">Upload template</label>
       <input id="eTplFile" type="file" accept=".html,.htm,text/html" hidden>
-      <a class="btn ghost sm" href="templates.html#email" data-i18n="cmp_manage_tpl">Manage</a>
+      <a class="btn ghost sm" href="#templates?kind=mail" data-i18n="cmp_manage_tpl">Manage</a>
     </div>
+    <!-- One tap to a starting message. The editor still opens blank: this offers, it does not
+         decide. It is how a page you just published goes out without writing from nothing. -->
+    <div class="etpl-quick" id="etplQuick" hidden></div>
     <div class="grid3">
-      <div class="field"><label data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
-      <div class="field"><label data-i18n="cmp_to">To</label><input id="eto" class="input" type="email" autocomplete="off" placeholder="name@example.com"></div>
-      <div class="field"><label data-i18n="cmp_name">Recipient name</label><input id="ename" class="input" autocomplete="off" data-i18n-ph="cmp_name_ph"></div>
+      <div class="field"><label for="efrom" data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
+      <div class="field"><label for="eto" data-i18n="cmp_to">To</label><input id="eto" class="input" type="email" autocomplete="off" placeholder="name@example.com"></div>
+      <div class="field"><label for="ename" data-i18n="cmp_name">Recipient name</label><input id="ename" class="input" autocomplete="off" data-i18n-ph="cmp_name_ph"></div>
     </div>
-    <div class="field" id="emonthWrap" hidden><label data-i18n="cmp_month">Month (this template asks for it)</label>
+    <div class="field" id="emonthWrap" hidden><label for="emonth" data-i18n="cmp_month">Month (this template asks for it)</label>
       <input id="emonth" class="input month-input" autocomplete="off" placeholder="July"></div>
     <label class="chk"><input type="checkbox" id="efirst"> <span data-i18n="cmp_firstname">Greet by first name only (Hi Ahmed)</span></label>
     <label class="chk"><input type="checkbox" id="ebrand"> <span data-i18n="cmp_branded">Add logo header (for known contacts; a plain personal email reaches the inbox better)</span></label>
-    <div class="field"><label data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off"></div>
+    <div class="field"><label for="esubject" data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off"></div>
 
-    <div class="field"><label data-i18n="cmp_message">Message</label>
+    <div class="field"><label id="ebodyL" data-i18n="cmp_message">Message</label>
       <div class="etoolbar">
         <button type="button" id="tbBold" title="Bold"><b>B</b></button>
         <button type="button" id="tbItalic" title="Italic"><i>I</i></button>
@@ -314,7 +317,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
           <button type="button" class="btn ghost sm" id="eoppCancel" data-i18n="close">Close</button>
         </div>
       </div>
-      <div id="ebody" class="ebody" contenteditable="true" spellcheck="true"></div>
+      <div id="ebody" class="ebody" contenteditable="true" spellcheck="true" aria-labelledby="ebodyL"></div>
       <div class="cmp-belowbody">
         <div class="hint" data-i18n="cmp_link_hint"></div>
         <div id="eoppstatus" class="eoppstatus" hidden></div>
@@ -334,51 +337,65 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <div class="page-h"><h1 class="title" data-i18n="tpl_title">Templates</h1></div>
   <p class="sub" data-i18n="tpl_sub"></p>
 
-  <section class="panel upload-panel">
-    <h3 class="block-h" data-i18n="tpl_upload_h">Upload a template</h3>
-    <p class="sub" data-i18n="tpl_upload_sub"></p>
-    <div class="dz" id="tplDz" data-i18n="upload_dz">Drop a finished .html file here, or click to choose</div>
-    <input id="tplFile" type="file" accept=".html,.htm,text/html" hidden>
-    <div class="grid3">
-      <div class="field"><label data-i18n="tpl_id">Template id</label><input id="tpl_id" class="input" autocomplete="off" placeholder="my-template"></div>
-      <div class="field"><label data-i18n="tpl_name">Display name</label><input id="tpl_name" class="input" autocomplete="off"></div>
-      <div class="field"><label data-i18n="tpl_lang">Language</label>
-        <select id="tpl_lang"><option value="EN">EN</option><option value="AR">AR</option></select></div>
-    </div>
-    <button class="btn" id="tplAdd" data-i18n="tpl_add">Add template</button>
-  </section>
-
-  <h3 class="block-h" data-i18n="tpl_builtin_h">Approved templates</h3>
-  <div class="tpl" id="builtinList"></div>
-
-  <h3 class="block-h" style="margin-top:26px" data-i18n="tpl_custom_h">Your uploaded templates</h3>
-  <div class="tpl" id="customList"></div>
-
-  <h3 class="block-h" id="email" style="margin-top:26px" data-i18n="tpl_email_h">Email templates</h3>
-  <p class="sub" data-i18n="tpl_email_sub"></p>
-  <div class="bar" style="margin-bottom:14px">
-    <button class="btn" id="etNew" data-i18n="et_new">New email template</button>
+  <!-- Two kinds of object, two tabs. A page template is a layout that becomes a prospect's
+       page on the web; a message template is the words that take them there. They were sitting
+       in one list under three headings, so the difference had to be inferred. -->
+  <div class="seg tpl-tabs" id="tplTabs" role="tablist">
+    <button role="tab" data-tpltab="page" class="on" aria-selected="true" data-i18n="tpl_tab_page">Page templates (HTML)</button>
+    <button role="tab" data-tpltab="mail" aria-selected="false" data-i18n="tpl_tab_mail">Message templates (text)</button>
   </div>
 
-  <section class="panel settings-panel" id="etEditor" hidden>
-    <h3 class="block-h" id="etEditorH" data-i18n="et_edit_h">Edit email template</h3>
-    <div class="grid2">
-      <div class="field"><label data-i18n="et_name_l">Name</label><input id="et_name" class="input" autocomplete="off"></div>
-      <div class="field"><label data-i18n="et_id_l">Id</label><input id="et_id" class="input" autocomplete="off" spellcheck="false"><div class="hint" data-i18n="et_id_hint"></div></div>
-    </div>
-    <div class="field"><label data-i18n="et_subject_l">Subject</label><input id="et_subject" class="input" autocomplete="off"></div>
-    <div class="field"><label data-i18n="et_body_l">Body</label>
-      <textarea id="et_body" class="input et-body" rows="10" spellcheck="false"></textarea>
-      <div class="hint" data-i18n="et_ph_hint"></div>
-    </div>
-    <div class="bar">
-      <button class="btn" id="etSave" data-i18n="et_save">Save template</button>
-      <button class="btn ghost" id="etCancel" data-i18n="close">Close</button>
-      <span class="pill" id="etHint"></span>
-    </div>
+  <section id="tplPanePage" data-tplpane="page">
+    <p class="sub" data-i18n="tpl_page_sub"></p>
+
+    <section class="panel upload-panel">
+      <h3 class="block-h" data-i18n="tpl_upload_h">Upload a page template</h3>
+      <p class="sub" data-i18n="tpl_upload_sub"></p>
+      <div class="dz" id="tplDz" data-i18n="upload_dz">Drop a finished .html file here, or click to choose</div>
+      <input id="tplFile" type="file" accept=".html,.htm,text/html" hidden>
+      <div class="grid3">
+        <div class="field"><label for="tpl_id" data-i18n="tpl_id">Template id</label><input id="tpl_id" class="input" autocomplete="off" placeholder="my-template"></div>
+        <div class="field"><label for="tpl_name" data-i18n="tpl_name">Display name</label><input id="tpl_name" class="input" autocomplete="off"></div>
+        <div class="field"><label for="tpl_lang" data-i18n="tpl_lang">Language</label>
+          <select id="tpl_lang"><option value="EN">EN</option><option value="AR">AR</option></select></div>
+      </div>
+      <button class="btn" id="tplAdd" data-i18n="tpl_add">Add template</button>
+    </section>
+
+    <h3 class="block-h" data-i18n="tpl_builtin_h">Approved page templates</h3>
+    <div class="tpl" id="builtinList"></div>
+
+    <h3 class="block-h" style="margin-top:26px" data-i18n="tpl_custom_h">Your uploaded page templates</h3>
+    <div class="tpl" id="customList"></div>
   </section>
 
-  <div class="tpl" id="emailTplList"></div>
+  <section id="tplPaneMail" data-tplpane="mail" hidden>
+    <h3 class="block-h" id="email" data-i18n="tpl_email_h">Message templates</h3>
+    <p class="sub" data-i18n="tpl_mail_sub"></p>
+    <div class="bar" style="margin-bottom:14px">
+      <button class="btn" id="etNew" data-i18n="et_new">New message template</button>
+    </div>
+
+    <section class="panel settings-panel" id="etEditor" hidden>
+      <h3 class="block-h" id="etEditorH" data-i18n="et_edit_h">Edit email template</h3>
+      <div class="grid2">
+        <div class="field"><label for="et_name" data-i18n="et_name_l">Name</label><input id="et_name" class="input" autocomplete="off"></div>
+        <div class="field"><label for="et_id" data-i18n="et_id_l">Id</label><input id="et_id" class="input" autocomplete="off" spellcheck="false"><div class="hint" data-i18n="et_id_hint"></div></div>
+      </div>
+      <div class="field"><label for="et_subject" data-i18n="et_subject_l">Subject</label><input id="et_subject" class="input" autocomplete="off"></div>
+      <div class="field"><label for="et_body" data-i18n="et_body_l">Body</label>
+        <textarea id="et_body" class="input et-body" rows="10" spellcheck="false"></textarea>
+        <div class="hint" data-i18n="et_ph_hint"></div>
+      </div>
+      <div class="bar">
+        <button class="btn" id="etSave" data-i18n="et_save">Save template</button>
+        <button class="btn ghost" id="etCancel" data-i18n="close">Close</button>
+        <span class="pill" id="etHint"></span>
+      </div>
+    </section>
+
+    <div class="tpl" id="emailTplList"></div>
+  </section>
 </main>
 <main class="wrap view" id="view-activity" hidden>
   <div class="page-h"><h1 class="title" data-i18n="act_title">Activity Log</h1></div>
@@ -416,11 +433,11 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <h3 class="block-h" data-i18n="set_gh_h">GitHub publishing</h3>
     <p class="sub" data-i18n="set_gh_sub"></p>
     <div class="grid3">
-      <div class="field"><label data-i18n="gh_owner_l">Owner</label><input id="gh_owner" class="input" autocomplete="off"></div>
-      <div class="field"><label data-i18n="gh_repo_l">Repository</label><input id="gh_repo" class="input" autocomplete="off"></div>
-      <div class="field"><label data-i18n="gh_branch_l">Branch</label><input id="gh_branch" class="input" autocomplete="off"></div>
+      <div class="field"><label for="gh_owner" data-i18n="gh_owner_l">Owner</label><input id="gh_owner" class="input" autocomplete="off"></div>
+      <div class="field"><label for="gh_repo" data-i18n="gh_repo_l">Repository</label><input id="gh_repo" class="input" autocomplete="off"></div>
+      <div class="field"><label for="gh_branch" data-i18n="gh_branch_l">Branch</label><input id="gh_branch" class="input" autocomplete="off"></div>
     </div>
-    <div class="field"><label data-i18n="gh_token_l">Access token</label>
+    <div class="field"><label for="gh_token" data-i18n="gh_token_l">Access token</label>
       <input id="gh_token" class="input" type="password" autocomplete="off" spellcheck="false">
       <div class="hint" data-i18n="gh_token_hint"></div></div>
     <div class="bar">
@@ -441,17 +458,17 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <h3 class="block-h" data-i18n="set_email_h">Email sending</h3>
     <p class="sub" data-i18n="set_email_sub"></p>
     <div class="grid2">
-      <div class="field"><label data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
-      <div class="field"><label data-i18n="set_from_email">Sender address</label><input id="em_from" class="input" value="hi@thriveiii.com" readonly></div>
+      <div class="field"><label for="em_name" data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
+      <div class="field"><label for="em_from" data-i18n="set_from_email">Sender address</label><input id="em_from" class="input" value="hi@thriveiii.com" readonly></div>
     </div>
-    <div class="field"><label data-i18n="set_email_ep_l">Send endpoint</label><input id="em_ep" class="input" type="url" data-i18n-ph="set_email_ph"></div>
+    <div class="field"><label for="em_ep" data-i18n="set_email_ep_l">Send endpoint</label><input id="em_ep" class="input" type="url" data-i18n-ph="set_email_ph"></div>
     <button class="btn" id="emSave" data-i18n="gh_save">Save</button>
   </section>
 
   <section class="panel settings-panel">
     <h3 class="block-h" data-i18n="set_sync_h">Live sync across devices</h3>
     <p class="sub" data-i18n="set_sync_sub"></p>
-    <div class="field"><label data-i18n="sy_ep_l">Sync endpoint (the same relay /exec URL)</label>
+    <div class="field"><label for="sy_ep" data-i18n="sy_ep_l">Sync endpoint (the same relay /exec URL)</label>
       <input id="sy_ep" class="input" type="url" autocomplete="off"></div>
     <div class="bar">
       <button class="btn" id="syEnable" data-i18n="sy_enable">Save &amp; publish to all devices</button>
@@ -468,8 +485,8 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <p class="sub" data-i18n="set_quota_sub"></p>
     <div class="quota-readout" id="quotaReadout"></div>
     <div class="grid2">
-      <div class="field"><label data-i18n="set_quota_daily">Daily cap</label><input id="q_daily" class="input" type="number" min="1" inputmode="numeric"></div>
-      <div class="field"><label data-i18n="set_quota_monthly">Monthly cap</label><input id="q_monthly" class="input" type="number" min="1" inputmode="numeric"></div>
+      <div class="field"><label for="q_daily" data-i18n="set_quota_daily">Daily cap</label><input id="q_daily" class="input" type="number" min="1" inputmode="numeric"></div>
+      <div class="field"><label for="q_monthly" data-i18n="set_quota_monthly">Monthly cap</label><input id="q_monthly" class="input" type="number" min="1" inputmode="numeric"></div>
     </div>
     <button class="btn" id="qSave" data-i18n="gh_save">Save</button>
   </section>
@@ -503,14 +520,39 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="stage-model.js"></script>
 <script src="app.js"></script>
 <script>
-/* One document, seven views. Each init runs once, the first time its view is shown, which is
-   exactly what the served console does per page load. */
+/* One document, eight views. Each init runs the first time its view is shown, which is exactly
+   what the served console does per page load, and again whenever the view is asked for with
+   DIFFERENT parameters, which is exactly what a second page load would do.
+
+   That second half was missing, and it is why "use this template", "compose with this" and the
+   Email button on a library card opened an empty screen: the destination was already started,
+   so the parameters were never read. Re-running an init over a DOM that has already been wired
+   would double every listener, so the view's markup is restored from the snapshot taken at boot
+   first. A view is then exactly as freshly loaded as it would be on its own page. */
 (function(){
   var VIEWS = [{"id":"board","init":"initBoard"},{"id":"home","init":"initHome"},{"id":"library","init":"initDashboard"},{"id":"editor","init":"initEditor"},{"id":"compose","init":"initCompose"},{"id":"templates","init":"initTemplates"},{"id":"activity","init":"initActivity"},{"id":"settings","init":"initSettings"}];
-  var started = {};
+  var started = {};      // id -> the parameter string it was started with
+  var stale = {};        // ids that must run again even with the same parameters
+  var snapshot = {};     // id -> its markup at boot, so a re-init starts clean
+
+  function snap(){
+    VIEWS.forEach(function(v){
+      var el = document.getElementById("view-" + v.id);
+      if(el) snapshot[v.id] = el.innerHTML;
+    });
+  }
+  function query(){
+    var h = location.hash || "", i = h.indexOf("?");
+    return i >= 0 ? h.slice(i + 1) : "";
+  }
+  function current(){ return (location.hash||"").replace(/^#/,"").split("?")[0] || VIEWS[0].id; }
+
   function show(id){
     var found = VIEWS.some(function(v){ return v.id === id; });
     if(!found) id = VIEWS[0].id;
+    // Going somewhere closes the sheet you were working in, and the sheet hands its view back.
+    if(window.thriveDrawer && window.thriveDrawer.isOpen && window.thriveDrawer.isOpen())
+      window.thriveDrawer.close(true);   // now, not after the transition: the view is needed here
     var host = document.getElementById("drawerBody");
     VIEWS.forEach(function(v){
       var el = document.getElementById("view-" + v.id);
@@ -522,21 +564,35 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       a.classList.toggle("active", a.getAttribute("data-view") === id);
     });
     var v = VIEWS.filter(function(x){ return x.id === id; })[0];
-    if(v && !started[id] && typeof window[v.init] === "function"){
-      started[id] = true;
+    var want = query();
+    var need = !(id in started) || started[id] !== want || stale[id];
+    if(v && need && typeof window[v.init] === "function"){
+      var el = document.getElementById("view-" + id);
+      // A restart, not a first start: put the markup back before wiring it again, so one
+      // element never ends up with two of the same listener.
+      if((id in started) && el && snapshot[id] != null){
+        el.innerHTML = snapshot[id];
+        if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
+      }
+      started[id] = want; delete stale[id];
       try{ window[v.init](); }catch(e){ console.error(e); }
     }
     try{ window.scrollTo(0,0); }catch(e){}
   }
-  function current(){ return (location.hash||"").replace(/^#/,"").split("?")[0] || VIEWS[0].id; }
   window.addEventListener("hashchange", function(){ show(current()); });
   document.addEventListener("DOMContentLoaded", function(){
+    snap();
     initLang();
     if(typeof initDrawer === "function") initDrawer();
     show(current());
     // A fresh unlock lands on the first view with its data already pulled. Registered like
     // every other listener, so it cannot displace the sync round or a view's own refresh.
-    if(typeof onThrive === "function") onThrive("unlock","shell",function(){ show(current()); });
+    if(typeof onThrive === "function") onThrive("unlock","shell",function(){
+      // Nothing was allowed to read data before the unlock, so everything already started
+      // has to run again against the data it can finally see.
+      Object.keys(started).forEach(function(k){ stale[k] = 1; });
+      show(current());
+    });
   });
 })();
 </script>

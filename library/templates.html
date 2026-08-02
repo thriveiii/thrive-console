@@ -31,51 +31,65 @@
   <div class="page-h"><h1 class="title" data-i18n="tpl_title">Templates</h1></div>
   <p class="sub" data-i18n="tpl_sub"></p>
 
-  <section class="panel upload-panel">
-    <h3 class="block-h" data-i18n="tpl_upload_h">Upload a template</h3>
-    <p class="sub" data-i18n="tpl_upload_sub"></p>
-    <div class="dz" id="tplDz" data-i18n="upload_dz">Drop a finished .html file here, or click to choose</div>
-    <input id="tplFile" type="file" accept=".html,.htm,text/html" hidden>
-    <div class="grid3">
-      <div class="field"><label data-i18n="tpl_id">Template id</label><input id="tpl_id" class="input" autocomplete="off" placeholder="my-template"></div>
-      <div class="field"><label data-i18n="tpl_name">Display name</label><input id="tpl_name" class="input" autocomplete="off"></div>
-      <div class="field"><label data-i18n="tpl_lang">Language</label>
-        <select id="tpl_lang"><option value="EN">EN</option><option value="AR">AR</option></select></div>
-    </div>
-    <button class="btn" id="tplAdd" data-i18n="tpl_add">Add template</button>
-  </section>
-
-  <h3 class="block-h" data-i18n="tpl_builtin_h">Approved templates</h3>
-  <div class="tpl" id="builtinList"></div>
-
-  <h3 class="block-h" style="margin-top:26px" data-i18n="tpl_custom_h">Your uploaded templates</h3>
-  <div class="tpl" id="customList"></div>
-
-  <h3 class="block-h" id="email" style="margin-top:26px" data-i18n="tpl_email_h">Email templates</h3>
-  <p class="sub" data-i18n="tpl_email_sub"></p>
-  <div class="bar" style="margin-bottom:14px">
-    <button class="btn" id="etNew" data-i18n="et_new">New email template</button>
+  <!-- Two kinds of object, two tabs. A page template is a layout that becomes a prospect's
+       page on the web; a message template is the words that take them there. They were sitting
+       in one list under three headings, so the difference had to be inferred. -->
+  <div class="seg tpl-tabs" id="tplTabs" role="tablist">
+    <button role="tab" data-tpltab="page" class="on" aria-selected="true" data-i18n="tpl_tab_page">Page templates (HTML)</button>
+    <button role="tab" data-tpltab="mail" aria-selected="false" data-i18n="tpl_tab_mail">Message templates (text)</button>
   </div>
 
-  <section class="panel settings-panel" id="etEditor" hidden>
-    <h3 class="block-h" id="etEditorH" data-i18n="et_edit_h">Edit email template</h3>
-    <div class="grid2">
-      <div class="field"><label data-i18n="et_name_l">Name</label><input id="et_name" class="input" autocomplete="off"></div>
-      <div class="field"><label data-i18n="et_id_l">Id</label><input id="et_id" class="input" autocomplete="off" spellcheck="false"><div class="hint" data-i18n="et_id_hint"></div></div>
-    </div>
-    <div class="field"><label data-i18n="et_subject_l">Subject</label><input id="et_subject" class="input" autocomplete="off"></div>
-    <div class="field"><label data-i18n="et_body_l">Body</label>
-      <textarea id="et_body" class="input et-body" rows="10" spellcheck="false"></textarea>
-      <div class="hint" data-i18n="et_ph_hint"></div>
-    </div>
-    <div class="bar">
-      <button class="btn" id="etSave" data-i18n="et_save">Save template</button>
-      <button class="btn ghost" id="etCancel" data-i18n="close">Close</button>
-      <span class="pill" id="etHint"></span>
-    </div>
+  <section id="tplPanePage" data-tplpane="page">
+    <p class="sub" data-i18n="tpl_page_sub"></p>
+
+    <section class="panel upload-panel">
+      <h3 class="block-h" data-i18n="tpl_upload_h">Upload a page template</h3>
+      <p class="sub" data-i18n="tpl_upload_sub"></p>
+      <div class="dz" id="tplDz" data-i18n="upload_dz">Drop a finished .html file here, or click to choose</div>
+      <input id="tplFile" type="file" accept=".html,.htm,text/html" hidden>
+      <div class="grid3">
+        <div class="field"><label for="tpl_id" data-i18n="tpl_id">Template id</label><input id="tpl_id" class="input" autocomplete="off" placeholder="my-template"></div>
+        <div class="field"><label for="tpl_name" data-i18n="tpl_name">Display name</label><input id="tpl_name" class="input" autocomplete="off"></div>
+        <div class="field"><label for="tpl_lang" data-i18n="tpl_lang">Language</label>
+          <select id="tpl_lang"><option value="EN">EN</option><option value="AR">AR</option></select></div>
+      </div>
+      <button class="btn" id="tplAdd" data-i18n="tpl_add">Add template</button>
+    </section>
+
+    <h3 class="block-h" data-i18n="tpl_builtin_h">Approved page templates</h3>
+    <div class="tpl" id="builtinList"></div>
+
+    <h3 class="block-h" style="margin-top:26px" data-i18n="tpl_custom_h">Your uploaded page templates</h3>
+    <div class="tpl" id="customList"></div>
   </section>
 
-  <div class="tpl" id="emailTplList"></div>
+  <section id="tplPaneMail" data-tplpane="mail" hidden>
+    <h3 class="block-h" id="email" data-i18n="tpl_email_h">Message templates</h3>
+    <p class="sub" data-i18n="tpl_mail_sub"></p>
+    <div class="bar" style="margin-bottom:14px">
+      <button class="btn" id="etNew" data-i18n="et_new">New message template</button>
+    </div>
+
+    <section class="panel settings-panel" id="etEditor" hidden>
+      <h3 class="block-h" id="etEditorH" data-i18n="et_edit_h">Edit email template</h3>
+      <div class="grid2">
+        <div class="field"><label for="et_name" data-i18n="et_name_l">Name</label><input id="et_name" class="input" autocomplete="off"></div>
+        <div class="field"><label for="et_id" data-i18n="et_id_l">Id</label><input id="et_id" class="input" autocomplete="off" spellcheck="false"><div class="hint" data-i18n="et_id_hint"></div></div>
+      </div>
+      <div class="field"><label for="et_subject" data-i18n="et_subject_l">Subject</label><input id="et_subject" class="input" autocomplete="off"></div>
+      <div class="field"><label for="et_body" data-i18n="et_body_l">Body</label>
+        <textarea id="et_body" class="input et-body" rows="10" spellcheck="false"></textarea>
+        <div class="hint" data-i18n="et_ph_hint"></div>
+      </div>
+      <div class="bar">
+        <button class="btn" id="etSave" data-i18n="et_save">Save template</button>
+        <button class="btn ghost" id="etCancel" data-i18n="close">Close</button>
+        <span class="pill" id="etHint"></span>
+      </div>
+    </section>
+
+    <div class="tpl" id="emailTplList"></div>
+  </section>
 </main>
 
 <script src="i18n.js" defer></script>
