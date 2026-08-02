@@ -35,11 +35,18 @@
   --ease:var(--e-standard);                 /* the name the existing rules already use */
   /* Direction sign, set once so no component branches on dir. */
   --dir:1;
+  /* ---- weights: Alyamama reads heavier than Lato at the same nominal weight,
+         so every Latin display weight steps down by one in Arabic ---- */
+  --w-body:400; --w-strong:700; --w-head:800; --w-max:900;
+  --font-lat:var(--font);
+  /* Syne is the brand display face, but it is not embedded here and one more base64 family
+     on every page is not worth one heading. Lato at its heaviest carries the moment instead. */
+  --font-display:var(--font);
   /* ---- board tuning ---- */
   --stall-days:10; --lane-min:132px;
   color-scheme:dark; /* dark native date-picker, selects, scrollbars */
 }
-html[dir="rtl"]{ --dir:-1 }
+html[dir="rtl"]{ --dir:-1; --w-body:400; --w-strong:500; --w-head:600; --w-max:700; --font-lat:var(--font-ar) }
 *{box-sizing:border-box}
 :focus-visible{outline:2px solid var(--purple);outline-offset:2px;border-radius:6px}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -498,3 +505,225 @@ a.conn-d{color:var(--teal);text-decoration:underline;text-underline-offset:3px}
 .lede{font-size:16.5px;line-height:1.7;color:var(--ink);margin:14px 0 18px;max-width:70ch;font-weight:600}
 .lede .q{color:var(--ink-3);font-weight:400}
 html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
+
+/* ============================================================================
+   Thrive Console · board view
+   Depends on tokens.css and motion.css.
+   Every horizontal offset uses logical properties so RTL needs no overrides.
+   ============================================================================ */
+
+/* --- numeric isolation ----------------------------------------------------
+   Every digit rendered inside a sentence goes in this class. Without it the
+   bidi algorithm reorders sequences like "15 / 100" inside Arabic text, and the
+   number then reads as wrong rather than as mirrored. The console already
+   learned this on its tiles. IDENTITY §6.3.                                  */
+
+.n{
+  font-family:var(--font-lat);
+  direction:ltr; unicode-bidi:isolate;
+  display:inline-block;
+  font-variant-numeric:tabular-nums;
+}
+
+/* --- verdict line: the one Syne moment on this screen --------------------- */
+
+.board-head{
+  display:flex; align-items:flex-end; justify-content:space-between;
+  gap:var(--s-4); flex-wrap:wrap; margin-bottom:var(--s-5);
+}
+.verdict{
+  font-family:var(--font-display);
+  font-weight:var(--w-max);
+  font-size:clamp(20px,3.2vw,var(--fs-2xl));
+  line-height:var(--lh-tight);
+  color:var(--ink);
+  letter-spacing:-.01em;
+  max-width:34ch;
+}
+[dir="rtl"] .verdict{ letter-spacing:normal; text-transform:none }
+.verdict em{ font-style:normal; color:var(--lane-opened) }
+.verdict-sub{
+  font-size:var(--fs-sm); color:var(--ink-4);
+  font-weight:var(--w-strong); margin-top:var(--s-1);
+}
+
+/* --- board scroller ------------------------------------------------------- */
+
+.board{
+  display:grid;
+  grid-auto-flow:column;
+  grid-auto-columns:minmax(var(--lane-min),1fr);
+  gap:var(--s-2);
+  overflow-x:auto;
+  overscroll-behavior-x:contain;
+  padding-bottom:var(--s-3);
+  scrollbar-width:thin;
+}
+.board::-webkit-scrollbar{ height:6px }
+.board::-webkit-scrollbar-thumb{ background:var(--hair); border-radius:var(--r-pill) }
+
+/* Below 900px the lanes stop sharing the width and keep a readable minimum,
+   so the board scrolls. No lane is ever hidden. IDENTITY §3.2. */
+@media(max-width:900px){
+  .board{ grid-auto-columns:var(--lane-min) }
+}
+
+/* --- lane ----------------------------------------------------------------- */
+
+.lane{ min-width:0; display:flex; flex-direction:column }
+.lane-head{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:var(--s-1);
+  padding-bottom:var(--s-2); margin-bottom:var(--s-3);
+  border-bottom:2px solid var(--lane-c);
+  position:sticky; top:0; z-index:2;
+  background:var(--bg);
+}
+.lane-title{
+  font-family:var(--font-lat);
+  font-size:var(--fs-micro); font-weight:900;
+  letter-spacing:.08em; text-transform:uppercase;
+  color:var(--lane-c);
+}
+[dir="rtl"] .lane-title{
+  font-family:var(--font-ar);
+  font-weight:var(--w-head);
+  letter-spacing:normal; text-transform:none;
+  font-size:var(--fs-xs);
+}
+.lane-count{
+  font-family:var(--font-lat); font-size:var(--fs-sm); font-weight:900;
+  color:var(--lane-c);
+  direction:ltr; unicode-bidi:isolate;
+}
+
+.lane[data-lane="draft"]{   --lane-c:var(--lane-draft);   --lane-t:var(--lane-draft-t) }
+.lane[data-lane="live"]{    --lane-c:var(--lane-live);    --lane-t:var(--lane-live-t) }
+.lane[data-lane="sent"]{    --lane-c:var(--lane-sent);    --lane-t:var(--lane-sent-t) }
+.lane[data-lane="opened"]{  --lane-c:var(--lane-opened);  --lane-t:var(--lane-opened-t) }
+.lane[data-lane="replied"]{ --lane-c:var(--lane-replied); --lane-t:var(--lane-replied-t) }
+
+.lane-body{ display:flex; flex-direction:column; gap:var(--s-2); min-height:60px }
+
+.lane-empty{
+  border:1px dashed var(--hair); border-radius:var(--r-md);
+  padding:var(--s-4) var(--s-3); text-align:center;
+  font-size:var(--fs-xs); color:var(--ink-4); line-height:var(--lh-base);
+}
+
+/* --- token ---------------------------------------------------------------- */
+
+.tok{
+  background:var(--panel);
+  border:1px solid var(--hair);
+  border-radius:var(--r-md);
+  padding:var(--s-2) var(--s-3);
+  text-align:start;
+  cursor:pointer;
+  font:inherit; color:inherit;
+  display:block; width:100%;
+}
+.tok:hover{ border-color:var(--lane-c) }
+.tok:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
+
+/* display:block is load-bearing. On an inline span, overflow, white-space and
+   text-overflow are all ignored, and a long business name silently widens the
+   lane instead of truncating. */
+.tok-name{
+  display:block;
+  font-family:var(--font-lat);
+  font-size:var(--fs-xs); font-weight:var(--w-head); color:var(--ink);
+  line-height:var(--lh-tight);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+[dir="rtl"] .tok-name{ font-family:var(--font-ar) }
+
+/* The meta line is mixed content: an Arabic phrase around Latin digits. It stays
+   in the paragraph direction so the words read correctly, and the digits are
+   isolated by the .n class inside it, not by forcing the whole line to LTR. */
+.tok-meta{
+  display:block;
+  font-size:var(--fs-micro); color:var(--ink-4);
+  font-weight:var(--w-strong); margin-top:var(--s-1);
+  text-align:start;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
+/* stalled: amber ring, and always an age in text beside it. IDENTITY §4.4 */
+.tok.is-stalled{
+  border-color:var(--state-stall-b);
+  box-shadow:0 0 0 3px var(--state-stall-t);
+}
+.tok.is-stalled .tok-meta{ color:var(--state-stall) }
+
+/* opened with repeat opens: the only token that carries lane tint as fill */
+.tok.is-hot{ border-color:var(--lane-c); background:var(--lane-t) }
+
+/* a draft that was never published reads as provisional */
+.tok.is-provisional{ border-style:dashed; opacity:.68 }
+.tok.is-provisional:hover{ opacity:1 }
+
+/* --- summary chips under the board ---------------------------------------- */
+
+.board-note{
+  margin-top:var(--s-5); padding-top:var(--s-4);
+  border-top:1px solid var(--hair-2);
+  display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap;
+}
+.chip{
+  font-size:var(--fs-xs); font-weight:var(--w-head);
+  padding:5px 12px; border-radius:var(--r-pill);
+  border:1px solid var(--hair); background:var(--panel); color:var(--ink-3);
+  cursor:pointer;
+}
+.chip b{ color:var(--ink); margin-inline-start:2px;
+  direction:ltr; unicode-bidi:isolate; display:inline-block }
+.chip.warn{
+  color:var(--state-stall); background:var(--state-stall-t);
+  border-color:rgba(246,207,91,.30);
+}
+.chip.warn b{ color:var(--state-stall) }
+
+/* --- closed tray ---------------------------------------------------------- */
+
+.tray{ margin-top:var(--s-5); border-top:1px solid var(--hair-2); padding-top:var(--s-4) }
+.tray-toggle{
+  display:flex; align-items:center; gap:var(--s-2);
+  background:transparent; border:0; padding:0; cursor:pointer;
+  font:inherit; color:var(--ink-3);
+  font-size:var(--fs-sm); font-weight:var(--w-head);
+}
+.tray-chev{ width:10px; height:10px; flex:0 0 10px; opacity:.6 }
+.tray-body{ padding-top:var(--s-3) }
+.tray-list{ display:flex; flex-wrap:wrap; gap:var(--s-2) }
+.tray-item{
+  border:1px solid var(--hair); border-radius:var(--r-sm);
+  padding:6px 11px; font-size:var(--fs-xs); color:var(--ink-4);
+  font-weight:var(--w-strong);
+}
+.tray-item.won{ color:var(--state-good); border-color:rgba(126,224,184,.30) }
+.tray-item.lost{ color:var(--ink-4) }
+
+/* --- drawer chrome -------------------------------------------------------- */
+
+.drawer-head{
+  display:flex; align-items:center; gap:var(--s-3);
+  padding:var(--s-4) var(--s-5);
+  border-bottom:1px solid var(--hair);
+}
+.drawer-title{ font-size:var(--fs-md); font-weight:var(--w-head); color:var(--ink);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.drawer-close{
+  margin-inline-start:auto; background:transparent; border:1px solid var(--hair);
+  border-radius:var(--r-sm); color:var(--ink-3); cursor:pointer;
+  padding:6px 12px; font:inherit; font-size:var(--fs-sm); font-weight:var(--w-head);
+}
+.drawer-close:hover{ border-color:var(--purple); color:var(--ink) }
+.drawer-body{ padding:var(--s-5) }
+.drawer-tabs{ display:flex; gap:var(--s-1); padding:0 var(--s-5) var(--s-3) }
+.drawer-tab{
+  background:transparent; border:1px solid var(--hair); border-radius:var(--r-sm);
+  color:var(--ink-3); font:inherit; font-size:var(--fs-sm); font-weight:var(--w-head);
+  padding:7px 13px; cursor:pointer;
+}
+.drawer-tab.on{ color:var(--ink); background:rgba(150,133,202,.16); border-color:var(--purple) }

@@ -18,6 +18,7 @@ const read = p => fs.readFileSync(p, "utf8");
 /* order matters: it is the reading order of the console itself */
 const VIEWS = [
   { id: "home",      file: "index.html",     init: "initHome",      key: "nav_home" },
+  { id: "board",     file: "board.html",     init: "initBoard",     key: "nav_board" },
   { id: "library",   file: "library.html",   init: "initDashboard", key: "nav_library" },
   { id: "editor",    file: "editor.html",    init: "initEditor",    key: "nav_editor" },
   { id: "compose",   file: "compose.html",   init: "initCompose",   key: "nav_compose" },
@@ -47,8 +48,9 @@ function mainOf(file) {
 /* Links between pages become view switches; the logo becomes the inlined data URI. */
 function rewrite(html) {
   return html
+    .replace(/href="board\.html"/g, 'href="#board"')
     .replace(/href="index\.html"/g, 'href="#home"')
-    .replace(/href="library\.html"/g, 'href="#library"')
+    .replace(/href="library\.html([^"]*)"/g, 'href="#library$1"')
     .replace(/href="editor\.html"/g, 'href="#editor"')
     .replace(/href="compose\.html([^"]*)"/g, 'href="#compose$1"')
     .replace(/href="templates\.html"/g, 'href="#templates"')

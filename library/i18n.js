@@ -1057,3 +1057,265 @@ function initLang(){
   document.addEventListener("visibilitychange", ()=> document.documentElement.classList.toggle("tab-hidden", document.hidden));
   applyLang();
 }
+
+/* ============================================================================
+   Thrive Console · board strings
+
+   Merge these into the existing I18N object. Do not create a second dictionary.
+
+   Arabic register: fluent simple MSA in the Gulf digital register.
+   Guillemets «...» for quotes, Western numerals, no letter-spacing, no
+   uppercase. See IDENTITY.md §7.
+
+   ---------------------------------------------------------------------------
+   WHY THIS FILE IS MORE THAN A STRING TABLE
+   ---------------------------------------------------------------------------
+   Arabic inflects the noun after a number, and it does so differently at 1, at
+   2, at 3 to 10, at 11 to 99, and at 100 and above. A single template with {n}
+   in it is wrong for most values. «3 ردّ» is not Arabic, and neither is
+   «1 ردّوا».
+
+   English needs two forms. Arabic needs five. So every string that carries a
+   count is stored as a form object and `boardText()` chooses. This is not
+   over-engineering. The board is a counting surface, nearly every sentence on
+   it carries a number, and a product that miscounts in its second language is
+   not bilingual, it is translated.
+
+   Any future string that carries a number must be added as a form object.
+   A flat "{n}" template holding a count is a defect.
+   ============================================================================ */
+
+var I18N_BOARD = {
+
+  /* ---- plural rules ------------------------------------------------------
+     Category names follow CLDR so this stays portable if the console ever
+     adopts Intl.PluralRules. It does not use Intl today, because the console
+     ships as one offline file and the rule is four lines by hand.          */
+  _rule: {
+    en: function(n){ return n === 1 ? "one" : "other"; },
+    ar: function(n){
+      if (n === 0) return "zero";
+      if (n === 1) return "one";
+      if (n === 2) return "two";
+      var m = n % 100;
+      if (m >= 3  && m <= 10) return "few";
+      if (m >= 11 && m <= 99) return "many";
+      return "other";
+    }
+  },
+
+  en: {
+    nav_board:      "Board",
+    board_title:    "Board",
+    board_sub:      "Where every opportunity stands right now.",
+
+    lane_draft:     "Draft",
+    lane_live:      "Live",
+    lane_sent:      "Sent",
+    lane_opened:    "Opened",
+    lane_replied:   "Replied",
+
+    lane_draft_empty:   "Nothing in progress.",
+    lane_live_empty:    "No page waiting for a first email.",
+    lane_sent_empty:    "Nothing awaiting an open.",
+    lane_opened_empty:  "Nobody reading right now.",
+    lane_replied_empty: "No answers yet.",
+
+    /* verdict: one sentence at a time, chosen by priority in stage-model.js */
+    vd_replied: { one:"{n} answered you.",           other:"{n} answered you." },
+    vd_opened:  { one:"{n} is reading and waiting.", other:"{n} are reading and waiting." },
+    vd_stalled: { one:"{n} has gone quiet.",         other:"{n} have gone quiet." },
+    vd_live:    { one:"{n} page is live with no email sent.",
+                  other:"{n} pages are live with no email sent." },
+    vd_quiet:   { other:"Nothing needs you right now." },
+    vd_empty:   { other:"The board is empty. Start with one opportunity." },
+
+    vd_sub_stalled: { one:"Untouched for {n} day or more.",
+                      other:"Untouched for {n} days or more." },
+    vd_sub_none:    { other:"Three sends a day is a full week." },
+
+    /* {d} is the stall threshold, a constant, not the chip's count */
+    chip_stalled:   { other:"stalled over {d} days" },
+    chip_sends:     { one:"send left today", other:"sends left today" },
+    chip_reply:     { other:"reply rate" },
+    chip_archived:  { other:"archived" },
+
+    tray_closed:    "Closed",
+    tray_won:       "Won",
+    tray_lost:      "Lost",
+    tray_empty:     "Nothing closed yet.",
+
+    tok_days:       { zero:"today", one:"{n} day",      other:"{n} days" },
+    tok_idle:       { one:"{n} day idle", other:"{n} days idle" },
+    tok_opens:      { one:"{n} open",     other:"{n} opens" },
+    tok_nopage:     "no page",
+    tok_noemail:    "no email yet",
+    tok_answered:   "answered",
+
+    dw_edit:        "Edit page",
+    dw_compose:     "Write email",
+    dw_history:     "History",
+    dw_close:       "Close",
+    dw_open_page:   "Open page",
+
+    board_empty_h:  "No opportunities yet.",
+    board_empty_p:  "Build the first page, and it will appear in Draft."
+  },
+
+  ar: {
+    nav_board:      "اللوح",
+    board_title:    "اللوح",
+    board_sub:      "أين تقف كل فرصة الآن.",
+
+    lane_draft:     "مسودة",
+    lane_live:      "منشورة",
+    lane_sent:      "أُرسلت",
+    lane_opened:    "فُتحت",
+    lane_replied:   "رُدّ عليها",
+
+    lane_draft_empty:   "لا يوجد عمل قيد الإعداد.",
+    lane_live_empty:    "لا توجد صفحة تنتظر رسالة أولى.",
+    lane_sent_empty:    "لا شيء ينتظر الفتح.",
+    lane_opened_empty:  "لا أحد يقرأ الآن.",
+    lane_replied_empty: "لا توجد ردود بعد.",
+
+    vd_replied: {
+      one:   "ردّ واحد ينتظر متابعتك.",
+      two:   "ردّان ينتظران متابعتك.",
+      few:   "{n} ردود تنتظر متابعتك.",
+      many:  "{n} ردًّا ينتظر متابعتك.",
+      other: "{n} ردّ ينتظر متابعتك."
+    },
+    vd_opened: {
+      one:   "فرصة واحدة تقرأ رسالتك ولم تردّ.",
+      two:   "فرصتان تقرآن رسالتك ولم تردّا.",
+      few:   "{n} فرص تقرأ رسالتك ولم تردّ.",
+      many:  "{n} فرصة تقرأ رسالتك ولم تردّ.",
+      other: "{n} فرصة تقرأ رسالتك ولم تردّ."
+    },
+    vd_stalled: {
+      one:   "فرصة واحدة توقفت عن الحركة.",
+      two:   "فرصتان توقفتا عن الحركة.",
+      few:   "{n} فرص توقفت عن الحركة.",
+      many:  "{n} فرصة توقفت عن الحركة.",
+      other: "{n} فرصة توقفت عن الحركة."
+    },
+    vd_live: {
+      one:   "صفحة واحدة منشورة بلا رسالة.",
+      two:   "صفحتان منشورتان بلا رسالة.",
+      few:   "{n} صفحات منشورة بلا رسالة.",
+      many:  "{n} صفحة منشورة بلا رسالة.",
+      other: "{n} صفحة منشورة بلا رسالة."
+    },
+    vd_quiet: { other:"لا شيء يحتاج قرارك الآن." },
+    vd_empty: { other:"اللوح فارغ. ابدأ بفرصة واحدة." },
+
+    vd_sub_stalled: {
+      one:   "لم تُلمس منذ يوم أو أكثر.",
+      two:   "لم تُلمس منذ يومين أو أكثر.",
+      few:   "لم تُلمس منذ {n} أيام أو أكثر.",
+      many:  "لم تُلمس منذ {n} يومًا أو أكثر.",
+      other: "لم تُلمس منذ {n} يوم أو أكثر."
+    },
+    vd_sub_none: { other:"ثلاث رسائل في اليوم أسبوع كامل." },
+
+    chip_stalled: { other:"متوقفة أكثر من {d} أيام" },
+    chip_sends: {
+      one:   "رسالة متبقية اليوم",
+      two:   "رسالتان متبقيتان اليوم",
+      few:   "رسائل متبقية اليوم",
+      many:  "رسالة متبقية اليوم",
+      other: "رسالة متبقية اليوم"
+    },
+    chip_reply:    { other:"نسبة الرد" },
+    chip_archived: { other:"مؤرشفة" },
+
+    tray_closed:   "منتهية",
+    tray_won:      "نجحت",
+    tray_lost:     "فشلت",
+    tray_empty:    "لا شيء منتهٍ بعد.",
+
+    tok_days: {
+      zero:"اليوم", one:"يوم واحد", two:"يومان",
+      few:"{n} أيام", many:"{n} يومًا", other:"{n} يوم"
+    },
+    tok_idle: {
+      one:"يوم بلا حركة", two:"يومان بلا حركة",
+      few:"{n} أيام بلا حركة", many:"{n} يومًا بلا حركة", other:"{n} يوم بلا حركة"
+    },
+    tok_opens: {
+      one:"فتحة واحدة", two:"فتحتان",
+      few:"{n} فتحات", many:"{n} فتحة", other:"{n} فتحة"
+    },
+    tok_nopage:   "بلا صفحة",
+    tok_noemail:  "بلا رسالة بعد",
+    tok_answered: "ردّ",
+
+    dw_edit:      "تحرير الصفحة",
+    dw_compose:   "كتابة رسالة",
+    dw_history:   "السجل",
+    dw_close:     "إغلاق",
+    dw_open_page: "فتح الصفحة",
+
+    board_empty_h: "لا توجد فرص بعد.",
+    board_empty_p: "ابنِ الصفحة الأولى، وستظهر في «مسودة»."
+  }
+};
+
+/* ---------------------------------------------------------------------------
+   boardText(lang, key, n, extra) returns a plain string.
+
+   The caller decides whether to insert it as text or as HTML, and the caller
+   wraps any digits in an element carrying direction:ltr and
+   unicode-bidi:isolate. Without that isolation the bidi algorithm reorders
+   digits inside Arabic text and the number then reads as simply wrong.
+   See IDENTITY.md §6.3.
+
+   `extra` supplies named placeholders other than {n}, for example {d} for the
+   stall threshold, which is a constant rather than a count.
+   --------------------------------------------------------------------------- */
+function boardText(lang, key, n, extra){
+  var table = I18N_BOARD[lang] || I18N_BOARD.en;
+  var entry = table[key];
+  if (entry === undefined){
+    entry = (I18N_BOARD.en[key] !== undefined) ? I18N_BOARD.en[key] : key;
+  }
+
+  var s;
+  if (typeof entry === "string"){
+    s = entry;
+  } else {
+    var rule = I18N_BOARD._rule[lang] || I18N_BOARD._rule.en;
+    var cat = rule(Number(n) || 0);
+    s = entry[cat];
+    /* Fall down the chain rather than showing a raw key. A string in a slightly
+       wrong grammatical form is always better than a missing string. */
+    if (s === undefined){
+      s = entry.other || entry.many || entry.few || entry.one || "";
+    }
+  }
+
+  s = s.replace(/\{n\}/g, (n === undefined || n === null) ? "" : String(n));
+  if (extra){
+    Object.keys(extra).forEach(function(k){
+      s = s.split("{" + k + "}").join(String(extra[k]));
+    });
+  }
+  return s;
+}
+
+/* Merge only the flat, count-free strings into the console's I18N, so that
+   existing data-i18n attributes keep working untouched. Count-bearing keys stay
+   here as form objects and are read through boardText(). Never flatten a form
+   object into I18N: that is how the plural rule gets bypassed. */
+(function(){
+  if (typeof I18N === "undefined") return;
+  ["en","ar"].forEach(function(lang){
+    var src = I18N_BOARD[lang], dst = I18N[lang];
+    if (!src || !dst) return;
+    Object.keys(src).forEach(function(k){
+      if (typeof src[k] !== "string") return;
+      if (!(k in dst)) dst[k] = src[k];
+    });
+  });
+})();
