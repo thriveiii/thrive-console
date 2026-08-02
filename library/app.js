@@ -2566,3 +2566,134 @@ async function initInsights(){
   window.onLangApplied=render;
   render();
 }
+
+/* ---------- the board ----------
+   State is position. Every opportunity sits in the lane that is its state, so you learn
+   where everything stands by looking rather than by reading a number, and follow-up debt
+   shows up as mass on the screen instead of as something to remember.
+
+   It derives, it never stores: there is no lane field and there must never be one, because a
+   stored lane drifts from the truth the moment a beacon hit lands on another device. Every
+   stage write goes through the same saveDraft plus logActivity pair the Library select uses,
+   so the two surfaces can never disagree about what happened. */
+async function initBoard(){
+  const el=id=>document.getElementById(id);
+  const lang=()=>getLang();
+  const txt=(k,n,extra)=> (typeof boardText==="function")? boardText(lang(),k,n,extra) : "";
+  const num=v=>'<span class="n">'+v+'</span>';
+
+  function syncPill(){
+    const p=el("boardSync"); if(!p) return;
+    const last=syncLast();
+    if(!getSyncEndpoint()){ p.textContent=t("home_sync_off"); p.className="pill warn"; return; }
+    if(!last){ p.textContent=t("sy_ready"); p.className="pill"; return; }
+    p.textContent=t("sy_last")+" "+fmtWhen(last); p.className="pill ok";
+  }
+
+  async function build(){
+    const opps=await mergedOpps();
+    const opens={}; opps.forEach(o=>{ opens[o.slug]=opensForSlug(o.slug); });
+    return ThriveBoard.build(opps, { opens:opens, mail:getMailLog() });
+  }
+
+  function tokenHtml(tk){
+    const cls=["tok"];
+    if(tk.stalled) cls.push("is-stalled");
+    if(tk.hot) cls.push("is-hot");
+    if(tk.provisional) cls.push("is-provisional");
+    // The meta line stays in the paragraph direction so the words read correctly; only the
+    // digits inside it are isolated, by .n, never the whole line.
+    let meta;
+    if(tk.lane==="draft") meta=txt("tok_nopage");
+    else if(tk.lane==="live") meta=txt("tok_noemail");
+    else if(tk.lane==="replied") meta=txt("tok_answered");
+    else if(tk.opens>0) meta=txt("tok_opens", tk.opens).replace(String(tk.opens), num(tk.opens));
+    else meta=txt("tok_idle", tk.age).replace(String(tk.age), num(tk.age));
+    return '<button class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" type="button">'+
+      '<span class="tok-name">'+esc(tk.biz)+'</span>'+
+      '<span class="tok-meta">'+meta+'</span></button>';
+  }
+
+  async function render(){
+    syncPill();
+    const b=await build();
+
+    ThriveBoard.LANES.forEach(k=>{
+      const body=document.querySelector('[data-body="'+k+'"]');
+      const count=document.querySelector('[data-count="'+k+'"]');
+      if(count) count.textContent=b.lanes[k].length;
+      if(!body) return;
+      body.innerHTML = b.lanes[k].length
+        ? b.lanes[k].map((tk,i)=> tokenHtml(tk).replace('class="tok ', 'class="tok '+(i<3?"enter enter-"+(i+1)+" ":"")) ).join("")
+        : '<div class="lane-empty">'+esc(t("lane_"+k+"_empty"))+'</div>';
+    });
+
+    // One sentence, chosen by priority. The console says one thing at a time.
+    const v=ThriveBoard.verdict(b);
+    el("boardVerdict").innerHTML = txt(v.key, v.n).replace(String(v.n), num(v.n));
+    el("boardVerdictSub").innerHTML = b.summary.stalled
+      ? txt("vd_sub_stalled", ThriveBoard.STALL_DAYS).replace(String(ThriveBoard.STALL_DAYS), num(ThriveBoard.STALL_DAYS))
+      : txt("vd_sub_none");
+
+    // Every number here is also an action.
+    const q=quotaUsage(), left=Math.max(0, q.dailyCap-q.day);
+    const chips=[];
+    if(b.summary.stalled) chips.push('<button class="chip warn" data-chip="stalled">'+
+      txt("chip_stalled", b.summary.stalled, {d:ThriveBoard.STALL_DAYS})+' <b>'+b.summary.stalled+'</b></button>');
+    chips.push('<button class="chip" data-chip="sends">'+txt("chip_sends", left)+' <b>'+left+'</b></button>');
+    if(b.archived) chips.push('<button class="chip" data-chip="archived">'+txt("chip_archived")+' <b>'+b.archived+'</b></button>');
+    el("boardChips").innerHTML=chips.join("");
+    el("boardChips").querySelectorAll("[data-chip]").forEach(c=>c.addEventListener("click",()=>{
+      const k=c.getAttribute("data-chip");
+      if(k==="stalled") location.href="library.html?followup=1";
+      else if(k==="archived") location.href="library.html?status=archived";
+      else location.href="compose.html";
+    }));
+
+    const closed=b.closed.won.concat(b.closed.lost);
+    el("trayCount").textContent=closed.length;
+    el("trayList").innerHTML = closed.length
+      ? b.closed.won.map(o=>'<span class="tray-item won">'+esc(o.business||o.slug)+'</span>').join("")+
+        b.closed.lost.map(o=>'<span class="tray-item lost">'+esc(o.business||o.slug)+'</span>').join("")
+      : '<div class="lane-empty">'+esc(t("tray_empty"))+'</div>';
+
+    const empty=b.summary.total===0 && closed.length===0;
+    el("boardEmpty").hidden=!empty;
+    el("boardLanes").hidden=empty;
+    el("boardChips").hidden=empty;
+    el("boardTray").hidden=empty;
+
+    // A token opens the work for that opportunity. PR 4 turns this into a drawer; until then
+    // it is an honest page change rather than a half-built panel.
+    document.querySelectorAll(".tok").forEach(tk=>tk.addEventListener("click",()=>{
+      const slug=tk.getAttribute("data-slug");
+      location.href="compose.html?slug="+encodeURIComponent(slug);
+    }));
+  }
+
+  // The tray is a posture, not a decision, so it stays on this device and never syncs.
+  const BOARD_PREF="thrive_board_v1";
+  function pref(){ try{ return JSON.parse(localStorage.getItem(BOARD_PREF)||"{}"); }catch(e){ return {}; } }
+  function setPref(p){ try{ localStorage.setItem(BOARD_PREF, JSON.stringify(p)); }catch(e){} }
+  const tray=el("trayToggle"), trayBody=el("trayBody");
+  function applyTray(open){
+    tray.setAttribute("aria-expanded", open?"true":"false");
+    trayBody.hidden=!open;
+    tray.querySelector(".tray-chev").style.transform = open? "rotate(180deg)" : "";
+  }
+  applyTray(!!pref().trayOpen);
+  tray.addEventListener("click",()=>{
+    const open=tray.getAttribute("aria-expanded")!=="true";
+    applyTray(open); const p=pref(); p.trayOpen=open; setPref(p);
+  });
+
+  if(el("boardRefresh")) el("boardRefresh").addEventListener("click", async ()=>{
+    try{ await fetchRemoteHits(); }catch(e){}
+    try{ await syncNow(); }catch(e){}
+    render();
+  });
+  window.onLangApplied=render;
+  window.onThriveSync=render;
+  window.onGateUnlocked=render;
+  await render();
+}
