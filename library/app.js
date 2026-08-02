@@ -173,8 +173,13 @@ async function fetchTemplateHtml(idT){
   if(__tplCache[idT]) return __tplCache[idT];
   const custom=getCustomTemplate(idT);
   if(custom){ __tplCache[idT]=custom.html||""; return __tplCache[idT]; }
-  const r=await fetch("../templates/"+idT+"/template.html",{cache:"no-store"});
-  const txt=await r.text(); __tplCache[idT]=txt; return txt;
+  // A stock template lives beside the console on the server. The offline single-file build has
+  // no such neighbour, and a missing file is a missing preview, never an unhandled failure.
+  try{
+    const r=await fetch("../templates/"+idT+"/template.html",{cache:"no-store"});
+    if(!r.ok) return "";
+    const txt=await r.text(); __tplCache[idT]=txt; return txt;
+  }catch(e){ return ""; }
 }
 function fillTemplate(tpl, v){
   let h=tpl;
@@ -261,6 +266,9 @@ async function syncBootstrap(){
   if(__syncBootstrapped) return; __syncBootstrapped=true;
   let j=null;
   try{ const r=await fetch("./sync.json",{cache:"no-store"}); if(r.ok) j=await r.json(); }catch(e){}
+  // The offline single-file build has no sibling sync.json to fetch, so it carries the
+  // published endpoint inside itself. The served console never reaches this line.
+  if((!j || !j.ep) && window.THRIVE_SYNC_JSON) j=window.THRIVE_SYNC_JSON;
   if(!j || !j.ep) return;
   const cur=getSyncEndpoint(), ee=getEmailEndpoint();
   if(cur===j.ep) return;

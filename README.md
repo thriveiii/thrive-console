@@ -24,6 +24,18 @@ No Netlify, no per-deploy credits. Just a GitHub repo served by GitHub Pages, wi
 CNAME                  thriveiii.com
 ```
 
+### The console as one downloadable file
+
+```bash
+node tools/bundle.js      # -> dist/thrive-console.html
+```
+
+One self-contained file: every page becomes a view, styles, fonts, scripts and the logo are
+inlined, and it carries the published relay URL inside itself. It opens from a phone's
+Downloads folder with no server and no network, asks for the same passcode, and syncs with the
+same relay once it is online. Its browser storage is separate from the hosted console, so it
+is a working copy and a backup, not a second window onto the same device data.
+
 ### Before every push
 
 ```bash
