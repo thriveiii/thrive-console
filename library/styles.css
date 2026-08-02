@@ -325,7 +325,9 @@ html[dir="rtl"] .field label,html[dir="rtl"] .etpl-label,html[dir="rtl"] .devtog
 html[dir="rtl"] .sub,html[dir="rtl"] .hint,html[dir="rtl"] .note,html[dir="rtl"] .meta-line{font-weight:400}
 html[dir="rtl"] .card .link,html[dir="rtl"] .urlpill{direction:ltr;text-align:start}
 html[dir="rtl"] .tpl .thumb iframe{transform-origin:top right}
-html[dir="rtl"] #thriveGate .gate-input{text-align:center}
+/* The gate input tracks its Latin placeholder, and that tracking was reaching the Arabic
+   one, where letter-spacing breaks the joins. Latin only. */
+html[dir="rtl"] #thriveGate .gate-input{text-align:center;letter-spacing:normal}
 html[dir="rtl"] .logtable td.mono{direction:ltr;text-align:start}
 
 /* ---- Performance: off-screen cards skip layout/paint; respect reduced-motion; pause logo spin on hidden tab ---- */
@@ -767,3 +769,8 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
     transition-property:opacity!important; transform:none!important;
   }
 }
+
+/* A token in flight is raised above its lane and drops the raise when it lands. The lane
+   heads are sticky, so without this the token would travel underneath them. */
+.tok.is-moving{ position:relative; z-index:3; box-shadow:var(--el-raised); will-change:transform }
+.lane-count{ transition:color var(--t-quick) var(--e-standard) }

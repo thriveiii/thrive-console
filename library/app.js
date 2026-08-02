@@ -2614,8 +2614,41 @@ async function initBoard(){
       '<span class="tok-meta">'+meta+'</span></button>';
   }
 
+  /* FLIP: a token never teleports between lanes.
+     First, record where every token is. Last, let the render put it where it belongs. Invert,
+     put it back visually with a transform and no transition. Play, clear the transform on the
+     next frame. Only transform moves, the raise is dropped on transitionend so nothing keeps
+     a permanent will-change, and a reader who asked for less motion gets none of it. */
+  function firstRects(){
+    const m={};
+    document.querySelectorAll(".tok[data-slug]").forEach(el=>{ m[el.getAttribute("data-slug")]=el.getBoundingClientRect(); });
+    return m;
+  }
+  function playFlip(first){
+    if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    document.querySelectorAll(".tok[data-slug]").forEach(el=>{
+      const was=first[el.getAttribute("data-slug")];
+      if(!was) return;                                   // it is new: the entrance stagger owns it
+      const now=el.getBoundingClientRect();
+      const dx=was.left-now.left, dy=was.top-now.top;
+      if(Math.abs(dx)<1 && Math.abs(dy)<1) return;       // it did not move
+      el.classList.remove("enter","enter-1","enter-2","enter-3");
+      el.style.transition="none";
+      el.style.transform="translate("+dx+"px,"+dy+"px)";
+      el.classList.add("is-moving");
+      requestAnimationFrame(()=>{
+        el.style.transition="transform var(--t-base) var(--e-standard)";
+        el.style.transform="";
+        const done=()=>{ el.classList.remove("is-moving"); el.style.transition=""; el.removeEventListener("transitionend",done); };
+        el.addEventListener("transitionend", done);
+        setTimeout(done, 600);                            // a transition that never fires must not strand the raise
+      });
+    });
+  }
+
   async function render(){
     syncPill();
+    const first=firstRects();
     const b=await build();
 
     ThriveBoard.LANES.forEach(k=>{
@@ -2665,6 +2698,8 @@ async function initBoard(){
 
     // A token opens the work for that opportunity. PR 4 turns this into a drawer; until then
     // it is an honest page change rather than a half-built panel.
+    playFlip(first);
+
     document.querySelectorAll(".tok").forEach(tk=>tk.addEventListener("click",()=>{
       const slug=tk.getAttribute("data-slug");
       const name=(tk.querySelector(".tok-name")||{}).textContent||slug;
