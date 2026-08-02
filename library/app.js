@@ -278,7 +278,8 @@ function syncSnapshot(){
   // ended up calling two different deployments. The published truth is library/sync.json.
   return { v:1, updated:Date.now(), scalarsUp:scalarsUp(),
     opps, mail:getMailLog(), quota:getSendStamps(), activity:getActivity(),
-    etpl:getEmailTemplates(), fromName:getFromName(), quotaCfg:quotaCfg() };
+    etpl:getEmailTemplates(), fromName:getFromName(), quotaCfg:quotaCfg(),
+    vault:sealedVault() };
 }
 function syncMergeApply(remote){
   if(!remote || typeof remote!=="object") return false;
@@ -315,6 +316,9 @@ function syncMergeApply(remote){
       remote.etpl.forEach(r=>{ const l=byId[r.id]; if(!l || (r.up||0)>(l.up||0)) byId[r.id]=r; });
       setEmailTemplates(Object.values(byId));
     }
+    // Publishing credentials: sealed under the passcode, newest wins. Opened asynchronously,
+    // so a device that just unlocked gains publishing a moment after the first sync round.
+    if(remote.vault){ try{ vaultAdopt(remote.vault); }catch(e){} }
     if((remote.scalarsUp||0) > scalarsUp()){              // settings scalars: newest device wins
       if(typeof remote.fromName==="string") setFromName(remote.fromName);
       if(remote.quotaCfg) setQuotaCfg(remote.quotaCfg);
@@ -410,6 +414,72 @@ document.addEventListener("DOMContentLoaded", startLiveSync);
 const GH = "thrive_gh_v1";
 function ghConfig(){ try{ return JSON.parse(localStorage.getItem(GH)||"{}"); }catch(e){ return {}; } }
 function setGhConfig(c){ try{ localStorage.setItem(GH, JSON.stringify(c)); }catch(e){} }
+
+/* ---------- the vault: publishing on every device ----------
+   The passcode is the boundary. Everything behind it must work from any device, including
+   publishing pages, so the GitHub token travels with the shared state. It never travels in
+   the clear: it is sealed with AES-GCM under a key derived from the passcode (gate.js, salt
+   thrive-vault-v1) before it leaves the browser. The relay stores ciphertext it cannot read,
+   and only a device that knows the passcode can open it. Losing the passcode loses the vault,
+   which is the correct trade: the alternative is a token readable by whoever holds the store. */
+const VAULT_KEY_LS="thrive_vault_key";
+function vaultKey(){
+  try{ return sessionStorage.getItem(VAULT_KEY_LS) || localStorage.getItem(VAULT_KEY_LS) || ""; }
+  catch(e){ return ""; }
+}
+async function aesKey(hex){
+  const raw=new Uint8Array((hex.match(/.{1,2}/g)||[]).map(b=>parseInt(b,16)));
+  return crypto.subtle.importKey("raw", raw, {name:"AES-GCM"}, false, ["encrypt","decrypt"]);
+}
+async function vaultSeal(obj){
+  const k=vaultKey(); if(!k) return null;
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const key=await aesKey(k);
+  const buf=await crypto.subtle.encrypt({name:"AES-GCM", iv:iv}, key, new TextEncoder().encode(JSON.stringify(obj)));
+  const b=a=>btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(a))));
+  return { v:1, iv:b(iv), ct:b(buf), up:Date.now() };
+}
+async function vaultOpen(sealed){
+  const k=vaultKey(); if(!k || !sealed || !sealed.ct) return null;
+  try{
+    const u=s=>Uint8Array.from(atob(s), c=>c.charCodeAt(0));
+    const key=await aesKey(k);
+    const buf=await crypto.subtle.decrypt({name:"AES-GCM", iv:u(sealed.iv)}, key, u(sealed.ct));
+    return JSON.parse(new TextDecoder().decode(buf));
+  }catch(e){ return null; }
+}
+/* What the vault carries: the publishing credentials, and nothing else. */
+function vaultPayload(){
+  const c=ghConfig();
+  return c.token? { owner:c.owner||"", repo:c.repo||"", branch:c.branch||"main", token:c.token } : null;
+}
+let __vaultUp=0;
+function vaultStamp(){ try{ return parseInt(localStorage.getItem("thrive_vault_up")||"0",10)||__vaultUp; }catch(e){ return __vaultUp; } }
+function setVaultStamp(t){ __vaultUp=t; try{ localStorage.setItem("thrive_vault_up", String(t)); }catch(e){} }
+function sealedVault(){ try{ return JSON.parse(localStorage.getItem("thrive_vault_v1")||"null"); }catch(e){ return null; } }
+/* Re-seal whenever the credentials change, so the snapshot itself stays synchronous. */
+async function vaultRefresh(){
+  const p=vaultPayload();
+  if(!p){ try{ localStorage.removeItem("thrive_vault_v1"); }catch(e){} return false; }
+  const sealed=await vaultSeal(p);
+  if(!sealed) return false;
+  try{ localStorage.setItem("thrive_vault_v1", JSON.stringify(sealed)); }catch(e){}
+  setVaultStamp(sealed.up);
+  return true;
+}
+/* Adopt a vault that arrived from another device. Publishing then works here with nothing typed. */
+async function vaultAdopt(remote){
+  if(!remote || !remote.ct) return false;
+  if((remote.up||0) <= vaultStamp()) return false;
+  const p=await vaultOpen(remote);
+  if(!p || !p.token) return false;
+  const cur=ghConfig();
+  setGhConfig({ owner:p.owner||cur.owner||"thriveiii", repo:p.repo||cur.repo||"thrive-console",
+                branch:p.branch||cur.branch||"main", token:p.token });
+  try{ localStorage.setItem("thrive_vault_v1", JSON.stringify(remote)); }catch(e){}
+  setVaultStamp(remote.up||Date.now());
+  return true;
+}
 function ghReady(){ const c=ghConfig(); return !!(c.token && c.owner && c.repo); }
 function b64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function unb64(str){ try{ return decodeURIComponent(escape(atob((str||"").replace(/\n/g,"")))); }catch(e){ return ""; } }
@@ -1658,6 +1728,10 @@ async function connCheck(candidate, onStep){
   let filed="";
   try{ const r=await fetchT("./sync.json",{cache:"no-store"},8000); if(r.ok){ const j=await r.json(); filed=(j&&j.ep)||""; } }catch(e){}
   add("conn_repo", !!filed && filed===ep, filed? tail(filed) : t("conn_no_file"));
+
+  // The passcode is the boundary, so publishing has to work here too, not only on one device.
+  const gc=ghConfig();
+  add("conn_publish", ghReady(), ghReady()? (gc.owner+"/"+gc.repo) : "");
   return steps;
 }
 
@@ -1676,7 +1750,7 @@ function initSettings(){
   function result(msg, kind){ const r=el("ghResult"); if(!r) return; r.hidden=false; r.textContent=msg; r.className="gh-result "+(kind||""); }
 
   /* ---- connection health panel ---- */
-  const CONN_STEPS=["conn_url","conn_v4","conn_key","conn_sync","conn_push","conn_hits","conn_repo"];
+  const CONN_STEPS=["conn_url","conn_v4","conn_key","conn_sync","conn_push","conn_hits","conn_repo","conn_publish"];
   function connRender(steps, running){
     const list=el("connList"); if(!list) return;
     const byKey={}; (steps||[]).forEach(s=>{ byKey[s.k]=s; });
@@ -1747,7 +1821,8 @@ function initSettings(){
       try{ await ghPutFile("library/sync.json", JSON.stringify({ep:ep, up:now})+"\n", "Publish relay endpoint"); }
       catch(e){ repoMsg=t("gh_err")+": "+e.message; }
     } else repoMsg=t("sy_no_repo");
-    // 4. put this device's data in the shared store, then pull analytics back
+    // 4. seal the publishing credentials so every device gains them, then push and pull
+    try{ await vaultRefresh(); }catch(e){}
     try{ await syncPush(); }catch(e){}
     try{ await syncNow(); }catch(e){}
     logActivity("settings","","relay repair");
@@ -1756,8 +1831,29 @@ function initSettings(){
     if(repoMsg){ note.hidden=false; note.className="gh-result warn"; note.textContent="⚠ "+t("sy_local_only")+" "+repoMsg; }
   });
   connRun("");
+  // A device that just unlocked gains its publishing credentials a moment later, when the
+  // first sync round opens the vault. Refresh the page once when that lands, so the panel and
+  // the fields show what the device actually holds instead of what it held at load.
+  let __connRefreshed=false;
+  window.onThriveSync=function(){
+    try{ syCounts(); }catch(e){}
+    if(!__connRefreshed && ghReady() && !el("gh_token").value){
+      __connRefreshed=true;
+      const c2=ghConfig();
+      el("gh_owner").value=c2.owner||""; el("gh_repo").value=c2.repo||"";
+      el("gh_branch").value=c2.branch||"main"; el("gh_token").value=c2.token||"";
+      status(); connRun("");
+    }
+  };
 
-  el("ghSave").addEventListener("click",()=>{ persist(); logActivity("settings","","github config"); toast(t("settings_saved")); status(); });
+  el("ghSave").addEventListener("click", async ()=>{
+    persist(); logActivity("settings","","github config"); status();
+    // Sealed here, so every other device that unlocks with the passcode can publish too.
+    const sealed=await vaultRefresh();
+    if(sealed) try{ await syncPush(); }catch(e){}
+    toast(sealed? t("gh_shared") : t("settings_saved"));
+    connRun("");
+  });
   el("ghTest").addEventListener("click", async ()=>{
     persist(); status(); result(t("testing"), "");
     try{ const r=await ghVerify();
@@ -2124,6 +2220,22 @@ async function initHome(){
     const contacted=new Set(mail.filter(m=>m.to).map(m=>String(m.to).toLowerCase())).size;
     const answered=threads.filter(th=>th.replied>0).length;
     const rate=threads.length? Math.round(answered/threads.length*100) : 0;
+    /* One sentence that reads the numbers back, in the order a person actually cares about:
+       is anyone answering, is anyone reading, and who is waiting on me. Tiles tell you what
+       happened; this tells you what it means. */
+    const waiting=threads.filter(th=>!th.replied).length;
+    const story=[];
+    if(!sent) story.push(t("story_none"));
+    else{
+      story.push(t("story_sent").replace("{n}", sent).replace("{p}", contacted));
+      if(replies) story.push(t("story_replies").replace("{n}", replies).replace("{r}", rate));
+      else if(waiting) story.push(t("story_no_replies").replace("{n}", waiting));
+      const totalOpens=pages.reduce((a,p)=>a+p.opens,0);
+      if(totalOpens) story.push(t("story_opens").replace("{n}", totalOpens));
+      else if(usingCollected()) story.push(t("story_no_opens"));
+    }
+    el("homeStory").innerHTML=story.join(" ");
+
     el("tilesOutreach").innerHTML=
       tile(q.day+" / "+q.dailyCap, t("home_sent_today"), q.dayFull?"t-warn":"", t("tip_sent_today"))+
       tile(q.month+" / "+q.monthlyCap, t("home_sent_month"), "", t("tip_sent_month"))+
@@ -2222,6 +2334,80 @@ async function initHome(){
           '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">–</span>')+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_no_campaigns")+'</div>';
+
+    /* ---- which message is working ----
+       Per template, not per opportunity: how many went out with it, how many of the pages
+       those sends pointed at were opened, and how many people answered. A template with a
+       high open rate and no replies has a body problem, not a subject problem. Sends made
+       with no template are grouped honestly as "no template" instead of being dropped. */
+    const byTpl={};
+    mail.filter(m=>m.status==="sent"||m.status==="copied").forEach(m=>{
+      const id=m.templateId||"", name=m.templateName||t("home_tpl_none");
+      const r=byTpl[id]||(byTpl[id]={ id, name, sent:0, opens:0, uniq:0, replies:0, people:new Set(), opps:new Set(), last:"" });
+      r.name=name; r.sent++;
+      if(m.to) r.people.add(String(m.to).toLowerCase());
+      if(m.opp) r.opps.add(m.opp);
+      if(m.ts>r.last) r.last=m.ts;
+    });
+    // A reply belongs to the template of the send it answers, found through its conversation.
+    threads.forEach(th=>{
+      if(!th.replied) return;
+      const out=th.msgs.filter(m=>m.direction!=="in" && (m.status==="sent"||m.status==="copied"));
+      const first=out[0]; if(!first) return;
+      const r=byTpl[first.templateId||""]; if(r) r.replies+=th.replied;
+    });
+    Object.values(byTpl).forEach(r=>{
+      r.opps.forEach(slug=>{ const p=pageBySlug[slug]; if(p){ r.opens+=p.opens; r.uniq+=p.vids.size; } });
+    });
+    const tplRows=Object.values(byTpl).sort((a,b)=> b.sent-a.sent || String(a.name).localeCompare(String(b.name)));
+    const pct=(a,b)=> b? Math.round(a/b*100)+"%" : "<span class=\"zero\">0%</span>";
+    el("homeTemplates").innerHTML = tplRows.length
+      ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
+        '<th>'+t("home_tpl_name")+'</th>'+hth(t("cmp_sent_n"),t("tip_tpl_sent"))+
+        hth(t("ins_opens"),t("tip_tpl_opens"))+hth(t("home_tpl_openrate"),t("tip_tpl_openrate"))+
+        hth(t("cmp_replied_n"),t("tip_replies"))+hth(t("home_tpl_replyrate"),t("tip_tpl_replyrate"))+
+        hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
+        tplRows.map(r=>'<tr><td><b>'+esc(r.name)+'</b></td>'+
+          '<td>'+num(r.sent)+'</td><td>'+num(r.opens)+'</td>'+
+          '<td>'+(r.sent? pct(r.uniq, r.people.size||r.sent) : '<span class="zero">0%</span>')+'</td>'+
+          '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
+          '<td>'+(r.sent? pct(r.replies, r.people.size||r.sent) : '<span class="zero">0%</span>')+'</td>'+
+          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">–</span>')+'</td></tr>').join("")+
+        '</tbody></table></div>'
+      : '<div class="empty">'+t("home_tpl_empty")+'</div>';
+
+    /* ---- who is paying attention ----
+       One row per person, so a follow-up is a decision about a human rather than about a slug. */
+    const byPerson={};
+    mail.forEach(m=>{
+      const who=String(m.to||"").toLowerCase(); if(!who) return;
+      const r=byPerson[who]||(byPerson[who]={ to:m.to, name:m.toName||"", sent:0, replies:0, opens:0, opps:new Set(), last:"" });
+      if(m.toName && !r.name) r.name=m.toName;
+      if(m.status==="sent"||m.status==="copied") r.sent++;
+      if(m.direction==="in"||m.status==="replied") r.replies++;
+      if(m.opp) r.opps.add(m.opp);
+      if(m.ts>r.last) r.last=m.ts;
+    });
+    Object.values(byPerson).forEach(r=>{ r.opps.forEach(slug=>{ const p=pageBySlug[slug]; if(p) r.opens+=p.opens; }); });
+    const DAY=86400000;
+    const peopleRows=Object.values(byPerson).map(r=>{
+      const age=r.last? (Date.now()-new Date(r.last).getTime())/DAY : 0;
+      // The state is a decision, not a decoration: replied, opened but silent, or gone quiet.
+      r.state = r.replies? "replied" : (r.opens? (age>3? "warm_cold":"warm") : (age>3? "cold":"sent"));
+      return r;
+    }).sort((a,b)=> b.replies-a.replies || b.opens-a.opens || (a.last<b.last?1:-1));
+    el("homePeople").innerHTML = peopleRows.length
+      ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
+        '<th>'+t("home_p_who")+'</th>'+hth(t("cmp_sent_n"),t("tip_tpl_sent"))+hth(t("ins_opens"),t("tip_opens"))+
+        hth(t("cmp_replied_n"),t("tip_replies"))+'<th>'+t("home_p_state")+'</th>'+
+        hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
+        peopleRows.map(r=>'<tr><td><b>'+esc(r.name||r.to)+'</b>'+(r.name?'<div class="mprev mono">'+esc(r.to)+'</div>':"")+'</td>'+
+          '<td>'+num(r.sent)+'</td><td>'+num(r.opens)+'</td>'+
+          '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
+          '<td><span class="tag tag-st-'+r.state+'">'+esc(t("home_p_"+r.state))+'</span></td>'+
+          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">–</span>')+'</td></tr>').join("")+
+        '</tbody></table></div>'
+      : '<div class="empty">'+t("home_p_empty")+'</div>';
 
     // ---- most opened pages (only pages that actually have opens; this list IS "top N") ----
     const opened=pages.filter(p=>p.opens>0);

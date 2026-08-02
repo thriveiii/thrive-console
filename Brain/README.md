@@ -64,6 +64,7 @@ that breaks one is recognised as a regression rather than a preference.
 | A `<noscript>` statement instead of an empty screen | 01 §12 | every `library/*.html` |
 | The pre-hand-off checklist, adapted to this repository | 01 §9, 04 §7 | `Brain/CHECKLIST.md` |
 | The operating manual for the one moving part, written after the relay cost three days | 02 §2.1, 02 §6.10, 02 §10 | `Brain/RUNBOOK-sync.md` |
+| The five review layers, and which one each screen currently fails | 01 §9, 04 §1, 04 §7 | `Brain/REVIEW-LAYERS.md` |
 
 ## Deliberately not applied
 

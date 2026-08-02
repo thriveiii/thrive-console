@@ -13,6 +13,8 @@
   var ITER = 120000;
   var GATE_SALT = "thrive-gate-v2";
   var SYNC_SALT = "thrive-sync-v2";
+  var VAULT_SALT = "thrive-vault-v1";      // wraps the publishing token so only the passcode opens it
+  var VAULT_KEY = "thrive_vault_key";
   var HASH = "0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8"; // PBKDF2(passcode, thrive-gate-v2, 120k)
 
   var STR = {
@@ -97,8 +99,17 @@
       var val = input.value || "";
       if (!val) { return; }
       busy = true; input.disabled = true;
-      var h = null, sync = null;
-      try { h = await pbkdf2Hex(val, GATE_SALT); if (h === HASH) sync = await pbkdf2Hex(val, SYNC_SALT); } catch (ex) {}
+      var h = null, sync = null, vault = null;
+      try {
+        h = await pbkdf2Hex(val, GATE_SALT);
+        if (h === HASH) {
+          sync = await pbkdf2Hex(val, SYNC_SALT);
+          // A third derived value, never sent anywhere: it decrypts the publishing token
+          // that travels through the shared store, so the passcode alone unlocks every
+          // capability on any device, and the store itself holds only ciphertext.
+          vault = await pbkdf2Hex(val, VAULT_SALT);
+        }
+      } catch (ex) {}
       busy = false; input.disabled = false;
       if (h === HASH) {
         clearFails();
@@ -109,6 +120,7 @@
         try {
           sessionStorage.setItem(KEY, HASH);
           if (sync) { sessionStorage.setItem(SYNC_KEY, sync); localStorage.setItem(SYNC_KEY, sync); }
+          if (vault) { sessionStorage.setItem(VAULT_KEY, vault); localStorage.setItem(VAULT_KEY, vault); }
         } catch (ex) {}
         if (typeof window.logActivity === "function") {
           try { window.logActivity("login", "", "console unlocked"); } catch (ex) {}
@@ -142,7 +154,7 @@
 
   // expose a manual lock (used by a "Lock" button in the console)
   window.thriveLock = function () {
-    try { sessionStorage.removeItem(KEY); sessionStorage.removeItem(SYNC_KEY); } catch (e) {}
+    try { sessionStorage.removeItem(KEY); sessionStorage.removeItem(SYNC_KEY); sessionStorage.removeItem(VAULT_KEY); } catch (e) {}
     location.reload();
   };
 })();

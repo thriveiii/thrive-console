@@ -435,3 +435,15 @@ html[dir="rtl"] #sy_ep,html[dir="rtl"] #em_ep,html[dir="rtl"] #ep2,html[dir="rtl
   unicode-bidi:isolate;direction:ltr;overflow-wrap:anywhere}
 a.conn-d{color:var(--teal);text-decoration:underline;text-underline-offset:3px}
 .conn-fix{flex:1 1 100%;font-size:12.5px;color:var(--ink-3);line-height:1.6}
+
+/* Where a person stands: a state you can act on, coloured by temperature not by decoration. */
+.tag-st-replied{background:rgba(127,209,163,.14);color:#7fd1a3;border-color:rgba(127,209,163,.35)}
+.tag-st-warm{background:rgba(224,178,74,.14);color:#e0b24a;border-color:rgba(224,178,74,.35)}
+.tag-st-warm_cold{background:rgba(238,140,157,.14);color:#EE8C9D;border-color:rgba(238,140,157,.35)}
+.tag-st-sent{background:var(--panel-2);color:var(--ink-3)}
+.tag-st-cold{background:var(--panel-2);color:var(--ink-3);opacity:.75}
+
+/* The one sentence that reads the numbers back to you. Warmth is a sentence, not a colour. */
+.lede{font-size:16.5px;line-height:1.7;color:var(--ink);margin:14px 0 18px;max-width:70ch;font-weight:600}
+.lede .q{color:var(--ink-3);font-weight:400}
+html[dir="rtl"] .lede{font-weight:500;line-height:1.8}

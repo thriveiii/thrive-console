@@ -73,9 +73,8 @@ That is the whole procedure. The device reads the relay URL from the repository,
 own sync credential from the passcode, pulls the shared state, and shows the same live console.
 If it does not, open Settings and read Connection health: the broken link is named there.
 
-Nothing else is ever typed on a second device. No URL, no key, no token. The GitHub token is
-deliberately never synced, so a teammate's device can read and send but cannot publish pages
-until you give that device its own token.
+Nothing else is ever typed on a second device. No URL, no key, no token. Publishing included:
+the token arrives sealed through the vault and opens with the passcode.
 
 ## When something looks wrong
 
@@ -120,12 +119,29 @@ Two symptoms and what they always mean:
   wake the relay if it keeps timing out. The console retries once on its own before it calls
   the link broken.
 
+## The vault: publishing from any device
+
+The passcode is the boundary, and everything behind it works on every device, publishing
+included. The GitHub token travels with the shared state, but never in the clear:
+
+- It is sealed with AES-GCM under a key derived from the passcode (`gate.js`, salt
+  `thrive-vault-v1`) before it leaves the browser.
+- The relay stores ciphertext it cannot read. Anyone holding the store, including Google,
+  holds an opaque blob.
+- Only a device that knows the passcode derives the key that opens it. Locking the console
+  clears that key from the session.
+- Press `Save` under GitHub publishing on the device that already publishes. Every other
+  device gains publishing on its next sync round, with nothing typed.
+
+What follows from that: **the passcode now opens repository write access as well.** Treat it
+accordingly. Change it when anyone leaves, and remember that changing it re-derives both the
+sync credential and the vault key, so `SYNC_KEY` in Script properties has to be updated and
+the vault re-saved once from a device that still holds the token.
+
 ## What is deliberately not automatic
 
-- Publishing `library/sync.json` needs the GitHub token, so it happens on one device only. The
-  console never claims to have published when it has not.
-- The GitHub token is never synced between devices. That is a security decision, not an
-  oversight.
+- Publishing `library/sync.json` needs a GitHub token, so the first device to publish must
+  have one. Every device after that inherits it through the vault.
 - Email sending and page analytics both ride the same relay on purpose. One URL, one thing to
   keep alive.
 
@@ -134,6 +150,7 @@ Two symptoms and what they always mean:
 - Rotate `SYNC_KEY` and the GitHub token if either has ever been seen in a screenshot, a chat,
   or a terminal.
 - Give each teammate the passcode only. Nothing else is needed for a read-and-send device.
-- Give a publishing token only to whoever publishes pages, scoped to this repository with
-  `Contents: Read and write`, and to nothing else.
+- The passcode grants everything, publishing included. Anyone who has it can write to the
+  repository. If a teammate should not publish, they need their own console and their own
+  passcode, not a shared one.
 - Point them at this file. It is the whole procedure.

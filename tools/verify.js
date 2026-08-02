@@ -159,7 +159,9 @@ head("Copy");
     const curly = Object.keys(I18N.en).filter(k => typeof I18N.en[k] === "string" && /[“”]/.test(I18N.en[k]));
     curly.length ? bad("English copy uses straight quotes, not curly", curly) : ok("English copy uses straight quotes");
 
-    const straight = Object.keys(I18N.ar).filter(k => typeof I18N.ar[k] === "string" && /"/.test(I18N.ar[k]));
+    // The rule is about prose quotation, not markup: a class="..." inside a string is not a quote.
+    const prose = s => String(s).replace(/<[^>]*>/g, "");
+    const straight = Object.keys(I18N.ar).filter(k => typeof I18N.ar[k] === "string" && /"/.test(prose(I18N.ar[k])));
     straight.length ? bad("Arabic copy quotes with guillemets «»", straight)
                     : ok("Arabic copy quotes with guillemets «»");
 
