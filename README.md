@@ -22,6 +22,7 @@ No Netlify, no per-deploy credits. Just a GitHub repo served by GitHub Pages, wi
 /Brain/                the deep-knowledge archive behind this work, plus the pre-publish checklist
 /tools/verify.js       the verify gate: run it before every push
 /tools/gates.py        the ten review gates, walked in a browser in both languages
+/tools/mirror.py       two devices sharing one store, compared field by field
 /tools/lane-truth.py   the lane rule, held against the four real records
 /tools/audit-five-layers.py  the five review layers, walked in both languages
 CNAME                  thriveiii.com
@@ -56,7 +57,8 @@ node tools/verify.js
 Three browser gates go with it, and all are re-runnable on purpose:
 
 ```bash
-python3 tools/gates.py               # the ten review gates, 260 checks, EN and AR, 320 to 1440
+python3 tools/gates.py               # the ten review gates, EN and AR, 320 to 1440
+python3 tools/mirror.py              # two devices, one store: are they the same console?
 python3 tools/lane-truth.py          # the lane rule, held against the four real records
 python3 tools/audit-five-layers.py   # the five review layers, 158 assertions, EN and AR
 ```
@@ -77,6 +79,24 @@ dash, Western numerals, straight quotes in English, guillemets in Arabic, tanwin
 letter). It also checks that every console page carries the boot failsafe and that every
 published prospect page carries the analytics beacon. `Brain/CHECKLIST.md` covers the rest,
 the part that still needs a person.
+
+### What is mirrored across devices
+
+Everything the console holds is in exactly one of three classes:
+
+- **Mirrored** through the relay's shared state, complete, **including removals**: opportunities,
+  the mail ledger, the activity log, send stamps, message templates, page template records,
+  publishing credentials, and settings. Delete something on one device and it is deleted
+  everywhere; it returns only if you make it again.
+- **Published** to the repository and therefore readable from every device by construction: the
+  live pages, and a page template once it is published.
+- **Local** on purpose: the collapsed tray, the language, the relay URL (which comes from
+  `library/sync.json`), and the session key.
+
+Page HTML is the one thing that can run to hundreds of kilobytes, against a shared store
+measured in hundreds of kilobytes in total, so it travels while it fits, newest first. Anything
+that did not fit is named in Settings with the way to fix it: publish it, and every device reads
+it from the repository. A mirror is allowed a physical limit and never a quiet one.
 
 ### Two kinds of template, kept apart
 

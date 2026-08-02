@@ -7,7 +7,8 @@ something got through: the numbered notes say what.
   1  Boot          every page and every view starts, with nothing blank and nothing thrown
   2  Doors         every link leads somewhere real, and its parameters arrive
   3  Round trip    what the drawer borrows it gives back; a view re-entered is a view reloaded
-  4  Truth         lanes, pills and tables report the same facts, and only facts with evidence
+  4  Truth         lanes, pills and tables report the same facts, and only facts with evidence,
+                and two devices sharing one store are the same console, removals included
   5  Bilingual     both languages complete, no key on screen, plural forms correct
   6  Typography    one Latin face and one Arabic face, everywhere, measured not assumed
   7  Layout        nothing scrolls sideways, everything a finger uses clears 40px
@@ -353,6 +354,14 @@ def gate4(b):
        row and row[1] == "0" and row[2] == "3" and row[3] == "0", row)
     ck("nothing threw", not errs, errs[:4])
     ctx.close()
+
+    # Two devices, one store. A console that only ever unions is an archive that argues with
+    # you: the deleted opportunity comes back, and the two devices are never the same console.
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "mirror.py")],
+                       capture_output=True, text=True, timeout=900)
+    bad = [l for l in r.stdout.splitlines() if l.startswith("FAIL")]
+    ck("two devices sharing one store hold the same console (tools/mirror.py)",
+       r.returncode == 0, "\n".join(bad[:8]) or r.stderr[-400:])
 
 
 # ================================================================ 5  BILINGUAL

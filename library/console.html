@@ -165,25 +165,32 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <div class="page-h"><h1 class="title" data-i18n="lib_title">Opportunity Library</h1></div>
   <p class="sub" data-i18n="lib_sub"></p>
 
+  <!-- One primary path: find it, or make one. Search, the pills under it, and New
+       opportunity. Sorting, filtering by template, the status list and the exports are real
+       controls that are used rarely, so they wait behind one disclosure instead of competing
+       with the search box for the same glance. -->
   <div class="toolbar">
-    <div class="search"><input id="q" type="search" data-i18n-ph="search_ph">      <a class="btn ghost" href="#home" data-i18n="nav_home">Overview</a>
-      <a class="btn ghost" href="#templates" data-i18n="nav_templates">Templates</a>
-      <a class="btn ghost" href="#activity" data-i18n="nav_activity">Activity</a>
-</div>
-    <select id="sort" style="max-width:180px">
+    <div class="search"><input id="q" type="search" data-i18n-ph="search_ph"></div>
+    <a class="btn" href="#editor" data-i18n="new_opp">New opportunity</a>
+    <button class="btn ghost" id="libMoreBtn" aria-expanded="false" aria-controls="libMore" data-i18n="lib_more">More</button>
+  </div>
+
+  <div id="libMore" class="more-bar" hidden>
+    <select id="sort" aria-label="Sort">
       <option value="new" data-i18n="sort_new">Newest sent</option>
       <option value="old" data-i18n="sort_old">Oldest sent</option>
-      <option value="az" data-i18n="sort_az">Business A–Z</option>
+      <option value="az" data-i18n="sort_az">Business A-Z</option>
     </select>
-    <select id="filter" style="max-width:170px"><option value="all" data-i18n="filter_all">All templates</option></select>
-    <select id="statusFilter" style="max-width:160px">
+    <select id="filter" aria-label="Template"><option value="all" data-i18n="filter_all">All templates</option></select>
+    <select id="statusFilter" aria-label="Status">
       <option value="active" data-i18n="statusf_active">Active</option>
       <option value="followup" data-i18n="statusf_followup">Needs follow-up</option>
       <option value="archived" data-i18n="statusf_archived">Archived</option>
       <option value="all" data-i18n="statusf_all">All statuses</option>
     </select>
-    <a class="btn" href="#editor" data-i18n="new_opp">New opportunity</a>
     <button class="btn ghost" id="exportManifest" data-i18n="export_manifest">Export manifest.json</button>
+    <a class="btn ghost" href="#templates" data-i18n="nav_templates">Templates</a>
+    <a class="btn ghost" href="#activity" data-i18n="nav_activity">Activity</a>
   </div>
 
   <div id="pipeline" class="pipeline"></div>
@@ -262,26 +269,32 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <p class="sub" data-i18n="cmp_sub"></p>
 
   <section class="panel compose-panel">
+    <!-- At rest this screen asks for four things: which message, to whom, what it says, and
+         send. Everything else is real and rarely touched, so it waits behind one disclosure
+         rather than competing for the same glance while you are writing. -->
     <div class="etpl-bar">
-      <label for="etpl" class="etpl-label" data-i18n="cmp_template">Template</label>
+      <label for="etpl" class="etpl-label" data-i18n="cmp_template">Message template</label>
       <select id="etpl" class="input"></select>
-      <button class="btn ghost sm" id="eSaveTpl" data-i18n="cmp_save_tpl">Save as template</button>
-      <label class="btn ghost sm" for="eTplFile" data-i18n="cmp_tpl_upload">Upload template</label>
-      <input id="eTplFile" type="file" accept=".html,.htm,text/html" hidden>
-      <a class="btn ghost sm" href="#templates?kind=mail" data-i18n="cmp_manage_tpl">Manage</a>
+      <button class="btn ghost sm" id="cmpMoreBtn" aria-expanded="false" aria-controls="cmpMore" data-i18n="lib_more">More</button>
     </div>
     <!-- One tap to a starting message. The editor still opens blank: this offers, it does not
          decide. It is how a page you just published goes out without writing from nothing. -->
     <div class="etpl-quick" id="etplQuick" hidden></div>
-    <div class="grid3">
+    <div id="cmpMore" class="more-bar" hidden>
       <div class="field"><label for="efrom" data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
+      <button class="btn ghost sm" id="eSaveTpl" data-i18n="cmp_save_tpl">Save as template</button>
+      <label class="btn ghost sm" for="eTplFile" data-i18n="cmp_tpl_upload">Import HTML as a message</label>
+      <input id="eTplFile" type="file" accept=".html,.htm,text/html" hidden>
+      <a class="btn ghost sm" href="#templates?kind=mail" data-i18n="cmp_manage_tpl">Manage</a>
+      <label class="chk"><input type="checkbox" id="efirst"> <span data-i18n="cmp_firstname">Greet by first name only (Hi Ahmed)</span></label>
+      <label class="chk"><input type="checkbox" id="ebrand"> <span data-i18n="cmp_branded">Add logo header (for known contacts; a plain personal email reaches the inbox better)</span></label>
+    </div>
+    <div class="grid2">
       <div class="field"><label for="eto" data-i18n="cmp_to">To</label><input id="eto" class="input" type="email" autocomplete="off" placeholder="name@example.com"></div>
       <div class="field"><label for="ename" data-i18n="cmp_name">Recipient name</label><input id="ename" class="input" autocomplete="off" data-i18n-ph="cmp_name_ph"></div>
     </div>
     <div class="field" id="emonthWrap" hidden><label for="emonth" data-i18n="cmp_month">Month (this template asks for it)</label>
       <input id="emonth" class="input month-input" autocomplete="off" placeholder="July"></div>
-    <label class="chk"><input type="checkbox" id="efirst"> <span data-i18n="cmp_firstname">Greet by first name only (Hi Ahmed)</span></label>
-    <label class="chk"><input type="checkbox" id="ebrand"> <span data-i18n="cmp_branded">Add logo header (for known contacts; a plain personal email reaches the inbox better)</span></label>
     <div class="field"><label for="esubject" data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off"></div>
 
     <div class="field"><label id="ebodyL" data-i18n="cmp_message">Message</label>
@@ -407,6 +420,9 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <button class="btn ghost" id="logExport" data-i18n="act_export">Export</button>
     <button class="btn ghost danger" id="logClear" data-i18n="act_clear">Clear</button>
   </div>
+
+  <!-- The week as a week, before the same week as rows. IDENTITY: sentences before tables. -->
+  <div id="logStory"></div>
 
   <div id="campaigns"></div>
   <div id="logCats" class="pipeline"></div>
