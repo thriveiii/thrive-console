@@ -14,6 +14,11 @@ something got through: the numbered notes say what.
   8  Forms         every control is labelled, reachable, and does what it says
   9  Resilience    relay down, relay slow, no data: a designed state, never a blank or a spinner
  10  Build         the gate passes, the shell is regenerated from source, the offline file works
+
+Gate 8 ends by sending a real message through a relay that answers and remembers what it was
+handed, then watches the opportunity move from Ready to Sent. Gate 9 takes that same session,
+exports a backup, wipes the device, and restores it. Those two are the loops the console exists
+for, and neither had ever been proven end to end.
 """
 import threading, http.server, socketserver, functools, os, sys, json, subprocess, re
 
@@ -33,6 +38,7 @@ EP = f"{base}/exec"
 from playwright.sync_api import sync_playwright
 
 results = {}          # gate number -> [(name, ok)]
+GATE8_CTX = []        # the session that sent, handed to gate 9 so the backup has real content
 current = [0]
 
 def gate(n, title):
@@ -80,6 +86,24 @@ def relay_ok(route):
 
 def relay_down(route):
     return route.abort()
+
+
+SENT = []
+
+
+def relay_sends(route):
+    """A relay that answers, and remembers what it was asked to send."""
+    if route.request.method == "GET":
+        return route.fulfill(status=200, body="Thrive relay v4 (email + sync + analytics) is running.")
+    d = json.loads(route.request.post_data or "{}")
+    if d.get("op") == "state_get":
+        return route.fulfill(status=200, body=json.dumps({"ok": True, "data": None}))
+    if d.get("op") == "hits_get":
+        return route.fulfill(status=200, body=json.dumps({"ok": True, "events": []}))
+    if d.get("op"):
+        return route.fulfill(status=200, body=json.dumps({"ok": True}))
+    SENT.append(d)
+    return route.fulfill(status=200, body=json.dumps({"ok": True, "id": "re_test_1"}))
 
 
 def relay_old(route):
@@ -498,6 +522,64 @@ def gate8(b):
     ck("nothing threw", not errs, errs[:4])
     ctx.close()
 
+    # The loop the whole console exists for: write a message, send it, and watch the
+    # opportunity move. Under the lane rule the ledger is the only send evidence, so a send
+    # that does not reach the ledger leaves the board frozen and the console decorative.
+    SENT.clear()
+    ctx = b.new_context(viewport={"width": 1280, "height": 950}, accept_downloads=True)
+    ctx.route("**/exec", relay_sends)
+    ctx.route("**/library/sync.json",
+              lambda r: r.fulfill(status=200, body=json.dumps({"ep": EP, "up": 1})))
+    ctx.route("https://api.github.com/**", lambda r: r.abort())
+    pg = ctx.new_page()
+    errs = []
+    pg.on("pageerror", lambda e: errs.append(str(e)))
+    pg.goto(f"{base}/library/console.html")
+    pg.wait_for_timeout(400)
+    pg.fill("#gateInput", "ConThrive2030")
+    pg.click(".gate-btn")
+    pg.wait_for_timeout(2000)
+    pg.evaluate("ep=>localStorage.setItem('thrive_email_ep_v1', ep)", EP)
+    pg.reload()
+    pg.wait_for_timeout(2400)
+
+    pg.evaluate("()=>location.hash='#board'")
+    pg.wait_for_timeout(1800)
+    ck("an opportunity with no send starts in Ready",
+       pg.evaluate("""()=>{const t=document.querySelector(".tok[data-slug='2-faces']");
+           return t? t.closest('.lane').dataset.lane : null;}""") == "live")
+    pg.evaluate("()=>location.hash='#compose?slug=2-faces'")
+    pg.wait_for_timeout(2200)
+    pg.click("#etplQuick [data-quick]")
+    pg.wait_for_timeout(900)
+    pg.fill("#eto", "owner@2faces.example")
+    pg.fill("#ename", "Sara")
+    pg.wait_for_timeout(400)
+    pg.click("#eSend")
+    pg.wait_for_timeout(2500)
+    ck("sending hands the relay exactly one message", len(SENT) == 1, SENT)
+    if SENT:
+        m = SENT[0]
+        ck("addressed to the person typed in", m.get("to") == "owner@2faces.example", m.get("to"))
+        ck("sent from the Thrive address", "thriveiii.com" in str(m.get("from", "")), m.get("from"))
+        ck("with that page's link in the html it actually sends",
+           "opp/2-faces" in str(m.get("html", "")), str(m.get("html"))[:200])
+    led = pg.evaluate("()=>getMailLog().filter(x=>x.opp==='2-faces')")
+    ck("the ledger records it as a send", led and led[0].get("status") == "sent", led)
+    pg.evaluate("()=>location.hash='#board'")
+    pg.wait_for_timeout(2200)
+    ck("and the board moves it from Ready to Sent",
+       pg.evaluate("""()=>{const t=document.querySelector(".tok[data-slug='2-faces']");
+           return t? t.closest('.lane').dataset.lane : null;}""") == "sent")
+    ck("the day's quota counted it", pg.evaluate("()=>quotaUsage().day") == 1,
+       pg.evaluate("()=>quotaUsage()"))
+    pg.evaluate("()=>location.hash='#home'")
+    pg.wait_for_timeout(2600)
+    tpl = pg.eval_on_selector("#homeTemplates", "e=>e.innerText")
+    ck("and the message it went out with became measurable",
+       "opportunity page" in tpl or "فرصة" in tpl, tpl[:200])
+    ck("nothing threw in the send loop", not errs, errs[:4])
+    GATE8_CTX.append((ctx, pg))
 
 # ================================================================ 9  RESILIENCE
 def gate9(b):
@@ -542,6 +624,43 @@ def gate9(b):
         ck(f"with nothing stored, {v} shows a designed empty state", st["text"] > 40, st)
     ck("nothing threw on an empty console", not errs, errs[:4])
     ctx.close()
+
+    # A backup that does not round trip is a data loss waiting for the day it is needed.
+    if GATE8_CTX:
+        ctx, pg = GATE8_CTX.pop()
+        pg.evaluate("()=>location.hash='#settings'")
+        pg.wait_for_timeout(2000)
+        with pg.expect_download() as dl:
+            pg.click("#bkExport")
+        path = dl.value.path()
+        raw = open(path, encoding="utf-8").read()
+        ck("the backup is real content, not an empty file", len(raw) > 200, len(raw))
+        try:
+            obj = json.loads(raw)
+        except Exception as e:
+            obj = None
+            ck("the backup parses", False, e)
+        if obj:
+            for k in ("opps", "mail", "activity", "emailTemplates"):
+                ck(f"the backup carries {k}", k in obj, sorted(obj.keys()))
+            ck("and the send that was just made is inside it",
+               any(x.get("opp") == "2-faces" for x in obj.get("mail", [])), obj.get("mail"))
+            pg.evaluate("""()=>{['thrive_mail_v1','thrive_opps_v1','thrive_log_v1',
+                'thrive_email_templates_v1','thrive_quota_v1'].forEach(k=>localStorage.removeItem(k));}""")
+            pg.reload()
+            pg.wait_for_timeout(2400)
+            pg.evaluate("()=>location.hash='#settings'")
+            pg.wait_for_timeout(1800)
+            pg.set_input_files("#bkFile", path)
+            pg.wait_for_timeout(2500)
+            ck("restoring the file brings the ledger back",
+               pg.evaluate("()=>getMailLog().filter(x=>x.opp==='2-faces').length") == 1)
+            pg.evaluate("()=>location.hash='#board'")
+            pg.wait_for_timeout(2200)
+            ck("and the board reads the same as it did before the wipe",
+               pg.evaluate("""()=>{const t=document.querySelector(".tok[data-slug='2-faces']");
+                   return t? t.closest('.lane').dataset.lane : null;}""") == "sent")
+        ctx.close()
 
 
 # ================================================================ 10  BUILD

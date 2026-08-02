@@ -56,13 +56,15 @@ node tools/verify.js
 Three browser gates go with it, and all are re-runnable on purpose:
 
 ```bash
-python3 tools/gates.py               # the ten review gates, 242 checks, EN and AR, 320 to 1440
+python3 tools/gates.py               # the ten review gates, 260 checks, EN and AR, 320 to 1440
 python3 tools/lane-truth.py          # the lane rule, held against the four real records
 python3 tools/audit-five-layers.py   # the five review layers, 158 assertions, EN and AR
 ```
 
 `gates.py` is the widest of the three: boot, doors, round trip, truth, bilingual, typography,
-layout, forms, resilience, build. Run one gate on its own with `python3 tools/gates.py 3`.
+layout, forms, resilience, build. Gate 8 sends a real message through a relay that answers and
+watches the opportunity move from Ready to Sent; gate 9 exports that session's backup, wipes the
+device and restores it. Run one gate on its own with `python3 tools/gates.py 3`.
 `Brain/REVIEW-LAYERS.md` says what each gate asks and what it caught.
 
 `lane-truth.py` is the regression: an opportunity reaches Sent or Opened only when the mail
