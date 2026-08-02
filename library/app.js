@@ -87,7 +87,7 @@ function allHits(opts){
   return out;
 }
 function selfHitCount(){ return (usingCollected()?getRemoteHits():getHits()).filter(e=>e&&e.self).length; }
-function clearLocalHits(){ try{ localStorage.removeItem(HITS); }catch(e){} __opensCache=null; }
+function clearLocalHits(){ try{ localStorage.removeItem(HITS); }catch(e){} invalidateHits(); }
 /* Is collection actually working? Distinguishes three states that look identical otherwise:
    "off" (no relay), "stale" (relay answered but doesn't understand analytics, an old script),
    "live" (collecting, even if nobody has opened a page yet). */
@@ -142,7 +142,7 @@ async function fetchRemoteHits(){
     j.events.concat(getRemoteHits()).forEach(e=>{ const k=hitKey(e); if(seen[k]) return; seen[k]=1; merged.push(e); });
     merged.sort((a,b)=> (String(a.ts)<String(b.ts)?-1:1));
     setRemoteHits(merged);
-    __opensCache=null;                                   // opens map must be recomputed
+    invalidateHits();                                    // opens map and open times must be recomputed
     return true;
   }catch(e){ __hitsState="stale"; __hitsErr=String(e.message||e); return false; }
 }
@@ -156,11 +156,87 @@ function opensMap(){
   const m={}; allHits().forEach(e=>{ if(e.type==="open"||!e.type){ m[e.slug]=(m[e.slug]||0)+1; } });
   __opensCache=m; __opensTs=now; return m;
 }
+/* Every recorded view of a page, whatever caused it. This is a real number and it is shown as
+   one, but it is not the same number as "somebody read what I sent them". */
 function opensForSlug(slug){ return opensMap()[slug]||0; }
+
+/* One timestamp parser for dates and full stamps alike, so a comparison never silently
+   becomes NaN and answers "no". */
+function tsMs(v){ if(!v) return 0; const s=String(v);
+  const ms=Date.parse(s.length===10? s+"T00:00:00Z" : s); return isNaN(ms)? 0 : ms; }
+
+/* WHEN each view happened, so a view can be told apart from a read. A page opened before any
+   message went out was opened by somebody who was never written to: the operator, a colleague,
+   a shared link. Counting those as opens is how a page nobody had emailed reported readers. */
+let __openTimesCache=null, __openTimesTs=0;
+function openTimes(){
+  const now=Date.now();
+  if(__openTimesCache && (now-__openTimesTs)<3000) return __openTimesCache;
+  const m={};
+  allHits().forEach(e=>{
+    if(e.type && e.type!=="open") return;
+    const ms=tsMs(e.ts); if(!ms) return;
+    (m[e.slug]||(m[e.slug]=[])).push(ms);
+  });
+  __openTimesCache=m; __openTimesTs=now; return m;
+}
+function opensSince(slug, since){
+  const from=tsMs(since); if(!from) return 0;
+  const a=openTimes()[slug]||[]; let n=0;
+  for(let i=0;i<a.length;i++) if(a[i]>=from) n++;
+  return n;
+}
+function invalidateHits(){ __opensCache=null; __openTimesCache=null; }
+
+/* ---------- send evidence ----------
+   "Sent" means a message left. Two things prove that and nothing else does: the mail ledger,
+   which records every message this console sent or handed to Gmail, and your own declaration
+   on the record for a message you sent elsewhere.
+
+   sent_on proves nothing. It is the day the page was made, it is filled in on every record
+   including ones nobody has been written to, and reading it as a send is exactly what put
+   pages with no email behind them into Sent, and their page views into Opened. */
+let __sendCache=null, __sendTs=0;
+function sendIndex(){
+  const now=Date.now();
+  if(__sendCache && (now-__sendTs)<3000) return __sendCache;
+  const m={};
+  getMailLog().forEach(x=>{
+    if(!x || !x.opp) return;
+    if(x.direction==="in") return;                        // a reply is not a send
+    if(x.status && x.status!=="sent" && x.status!=="copied") return;   // queued or failed is not sent
+    const r=m[x.opp]||(m[x.opp]={count:0, first:"", last:""});
+    r.count++;
+    const ts=String(x.ts||"");
+    if(ts){ if(!r.first || ts<r.first) r.first=ts; if(ts>r.last) r.last=ts; }
+  });
+  __sendCache=m; __sendTs=now; return m;
+}
+function invalidateSends(){ __sendCache=null; }
+/* Accepts a record or a slug. A record can also carry a hand declaration; a slug cannot. */
+function sendsFor(o){
+  const slug=(typeof o==="string")? o : ((o&&o.slug)||"");
+  const r=sendIndex()[slug];
+  if(r && r.count) return r;
+  if(o && typeof o==="object" && o.stage==="sent")
+    return { count:1, first:o.sent_on||"", last:o.sent_on||"", declared:true };
+  return { count:0, first:"", last:"" };
+}
+/* Opens that answer a message: views recorded at or after the first send. Zero until something
+   was actually sent, because before that there is nothing for anybody to have opened. */
+function outreachOpens(o){
+  const s=sendsFor(o);
+  if(!s.count) return 0;
+  return opensSince((typeof o==="string")? o : o.slug, s.first);
+}
 function debounce(fn, ms){ let h; return function(){ const a=arguments, c=this; clearTimeout(h); h=setTimeout(()=>fn.apply(c,a), ms||150); }; }
 
-/* ---------- pipeline stages (mini CRM) ---------- */
+/* ---------- pipeline stages (mini CRM) ----------
+   STAGES are the five you can declare on a record. PIPE_STAGES are the seven a record can
+   actually be in: draft and live are derived, never declared, and they were invisible for as
+   long as every untouched record defaulted to "sent". */
 const STAGES=["sent","opened","replied","won","lost"];
+const PIPE_STAGES=["draft","live"].concat(STAGES);
 /* Accepts a plain date (2026-07-01) and a full timestamp alike. It used to append a time to
    whatever it was given, so any ISO timestamp parsed as NaN and silently aged nothing: a
    ledger entry could be a month old and still read as today. */
@@ -169,12 +245,31 @@ function daysSince(d){ if(!d) return 0;
   if(isNaN(ms)) return 0; return Math.floor((Date.now()-ms)/86400000); }
 /* shared opportunity predicates (used by the library grid and the Overview dashboard) */
 function isLive(o){ return !o._local || !!o.published; }
-/* The promotion rule lives here and only here. The opens count can be injected so a caller
-   with its own map (the board derivation layer, a test) reuses this rule instead of copying
-   it. A second implementation of this line is how a board and a library start disagreeing. */
-function effStage(o, opensOverride){ const op=(opensOverride===undefined)?opensForSlug(o.slug):(opensOverride||0);
-  if((!o.stage||o.stage==="sent")&&op>0) return "opened"; return o.stage||"sent"; }
-function needsFollowup(o){ return isLive(o) && !o.archived && effStage(o)==="sent" && opensForSlug(o.slug)===0 && daysSince(o.sent_on)>=3; }
+/* The stage rule lives here and only here. Both the opens count and the send evidence can be
+   injected, so a caller with its own context (the board derivation layer, a test) reuses this
+   rule instead of copying it. A second implementation of these lines is how a board and a
+   library start disagreeing about the same record.
+
+   The order is the whole rule:
+     1. What you declared stands. Replied, won and lost are decisions, not derivations.
+     2. With no send, a record is a live page or a draft. It is never "sent".
+     3. With a send, it is opened if somebody read it after that send, otherwise sent. */
+function effStage(o, opensOverride, sendOverride){
+  const declared=o.stage||"";
+  if(declared && declared!=="sent") return declared;
+  const s=(sendOverride===undefined)? sendsFor(o) : sendOverride;
+  if(!s || !s.count) return isLive(o) ? "live" : "draft";
+  const op=(opensOverride===undefined)? outreachOpens(o) : (opensOverride||0);
+  return op>0 ? "opened" : "sent";
+}
+/* Follow-up is a thing you do about a message. A page you have not written to yet does not
+   need following up, it needs sending, and calling that "needs follow-up" made the console
+   ask for the wrong action on the wrong record. */
+function needsFollowup(o){
+  if(!isLive(o) || o.archived || effStage(o)!=="sent") return false;
+  const s=sendsFor(o);
+  return daysSince(s.last||s.first)>=3;
+}
 
 /* ---------- opportunity HTML (regenerated on demand, not stored, to save space) ---------- */
 const __tplCache={};
@@ -226,6 +321,22 @@ function importBackup(obj){
   if(Array.isArray(obj.emailTemplates)) setEmailTemplates(obj.emailTemplates);
   if(typeof obj.fromName==="string") setFromName(obj.fromName);
 }
+
+/* ---------- one document, many listeners ----------
+   Every view used to own its page, so assigning window.onThriveSync was safe. In one shell
+   they all share one window, and the view that initialises last silently unsubscribes every
+   view that ran before it: open Activity once and the board stops refreshing on sync, and the
+   board's own handler had already displaced the sync round that runs on unlock. Listeners are
+   registered by key now. A view replaces only its own, and all of them run. */
+const __hooks={ sync:{}, lang:{}, unlock:{} };
+function onThrive(kind, key, fn){ (__hooks[kind]||(__hooks[kind]={}))[key]=fn; }
+function fireThrive(kind){
+  const h=__hooks[kind]||{};
+  Object.keys(h).forEach(k=>{ try{ h[k](); }catch(e){} });
+}
+window.onThriveSync  = function(){ fireThrive("sync"); };
+window.onLangApplied = function(){ fireThrive("lang"); };
+window.onGateUnlocked= function(){ fireThrive("unlock"); };
 
 /* ---------- live cross-device sync ----------
    One shared state document, stored by the same Apps Script relay that sends email.
@@ -422,7 +533,7 @@ function scheduleSyncPush(){
 function startLiveSync(){
   if(!document.querySelector("header.top")) return;       // console pages only
   if(syncAuth()) syncNow();
-  window.onGateUnlocked=function(){ syncNow(); };
+  onThrive("unlock","sync",function(){ syncNow(); });
   setInterval(()=>{ if(!document.hidden && syncAuth()) syncNow(); }, 60000);
 }
 document.addEventListener("DOMContentLoaded", startLiveSync);
@@ -654,11 +765,11 @@ async function initDashboard(){
     // highlight, and clear button stay correct even when a filter yields zero cards.
     const pipelineEl=document.getElementById("pipeline");
     if(pipelineEl){
-      const act=state.data.filter(o=>!o.archived); const counts={}; STAGES.forEach(s=>counts[s]=0);
+      const act=state.data.filter(o=>!o.archived); const counts={}; PIPE_STAGES.forEach(s=>counts[s]=0);
       act.forEach(o=>{ const s=effStage(o); counts[s]=(counts[s]||0)+1; });
       const fu=act.filter(needsFollowup).length;
       pipelineEl.innerHTML =
-        STAGES.map(s=>`<button class="pl-pill pl-${s}${state.stage===s?" on":""}" data-stage-f="${s}">${t("stage_"+s)} <b>${counts[s]}</b></button>`).join("")
+        PIPE_STAGES.map(s=>`<button class="pl-pill pl-${s}${state.stage===s?" on":""}" data-stage-f="${s}">${t("stage_"+s)} <b>${counts[s]}</b></button>`).join("")
         + `<button class="pl-pill pl-fu${state.status==="followup"?" on":""}" data-fu="1">${t("followup")} <b>${fu}</b></button>`
         + ((state.stage||state.status==="followup"||state.tmpl!=="all"||state.q)?`<button class="pl-pill pl-clear" data-clear="1">${t("clear_filters")}</button>`:"");
       pipelineEl.querySelectorAll("[data-stage-f]").forEach(b=>b.addEventListener("click",()=>{
@@ -683,14 +794,22 @@ async function initDashboard(){
     if(!rows.length){ grid.className="empty-wrap"; grid.innerHTML='<div class="empty">'+t("empty")+'</div>'; return; }
     grid.className="grid";
 
+    /* The first option is the derived state and it is what a record sits on until you say
+       otherwise. Declaring a stage is a decision you can make and unmake; it is no longer
+       something the console assumes on your behalf. */
     function stageSel(o){
       if(!isLive(o)) return "";
-      const cur=effStage(o);
+      const declared=o.stage||"", cur=effStage(o);
       return `<select class="stage-sel" data-stage="${esc(o.slug)}" title="${t("stage")}">`+
-        STAGES.map(s=>`<option value="${s}"${s===cur?" selected":""}>${t("stage_"+s)}</option>`).join("")+`</select>`;
+        `<option value=""${declared?"":" selected"}>${t("stage_auto")}: ${t("stage_"+cur)}</option>`+
+        STAGES.map(s=>`<option value="${s}"${s===declared?" selected":""}>${t("stage_"+s)}</option>`).join("")+`</select>`;
     }
     grid.innerHTML = rows.map(o=>{
       const arch=o.archived, live=isLive(o), enc=encodeURIComponent(o.slug), fu=needsFollowup(o);
+      /* Two different facts, told apart. The date on the record is the day the page was made.
+         A send date exists only when a message actually went out, and only then is a view of
+         that page an open rather than a visit. */
+      const snd=sendsFor(o), sentDay=String(snd.last||snd.first||"").slice(0,10);
       const linkRow = live
         ? `<a class="link" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${esc(liveUrl(o.slug))}</a>`
         : `<span class="link muted">${esc(liveUrl(o.slug))} · ${t("not_published")}</span>`;
@@ -704,8 +823,9 @@ async function initDashboard(){
         </div>
         <div class="meta">
           <span class="chip tmpl">${esc(o.template)||t("none")}</span>
-          <span class="chip">${t("col_sent")}: ${esc(o.sent_on)||t("none")}</span>
-          ${live?`<span class="chip">${t("ins_opens")}: ${opensForSlug(o.slug)}</span>`:""}
+          <span class="chip">${t("col_made")}: ${esc(o.sent_on)||t("none")}</span>
+          ${snd.count?`<span class="chip">${t("col_sent")}: ${esc(sentDay)||t("none")}</span>`:""}
+          ${live?`<span class="chip">${snd.count?t("ins_opens")+": "+outreachOpens(o):t("col_views")+": "+opensForSlug(o.slug)}</span>`:""}
           <span class="chip">${t("col_location")}: ${esc(o.location)||t("none")}</span>
           ${fu?`<span class="chip fu-chip">${t("followup")}</span>`:""}
         </div>
@@ -726,7 +846,8 @@ async function initDashboard(){
 
     grid.querySelectorAll(".stage-sel").forEach(sel=>sel.addEventListener("change",()=>{
       const slug=sel.getAttribute("data-stage"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
-      o.stage=sel.value; saveDraft({slug, stage:sel.value}); logActivity("stage", slug, sel.value);
+      o.stage=sel.value; saveDraft({slug, stage:sel.value});
+      logActivity("stage", slug, sel.value||t("stage_auto"));
       render();   // always re-render so pipeline counts + any active stage filter reflect the change
     }));
     grid.querySelectorAll("[data-pdf]").forEach(b=>b.addEventListener("click", async ()=>{
@@ -789,7 +910,7 @@ async function initDashboard(){
   }
 
   const debRender=debounce(render,140);
-  window.onThriveSync=async ()=>{ state.data=await mergedOpps(); render(); };   // live refresh on sync
+  onThrive("sync","library", async ()=>{ state.data=await mergedOpps(); render(); });
   search.addEventListener("input",e=>{ state.q=e.target.value; debRender(); });
   sort.addEventListener("change",e=>{ state.sort=e.target.value; render(); });
   filt.addEventListener("change",e=>{ state.tmpl=e.target.value; render(); });
@@ -813,7 +934,7 @@ async function initDashboard(){
     toast(localCount? t("export_local_note").replace("{n}",localCount) : t("exported_toast"));
   });
 
-  window.onLangApplied=render;
+  onThrive("lang","dashboard",render);
   render();
 }
 
@@ -1014,10 +1135,10 @@ async function initEditor(slugArg){
       if("WANT" in F) el("f_want").value=F.WANT||"";
     }
   }
-  window.onLangApplied=()=>{
+  onThrive("lang","editor",()=>{
     relabelBuiltins();                                   // template names follow the language switch
     if(mode==="upload" && uploadedName) dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>";
-  };
+  });
   refresh();
 }
 
@@ -1129,8 +1250,8 @@ function initActivity(){
   el("logExport").addEventListener("click",()=>{
     download("thrive-activity.json", JSON.stringify({ activity:getActivity(), mail:getMailLog() },null,2), "application/json");
   });
-  window.onLangApplied=()=>{ renderChips(); render(); };
-  window.onThriveSync=render;                            // ledger/threads refresh live after a sync
+  onThrive("lang","activity",()=>{ renderChips(); render(); });
+  onThrive("sync","activity",render);
   renderChips(); render();
 }
 
@@ -1246,7 +1367,7 @@ function tplUsesMonth(tp){ return !!tp && /\{\{MONTH\}\}/.test((tp.subject||"")+
 /* mail log: every send/copy/reply, per recipient (campaign documentation) */
 const MAILLOG = "thrive_mail_v1";
 function getMailLog(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)||"[]"); }catch(e){ return []; } }
-function setMailLog(a){ lsSet(MAILLOG, JSON.stringify(a.slice(-800))); }
+function setMailLog(a){ const ok=lsSet(MAILLOG, JSON.stringify(a.slice(-800))); invalidateSends(); return ok; }
 // Normalise a subject into a stable conversation root (strip Re:/Fwd:/رد: prefixes).
 function subjRoot(s){ return (s||"").replace(/^\s*(re|fwd|fw|رد|إعادة\s*توجيه)\s*:\s*/i,"").replace(/^\s*(re|fwd|fw|رد)\s*:\s*/i,"").trim().toLowerCase().slice(0,80); }
 // A thread groups every message to one recipient about one opportunity (or, with no
@@ -1266,7 +1387,8 @@ function logMail(rec){
   if(!r.direction) r.direction=(r.status==="replied"||r.status==="received")?"in":"out";
   if(r.templateId===undefined) r.templateId="";
   if(r.templateName===undefined) r.templateName="";
-  a.push(r); setMailLog(a); return r;
+  a.push(r); setMailLog(a);   // invalidates the send index: a send changes a lane immediately
+  return r;
 }
 // Roll the flat mail log up into thread objects, newest activity first.
 function getThreads(){
@@ -1628,7 +1750,7 @@ async function initCompose(slugArg){
     meter.title=t("cmp_quota_hint");
   }
   renderQuota();
-  window.onThriveSync=renderQuota;                       // counter refreshes live when another device's sends arrive
+  onThrive("sync","compose",renderQuota);
   el("eSend").addEventListener("click", async ()=>{
     const to=el("eto").value.trim();
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
@@ -1852,7 +1974,7 @@ function initSettings(){
   // first sync round opens the vault. Refresh the page once when that lands, so the panel and
   // the fields show what the device actually holds instead of what it held at load.
   let __connRefreshed=false;
-  window.onThriveSync=function(){
+  onThrive("sync","settings",function(){
     try{ syCounts(); }catch(e){}
     if(!__connRefreshed && ghReady() && !el("gh_token").value){
       __connRefreshed=true;
@@ -1861,7 +1983,7 @@ function initSettings(){
       el("gh_branch").value=c2.branch||"main"; el("gh_token").value=c2.token||"";
       status(); connRun("");
     }
-  };
+  });
 
   el("ghSave").addEventListener("click", async ()=>{
     persist(); logActivity("settings","","github config"); status();
@@ -2000,7 +2122,7 @@ function initSettings(){
     fr.onload=()=>{ try{ importBackup(JSON.parse(fr.result)); logActivity("restore","",""); toast(t("restored_ok")); setTimeout(()=>location.reload(),1200); }
       catch(ex){ toast(t("restore_err")+": "+ex.message); } bkFile.value=""; };
     fr.readAsText(f); });
-  window.onLangApplied=status; status();
+  onThrive("lang","settings-gh",status); status();
 }
 
 /* ---------- templates gallery ---------- */
@@ -2187,7 +2309,7 @@ function initTemplates(){
       renderEmailTpls();
     }));
   }
-  window.onLangApplied=()=>{ renderBuiltin(); renderCustom(); renderEmailTpls(); };
+  onThrive("lang","templates",()=>{ renderBuiltin(); renderCustom(); renderEmailTpls(); });
   renderBuiltin(); renderCustom(); renderEmailTpls();
 }
 
@@ -2229,6 +2351,13 @@ async function initHome(){
     syncPill();
     const mail=getMailLog(), q=quotaUsage(), opps=await mergedOpps();
     const hits=allHits(), pages=aggregateHits(hits);     // recipients only, own previews excluded
+    /* Two counts, told apart everywhere on this page. views is every look at a page; opens are
+       the looks that came after a message went out about it. One number, used for both, is
+       what made a page nobody had been written to report readers. */
+    const oppBySlug={}; opps.forEach(o=>{ oppBySlug[o.slug]=o; });
+    const outOpens=slug=> outreachOpens(oppBySlug[slug] || slug);
+    const totalViews=pages.reduce((a,p)=>a+p.opens,0);
+    const totalOpens=pages.reduce((a,p)=>a+outOpens(p.slug),0);
 
     // ---- outreach ----
     const sent=mail.filter(m=>m.status==="sent").length;
@@ -2247,8 +2376,8 @@ async function initHome(){
       story.push(t("story_sent").replace("{n}", sent).replace("{p}", contacted));
       if(replies) story.push(t("story_replies").replace("{n}", replies).replace("{r}", rate));
       else if(waiting) story.push(t("story_no_replies").replace("{n}", waiting));
-      const totalOpens=pages.reduce((a,p)=>a+p.opens,0);
       if(totalOpens) story.push(t("story_opens").replace("{n}", totalOpens));
+      else if(totalViews) story.push(t("story_views").replace("{n}", totalViews));
       else if(usingCollected()) story.push(t("story_no_opens"));
     }
     el("homeStory").innerHTML=story.join(" ");
@@ -2263,13 +2392,13 @@ async function initHome(){
 
     // ---- pages ----
     const live=opps.filter(o=>isLive(o)).length;
-    const totalOpens=pages.reduce((s,r)=>s+r.opens,0);
     const uniq=new Set(); hits.forEach(e=>e.vid&&uniq.add(e.vid));
     const dw=pages.reduce((a,r)=>{ a.ms+=r.dwellMs; a.n+=r.dwellN; return a; }, {ms:0,n:0});
     const fu=opps.filter(o=>!o.archived&&needsFollowup(o)).length;
     el("tilesPages").innerHTML=
       tile(live, t("home_live_pages"), "", t("tip_live_pages"))+
       tile(opps.length, t("home_total_opps"), "", t("tip_total_opps"))+
+      tile(totalViews, t("col_views"), "", t("tip_views"))+
       tile(totalOpens, t("ins_total_opens"), "", t("tip_opens"))+
       tile(uniq.size, t("ins_unique"), "", t("tip_unique"))+
       tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("ins_avg_dwell"), "", t("tip_dwell"))+
@@ -2319,33 +2448,40 @@ async function initHome(){
        was a page that had never been sent to anyone. A zero is information; an absent row is not. */
     const byOpp={}, pageBySlug={};
     pages.forEach(p=>{ pageBySlug[p.slug]=p; });
+    /* views and opens stay two columns, because collapsing them is what let a page nobody had
+       written to report readers. A page read before the first send is worth knowing about and
+       is not an open. */
     opps.forEach(o=>{ byOpp[o.slug]={ slug:o.slug, biz:o.business||o.slug, live:isLive(o), archived:!!o.archived,
-      sent:0, replies:0, opens:0, uniq:0, dwellMs:0, dwellN:0, last:"" }; });
+      sent:0, replies:0, views:0, opens:0, uniq:0, dwellMs:0, dwellN:0, last:"" }; });
     mail.forEach(m=>{
       const k=m.opp||""; if(!k) return;
-      const r=byOpp[k]||(byOpp[k]={ slug:k, biz:k, live:false, archived:false, sent:0, replies:0, opens:0, uniq:0, dwellMs:0, dwellN:0, last:"" });
+      const r=byOpp[k]||(byOpp[k]={ slug:k, biz:k, live:false, archived:false, sent:0, replies:0, views:0, opens:0, uniq:0, dwellMs:0, dwellN:0, last:"" });
       if(m.status==="sent") r.sent++;
       if(m.direction==="in"||m.status==="replied") r.replies++;
       if(m.ts>r.last) r.last=m.ts;
     });
     Object.keys(byOpp).forEach(k=>{
-      const p=pageBySlug[k], r=byOpp[k]; if(!p) return;
-      r.opens=p.opens; r.uniq=p.vids.size; r.dwellMs=p.dwellMs; r.dwellN=p.dwellN;
+      const r=byOpp[k]; r.opens=outOpens(k);
+      const p=pageBySlug[k]; if(!p) return;
+      r.views=p.opens; r.uniq=p.vids.size; r.dwellMs=p.dwellMs; r.dwellN=p.dwellN;
       if(p.lastTs>r.last) r.last=p.lastTs;
     });
     const rows=Object.values(byOpp)
       .filter(r=>!r.archived)                            // archived opportunities stay out of the active view
       .sort((a,b)=> (b.sent+b.opens+b.replies)-(a.sent+a.opens+a.replies) || String(a.biz).localeCompare(String(b.biz)));
+    /* The story sentence counts opens the same way, so the line above the table and the table
+       can never report two different numbers. */
     const hth=(label,tip)=>'<th>'+label+'<button type="button" class="info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button></th>';
     const num=v=>v?('<b>'+v+'</b>'):'<span class="zero">0</span>';
     el("homeCampaigns").innerHTML = rows.length
       ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
-        '<th>'+t("home_c_opp")+'</th>'+hth(t("cmp_sent_n"),t("tip_c_sent"))+hth(t("ins_opens"),t("tip_opens"))+
+        '<th>'+t("home_c_opp")+'</th>'+hth(t("cmp_sent_n"),t("tip_c_sent"))+
+        hth(t("col_views"),t("tip_views"))+hth(t("ins_opens"),t("tip_opens"))+
         hth(t("ins_unique"),t("tip_unique"))+hth(t("ins_dwell"),t("tip_dwell"))+
         hth(t("cmp_replied_n"),t("tip_replies"))+hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
         rows.map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.biz)+'</a>'+
           (r.live?'':' <span class="tag tag-plain">'+t("draft")+'</span>')+'</td>'+
-          '<td>'+num(r.sent)+'</td><td>'+num(r.opens)+'</td><td>'+num(r.uniq)+'</td>'+
+          '<td>'+num(r.sent)+'</td><td>'+num(r.views)+'</td><td>'+num(r.opens)+'</td><td>'+num(r.uniq)+'</td>'+
           '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):'<span class="zero">–</span>')+'</td>'+
           '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
           '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">–</span>')+'</td></tr>').join("")+
@@ -2373,8 +2509,10 @@ async function initHome(){
       const first=out[0]; if(!first) return;
       const r=byTpl[first.templateId||""]; if(r) r.replies+=th.replied;
     });
+    /* Opens credited to a message are opens that came after it went out. Counting every view of
+       the page instead would credit a template with readers it never earned. */
     Object.values(byTpl).forEach(r=>{
-      r.opps.forEach(slug=>{ const p=pageBySlug[slug]; if(p){ r.opens+=p.opens; r.uniq+=p.vids.size; } });
+      r.opps.forEach(slug=>{ r.opens+=outOpens(slug); const p=pageBySlug[slug]; if(p) r.uniq+=p.vids.size; });
     });
     const tplRows=Object.values(byTpl).sort((a,b)=> b.sent-a.sent || String(a.name).localeCompare(String(b.name)));
     const pct=(a,b)=> b? Math.round(a/b*100)+"%" : "<span class=\"zero\">0%</span>";
@@ -2405,7 +2543,7 @@ async function initHome(){
       if(m.opp) r.opps.add(m.opp);
       if(m.ts>r.last) r.last=m.ts;
     });
-    Object.values(byPerson).forEach(r=>{ r.opps.forEach(slug=>{ const p=pageBySlug[slug]; if(p) r.opens+=p.opens; }); });
+    Object.values(byPerson).forEach(r=>{ r.opps.forEach(slug=>{ r.opens+=outOpens(slug); }); });
     const DAY=86400000;
     const peopleRows=Object.values(byPerson).map(r=>{
       const age=r.last? (Date.now()-new Date(r.last).getTime())/DAY : 0;
@@ -2426,11 +2564,13 @@ async function initHome(){
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_p_empty")+'</div>';
 
-    // ---- most opened pages (only pages that actually have opens; this list IS "top N") ----
+    /* ---- most viewed pages ----
+       Traffic, not outreach: every recorded view, whether or not a message went out first.
+       Only pages that were actually looked at, so this list IS "top N". */
     const opened=pages.filter(p=>p.opens>0);
     el("homeTop").innerHTML = opened.length
       ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
-        '<th>'+t("ins_item")+'</th>'+hth(t("ins_opens"),t("tip_opens"))+hth(t("ins_unique"),t("tip_unique"))+
+        '<th>'+t("ins_item")+'</th>'+hth(t("col_views"),t("tip_views"))+hth(t("ins_unique"),t("tip_unique"))+
         hth(t("ins_dwell"),t("tip_dwell"))+hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
         opened.slice(0,10).map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.slug)+'</a></td>'+
           '<td><b>'+r.opens+'</b></td><td>'+r.vids.size+'</td>'+
@@ -2481,8 +2621,8 @@ async function initHome(){
     setTimeout(checkBeacons, 1500);
   });
   checkBeacons();
-  window.onLangApplied=render;
-  window.onThriveSync=render;                            // live refresh when another device's data arrives
+  onThrive("lang","home",render);
+  onThrive("sync","home",render);
   render();
   // Collected analytics arrive a moment later. Re-render either way: a FAILED fetch is also
   // information (it tells the banner the relay isn't answering) and must not leave a stale
@@ -2563,7 +2703,7 @@ async function initInsights(){
   el("epSave").addEventListener("click",()=>{ setEndpoint(el("epInput").value.trim()); toast(t("ins_saved")); render(); });
   el("insRefresh").addEventListener("click",render);
   el("insClear").addEventListener("click",()=>{ if(!confirm(t("ins_confirm_clear"))) return; try{localStorage.removeItem(HITS);}catch(e){} render(); });
-  window.onLangApplied=render;
+  onThrive("lang","insights",render);
   render();
 }
 
@@ -2590,10 +2730,14 @@ async function initBoard(){
     p.textContent=t("sy_last")+" "+fmtWhen(last); p.className="pill ok";
   }
 
+  /* Two counts, kept apart on purpose. opens is what answered a message you sent; views is
+     every time the page was looked at. A page can be read before anybody was written to, and
+     the board says so rather than promoting it into a lane it did not earn. */
   async function build(){
     const opps=await mergedOpps();
-    const opens={}; opps.forEach(o=>{ opens[o.slug]=opensForSlug(o.slug); });
-    return ThriveBoard.build(opps, { opens:opens, mail:getMailLog() });
+    const opens={}, views={};
+    opps.forEach(o=>{ opens[o.slug]=outreachOpens(o); views[o.slug]=opensForSlug(o.slug); });
+    return ThriveBoard.build(opps, { opens:opens, views:views, mail:getMailLog() });
   }
 
   function tokenHtml(tk){
@@ -2605,7 +2749,10 @@ async function initBoard(){
     // digits inside it are isolated, by .n, never the whole line.
     let meta;
     if(tk.lane==="draft") meta=txt("tok_nopage");
-    else if(tk.lane==="live") meta=txt("tok_noemail");
+    else if(tk.lane==="live") meta = tk.views>0
+      // Read, but by somebody who was never written to. Real information, and not an open.
+      ? txt("tok_views", tk.views).replace(String(tk.views), num(tk.views))
+      : txt("tok_noemail");
     else if(tk.lane==="replied") meta=txt("tok_answered");
     else if(tk.opens>0) meta=txt("tok_opens", tk.opens).replace(String(tk.opens), num(tk.opens));
     else meta=txt("tok_idle", tk.age).replace(String(tk.age), num(tk.age));
@@ -2731,9 +2878,9 @@ async function initBoard(){
     try{ await syncNow(); }catch(e){}
     render();
   });
-  window.onLangApplied=render;
-  window.onThriveSync=render;
-  window.onGateUnlocked=render;
+  onThrive("lang","board",render);
+  onThrive("sync","board",render);
+  onThrive("unlock","board",render);
   await render();
 }
 
@@ -2787,7 +2934,20 @@ function initDrawer(){
   }
   el("drawerClose").addEventListener("click", close);
   scrim.addEventListener("click", close);
-  document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !drawer.hidden) close(); });
+  document.addEventListener("keydown", e=>{
+    if(drawer.hidden) return;
+    if(e.key==="Escape"){ close(); return; }
+    // aria-modal is a promise to assistive technology, and a promise the keyboard has to keep
+    // too: without a trap, Tab walks out of the dialog into a board the reader cannot see.
+    if(e.key!=="Tab") return;
+    const f=drawer.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])');
+    const list=Array.prototype.filter.call(f, el=>el.offsetParent!==null);
+    if(!list.length) return;
+    const first=list[0], last=list[list.length-1];
+    if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+    else if(!drawer.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
+  });
   drawer.querySelectorAll(".drawer-tab").forEach(b=>b.addEventListener("click", ()=>{
     const tab=b.getAttribute("data-tab");
     if(!host(tab)) return;

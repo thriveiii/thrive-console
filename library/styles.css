@@ -219,6 +219,11 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100
 .pl-pill b{color:var(--ink);margin-inline-start:2px}
 .pl-pill:hover{border-color:var(--purple);color:var(--ink)}
 .pl-pill.on{background:rgba(150,133,202,.18);border-color:var(--purple);color:var(--ink)}
+/* The pill and the lane are the same state, so they are the same colour. A reader who learns
+   the board reads the library without learning it twice. */
+.pl-draft b{color:var(--lane-draft)} .pl-live b{color:var(--lane-live)}
+.pl-sent b{color:var(--lane-sent)} .pl-opened b{color:var(--lane-opened)}
+.pl-replied b{color:var(--lane-replied)}
 .pl-won b{color:#7ee0b8} .pl-lost b{color:var(--pink)}
 .pl-fu{border-color:rgba(246,207,91,.4);color:#F6CF5B}
 .pl-fu:hover{background:rgba(246,207,91,.1);border-color:#F6CF5B}
@@ -304,6 +309,21 @@ html[dir="rtl"] .elink-url{text-align:start}
   .nav{width:100%;margin-inline-start:0;gap:4px}
   .nav a{padding:7px 10px;font-size:12.5px}
   .langbtn{padding:7px 10px}
+}
+/* A fourth destination costs width, and the bar is the one thing on screen that must not grow
+   a row on a phone: every row it takes is a row the work does not get. Tighter horizontal
+   padding on the narrowest screens, and nothing else changes. Heights are untouched, so the
+   40px touch floor below still holds. */
+@media(max-width:430px){
+  .nav{gap:3px}
+  .nav a{padding:7px 7px}
+  .langbtn{padding:7px 8px}
+}
+/* The smallest phones still in use. One more notch, so the bar is one row there too. */
+@media(max-width:380px){
+  .nav{gap:2px}
+  .nav a{padding:7px 5px;font-size:12px}
+  .langbtn{padding:7px 6px;font-size:11.5px}
 }
 
 /* RTL */
@@ -639,6 +659,15 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 [dir="rtl"] .tok-name{ font-family:var(--font-ar) }
+/* A business name is a name, not a sentence, and it keeps its own reading order. In an Arabic
+   page "2 Faces" was being reordered into "Faces 2", which is the wrong name. plaintext lets
+   each name set its own direction from its first letter; the explicit alignment keeps every
+   token, card and tray chip lined up on the same edge regardless. */
+[dir="rtl"] .tok-name,
+[dir="rtl"] .card .biz,
+[dir="rtl"] .tray-item,
+[dir="rtl"] .drawer-title,
+[dir="rtl"] .logtable td:first-child{ unicode-bidi:plaintext; text-align:right }
 
 /* The meta line is mixed content: an Arabic phrase around Latin digits. It stays
    in the paragraph direction so the words read correctly, and the digits are
@@ -674,7 +703,9 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 }
 .chip{
   font-size:var(--fs-xs); font-weight:var(--w-head);
-  padding:5px 12px; border-radius:var(--r-pill);
+  /* Each chip is a filter, so it is a control before it is a label and needs to be worth
+     aiming at with a mouse as well as a finger. */
+  padding:7px 13px; min-height:30px; display:inline-flex; align-items:center; border-radius:var(--r-pill);
   border:1px solid var(--hair); background:var(--panel); color:var(--ink-3);
   cursor:pointer;
 }
@@ -774,3 +805,14 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
    heads are sticky, so without this the token would travel underneath them. */
 .tok.is-moving{ position:relative; z-index:3; box-shadow:var(--el-raised); will-change:transform }
 .lane-count{ transition:color var(--t-quick) var(--e-standard) }
+
+/* Touch targets. The three destinations in the bar, the lock, the language switch and the
+   board chips measured 24 to 33px tall, and they are the most-tapped controls in the console.
+   A pointer keeps the tighter density; a finger gets 40. */
+@media (pointer:coarse){
+  .nav a,.langbtn{min-height:40px;display:inline-flex;align-items:center}
+  .chip{min-height:40px;display:inline-flex;align-items:center}
+  .tok{min-height:44px}
+  .drawer-tab,.drawer-close{min-height:40px}
+  .tray-toggle{min-height:40px}
+}

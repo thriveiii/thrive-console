@@ -62,6 +62,85 @@ purpose is unclear is the most expensive way to waste a day.
   open and returns to the token on close. The single pages still work with no drawer at all:
   the layer stays dormant when `#drawer` is absent.
 
+## The audit of the new platform
+
+Run it: `python3 tools/audit-five-layers.py`. It walks the shell the way a person does, at
+390 with a finger, at 1024 and 1440 with a pointer, in both languages. 158 assertions, one per
+layer question. It is kept because a review that cannot be re-run is an opinion.
+
+Four defects it found, all fixed:
+
+**1. Listeners were clobbering each other. (Layer 3, Layer 5)**
+Every view used to own its page, so assigning `window.onThriveSync` was safe. In one shell
+they share one window, and the view that initialised last silently unsubscribed every view
+before it. Opening Activity once stopped the board refreshing on sync, and the board's own
+handler had already displaced the sync round that runs on unlock. This is the defect the shell
+introduced and nothing would have surfaced it except walking between views and then syncing.
+Listeners are registered by key now, so a view replaces only its own and all of them run.
+
+**2. The most-tapped controls were too small to tap. (Layer 4)**
+The three destinations in the bar measured 33px, the lock 31px, the board chips 24px. On a
+phone those are the controls used twenty times a day. A pointer keeps the tighter density; a
+finger now gets 40. The chips gained a real hit area at every width, because a chip here is a
+filter before it is a label.
+
+**3. `aria-modal` was a promise the keyboard did not keep. (Layer 5)**
+The drawer declared itself modal, and a pointer was correctly held out by the scrim, but Tab
+walked straight out of the dialog into a board the reader could not see. Focus is trapped
+inside it now, and still returns to the token on close.
+
+**4. The gate input tracked its Arabic placeholder. (Layer 4)**
+Found by the checklist in phase 6. Letter-spacing on Arabic breaks the joins. Latin only.
+
+---
+
+## The lane truth pass
+
+Found in use, not by the audit, which is the honest way to record it. The live board reported
+one page as Sent and three as Opened. One message had gone out to two of them and none to the
+other two. Every number on the screen was wrong, and the screen looked calm.
+
+**Layer 3, the failure.** Two separate mistakes reinforcing each other.
+
+1. `sent_on` was read as proof of a send. It is not. It is the day the page was made, it is
+   filled in on every record the manifest carries, and it is filled in before anybody has been
+   written to. The board asked "does this record have a date" and called the answer a send.
+2. Any page view promoted a record to Opened. A page can be opened by the person who built it,
+   by a colleague, by a link pasted into a chat. Before a message goes out there is nothing for
+   a prospect to have opened, so an open before the first send is a view and nothing more.
+
+**The rule now, in one place.** `effStage` in `library/app.js` is the only authority, and both
+the opens count and the send evidence can be injected into it, so the board's derivation layer
+reuses the rule instead of holding a copy that drifts.
+
+1. What you declared stands. Replied, won and lost are decisions, not derivations.
+2. With no send, a record is a live page or a draft. It is never "sent".
+3. With a send, it is opened if somebody read it *after* that send, otherwise sent.
+
+Send evidence is the mail ledger, or your own declaration on the record for a message sent
+elsewhere. Nothing else. `sent_on` no longer touches lane assignment anywhere.
+
+**What was gained, not just removed.** A view of an unsent page is real information and it is
+now shown as what it is: the token says "no email yet, 3 views", the library card says
+"Views: 3" beside "Page made", and the campaign table carries views and opens as two columns
+with two tooltips. The Insights page counts opens the same way in all four tables, so the
+sentence at the top and the tables under it can never report different numbers.
+
+**Layer 1, the second failure.** The navigation reduction left Board, Library and Settings.
+Campaign performance, per-message performance and per-person response were still built and
+still correct, and were reachable only from inside another screen, which is indistinguishable
+from deleted. Insights is a destination in the bar again. Four is still a bar you can read.
+
+**Layer 4, one deliberate call.** A lane is 132px wide, so the lane reads "Ready" and the
+pipeline pill reads "Ready to send". Short form and long form of one name, never two names.
+
+**Layer 5.** The send index is invalidated whenever the ledger is written, including by a sync
+round, so a send moves a token immediately rather than up to three seconds later.
+
+The audit now locks all of it: no ledger send means no Sent lane and no Opened lane, an unsent
+page keeps its views, follow-up is never asked for a message that was never sent, and the
+numbers are one tap from the board.
+
 ## Queued, in this order
 
 1. **Compose** (`compose.html`): the densest screen and the one used most under pressure.
@@ -70,8 +149,9 @@ purpose is unclear is the most expensive way to waste a day.
 2. **Library** (`library.html`): layer 1. It currently offers search, sort, two filters and a
    language toggle with equal weight. One primary path, the rest secondary.
 3. **Editor** (`editor.html`): layer 5. What happens when a publish fails halfway.
-4. **Templates** (`templates.html`): layer 2. Show each template's own performance next to it,
-   now that per-template numbers exist.
+4. **Templates** (`templates.html`): layer 2. Show each template's own performance next to it.
+   The numbers exist and are now counted honestly on Insights; this is putting them where the
+   choice between templates is actually made.
 5. **Activity** (`activity.html`): layer 1. It is a log; it should read as a story of the week.
 
 Nothing here is cosmetic-only work. Each entry names the layer that fails today, so the pass
