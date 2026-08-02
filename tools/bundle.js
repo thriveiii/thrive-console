@@ -17,8 +17,8 @@ const read = p => fs.readFileSync(p, "utf8");
 
 /* order matters: it is the reading order of the console itself */
 const VIEWS = [
-  { id: "home",      file: "index.html",     init: "initHome",      key: "nav_home" },
   { id: "board",     file: "board.html",     init: "initBoard",     key: "nav_board" },
+  { id: "home",      file: "index.html",     init: "initHome",      key: "nav_home" },
   { id: "library",   file: "library.html",   init: "initDashboard", key: "nav_library" },
   { id: "editor",    file: "editor.html",    init: "initEditor",    key: "nav_editor" },
   { id: "compose",   file: "compose.html",   init: "initCompose",   key: "nav_compose" },
@@ -63,7 +63,8 @@ const sections = VIEWS.map(v =>
   '<main class="wrap view" id="view-' + v.id + '" hidden>' + rewrite(mainOf(v.file)) + "</main>"
 ).join("\n");
 
-const nav = VIEWS.map(v =>
+const TOPBAR = ["board","library","settings"];
+const nav = VIEWS.filter(v => TOPBAR.indexOf(v.id) >= 0).map(v =>
   '<a href="#' + v.id + '" data-view="' + v.id + '" data-i18n="' + v.key + '"></a>'
 ).join("\n    ");
 
