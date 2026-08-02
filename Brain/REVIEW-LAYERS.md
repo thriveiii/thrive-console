@@ -62,6 +62,36 @@ purpose is unclear is the most expensive way to waste a day.
   open and returns to the token on close. The single pages still work with no drawer at all:
   the layer stays dormant when `#drawer` is absent.
 
+## The audit of the new platform
+
+Run it: `python3 tools/audit-five-layers.py`. It walks the shell the way a person does, at
+390 with a finger, at 1024 and 1440 with a pointer, in both languages. 98 assertions, one per
+layer question. It is kept because a review that cannot be re-run is an opinion.
+
+Four defects it found, all fixed:
+
+**1. Listeners were clobbering each other. (Layer 3, Layer 5)**
+Every view used to own its page, so assigning `window.onThriveSync` was safe. In one shell
+they share one window, and the view that initialised last silently unsubscribed every view
+before it. Opening Activity once stopped the board refreshing on sync, and the board's own
+handler had already displaced the sync round that runs on unlock. This is the defect the shell
+introduced and nothing would have surfaced it except walking between views and then syncing.
+Listeners are registered by key now, so a view replaces only its own and all of them run.
+
+**2. The most-tapped controls were too small to tap. (Layer 4)**
+The three destinations in the bar measured 33px, the lock 31px, the board chips 24px. On a
+phone those are the controls used twenty times a day. A pointer keeps the tighter density; a
+finger now gets 40. The chips gained a real hit area at every width, because a chip here is a
+filter before it is a label.
+
+**3. `aria-modal` was a promise the keyboard did not keep. (Layer 5)**
+The drawer declared itself modal, and a pointer was correctly held out by the scrim, but Tab
+walked straight out of the dialog into a board the reader could not see. Focus is trapped
+inside it now, and still returns to the token on close.
+
+**4. The gate input tracked its Arabic placeholder. (Layer 4)**
+Found by the checklist in phase 6. Letter-spacing on Arabic breaks the joins. Latin only.
+
 ## Queued, in this order
 
 1. **Compose** (`compose.html`): the densest screen and the one used most under pressure.
