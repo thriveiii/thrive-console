@@ -727,3 +727,43 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   padding:7px 13px; cursor:pointer;
 }
 .drawer-tab.on{ color:var(--ink); background:rgba(150,133,202,.16); border-color:var(--purple) }
+
+/* --- drawer ---------------------------------------------------------------
+   The work opens beside you, from the trailing edge, so the board stays where it was and you
+   never lose your place. Only transform and opacity move; the panel travels 16px, because a
+   drawer that slides the width of the screen reads as theatre. Exit is shorter than enter. */
+.drawer-scrim{
+  position:fixed; inset:0; z-index:80; background:var(--scrim);
+  opacity:0; pointer-events:none;
+  transition:opacity var(--t-quick) var(--e-standard);
+}
+.drawer-scrim.on{ opacity:1; pointer-events:auto }
+.drawer{
+  position:fixed; z-index:81; inset-block:0; inset-inline-end:0;
+  /* A full-width drawer on a phone leaves no scrim to tap, so the only way out is a button a
+     thumb cannot always reach. It keeps a strip of the board visible instead: you can see what
+     you came from, and tapping it closes. */
+  width:min(560px,92vw);
+  background:var(--panel); border-inline-start:1px solid var(--hair);
+  box-shadow:var(--el-drawer);
+  display:flex; flex-direction:column;
+  opacity:0; transform:translateX(calc(16px * var(--dir))); pointer-events:none;
+  transition:opacity calc(var(--t-slow) * .7) var(--e-exit),
+             transform calc(var(--t-slow) * .7) var(--e-exit);
+}
+.drawer.on{
+  opacity:1; transform:none; pointer-events:auto;
+  transition:opacity var(--t-slow) var(--e-enter), transform var(--t-slow) var(--e-enter);
+}
+.drawer-body{ flex:1; min-height:0; overflow:auto; opacity:0; transform:translateY(8px) }
+.drawer.on .drawer-body{
+  opacity:1; transform:none;
+  transition:opacity var(--t-base) var(--e-enter) 60ms, transform var(--t-base) var(--e-enter) 60ms;
+}
+/* A view the drawer has adopted stops being a page and becomes panel content. */
+.drawer-body > .view{ max-width:none; margin:0; padding:0 }
+@media (prefers-reduced-motion:reduce){
+  .drawer,.drawer.on,.drawer-scrim,.drawer-body,.drawer.on .drawer-body{
+    transition-property:opacity!important; transform:none!important;
+  }
+}

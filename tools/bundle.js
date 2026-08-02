@@ -1,6 +1,12 @@
 #!/usr/bin/env node
-/* Build the whole console into one downloadable HTML file.
-   Run:  node tools/bundle.js  ->  dist/thrive-console.html
+/* Build the console as one document, twice.
+   Run:  node tools/bundle.js
+     ->  library/console.html      the served shell: same document, assets linked and cached
+     ->  dist/thrive-console.html  the offline copy: everything inlined, opens from a file
+
+   Both are generated from library/*.html, which stay the source of every view. One shell means
+   one editor and one composer in the document, which is what lets the drawer host them by
+   moving the existing nodes instead of duplicating markup.
 
    Every page becomes a section of one document, the nav switches between them without a
    navigation, and each page's init runs the first time its section is shown. Styles, fonts,
@@ -62,6 +68,27 @@ function rewrite(html) {
 const sections = VIEWS.map(v =>
   '<main class="wrap view" id="view-' + v.id + '" hidden>' + rewrite(mainOf(v.file)) + "</main>"
 ).join("\n");
+const sectionsLinked = VIEWS.map(v =>
+  '<main class="wrap view" id="view-' + v.id + '" hidden>' +
+  rewrite(mainOf(v.file)).split(logo).join("../assets/thrive-logo.png") + "</main>"
+).join("\n");
+
+/* The drawer host lives outside every view, because it opens from more than one of them and a
+   fixed element inside a [hidden] view is a bug waiting to happen. PR 4 moves the existing
+   editor and composer nodes into it, so the document holds exactly one of each. */
+const DRAWER = `
+<div class="drawer-scrim" id="drawerScrim" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" hidden>
+  <header class="drawer-head">
+    <span class="drawer-title" id="drawerTitle"></span>
+    <button class="drawer-close" id="drawerClose" data-i18n="dw_close">Close</button>
+  </header>
+  <nav class="drawer-tabs" id="drawerTabs">
+    <button class="drawer-tab on" data-tab="compose" data-i18n="dw_compose">Write email</button>
+    <button class="drawer-tab" data-tab="edit" data-i18n="dw_edit">Edit page</button>
+  </nav>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>`;
 
 const TOPBAR = ["board","library","settings"];
 const nav = VIEWS.filter(v => TOPBAR.indexOf(v.id) >= 0).map(v =>
@@ -70,6 +97,20 @@ const nav = VIEWS.filter(v => TOPBAR.indexOf(v.id) >= 0).map(v =>
 
 const GATE_HASH = "0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8";
 
+function build(inline){
+const head = inline
+  ? '<style>\n' + css + '\n.view[hidden]{display:none!important}\n</style>'
+  : '<link rel="stylesheet" href="fonts.css">\n<link rel="stylesheet" href="styles.css">' +
+    '\n<style>.view[hidden]{display:none!important}</style>';
+const body = inline
+  ? '<script>window.THRIVE_SYNC_JSON = ' + JSON.stringify(published) + ';</script>' +
+    '\n<script>\n' + i18n + '\n</script>\n<script>\n' + gate + '\n</script>' +
+    '\n<script>\n' + model + '\n</script>\n<script>\n' + app + '\n</script>'
+  : '<script src="i18n.js"></script>\n<script src="gate.js"></script>' +
+    '\n<script src="stage-model.js"></script>\n<script src="app.js"></script>';
+const icon = inline ? logo : "../assets/thrive-logo.png";
+const mark = inline ? logo : "../assets/thrive-logo.png";
+const sections2 = inline ? sections : sectionsLinked;
 const out = `<!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
@@ -77,7 +118,7 @@ const out = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>Thrive Console</title>
-<link rel="icon" href="${logo}">
+<link rel="icon" href="${icon}">
 <script>(function(){var d=document.documentElement;function lock(){d.classList.add('gate-locked')}
 try{if(sessionStorage.getItem('thrive_gate_v2')!=='${GATE_HASH}')lock()}catch(e){lock()}
 setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;
@@ -86,16 +127,12 @@ var p=document.createElement('p');p.className='bootfail';
 p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل الصفحة، وتحقق من الاتصال إن تكرر الأمر.'
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
-<style>
-${css}
-/* the single-file build stacks every page as a hidden view and shows one at a time */
-.view[hidden]{display:none!important}
-</style>
+${head}
 </head>
 <body>
 <noscript><p class="bootfail">This console needs JavaScript to run. <span dir="rtl">يحتاج هذا الكونسول إلى تفعيل JavaScript.</span></p></noscript>
 <header class="top">
-  <a class="brand" href="#home"><img src="${logo}" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <a class="brand" href="#board"><img src="${mark}" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
   <nav class="nav">
     ${nav}
     <button id="langbtn" class="langbtn">العربية</button>
@@ -103,21 +140,10 @@ ${css}
   </nav>
 </header>
 
-${sections}
+${sections2}
+${DRAWER}
 
-<script>window.THRIVE_SYNC_JSON = ${JSON.stringify(published)};</script>
-<script>
-${i18n}
-</script>
-<script>
-${gate}
-</script>
-<script>
-${model}
-</script>
-<script>
-${app}
-</script>
+${body}
 <script>
 /* One document, seven views. Each init runs once, the first time its view is shown, which is
    exactly what the served console does per page load. */
@@ -127,9 +153,12 @@ ${app}
   function show(id){
     var found = VIEWS.some(function(v){ return v.id === id; });
     if(!found) id = VIEWS[0].id;
+    var host = document.getElementById("drawerBody");
     VIEWS.forEach(function(v){
       var el = document.getElementById("view-" + v.id);
-      if(el) el.hidden = (v.id !== id);
+      if(!el) return;
+      if(host && el.parentNode === host) return;   // the drawer owns this one right now
+      el.hidden = (v.id !== id);
     });
     document.querySelectorAll(".nav a[data-view]").forEach(function(a){
       a.classList.toggle("active", a.getAttribute("data-view") === id);
@@ -145,6 +174,7 @@ ${app}
   window.addEventListener("hashchange", function(){ show(current()); });
   document.addEventListener("DOMContentLoaded", function(){
     initLang();
+    if(typeof initDrawer === "function") initDrawer();
     show(current());
     // A fresh unlock lands on the first view with its data already pulled.
     var prev = window.onGateUnlocked;
@@ -155,8 +185,15 @@ ${app}
 </body>
 </html>
 `;
+return out;
+}
 
-fs.mkdirSync(path.join(ROOT, "dist"), { recursive: true });
-const dest = path.join(ROOT, "dist/thrive-console.html");
-fs.writeFileSync(dest, out);
-console.log("wrote " + path.relative(ROOT, dest) + "  (" + Math.round(out.length / 1024) + " KB)");
+function emit(file, inline){
+  const html = build(inline);
+  const dest = path.join(ROOT, file);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, html);
+  console.log("wrote " + file + "  (" + Math.round(html.length / 1024) + " KB)");
+}
+emit("library/console.html", false);
+emit("dist/thrive-console.html", true);

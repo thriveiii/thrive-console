@@ -157,7 +157,9 @@
   function decorate(o, lane, ctx){
     return {
       slug: o.slug,
-      biz: o.biz || o.slug,
+      /* The package documents this field as biz. The shipped console writes business, and
+         the live file wins: read both, fall back to the slug. */
+      biz: o.business || o.biz || o.slug,
       lane: lane,
       stage: hostEffStage(o, ctx),
       opens: hostOpens(o.slug, ctx),
