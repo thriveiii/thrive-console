@@ -161,10 +161,19 @@ function debounce(fn, ms){ let h; return function(){ const a=arguments, c=this; 
 
 /* ---------- pipeline stages (mini CRM) ---------- */
 const STAGES=["sent","opened","replied","won","lost"];
-function daysSince(d){ if(!d) return 0; const ms=Date.parse(d+"T00:00:00Z"); if(isNaN(ms)) return 0; return Math.floor((Date.now()-ms)/86400000); }
+/* Accepts a plain date (2026-07-01) and a full timestamp alike. It used to append a time to
+   whatever it was given, so any ISO timestamp parsed as NaN and silently aged nothing: a
+   ledger entry could be a month old and still read as today. */
+function daysSince(d){ if(!d) return 0;
+  const str=String(d); const ms=Date.parse(str.length===10? str+"T00:00:00Z" : str);
+  if(isNaN(ms)) return 0; return Math.floor((Date.now()-ms)/86400000); }
 /* shared opportunity predicates (used by the library grid and the Overview dashboard) */
 function isLive(o){ return !o._local || !!o.published; }
-function effStage(o){ const op=opensForSlug(o.slug); if((!o.stage||o.stage==="sent")&&op>0) return "opened"; return o.stage||"sent"; }
+/* The promotion rule lives here and only here. The opens count can be injected so a caller
+   with its own map (the board derivation layer, a test) reuses this rule instead of copying
+   it. A second implementation of this line is how a board and a library start disagreeing. */
+function effStage(o, opensOverride){ const op=(opensOverride===undefined)?opensForSlug(o.slug):(opensOverride||0);
+  if((!o.stage||o.stage==="sent")&&op>0) return "opened"; return o.stage||"sent"; }
 function needsFollowup(o){ return isLive(o) && !o.archived && effStage(o)==="sent" && opensForSlug(o.slug)===0 && daysSince(o.sent_on)>=3; }
 
 /* ---------- opportunity HTML (regenerated on demand, not stored, to save space) ---------- */
