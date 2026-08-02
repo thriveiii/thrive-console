@@ -197,6 +197,34 @@ with sync_playwright() as p:
            o.forEach(x=>{op[x.slug]=outreachOpens(x);vw[x.slug]=opensForSlug(x.slug);});
            return JSON.stringify(ThriveBoard.build(o,{opens:op,views:vw,mail:getMailLog()}).summary.counts);}"""))
 
+    # ---------------------------------------------------------------- 9. a full store
+    # The relay refuses a state over 400,000 bytes outright, and a refused push is not a
+    # smaller mirror, it is no mirror. A console that has outgrown the store must shed in a
+    # fixed order and never shed the evidence.
+    A.evaluate("""()=>{
+      const log=[]; for(let i=0;i<700;i++) log.push({ts:new Date(Date.now()-i*60000).toISOString(),
+        action:'stage', slug:'filler-'+i, detail:'x'.repeat(300)});
+      setActivity(log);
+      const mail=getMailLog();
+      for(let i=0;i<300;i++) mail.push({mid:'big'+i, ts:new Date(Date.now()-i*60000).toISOString(),
+        opp:'mirror-one', to:'p'+i+'@x.example', subject:'s', status:'sent', direction:'out',
+        preview:'y'.repeat(400)});
+      setMailLog(mail);
+      saveCustomTemplate({id:'huge-page', name:'Huge', lang:'EN', html:'<p>'+'z'.repeat(120000)+'</p>'});
+    }""")
+    z = A.evaluate("()=>{ const s=syncSnapshot(); return {bytes:JSON.stringify(s).length, info:syncSize(),"
+                   "  mail:(s.mail||[]).length, opps:(s.opps||[]).length, tombs:Object.keys(s.tombs||{}).length}; }")
+    print("full store:", z)
+    ck("the snapshot stays under the relay's hard cap", z["bytes"] < 400000, z)
+    ck("and it says what it shed", bool(z["info"]["shed"]), z["info"])
+    ck("the mail ledger is never shed", z["mail"] >= 300, z["mail"])
+    ck("the opportunities are never shed", z["opps"] >= 1, z["opps"])
+    ck("the removals are never shed", z["tombs"] >= 1, z["tombs"])
+    sync(A)
+    sync(C)
+    ck("and a device still receives the ledger through a full store",
+       C.evaluate("()=>getMailLog().length") >= 300, C.evaluate("()=>getMailLog().length"))
+
     ck("nothing threw on any device", not (ea + eb + ec), (ea + eb + ec)[:4])
     b.close()
 httpd.shutdown()
