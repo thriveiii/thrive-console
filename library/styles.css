@@ -22,7 +22,13 @@
   --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:20px; --s-6:26px; --s-7:34px; --s-8:48px;
   /* ---- type ---- */
   --font:"Lato","Segoe UI",Roboto,-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,"Alyamama","Noto Sans Arabic",sans-serif;
-  --font-ar:"Alyamama","Noto Sans Arabic","Segoe UI",Tahoma,sans-serif;
+  /* Lato comes first and Alyamama second on purpose. A font stack is resolved per character,
+     not per element, so Latin letters find Lato and Arabic letters fall through to Alyamama.
+     With Alyamama first, every Latin word inside an Arabic screen was drawn in Alyamama's own
+     Latin, which is a serif: business names on the board, on their cards and in every table
+     came out in a different typeface from the rest of the console. One Latin face and one
+     Arabic face, everywhere, in both directions. */
+  --font-ar:"Lato","Alyamama","Noto Sans Arabic","Segoe UI",Tahoma,sans-serif;
   --fs-micro:10.5px; --fs-xs:11.5px; --fs-sm:12.5px; --fs-base:13.5px;
   --fs-md:15px; --fs-lg:17px; --fs-xl:22px; --fs-2xl:30px;
   --lh-tight:1.25; --lh-base:1.55; --lh-read:1.85;
@@ -66,6 +72,10 @@ img{max-width:100%;height:auto;border:0}
 .nav a{padding:8px 13px;border-radius:9px;font-size:13px;font-weight:700;color:var(--ink-3);text-decoration:none;transition:.2s}
 .nav a:hover{color:var(--ink);background:var(--hair-2)}
 .nav a.active{color:var(--ink);background:rgba(150,133,202,.16)}
+/* One height for everything in the bar. Arabic sets a taller line box than Latin, so the
+   language switch stood 36px tall next to a 33px lock: two identical controls, different
+   sizes, decided by which script happened to be inside them. */
+.nav a,.langbtn{min-height:36px;display:inline-flex;align-items:center;justify-content:center}
 .langbtn{padding:8px 12px;border-radius:9px;border:1px solid var(--hair);background:transparent;color:var(--ink-2);font-weight:800;font-size:12px;cursor:pointer;font-family:inherit}
 .langbtn:hover{border-color:var(--purple)}
 
@@ -137,6 +147,12 @@ select{cursor:pointer}
 .tpl{display:grid;grid-template-columns:1fr;gap:16px}
 .tpl .item{display:grid;grid-template-columns:220px 1fr;gap:18px;background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:16px}
 @media(max-width:640px){.tpl .item{grid-template-columns:1fr}}
+/* A message template has no page to show a picture of, so it must not be squeezed into the
+   column that was reserved for one. */
+.tpl .item.no-thumb{grid-template-columns:1fr}
+/* Subject and preview are quoted content: an Arabic message inside an English console, or the
+   reverse, keeps its own reading order. */
+.tpl .meta-line{unicode-bidi:plaintext}
 .tpl .thumb{border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:#0a0a0c;aspect-ratio:16/11}
 .tpl .thumb iframe{width:250%;height:250%;transform:scale(.4);transform-origin:top left;border:0;pointer-events:none}
 .tpl h3{margin:0 0 4px;font-size:18px;color:var(--ink);font-weight:800}
@@ -235,6 +251,13 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100
 .etpl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--hair-2)}
 .etpl-label{font-size:12.5px;font-weight:800;color:var(--ink-2)}
 .etpl-bar select{max-width:240px}
+/* One tap to a starting message, offered only while the message is still empty. */
+.etpl-quick{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 16px}
+.etpl-quick-h{font-size:12px;font-weight:800;color:var(--ink-3)}
+.etpl-quick .lp{font-size:12px;font-weight:700;padding:7px 12px;border-radius:999px;border:1px solid var(--hair);background:transparent;color:var(--ink-2);cursor:pointer;font-family:inherit;transition:border-color .15s,color .15s}
+.etpl-quick .lp:hover{border-color:var(--purple);color:var(--ink)}
+/* Two kinds of template, and the tabs that keep them apart. */
+.tpl-tabs{max-width:520px;margin:0 0 18px}
 .tile-sub{font-size:13px;font-weight:600;color:var(--ink-3)}
 .tag-cat-emails{background:rgba(150,133,202,.16);color:#cbb8ff}
 .tag-cat-pages{background:rgba(113,191,204,.14);color:#8fd3de}

@@ -50,6 +50,37 @@ function logActivity(action, slug, detail){
 }
 window.logActivity = logActivity;
 
+/* ---------- one way to move around ----------
+   The console is one document in the shell and a set of documents on its own pages, and a link
+   has to mean the same thing in both. It did not.
+
+   Links written inside app.js said `compose.html?slug=x`, which inside the shell walked the
+   reader out of the application into a second document. Links written in the pages were
+   rewritten by the build into `#compose?slug=x`, and every reader of a parameter was asking
+   `location.search`, where nothing had been put. Two navigation models in one product, and the
+   parameters fell down the gap between them: "use this template", "compose with this", the
+   Email and Edit buttons on every library card, and both board chips all opened an empty
+   screen or left the shell.
+
+   So: every internal destination is built here, and every parameter is read here. */
+function inShell(){ return !!document.getElementById("view-board"); }
+function viewHref(view, query){
+  const q = query ? ("?" + query) : "";
+  if(inShell()) return "#" + view + q;
+  return (view === "home" ? "index.html" : view + ".html") + q;
+}
+function goTo(view, query){
+  if(inShell()) location.hash = viewHref(view, query);
+  else location.href = viewHref(view, query);
+}
+/* In the shell a parameter rides after the hash; on a single page it rides in the query
+   string. One reader, so neither caller has to know which document it is living in. */
+function viewParams(){
+  const h = location.hash || "", i = h.indexOf("?");
+  if(i >= 0) return new URLSearchParams(h.slice(i + 1));
+  return new URLSearchParams(location.search);
+}
+
 /* ---------- custom templates (local registry) ---------- */
 const TPLSTORE = "thrive_templates_v1";
 function getCustomTemplates(){ try{ return JSON.parse(localStorage.getItem(TPLSTORE)||"[]"); }catch(e){ return []; } }
@@ -835,8 +866,8 @@ async function initDashboard(){
         </div>
         <div class="actions actions-wrap">
           ${!live?`<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>`:""}
-          ${live?`<a class="btn ghost sm" href="compose.html?slug=${enc}">${t("email_btn")}</a><button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:""}
-          <a class="btn ghost sm" href="editor.html?slug=${enc}">${t("edit")}</a>
+          ${live?`<a class="btn ghost sm" href="${viewHref("compose","slug="+enc)}">${t("email_btn")}</a><button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:""}
+          <a class="btn ghost sm" href="${viewHref("editor","slug="+enc)}">${t("edit")}</a>
           <button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>
           ${live?`<button class="btn ghost sm danger" data-unpub="${esc(o.slug)}">${t("unpublish")}</button>`:""}
           ${(o._local&&!o.published)?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:""}
@@ -857,7 +888,7 @@ async function initDashboard(){
     }));
     grid.querySelectorAll("[data-unpub]").forEach(b=>b.addEventListener("click", async ()=>{
       const slug=b.getAttribute("data-unpub"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
-      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
+      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
       if(!confirm(t("confirm_unpublish"))) return;
       b.disabled=true; b.textContent=t("publishing");
       try{
@@ -880,7 +911,7 @@ async function initDashboard(){
     }));
     grid.querySelectorAll("[data-pub]").forEach(b=>b.addEventListener("click", async ()=>{
       const slug=b.getAttribute("data-pub"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
-      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
+      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
       b.disabled=true; b.textContent=t("publishing");
       try{
         const html=await renderOppHtml(o);
@@ -944,7 +975,7 @@ async function initEditor(slugArg){
   const existing = await allSlugs();
   // The slug currently being edited (null for a brand-new opp). Advances on first save so an
   // opp never collides with itself, and lets save/publish block collisions with OTHER opps.
-  let editingSlug = new URLSearchParams(location.search).get("slug");
+  let editingSlug = viewParams().get("slug");
 
   // add custom templates to the picker, then honor ?t=
   const tsel=el("f_template");
@@ -961,7 +992,7 @@ async function initEditor(slugArg){
     if([...tsel.options].some(o=>o.value===ct.id)) return;
     const o=document.createElement("option"); o.value=ct.id; o.textContent=ct.id+" · "+(ct.name||ct.id)+" ("+t("tpl_badge_custom")+")"; tsel.appendChild(o);
   });
-  const tParam=new URLSearchParams(location.search).get("t");
+  const tParam=viewParams().get("t");
   if(tParam && [...tsel.options].some(o=>o.value===tParam)) tsel.value=tParam;
 
   function values(){
@@ -1074,7 +1105,7 @@ async function initEditor(slugArg){
     if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
     if(missingRequired().length){ toast(t("need_fields")); return; }
     if(collides()){ toast(t("slug_taken")); return; }   // never overwrite another opp's live page
-    if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
+    if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
     const rec=await fullRecord();
     const pubRec=Object.assign({}, rec, { html: await currentHTML() });
     pubBtn.disabled=true; const old=pubBtn.textContent; pubBtn.textContent=t("publishing");
@@ -1096,7 +1127,7 @@ async function initEditor(slugArg){
   });
 
   // prefill from ?slug= (edit any existing opp) or default date today
-  const params=new URLSearchParams(location.search);
+  const params=viewParams();
   el("f_sent").value = new Date().toISOString().slice(0,10);
   const editSlug=(slugArg!==undefined&&slugArg!==null&&slugArg!=="")?slugArg:params.get("slug");
   if(editSlug){
@@ -1323,20 +1354,46 @@ const ETPL_MONTHLY = { id:"monthly", name:"Monthly update", subject:"{{MONTH}} a
    around English text. Greeting is «مرحبًا فلان،», not "Hi …". */
 const ETPL_MONTHLY_AR = { id:"monthly-ar", name:"التحديث الشهري", subject:"{{MONTH}} في ثرايف",
   html:'مرحبًا {{NAME}}،<br><br>مع نهاية الشهر، هذا هو {{MONTH}} في ثرايف. نحن نختار العمل الذي نفخر به. إن كان ذلك يناسبك، تكفي كلمة.<br><br>إلى الشهر القادم!<br><br>عبدالله ذياب<br>thriveiii.com' };
+/* The two that matter on the day you publish a page: the message that sends it, and the one
+   that follows up when nothing came back. Both carry the link inside real words rather than
+   as a bare URL, and neither states anything about the recipient: every fact in them is a
+   merge field or something you type. They are a starting point, and you edit them. */
+const ETPL_OPP = { id:"opp-intro", name:"Send an opportunity page", subject:"{{BIZ}} x Thrive",
+  html:'Hi {{NAME}},<br><br>I put together <a href="{{LINK}}">a short page for {{BIZ}}</a>. One screen, no form to fill in. It says what I noticed and what I would do about it.<br><br>If it is worth a conversation, just reply. If not, no reply needed.<br><br>Abdullah Thyab<br>thriveiii.com' };
+const ETPL_OPP_AR = { id:"opp-intro-ar", name:"إرسال صفحة فرصة", subject:"{{BIZ}} مع ثرايف",
+  html:'مرحبًا {{NAME}}،<br><br>أعددت <a href="{{LINK}}">صفحة قصيرة لـ {{BIZ}}</a>. شاشة واحدة، بلا نموذج تملؤه. فيها ما لاحظته وما أقترح فعله.<br><br>إن كانت تستحق حديثًا، يكفي أن تردّ. وإن لم تكن، فلا حاجة للرد.<br><br>عبدالله ذياب<br>thriveiii.com' };
+const ETPL_NUDGE = { id:"opp-nudge", name:"Follow up once", subject:"Re: {{BIZ}} x Thrive",
+  html:'Hi {{NAME}},<br><br>Bringing <a href="{{LINK}}">the page for {{BIZ}}</a> back to the top of your inbox, in case it arrived on a busy day.<br><br>If the timing is wrong, tell me and I will leave it there.<br><br>Abdullah Thyab<br>thriveiii.com' };
+const ETPL_NUDGE_AR = { id:"opp-nudge-ar", name:"متابعة واحدة", subject:"إعادة: {{BIZ}} مع ثرايف",
+  html:'مرحبًا {{NAME}}،<br><br>أعيد <a href="{{LINK}}">صفحة {{BIZ}}</a> إلى أعلى بريدك، فربما وصلت في يوم مزدحم.<br><br>وإن كان التوقيت غير مناسب، أخبرني وأتركها عند هذا الحد.<br><br>عبدالله ذياب<br>thriveiii.com' };
+
+/* Which stock templates this console has already been offered. Without it, deleting one
+   brought it back on the next load, which is a console overruling a decision you made. */
+const ETPL_SEED = "thrive_etpl_seed_v1";
+const ETPL_STOCK = [ETPL_OPP, ETPL_OPP_AR, ETPL_NUDGE, ETPL_NUDGE_AR, ETPL_MONTHLY, ETPL_MONTHLY_AR];
+function etplSeeded(){ try{ return JSON.parse(localStorage.getItem(ETPL_SEED)||"[]"); }catch(e){ return []; } }
 function getEmailTemplates(){
   let a; try{ a=JSON.parse(localStorage.getItem(ETPL)||"null"); }catch(e){ a=null; }
-  if(!a) a=[Object.assign({},ETPL_MONTHLY), Object.assign({},ETPL_MONTHLY_AR)];
+  const fresh = !a;
+  if(!a) a=[];
   else{
     // migrate the two OLD stock defaults (hard-wired month / auto-embedded link) to the new one
     const i=a.findIndex(x=>x.id==="monthly");
     if(i>=0 && /<a href="\{\{LINK\}\}">(this month|July) at Thrive<\/a>/.test(a[i].html||"")){
       a[i]=Object.assign({},ETPL_MONTHLY); try{ localStorage.setItem(ETPL, JSON.stringify(a)); }catch(e){}
     }
-    // add the Arabic stock template once, for consoles created before it existed
-    if(!a.some(x=>x.id==="monthly-ar")){
-      a=a.concat([Object.assign({},ETPL_MONTHLY_AR)]);
-      try{ localStorage.setItem(ETPL, JSON.stringify(a)); }catch(e){}
-    }
+  }
+  // Offer each stock template exactly once, ever. A console that already has it keeps its own
+  // edits; a console where you deleted it does not get it back.
+  const seen=etplSeeded(), add=[], seedNow=seen.slice();
+  ETPL_STOCK.forEach(tp=>{
+    const known = a.some(x=>x.id===tp.id) || (!fresh && seen.indexOf(tp.id)>=0);
+    if(!known){ add.push(Object.assign({},tp)); }
+    if(seedNow.indexOf(tp.id)<0) seedNow.push(tp.id);
+  });
+  if(add.length || seedNow.length!==seen.length){
+    a=a.concat(add);
+    try{ localStorage.setItem(ETPL, JSON.stringify(a)); localStorage.setItem(ETPL_SEED, JSON.stringify(seedNow)); }catch(e){}
   }
   return a;
 }
@@ -1413,7 +1470,7 @@ function getThreads(){
 async function initCompose(slugArg){
   const el=id=>document.getElementById(id);
   const body=el("ebody");
-  const params=new URLSearchParams(location.search);
+  const params=viewParams();
   const slug=(slugArg!==undefined&&slugArg!==null&&slugArg!=="")?slugArg:params.get("slug");
   const oppUrl = slug ? liveUrl(slug) : "";
 
@@ -1432,11 +1489,17 @@ async function initCompose(slugArg){
         linksBox=el("elinks"), presetsBox=el("elinkpresets");
   let savedRange=null, editingAnchor=null;
   // Keep the last real selection inside the editor alive across taps into the URL field.
-  document.addEventListener("selectionchange",()=>{
+  // Registered on the document, so the previous one is removed first: the composer can be
+  // opened again with a different opportunity, and one document must not collect a watcher
+  // per opening.
+  const onSel=()=>{
     const s=window.getSelection(); if(!s.rangeCount) return;
     const r=s.getRangeAt(0);
     if(body.contains(r.commonAncestorContainer) && !r.collapsed) savedRange=r.cloneRange();
-  });
+  };
+  if(window.__thriveSelWatch) document.removeEventListener("selectionchange", window.__thriveSelWatch);
+  window.__thriveSelWatch=onSel;
+  document.addEventListener("selectionchange", onSel);
   // Accept bare domains, emails, and phone numbers, turning them into valid hrefs.
   function normalizeUrl(u){
     u=(u||"").trim(); if(!u) return "";
@@ -1658,7 +1721,34 @@ async function initCompose(slugArg){
     tplSel.addEventListener("change",()=>{
       if(tplSel.value===""){ clearCompose(); }        // plain: back to an empty editor
       else applyTemplate(currentTpl());
+      quick();
     });
+  }
+  /* The editor still opens blank, and still only a person decides what it says. What changed is
+     that the choice is one tap instead of a drop-down you have to know is there: after you
+     publish a page, the message that sends it should not start from nothing. Offered while the
+     message is empty, gone the moment there is something to lose. */
+  const quickBox=el("etplQuick");
+  function quick(){
+    if(!quickBox) return;
+    const empty = !(body.textContent||"").trim() && !(el("esubject").value||"").trim();
+    if(!empty || !tplCache.length){ quickBox.hidden=true; quickBox.innerHTML=""; return; }
+    const ar=getLang()==="ar";
+    const score=tp=>{
+      const isAr=/[؀-ۿ]/.test((tp.subject||"")+(tp.html||""));
+      let n = (isAr===ar) ? 0 : 4;                       // your language first
+      if(/\{\{LINK\}\}/.test(tp.html||"") && slug) n-=2;  // then the ones that carry this page
+      return n;
+    };
+    const list=tplCache.slice().sort((a,b)=>score(a)-score(b)).slice(0,4);
+    quickBox.hidden=false;
+    quickBox.innerHTML='<span class="etpl-quick-h">'+esc(t("cmp_quick_h"))+'</span>'+
+      list.map(tp=>'<button type="button" class="lp" data-quick="'+esc(tp.id)+'">'+esc(tp.name||tp.id)+'</button>').join("");
+    quickBox.querySelectorAll("[data-quick]").forEach(b=>b.addEventListener("click",()=>{
+      tplSel.value=b.getAttribute("data-quick");
+      applyTemplate(currentTpl());
+      quick();
+    }));
   }
   el("esubject").addEventListener("input",()=>{ subjectDirty=true; });
   if(nameEl) nameEl.addEventListener("input",syncMerge);
@@ -1666,6 +1756,8 @@ async function initCompose(slugArg){
   if(monthEl) monthEl.addEventListener("input",syncMerge);
   applyTemplate(currentTpl());
   refreshLinks();
+  quick();
+  onThrive("lang","compose-quick",quick);
   // Outgoing HTML: unwrap the merge spans so the sent email is clean markup.
   function htmlOut(){
     const c=body.cloneNode(true);
@@ -1755,7 +1847,7 @@ async function initCompose(slugArg){
     const to=el("eto").value.trim();
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
     const ep=getEmailEndpoint();
-    if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>location.href="settings.html",1100); return; }
+    if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>goTo("settings"),1100); return; }
     // Resend free-tier guard: block before we would exceed the daily/monthly cap.
     const q=quotaUsage();
     if(q.dayFull){ toast(t("cmp_quota_day_hit")+(q.freeInMs>0?" "+t("cmp_quota_resets")+" "+fmtDur(q.freeInMs):"")); return; }
@@ -2151,7 +2243,7 @@ function initTemplates(){
           <span class="badge sent">${t("status_approved")}</span>
           <p>${l==="ar"?esc(tp.desc_ar):esc(tp.desc_en)}</p>
           <div class="actions">
-            <a class="btn sm" href="editor.html?t=${encodeURIComponent(tp.id)}">${t("use_template")}</a>
+            <a class="btn sm" href="${viewHref("editor","t="+encodeURIComponent(tp.id))}">${t("use_template")}</a>
             <a class="btn ghost sm" href="../templates/${encodeURIComponent(tp.id)}/template.html" download="${esc(tp.id)}.html">${t("dl_template")}</a>
             <a class="btn ghost sm" href="${esc(tp.example)}" target="_blank" rel="noopener">${t("open_page")}</a>
           </div>
@@ -2170,7 +2262,7 @@ function initTemplates(){
           <span class="badge edit">${t("tpl_badge_custom")}</span>
           <p class="meta-line">${t("act_upload")}: ${esc((ct.created||"").slice(0,10))||t("none")} · ${Math.round((ct.html||"").length/1024)} KB</p>
           <div class="actions">
-            <a class="btn sm" href="editor.html?t=${encodeURIComponent(ct.id)}">${t("use_template")}</a>
+            <a class="btn sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("use_template")}</a>
             <button class="btn ghost sm" data-dl="${esc(ct.id)}">${t("dl_template")}</button>
             ${ghReady()?`<button class="btn ghost sm" data-pubtpl="${esc(ct.id)}">${t("tpl_publish")}</button>`:""}
             <button class="btn ghost sm danger" data-del="${esc(ct.id)}">${t("tpl_delete")}</button>
@@ -2264,8 +2356,12 @@ function initTemplates(){
   });
   // Plain-text preview of a template body (tags stripped) so the card shows what it actually says.
   function etPreview(html){
-    const d=document.createElement("div"); d.innerHTML=String(html||"");
-    return (d.textContent||"").replace(/\s+/g," ").trim().slice(0,180);
+    // A line break is a space once the tags are gone, otherwise the preview reads
+    // "Hi {{NAME}},I put together", which is not what the message says.
+    const d=document.createElement("div");
+    d.innerHTML=String(html||"").replace(/<br\s*\/?>|<\/(p|div|li|h[1-6])>/gi," ");
+    const txt=(d.textContent||"").replace(/\s+/g," ").trim();
+    return txt.length>180 ? txt.slice(0,179).replace(/\s+\S*$/,"")+"\u2026" : txt;
   }
   function renderEmailTpls(){
     const wrap=el("emailTplList"); if(!wrap) return;
@@ -2274,9 +2370,9 @@ function initTemplates(){
     wrap.innerHTML = list.map(et=>{
       const usesMonth=tplUsesMonth(et);
       return `
-      <div class="item">
+      <div class="item no-thumb">
         <div class="item-body">
-          <div class="id">EMAIL · ${esc(et.id)}</div>
+          <div class="id">${t("tpl_kind_mail")} · ${esc(et.id)}</div>
           <h3>${esc(et.name||et.id)}</h3>
           <div class="meta">
             ${et.id==="monthly"?`<span class="chip">${t("et_default")}</span>`:""}
@@ -2286,7 +2382,7 @@ function initTemplates(){
           <p class="meta-line"><b>${esc(et.subject||"–")}</b></p>
           <p class="meta-line">${esc(etPreview(et.html))}</p>
           <div class="actions">
-            <a class="btn sm" href="compose.html?etpl=${encodeURIComponent(et.id)}">${t("cmp_compose_with")}</a>
+            <a class="btn sm" href="${viewHref("compose","etpl="+encodeURIComponent(et.id))}">${t("cmp_compose_with")}</a>
             <button class="btn ghost sm" data-etedit="${esc(et.id)}">${t("cmp_link_edit")}</button>
             <button class="btn ghost sm" data-etdup="${esc(et.id)}">${t("et_duplicate")}</button>
             <button class="btn ghost sm danger" data-etdel="${esc(et.id)}">${t("tpl_delete")}</button>
@@ -2309,6 +2405,27 @@ function initTemplates(){
       renderEmailTpls();
     }));
   }
+  /* Two kinds of template, two tabs, and the address bar remembers which one you were on so
+     "Manage" from the composer lands on messages rather than on page layouts. */
+  const tabs=el("tplTabs");
+  function showTab(which){
+    if(!tabs) return;
+    which = (which==="mail") ? "mail" : "page";
+    tabs.querySelectorAll("[data-tpltab]").forEach(b=>{
+      const on = b.getAttribute("data-tpltab")===which;
+      b.classList.toggle("on", on); b.setAttribute("aria-selected", on?"true":"false");
+    });
+    document.querySelectorAll("[data-tplpane]").forEach(p=>{
+      p.hidden = p.getAttribute("data-tplpane")!==which;
+    });
+  }
+  if(tabs) tabs.querySelectorAll("[data-tpltab]").forEach(b=>b.addEventListener("click",()=>{
+    showTab(b.getAttribute("data-tpltab"));
+  }));
+  // #email was the anchor the composer's Manage link used; keep it working as a tab request.
+  const wantMail = viewParams().get("kind")==="mail" || /(^|[#?&])email\b/.test(location.hash||"");
+  showTab(wantMail ? "mail" : "page");
+
   onThrive("lang","templates",()=>{ renderBuiltin(); renderCustom(); renderEmailTpls(); });
   renderBuiltin(); renderCustom(); renderEmailTpls();
 }
@@ -2609,7 +2726,7 @@ async function initHome(){
         .replace("{list}", unmeasured.map(u=>u.business).join("، ")); }
   }
   if(el("homeRepair")) el("homeRepair").addEventListener("click", async ()=>{
-    if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>location.href="settings.html",900); return; }
+    if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
     const btn=el("homeRepair"); btn.disabled=true; const old=btn.textContent; btn.textContent=t("publishing");
     let done=0;
     for(const u of unmeasured){
@@ -2825,9 +2942,9 @@ async function initBoard(){
     el("boardChips").innerHTML=chips.join("");
     el("boardChips").querySelectorAll("[data-chip]").forEach(c=>c.addEventListener("click",()=>{
       const k=c.getAttribute("data-chip");
-      if(k==="stalled") location.href="library.html?followup=1";
-      else if(k==="archived") location.href="library.html?status=archived";
-      else location.href="compose.html";
+      if(k==="stalled") goTo("library","followup=1");
+      else if(k==="archived") goTo("library","status=archived");
+      else goTo("compose");
     }));
 
     const closed=b.closed.won.concat(b.closed.lost);
@@ -2853,7 +2970,7 @@ async function initBoard(){
       // In the shell the work opens beside you. On a single page there is no drawer, and an
       // honest page change beats a panel that is not there.
       if(window.thriveDrawer) window.thriveDrawer.open(slug, "compose", name);
-      else location.href="compose.html?slug="+encodeURIComponent(slug);
+      else goTo("compose","slug="+encodeURIComponent(slug));
     }));
   }
 
@@ -2890,19 +3007,40 @@ async function initBoard(){
    the drawer host rather than duplicating their markup, so the document keeps exactly one
    editor, one composer, and one set of listeners. Duplicating them would mean two elements
    with the same ids and a composer whose send button belongs to whichever copy loaded last.
-   Only the shell has a #drawer, so on a single page this whole layer stays dormant. */
+   Only the shell has a #drawer, so on a single page this whole layer stays dormant.
+
+   What it borrows it MUST give back. It did not, and that was the blank screen: once a token
+   had opened the drawer, #view-compose lived inside a closed drawer forever, the shell's own
+   navigation skipped it because the drawer owned it, and "Send an email" led to nothing.
+   A panel that takes a node out of the document owes the document that node back. */
 function initDrawer(){
   const el=id=>document.getElementById(id);
   const drawer=el("drawer"), scrim=el("drawerScrim"), body=el("drawerBody");
   if(!drawer || !body) return null;
-  let opener=null, current="";
+  let opener=null, current="", open_=false;
+
+  /* Where each borrowed view lives when the drawer does not have it. Recorded once, on the
+     first borrow, from the document itself rather than assumed. */
+  const home={};
+  function remember(view){
+    if(home[view.id]) return;
+    home[view.id]={ parent:view.parentNode, next:view.nextSibling };
+  }
+  function giveBack(){
+    Array.prototype.slice.call(body.children).forEach(n=>{
+      const h=home[n.id];
+      n.hidden=true; n.classList.add("wrap");
+      if(h && h.parent) h.parent.insertBefore(n, h.next);
+    });
+  }
 
   function host(tab){
     const id = tab==="edit" ? "view-editor" : "view-compose";
     const view=document.getElementById(id);
     if(!view) return false;
     // park every other view back where it belongs before adopting this one
-    Array.prototype.forEach.call(body.children, n=>{ n.hidden=true; });
+    giveBack();
+    remember(view);
     if(view.parentNode!==body) body.appendChild(view);
     view.hidden=false; view.classList.remove("wrap");
     return true;
@@ -2918,6 +3056,7 @@ function initDrawer(){
     el("drawerTitle").textContent=title||slug||"";
     if(!host(tab)) return;
     tabs(tab);
+    open_=true;
     drawer.hidden=false; scrim.hidden=false;
     // let the browser paint the closed state before the transition starts
     requestAnimationFrame(()=>{ drawer.classList.add("on"); scrim.classList.add("on"); });
@@ -2925,15 +3064,25 @@ function initDrawer(){
     try{ if(tab==="edit") await initEditor(slug); else await initCompose(slug); }catch(e){}
     const close=el("drawerClose"); if(close) close.focus();
   }
-  function close(){
+  /* now=true when something else needs the borrowed view in this same tick, which is what a
+     navigation is. Waiting out the closing transition first would hand the view back after the
+     shell had already decided what to display, and the reader would land on nothing. */
+  function close(now){
+    if(!open_) return;
+    open_=false;
     drawer.classList.remove("on"); scrim.classList.remove("on");
     document.body.style.overflow="";
-    setTimeout(()=>{ drawer.hidden=true; scrim.hidden=true; }, 200);
+    const settle=()=>{
+      drawer.hidden=true; scrim.hidden=true;
+      // and the composer and the editor go home, hidden, where the shell can find them again
+      giveBack();
+    };
+    if(now) settle(); else setTimeout(settle, 200);
     if(opener && opener.focus) try{ opener.focus(); }catch(e){}
     opener=null;
   }
-  el("drawerClose").addEventListener("click", close);
-  scrim.addEventListener("click", close);
+  el("drawerClose").addEventListener("click", ()=>close());
+  scrim.addEventListener("click", ()=>close());
   document.addEventListener("keydown", e=>{
     if(drawer.hidden) return;
     if(e.key==="Escape"){ close(); return; }
@@ -2954,6 +3103,6 @@ function initDrawer(){
     tabs(tab);
     try{ if(tab==="edit") initEditor(current); else initCompose(current); }catch(e){}
   }));
-  window.thriveDrawer={ open:open, close:close };
+  window.thriveDrawer={ open:open, close:close, isOpen:()=>open_ };
   return window.thriveDrawer;
 }

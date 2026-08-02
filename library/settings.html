@@ -48,11 +48,11 @@
     <h3 class="block-h" data-i18n="set_gh_h">GitHub publishing</h3>
     <p class="sub" data-i18n="set_gh_sub"></p>
     <div class="grid3">
-      <div class="field"><label data-i18n="gh_owner_l">Owner</label><input id="gh_owner" class="input" autocomplete="off"></div>
-      <div class="field"><label data-i18n="gh_repo_l">Repository</label><input id="gh_repo" class="input" autocomplete="off"></div>
-      <div class="field"><label data-i18n="gh_branch_l">Branch</label><input id="gh_branch" class="input" autocomplete="off"></div>
+      <div class="field"><label for="gh_owner" data-i18n="gh_owner_l">Owner</label><input id="gh_owner" class="input" autocomplete="off"></div>
+      <div class="field"><label for="gh_repo" data-i18n="gh_repo_l">Repository</label><input id="gh_repo" class="input" autocomplete="off"></div>
+      <div class="field"><label for="gh_branch" data-i18n="gh_branch_l">Branch</label><input id="gh_branch" class="input" autocomplete="off"></div>
     </div>
-    <div class="field"><label data-i18n="gh_token_l">Access token</label>
+    <div class="field"><label for="gh_token" data-i18n="gh_token_l">Access token</label>
       <input id="gh_token" class="input" type="password" autocomplete="off" spellcheck="false">
       <div class="hint" data-i18n="gh_token_hint"></div></div>
     <div class="bar">
@@ -73,17 +73,17 @@
     <h3 class="block-h" data-i18n="set_email_h">Email sending</h3>
     <p class="sub" data-i18n="set_email_sub"></p>
     <div class="grid2">
-      <div class="field"><label data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
-      <div class="field"><label data-i18n="set_from_email">Sender address</label><input id="em_from" class="input" value="hi@thriveiii.com" readonly></div>
+      <div class="field"><label for="em_name" data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
+      <div class="field"><label for="em_from" data-i18n="set_from_email">Sender address</label><input id="em_from" class="input" value="hi@thriveiii.com" readonly></div>
     </div>
-    <div class="field"><label data-i18n="set_email_ep_l">Send endpoint</label><input id="em_ep" class="input" type="url" data-i18n-ph="set_email_ph"></div>
+    <div class="field"><label for="em_ep" data-i18n="set_email_ep_l">Send endpoint</label><input id="em_ep" class="input" type="url" data-i18n-ph="set_email_ph"></div>
     <button class="btn" id="emSave" data-i18n="gh_save">Save</button>
   </section>
 
   <section class="panel settings-panel">
     <h3 class="block-h" data-i18n="set_sync_h">Live sync across devices</h3>
     <p class="sub" data-i18n="set_sync_sub"></p>
-    <div class="field"><label data-i18n="sy_ep_l">Sync endpoint (the same relay /exec URL)</label>
+    <div class="field"><label for="sy_ep" data-i18n="sy_ep_l">Sync endpoint (the same relay /exec URL)</label>
       <input id="sy_ep" class="input" type="url" autocomplete="off"></div>
     <div class="bar">
       <button class="btn" id="syEnable" data-i18n="sy_enable">Save &amp; publish to all devices</button>
@@ -100,8 +100,8 @@
     <p class="sub" data-i18n="set_quota_sub"></p>
     <div class="quota-readout" id="quotaReadout"></div>
     <div class="grid2">
-      <div class="field"><label data-i18n="set_quota_daily">Daily cap</label><input id="q_daily" class="input" type="number" min="1" inputmode="numeric"></div>
-      <div class="field"><label data-i18n="set_quota_monthly">Monthly cap</label><input id="q_monthly" class="input" type="number" min="1" inputmode="numeric"></div>
+      <div class="field"><label for="q_daily" data-i18n="set_quota_daily">Daily cap</label><input id="q_daily" class="input" type="number" min="1" inputmode="numeric"></div>
+      <div class="field"><label for="q_monthly" data-i18n="set_quota_monthly">Monthly cap</label><input id="q_monthly" class="input" type="number" min="1" inputmode="numeric"></div>
     </div>
     <button class="btn" id="qSave" data-i18n="gh_save">Save</button>
   </section>

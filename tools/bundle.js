@@ -62,7 +62,7 @@ function rewrite(html) {
     .replace(/href="library\.html([^"]*)"/g, 'href="#library$1"')
     .replace(/href="editor\.html"/g, 'href="#editor"')
     .replace(/href="compose\.html([^"]*)"/g, 'href="#compose$1"')
-    .replace(/href="templates\.html"/g, 'href="#templates"')
+    .replace(/href="templates\.html([^"]*)"/g, 'href="#templates$1"')
     .replace(/href="activity\.html"/g, 'href="#activity"')
     .replace(/href="settings\.html"/g, 'href="#settings"')
     .replace(/\.\.\/assets\/thrive-logo\.png/g, logo);
@@ -151,14 +151,39 @@ ${DRAWER}
 
 ${body}
 <script>
-/* One document, seven views. Each init runs once, the first time its view is shown, which is
-   exactly what the served console does per page load. */
+/* One document, eight views. Each init runs the first time its view is shown, which is exactly
+   what the served console does per page load, and again whenever the view is asked for with
+   DIFFERENT parameters, which is exactly what a second page load would do.
+
+   That second half was missing, and it is why "use this template", "compose with this" and the
+   Email button on a library card opened an empty screen: the destination was already started,
+   so the parameters were never read. Re-running an init over a DOM that has already been wired
+   would double every listener, so the view's markup is restored from the snapshot taken at boot
+   first. A view is then exactly as freshly loaded as it would be on its own page. */
 (function(){
   var VIEWS = ${JSON.stringify(VIEWS.map(v => ({ id: v.id, init: v.init })))};
-  var started = {};
+  var started = {};      // id -> the parameter string it was started with
+  var stale = {};        // ids that must run again even with the same parameters
+  var snapshot = {};     // id -> its markup at boot, so a re-init starts clean
+
+  function snap(){
+    VIEWS.forEach(function(v){
+      var el = document.getElementById("view-" + v.id);
+      if(el) snapshot[v.id] = el.innerHTML;
+    });
+  }
+  function query(){
+    var h = location.hash || "", i = h.indexOf("?");
+    return i >= 0 ? h.slice(i + 1) : "";
+  }
+  function current(){ return (location.hash||"").replace(/^#/,"").split("?")[0] || VIEWS[0].id; }
+
   function show(id){
     var found = VIEWS.some(function(v){ return v.id === id; });
     if(!found) id = VIEWS[0].id;
+    // Going somewhere closes the sheet you were working in, and the sheet hands its view back.
+    if(window.thriveDrawer && window.thriveDrawer.isOpen && window.thriveDrawer.isOpen())
+      window.thriveDrawer.close(true);   // now, not after the transition: the view is needed here
     var host = document.getElementById("drawerBody");
     VIEWS.forEach(function(v){
       var el = document.getElementById("view-" + v.id);
@@ -170,21 +195,35 @@ ${body}
       a.classList.toggle("active", a.getAttribute("data-view") === id);
     });
     var v = VIEWS.filter(function(x){ return x.id === id; })[0];
-    if(v && !started[id] && typeof window[v.init] === "function"){
-      started[id] = true;
+    var want = query();
+    var need = !(id in started) || started[id] !== want || stale[id];
+    if(v && need && typeof window[v.init] === "function"){
+      var el = document.getElementById("view-" + id);
+      // A restart, not a first start: put the markup back before wiring it again, so one
+      // element never ends up with two of the same listener.
+      if((id in started) && el && snapshot[id] != null){
+        el.innerHTML = snapshot[id];
+        if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
+      }
+      started[id] = want; delete stale[id];
       try{ window[v.init](); }catch(e){ console.error(e); }
     }
     try{ window.scrollTo(0,0); }catch(e){}
   }
-  function current(){ return (location.hash||"").replace(/^#/,"").split("?")[0] || VIEWS[0].id; }
   window.addEventListener("hashchange", function(){ show(current()); });
   document.addEventListener("DOMContentLoaded", function(){
+    snap();
     initLang();
     if(typeof initDrawer === "function") initDrawer();
     show(current());
     // A fresh unlock lands on the first view with its data already pulled. Registered like
     // every other listener, so it cannot displace the sync round or a view's own refresh.
-    if(typeof onThrive === "function") onThrive("unlock","shell",function(){ show(current()); });
+    if(typeof onThrive === "function") onThrive("unlock","shell",function(){
+      // Nothing was allowed to read data before the unlock, so everything already started
+      // has to run again against the data it can finally see.
+      Object.keys(started).forEach(function(k){ stale[k] = 1; });
+      show(current());
+    });
   });
 })();
 </script>

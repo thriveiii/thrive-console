@@ -141,6 +141,68 @@ The audit now locks all of it: no ledger send means no Sent lane and no Opened l
 page keeps its views, follow-up is never asked for a message that was never sent, and the
 numbers are one tap from the board.
 
+---
+
+## The ten gates
+
+`python3 tools/gates.py`, or one at a time: `python3 tools/gates.py 3 7`.
+
+Five layers ask whether a screen is any good. Ten gates ask whether the thing works, in a
+browser, with real data, in both languages, at the widths people hold. The layers came first
+and the gates exist because things got through them.
+
+| # | Gate | The question | What it caught |
+|---|---|---|---|
+| 1 | **Boot** | Does every page and every view start, with nothing blank and nothing thrown? | |
+| 2 | **Doors** | Does every link lead somewhere real, and do its parameters arrive? | Every parameter-carrying link in the console |
+| 3 | **Round trip** | Does the drawer give back what it borrows? Is a view re-entered a view reloaded? | The blank composer |
+| 4 | **Truth** | Do the lanes, the pills and the tables report the same facts, and only facts with evidence? | |
+| 5 | **Bilingual** | Both languages complete, no key on screen, plural forms correct at 1, 2, 3, 11, 100 | |
+| 6 | **Typography** | One Latin face and one Arabic face, everywhere, measured rather than assumed | Alyamama's serif Latin |
+| 7 | **Layout** | Nothing scrolls sideways, everything a finger uses clears 40px, at six widths | Two heights in one bar |
+| 8 | **Forms** | Is every control labelled, reachable, and does it do what it says? | 35 labels pointing at nothing |
+| 9 | **Resilience** | Relay down, relay old, no data: a designed state, never a blank or an endless spinner | |
+| 10 | **Build** | The verify gate passes, the shell is what its source produces, the offline file is whole | |
+
+Gate 6 asks Chromium which font it actually drew, through `CSS.getPlatformFontsForNode`. No
+computed style would have answered it: the stack said Alyamama and the stack was being honoured.
+
+### The five defects the gates found
+
+**1. The drawer never gave back what it borrowed. (Gate 3)**
+This is the one that was reported: tap "Send an email", get a blank page. The drawer hosts the
+composer by moving `#view-compose` into itself, which is right, and on close it moved it
+nowhere, which is not. The shell skips any view the drawer owns, so from the first time a token
+was tapped, the composer and the editor were unreachable for the rest of the session. A panel
+that takes a node out of the document owes the document that node back, and it now does,
+immediately when a navigation needs it rather than after the closing transition.
+
+**2. Parameters fell down the gap between two navigation models. (Gate 2)**
+Links written in `app.js` said `compose.html?slug=x` and walked the reader out of the shell into
+a second document. Links written in the pages were rewritten by the build into
+`#compose?slug=x`, and every reader was asking `location.search`, where nothing had been put.
+Two models, and everything that travels with a parameter fell between them: "use this template",
+"compose with this", Email and Edit on every library card, and both board chips. One builder
+(`viewHref`), one reader (`viewParams`), one mover (`goTo`).
+
+**3. A view already started ignored its new parameters. (Gate 3)**
+Even with the parameters arriving, the shell ran a view's init once and never again, so asking
+for the same view with a different opportunity did nothing. It now restarts, and restores the
+view's markup from a snapshot taken at boot first, because re-running an init over a wired DOM
+is how one element ends up with two of the same listener.
+
+**4. Alyamama's Latin is a serif. (Gate 6)**
+`--font-ar` began with Alyamama, and a font stack resolves per character, so every Latin word on
+an Arabic screen was drawn in Alyamama's Latin: business names on the board, on their cards, in
+every table, in a different typeface from the rest of the console. Lato first, Alyamama second:
+Latin finds Lato, Arabic falls through. One Latin face and one Arabic face, both directions.
+
+**5. Thirty-five labels pointed at nothing, and the bar had two heights. (Gates 7 and 8)**
+Every field was written as a `<label>` beside its input rather than for it, so nothing was
+announced to a screen reader and tapping a label focused nothing. And the language switch stood
+36px tall next to a 33px lock, because Arabic sets a taller line box than Latin and the two
+identical controls were being sized by whichever script was inside them.
+
 ## Queued, in this order
 
 1. **Compose** (`compose.html`): the densest screen and the one used most under pressure.
