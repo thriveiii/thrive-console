@@ -24,7 +24,10 @@ const read = p => fs.readFileSync(p, "utf8");
 /* order matters: it is the reading order of the console itself */
 const VIEWS = [
   { id: "board",     file: "board.html",     init: "initBoard",     key: "nav_board" },
-  { id: "home",      file: "index.html",     init: "initHome",      key: "nav_home" },
+  /* Labelled Insights, not Overview: it is the only screen that answers which message is
+     working, which campaign moved, and who is paying attention, and a name that does not say
+     so is a name nobody taps. */
+  { id: "home",      file: "index.html",     init: "initHome",      key: "nav_insights" },
   { id: "library",   file: "library.html",   init: "initDashboard", key: "nav_library" },
   { id: "editor",    file: "editor.html",    init: "initEditor",    key: "nav_editor" },
   { id: "compose",   file: "compose.html",   init: "initCompose",   key: "nav_compose" },
@@ -90,7 +93,10 @@ const DRAWER = `
   <div class="drawer-body" id="drawerBody"></div>
 </aside>`;
 
-const TOPBAR = ["board","library","settings"];
+/* Four destinations, not three. The numbers were reachable only from inside the Library after
+   the reduction, which read as though they had been deleted. What you measure has to be one
+   tap from where you work. */
+const TOPBAR = ["board","home","library","settings"];
 const nav = VIEWS.filter(v => TOPBAR.indexOf(v.id) >= 0).map(v =>
   '<a href="#' + v.id + '" data-view="' + v.id + '" data-i18n="' + v.key + '"></a>'
 ).join("\n    ");

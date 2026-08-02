@@ -40,6 +40,8 @@
     return !o._local || !!o.published;
   }
 
+  /* Opens that answer a message: the number that means somebody read what you sent. The host
+     resolves it, because only the host knows when each view happened. */
   function hostOpens(slug, ctx){
     if (ctx && ctx.opens && Object.prototype.hasOwnProperty.call(ctx.opens, slug)) {
       return ctx.opens[slug] || 0;
@@ -48,35 +50,60 @@
     return 0;
   }
 
-  /* One authority. When the host is present its effStage decides, and the opens count this
-     module resolved is handed to it, so an injected context reaches the same rule instead of
-     a copy of it. The fallback below exists only for the standalone reference page. */
+  /* Every recorded view of the page, whatever caused it. A page can be visited before anybody
+     is written to, and that is worth showing; it is simply not an open. */
+  function hostViews(slug, ctx){
+    if (ctx && ctx.views && Object.prototype.hasOwnProperty.call(ctx.views, slug)) {
+      return ctx.views[slug] || 0;
+    }
+    return hostOpens(slug, ctx);
+  }
+
+  /* One authority. When the host is present its effStage decides, and both the opens count and
+     the send evidence this module resolved are handed to it, so an injected context reaches the
+     same rule instead of a copy of it. The fallback below exists only for the standalone
+     reference page, and it is written to give the same answers. */
   function hostEffStage(o, ctx){
     var op = hostOpens(o.slug, ctx);
-    if (typeof global.effStage === "function") return global.effStage(o, op);
-    if ((!o.stage || o.stage === "sent") && op > 0) return "opened";
-    return o.stage || "sent";
+    var send = (ctx && ctx.mail) ? sendInfo(o.slug, ctx, o) : undefined;
+    if (typeof global.effStage === "function") return global.effStage(o, op, send);
+    var declared = o.stage || "";
+    if (declared && declared !== "sent") return declared;
+    if (send === undefined) send = sendInfo(o.slug, ctx, o);
+    if (!send.count) return hostIsLive(o) ? "live" : "draft";
+    return op > 0 ? "opened" : "sent";
   }
 
   /* ---- send evidence ------------------------------------------------------
-     "Sent" means a message actually left, not that a date field was filled in.
-     The mail ledger is the authority. sent_on is accepted as a fallback for
-     records created before the ledger existed.                              */
+     "Sent" means a message actually left. The mail ledger proves that, and so
+     does your own declaration on the record for a message sent elsewhere.
+     sent_on does not: it is the day the page was made, it is filled in on every
+     record, and treating it as a send put pages nobody had written to into the
+     Sent lane and their page views into the Opened lane.                    */
 
-  function sendInfo(slug, ctx){
-    var last = "", count = 0;
+  function sendInfo(slug, ctx, o){
+    var first = "", last = "", count = 0;
     var log = (ctx && ctx.mail) || [];
     for (var i = 0; i < log.length; i++){
       var m = log[i];
       if (!m || m.opp !== slug) continue;
-      if (m.direction === "in") continue;
+      if (m.direction === "in") continue;                                    // a reply is not a send
+      if (m.status && m.status !== "sent" && m.status !== "copied") continue; // queued is not sent
       count++;
-      if (!last || String(m.ts) > String(last)) last = m.ts;
+      var ts = String(m.ts || "");
+      if (ts){
+        if (!first || ts < first) first = ts;
+        if (ts > last) last = ts;
+      }
     }
-    return { count: count, last: last };
+    if (!count && o && o.stage === "sent")
+      return { count: 1, first: o.sent_on || "", last: o.sent_on || "", declared: true };
+    return { count: count, first: first, last: last };
   }
 
-  /* ---- lane assignment ---------------------------------------------------- */
+  /* ---- lane assignment ----------------------------------------------------
+     Position is the whole claim this board makes, so a lane is never assigned
+     by anything softer than evidence.                                       */
 
   function laneOf(o, ctx){
     if (!o) return null;
@@ -86,15 +113,10 @@
     if (CLOSED.indexOf(stage) >= 0) return "closed";
     if (stage === "replied") return "replied";
     if (stage === "opened")  return "opened";
+    if (stage === "sent")    return "sent";
 
-    /* stage is "sent" from here down, which is also the default for a record
-       that has never been touched. Split it by real evidence.               */
-    var live = hostIsLive(o);
-    if (!live) return "draft";
-
-    var send = sendInfo(o.slug, ctx);
-    if (send.count > 0 || o.sent_on) return "sent";
-    return "live";
+    /* Nothing has gone out. It is a page that exists, or a page that does not. */
+    return hostIsLive(o) ? "live" : "draft";
   }
 
   /* ---- age and stall ------------------------------------------------------
@@ -103,7 +125,7 @@
      edit stamp. A record with no history at all has no age and cannot stall. */
 
   function lastTouch(o, ctx){
-    var send = sendInfo(o.slug, ctx);
+    var send = sendInfo(o.slug, ctx, o);
     if (send.last) return send.last;
     if (o.sent_on) return o.sent_on;
     if (o.up) return new Date(o.up).toISOString();
@@ -163,6 +185,7 @@
       lane: lane,
       stage: hostEffStage(o, ctx),
       opens: hostOpens(o.slug, ctx),
+      views: hostViews(o.slug, ctx),
       age: ageDays(o, ctx),
       stalled: isStalled(o, ctx),
       hot: isHot(o, ctx),
@@ -217,16 +240,26 @@
     var iso = function(d){ return new Date(now - d * 86400000).toISOString(); };
     var opps = [
       { slug:"a", biz:"Draft co",    _local:true,  published:false },
-      { slug:"b", biz:"Live co",     _local:false },
+      /* h is the record this board got wrong in production: a page made on a date, read three
+         times, never emailed to anybody. It belongs in Live, and its views belong on it.    */
+      { slug:"h", biz:"Read but unsent co", _local:false, sent_on:"2026-07-30" },
+      { slug:"b", biz:"Live co",     _local:false, sent_on:"2026-07-30" },
       { slug:"c", biz:"Sent co",     _local:false, sent_on:"2026-07-01" },
       { slug:"d", biz:"Opened co",   _local:false, sent_on:"2026-07-20" },
       { slug:"e", biz:"Replied co",  _local:false, stage:"replied" },
       { slug:"f", biz:"Won co",      _local:false, stage:"won" },
       { slug:"g", biz:"Archived co", _local:false, archived:true }
     ];
-    var ctx = { opens:{ d:4 }, mail:[ { opp:"c", direction:"out", ts:iso(30) } ] };
+    var ctx = {
+      /* Both maps are given in full, so the test never falls through to whatever this
+         browser happens to have collected. */
+      opens: { a:0, b:0, c:0, d:4, e:0, f:0, g:0, h:0 },   // opens that answer a send
+      views: { a:0, b:0, c:0, d:4, e:0, f:0, g:0, h:3 },   // every recorded view
+      mail: [ { opp:"c", direction:"out", status:"sent", ts:iso(30) },
+              { opp:"d", direction:"out", status:"sent", ts:iso(2)  } ]
+    };
     var b = build(opps, ctx);
-    var want = { draft:1, live:1, sent:1, opened:1, replied:1 };
+    var want = { draft:1, live:2, sent:1, opened:1, replied:1 };
     var fails = [];
     Object.keys(want).forEach(function(k){
       if (b.lanes[k].length !== want[k]) fails.push(k + " expected " + want[k] + " got " + b.lanes[k].length);
@@ -235,6 +268,15 @@
     if (b.archived !== 1) fails.push("archived expected 1 got " + b.archived);
     if (!b.lanes.sent[0].stalled) fails.push("30 day old send should be stalled");
     if (!b.lanes.opened[0].hot) fails.push("4 opens should be hot");
+    /* The rule this file exists to hold: no ledger send, no Sent lane and no Opened lane. */
+    var h = b.lanes.live.filter(function(t){ return t.slug === "h"; })[0];
+    if (!h) fails.push("a page with views and no send must sit in live");
+    else {
+      if (h.opens !== 0) fails.push("an unsent page has no opens, got " + h.opens);
+      if (h.views !== 3) fails.push("an unsent page keeps its views, got " + h.views);
+    }
+    if (b.lanes.sent.concat(b.lanes.opened).some(function(t){ return t.slug === "h" || t.slug === "b"; }))
+      fails.push("a record with no send reached a send lane");
     return { pass: fails.length === 0, fails: fails };
   }
 

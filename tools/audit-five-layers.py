@@ -1,9 +1,12 @@
 """Five review layers, run against the shell: purpose, story, truth, craft, resilience."""
 import threading, http.server, socketserver, functools, os, sys, json
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH","/opt/pw-browsers")
-ROOT="/home/user/thrive-console"; PORT=8905
+ROOT="/home/user/thrive-console"
 Handler=functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
-httpd=socketserver.TCPServer(("127.0.0.1",PORT),Handler); httpd.daemon_threads=True
+# Port 0 lets the OS pick a free one, so the audit can be re-run immediately and twice at once.
+socketserver.TCPServer.allow_reuse_address=True
+httpd=socketserver.TCPServer(("127.0.0.1",0),Handler); httpd.daemon_threads=True
+PORT=httpd.server_address[1]
 threading.Thread(target=httpd.serve_forever,daemon=True).start()
 from playwright.sync_api import sync_playwright
 base=f"http://127.0.0.1:{PORT}"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
@@ -16,12 +19,21 @@ def relay(route):
         return route.fulfill(status=200, body="Thrive relay v4 (email + sync + analytics) is running.")
     d=json.loads(route.request.post_data or "{}")
     if d.get("op")=="state_get": SYNCS["n"]+=1; return route.fulfill(status=200,body=json.dumps({"ok":True,"data":None}))
-    if d.get("op")=="hits_get": return route.fulfill(status=200,body=json.dumps({"ok":True,"events":[]}))
+    if d.get("op")=="hits_get": return route.fulfill(status=200,body=json.dumps({"ok":True,"events":HITS}))
     return route.fulfill(status=200,body=json.dumps({"ok":True,"id":"x"}))
+# v1x is the record that broke in production: a page made on a date, read three times, and
+# never emailed to anybody. Its date is not a send and its views are not opens.
+def ago(d):
+    import datetime
+    return (datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=d)).isoformat().replace("+00:00","Z")
+HITS=[{"type":"open","slug":"v1x","ts":ago(2),"vid":"a"},
+      {"type":"open","slug":"v1x","ts":ago(1),"vid":"b"},
+      {"type":"open","slug":"v1x","ts":ago(1),"vid":"c"}]
 SEED="""()=>{ const now=Date.now(), iso=d=>new Date(now-d*86400000).toISOString();
  localStorage.setItem('thrive_opps_v1', JSON.stringify([
   {slug:'d1',business:'Draft co',published:false,up:now},
   {slug:'l1',business:'Live co',published:true,up:now},
+  {slug:'v1x',business:'Read but unsent co',published:true,sent_on:'2026-07-30',up:now},
   {slug:'s1',business:'Stalled co',published:true,sent_on:'2026-06-20',up:now},
   {slug:'r1',business:'Replied co',published:true,stage:'replied',up:now},
   {slug:'w1',business:'Won co',published:true,stage:'won',up:now}]));
@@ -48,7 +60,9 @@ with sync_playwright() as p:
         # ---- L1 purpose ----
         ck(1,tag+": it lands on the board, one entry point", pg.eval_on_selector("#view-board","e=>!e.hidden"))
         ck(1,tag+": exactly one view is on screen", pg.eval_on_selector_all(".view","els=>els.filter(e=>!e.hidden).length")==1)
-        ck(1,tag+": three destinations, not seven", pg.eval_on_selector_all(".nav a","e=>e.length")==3)
+        ck(1,tag+": four destinations, not seven", pg.eval_on_selector_all(".nav a","e=>e.length")==4)
+        ck(1,tag+": what the work produced is one tap from where the work happens",
+           pg.eval_on_selector_all(".nav a[data-view='home']","e=>e.length")==1)
 
         # ---- L2 story ----
         v=pg.eval_on_selector("#boardVerdict","e=>e.innerText")
@@ -59,15 +73,29 @@ with sync_playwright() as p:
 
         # ---- L3 truth ----
         counts=pg.eval_on_selector_all(".lane","els=>Object.fromEntries(els.map(e=>[e.dataset.lane, e.querySelectorAll('.tok').length]))")
-        model=pg.evaluate("""async ()=>{ const o=await mergedOpps(); const opens={};
-          o.forEach(x=>opens[x.slug]=opensForSlug(x.slug));
-          return ThriveBoard.build(o,{opens,mail:getMailLog()}).summary.counts; }""")
+        model=pg.evaluate("""async ()=>{ const o=await mergedOpps(); const opens={},views={};
+          o.forEach(x=>{ opens[x.slug]=outreachOpens(x); views[x.slug]=opensForSlug(x.slug); });
+          return ThriveBoard.build(o,{opens,views,mail:getMailLog()}).summary.counts; }""")
         ck(3,tag+": what is drawn equals what was derived",
            all(counts.get(k)==model.get(k) for k in ["draft","live","sent","opened","replied"]))
         ck(3,tag+": a closed opportunity is counted, not shown", pg.eval_on_selector("#trayCount","e=>e.textContent")=="1")
         ck(3,tag+": the stalled one carries its ring", pg.eval_on_selector_all(".tok.is-stalled","e=>e.length")>=1)
         ck(3,tag+": every lane with nothing in it says so, rather than looking broken",
            pg.eval_on_selector_all(".lane","els=>els.every(e=>e.querySelectorAll('.tok').length>0 || e.querySelector('.lane-empty'))"))
+
+        # A lane is a claim about what happened. Nothing reaches Sent or Opened without a send.
+        where=pg.evaluate("""()=>{const o={};document.querySelectorAll('.tok[data-slug]').forEach(e=>
+          o[e.dataset.slug]=e.closest('.lane').dataset.lane);return o}""")
+        ck(3,tag+": a page nobody was written to is not reported as sent", where.get("v1x")=="live")
+        ck(3,tag+": and its readers are not reported as opens",
+           pg.evaluate("()=>outreachOpens({slug:'v1x'})")==0)
+        ck(3,tag+": its views are still shown, because a view is real",
+           "3" in pg.eval_on_selector(".tok[data-slug='v1x']","e=>e.innerText"))
+        ck(3,tag+": a page with no send is not asked to be followed up",
+           pg.evaluate("""async ()=>{const o=await mergedOpps();
+             return o.filter(x=>needsFollowup(x)).every(x=>x.slug!=='v1x'&&x.slug!=='l1');}"""))
+        ck(3,tag+": the derivation layer passes its own test",
+           pg.evaluate("()=>ThriveBoard.selfTest().pass"))
 
         # the listener registry: a second view must not unsubscribe the first
         pg.evaluate("()=>location.hash='#activity'"); pg.wait_for_timeout(1500)
@@ -82,6 +110,29 @@ with sync_playwright() as p:
           return el? el.closest('.lane').dataset.lane : null;
         }""")
         ck(3,tag+": a sync round really re-renders the board", moved=="replied")
+
+        # ---- the numbers themselves: reachable, and reading the same truth ----
+        pg.click(".nav a[data-view='home']"); pg.wait_for_timeout(2200)
+        ck(1,tag+": the insights view opens from the bar", pg.eval_on_selector("#view-home","e=>!e.hidden"))
+        ck(2,tag+": it opens with a sentence, before any table",
+           len(pg.eval_on_selector("#homeStory","e=>e.innerText").strip())>10)
+        for sec,label in (("homeCampaigns","campaign performance"),("homeTemplates","which message is working"),
+                          ("homePeople","who is paying attention"),("homeTop","most viewed pages")):
+            ck(1,tag+": "+label+" is on the page",
+               len(pg.eval_on_selector("#"+sec,"e=>e.innerText").strip())>0)
+        ck(3,tag+": the campaign table separates views from opens",
+           pg.evaluate("""()=>{const h=document.querySelector('#homeCampaigns thead');
+             if(!h) return false; const s=h.innerText.toLowerCase();
+             return (s.includes('view')||s.includes('مشاهد')) && (s.includes('open')||s.includes('فتح'));}"""))
+        ck(3,tag+": every column header is distinct, so two numbers never share a name",
+           pg.evaluate("""()=>[...document.querySelectorAll('#homeTemplates thead th')]
+             .map(e=>e.innerText.trim()).every((v,i,a)=>a.indexOf(v)===i)"""))
+        ck(3,tag+": an unsent page reports zero opens next to its views",
+           pg.evaluate("""()=>{const r=[...document.querySelectorAll('#homeCampaigns tbody tr')]
+             .find(t=>/Read but unsent/.test(t.innerText)); if(!r) return false;
+             const c=[...r.children].map(e=>e.innerText.trim());
+             return c[1]==='0' && c[2]==='3' && c[3]==='0';}"""))
+        pg.evaluate("()=>location.hash='#board'"); pg.wait_for_timeout(1200)
 
         # ---- L4 craft ----
         ck(4,tag+": the page never scrolls sideways",
