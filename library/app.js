@@ -28,7 +28,10 @@ function download(name, text, type){
 }
 /* quota-safe localStorage: on overflow, reclaim space from transient logs and retry once.
    Writes to synced keys also schedule a (debounced) cross-device sync push. */
-const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thrive_activity_v1:1, thrive_email_templates_v1:1 };
+/* Everything here is mirrored across devices. Writing any of them schedules a push, so a
+   change made anywhere reaches everywhere without being asked. */
+const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thrive_activity_v1:1,
+  thrive_email_templates_v1:1, thrive_templates_v1:1, thrive_removed_v1:1, thrive_etpl_seed_v1:1 };
 function lsSet(key, str){
   try{ localStorage.setItem(key, str); if(SYNCED_KEYS[key]) try{ scheduleSyncPush(); }catch(_){} return true; }
   catch(e){
@@ -81,13 +84,55 @@ function viewParams(){
   return new URLSearchParams(location.search);
 }
 
-/* ---------- custom templates (local registry) ---------- */
+/* ---------- removals ----------
+   A mirror that only ever adds is not a mirror. Every merge in this console was a union or a
+   newest-wins, so deleting an opportunity on the phone left it alive on the iPad, the iPad
+   pushed it back, and it returned. The console overruled a decision you had made.
+
+   So a removal is a fact with a timestamp, exactly like a record is, and it travels the same
+   way. An item comes back only if it was re-created AFTER it was removed. Tombstones are
+   pruned at six months, which is far longer than any device stays out of sync. */
+const TOMB = "thrive_removed_v1";
+const TOMB_KEEP_MS = 180*86400000;
+function tombs(){ try{ return JSON.parse(localStorage.getItem(TOMB)||"{}"); }catch(e){ return {}; } }
+function setTombs(o){
+  const now=Date.now(), out={};
+  // Number(), never |0. A bitwise operator truncates to 32 bits, and a millisecond timestamp
+  // has not fitted in 32 bits since 1970 plus 25 days: every tombstone was being wrapped into
+  // garbage and then discarded as ancient, which is why removals travelled nowhere.
+  Object.keys(o||{}).forEach(k=>{ const ts=Number(o[k])||0; if(ts && now-ts < TOMB_KEEP_MS) out[k]=ts; });
+  return lsSet(TOMB, JSON.stringify(out));
+}
+function markRemoved(kind, id){ const o=tombs(); o[kind+":"+id]=Date.now(); setTombs(o); }
+function removedAt(kind, id){ return Number(tombs()[kind+":"+id])||0; }
+/* One merge rule for every keyed collection, so opportunities, message templates and page
+   templates cannot drift into three different ideas of what "deleted" means. */
+function mergeKeyed(local, remote, key, tombKind, allTombs, carry){
+  const by={};
+  (local||[]).forEach(x=>{ if(x && x[key]!=null) by[x[key]]={ x:x, mine:true }; });
+  (remote||[]).forEach(r=>{
+    if(!r || r[key]==null) return;
+    const cur=by[r[key]];
+    if(!cur){ by[r[key]]={ x:r, mine:false }; return; }
+    if((r.up||0) > (cur.x.up||0)) by[r[key]]={ x: carry? carry(r, cur.x) : r, mine:false };
+  });
+  const out=[];
+  Object.keys(by).forEach(k=>{
+    const rec=by[k].x;
+    const gone=Math.max(allTombs[tombKind+":"+k]||0, 0);
+    if(gone && gone > (rec.up||0)) return;               // removed after it was last written
+    out.push(rec);
+  });
+  return out;
+}
+
+/* ---------- custom page templates (local registry) ---------- */
 const TPLSTORE = "thrive_templates_v1";
 function getCustomTemplates(){ try{ return JSON.parse(localStorage.getItem(TPLSTORE)||"[]"); }catch(e){ return []; } }
 function setCustomTemplates(a){ return lsSet(TPLSTORE, JSON.stringify(a)); }
 function getCustomTemplate(id){ return getCustomTemplates().find(x=>x.id===id); }
-function saveCustomTemplate(rec){ const a=getCustomTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setCustomTemplates(a); }
-function removeCustomTemplate(id){ setCustomTemplates(getCustomTemplates().filter(x=>x.id!==id)); }
+function saveCustomTemplate(rec){ rec.up=Date.now(); const a=getCustomTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setCustomTemplates(a); }
+function removeCustomTemplate(id){ markRemoved("tpl", id); setCustomTemplates(getCustomTemplates().filter(x=>x.id!==id)); }
 
 /* ---------- analytics (beacon hits stored same-origin) ---------- */
 const HITS = "thrive_hits_v1";
@@ -429,31 +474,104 @@ async function syncBootstrap(){
   if(cur && !(j.up && j.up >= syncEpStamp())) return;
   adoptPublishedEndpoint(j.ep, j.up||0, cur, ee);
 }
+/* ---------- the mirror contract ----------
+   Everything this console holds is in exactly one of three classes, and there is no fourth.
+
+   MIRRORED   travels in the shared state and is complete, removals included: opportunities,
+              the mail ledger, the activity log, send stamps, message templates, page template
+              records, publishing credentials, settings, and the tombstones that make a
+              deletion travel like any other fact.
+   PUBLISHED  lives in the repository and is therefore reachable from every device by
+              construction: the live pages, and a page template once it is published.
+   LOCAL      device posture that would be wrong to share: the collapsed tray, the language,
+              the relay URL (which comes from library/sync.json), the session key.
+
+   Page HTML is the one thing that can run to hundreds of kilobytes, and the shared store is a
+   few hundred kilobytes in total. So HTML travels while it fits, oldest dropped first, and
+   anything that did not fit is NAMED on screen rather than silently missing. A mirror is
+   allowed to have physical limits. It is not allowed to have quiet ones. */
+const SYNC_HTML_BUDGET = 220000;      // total page html carried in one snapshot
+const SYNC_HTML_MAX    = 90000;       // and the most any single record may take of it
+
 function syncSnapshot(){
-  // drafts travel WITHOUT page html (uploads can be hundreds of KB; the repo holds live pages)
-  const opps=getDrafts().map(d=>{ const c=Object.assign({},d); delete c.html; return c; });
+  /* A draft that was never published exists nowhere else, so its page travels while there is
+     room. A published one does not need to: the repo already holds it, and every device can
+     read it from there. */
+  let budget=SYNC_HTML_BUDGET;
+  const left=[];
+  const opps=getDrafts()
+    .slice()
+    .sort((a,b)=> (b.up||0)-(a.up||0))                   // newest first: the ones you are working on
+    .map(d=>{
+      const c=Object.assign({}, d);
+      const html=c.html||"";
+      const needed = html && !d.published;
+      if(!needed || html.length>SYNC_HTML_MAX || html.length>budget){
+        if(needed) left.push(c.slug);
+        delete c.html;
+      } else budget-=html.length;
+      return c;
+    });
+  setUnmirrored(left);
+  /* Page templates travel as records. Their html rides along under the same budget, and a
+     template that is published to the repo needs no ride at all. */
+  const tpl=getCustomTemplates().map(ct=>{
+    const c=Object.assign({}, ct), html=c.html||"";
+    if(!html || c.published || html.length>SYNC_HTML_MAX || html.length>budget){
+      if(html && !c.published) left.push("tpl:"+c.id);
+      delete c.html;
+    } else budget-=html.length;
+    return c;
+  });
   // The relay URL is deliberately NOT in here. It used to travel with the state, and a device
   // holding an old URL could push it back over a freshly verified one, which is how two devices
   // ended up calling two different deployments. The published truth is library/sync.json.
-  return { v:1, updated:Date.now(), scalarsUp:scalarsUp(),
+  return { v:2, updated:Date.now(), scalarsUp:scalarsUp(),
     opps, mail:getMailLog(), quota:getSendStamps(), activity:getActivity(),
-    etpl:getEmailTemplates(), fromName:getFromName(), quotaCfg:quotaCfg(),
+    etpl:getEmailTemplates(), tpl:tpl, seed:etplSeeded(), tombs:tombs(),
+    fromName:getFromName(), quotaCfg:quotaCfg(),
     vault:sealedVault() };
 }
+/* What this device is holding that the shared state could not carry. Read by Settings, so the
+   gap is a sentence on screen rather than a surprise on another device. */
+let __unmirrored=[];
+function setUnmirrored(a){ __unmirrored=a||[]; }
+function unmirrored(){ return __unmirrored.slice(); }
 function syncMergeApply(remote){
   if(!remote || typeof remote!=="object") return false;
   __syncApplying=true;
   try{
+    /* Removals first. Both sides' tombstones are merged before anything else is decided, so a
+       deletion made on either device is known to the rules below rather than being outvoted by
+       a copy that happens to still exist somewhere. */
+    const allTombs=tombs();
+    if(remote.tombs && typeof remote.tombs==="object"){
+      Object.keys(remote.tombs).forEach(k=>{
+        const ts=Number(remote.tombs[k])||0;
+        if(ts > (allTombs[k]||0)) allTombs[k]=ts;
+      });
+      setTombs(allTombs);
+    }
     // drafts: per-slug, newest `up` wins; a winner without html never erases local html
     if(Array.isArray(remote.opps)){
-      const loc=getDrafts(), bySlug={};
-      loc.forEach(d=>{ bySlug[d.slug]=d; });
-      remote.opps.forEach(r=>{
-        const l=bySlug[r.slug];
-        if(!l){ bySlug[r.slug]=r; return; }
-        if((r.up||0)>(l.up||0)) bySlug[r.slug]=Object.assign({}, r, (!r.html&&l.html)?{html:l.html}:{});
-      });
-      setDrafts(Object.values(bySlug));
+      setDrafts(mergeKeyed(getDrafts(), remote.opps, "slug", "opp", allTombs,
+        (r,l)=> Object.assign({}, r, (!r.html && l.html)?{html:l.html}:{})));
+    } else if(remote.tombs){
+      setDrafts(mergeKeyed(getDrafts(), [], "slug", "opp", allTombs));
+    }
+    /* Page templates: the same rule, and the same care with html. A record that arrives without
+       its page never wipes a page this device is holding. */
+    if(Array.isArray(remote.tpl)){
+      setCustomTemplates(mergeKeyed(getCustomTemplates(), remote.tpl, "id", "tpl", allTombs,
+        (r,l)=> Object.assign({}, r, (!r.html && l.html)?{html:l.html}:{})));
+    } else if(remote.tombs){
+      setCustomTemplates(mergeKeyed(getCustomTemplates(), [], "id", "tpl", allTombs));
+    }
+    /* Which stock messages this console has been offered, so one you deleted stays deleted on
+       every device instead of being re-seeded by the next one that syncs. */
+    if(Array.isArray(remote.seed)){
+      const s=new Set(etplSeeded()); remote.seed.forEach(x=>s.add(x));
+      try{ localStorage.setItem(ETPL_SEED, JSON.stringify([...s])); }catch(e){}
     }
     if(Array.isArray(remote.mail)){                       // ledger: union by message id
       const seen={}, all=[];
@@ -469,11 +587,10 @@ function syncMergeApply(remote){
       getActivity().concat(remote.activity).forEach(a=>{ const k=a.ts+"|"+a.action+"|"+(a.slug||""); if(!seen[k]){ seen[k]=1; all.push(a); } });
       all.sort((a,b)=> (a.ts<b.ts?-1:1)); setActivity(all);
     }
-    if(Array.isArray(remote.etpl)){                       // email templates: per-id, newest wins
-      const loc=getEmailTemplates(), byId={};
-      loc.forEach(x=>{ byId[x.id]=x; });
-      remote.etpl.forEach(r=>{ const l=byId[r.id]; if(!l || (r.up||0)>(l.up||0)) byId[r.id]=r; });
-      setEmailTemplates(Object.values(byId));
+    if(Array.isArray(remote.etpl)){                       // message templates: per-id, newest wins
+      setEmailTemplates(mergeKeyed(getEmailTemplates(), remote.etpl, "id", "etpl", allTombs));
+    } else if(remote.tombs){
+      setEmailTemplates(mergeKeyed(getEmailTemplates(), [], "id", "etpl", allTombs));
     }
     // Publishing credentials: sealed under the passcode, newest wins. Opened asynchronously,
     // so a device that just unlocked gains publishing a moment after the first sync round.
@@ -691,8 +808,22 @@ function withBeacon(html){
   return h+"\n"+BEACON_TAG;
 }
 function hasBeacon(html){ return /beacon\.js/.test(String(html||"")); }
-async function publishOpp(rec){
-  await ghPutFile("opp/"+rec.slug+"/index.html", withBeacon(rec.html||""), "Publish opp/"+rec.slug);
+/* Publishing is two writes: the page, then the manifest that lists it. Between them the repo
+   is in a state that is neither published nor unpublished, and if the second write fails the
+   page is live at its URL while the library still calls it a draft. That is the worst of the
+   three possible outcomes, because it looks like nothing happened.
+
+   So the halves are named. A failure after the page is written throws an error that says which
+   half is done, the record remembers it, and the console offers to finish rather than asking
+   you to publish again from the beginning. */
+const HALF = "thrive_half_publish_v1";
+function halfPublished(){ try{ return JSON.parse(localStorage.getItem(HALF)||"{}"); }catch(e){ return {}; } }
+function setHalfPublished(slug, on){
+  const o=halfPublished();
+  if(on) o[slug]=Date.now(); else delete o[slug];
+  try{ localStorage.setItem(HALF, JSON.stringify(o)); }catch(e){}
+}
+async function publishManifest(rec){
   const mf=await ghGetFile("library/manifest.json");
   let man = mf ? (JSON.parse(unb64(mf.content))||{}) : {};
   man.site=man.site||SITE; man.base_path=man.base_path||OPP_PATH; man.opportunities=man.opportunities||[];
@@ -701,7 +832,21 @@ async function publishOpp(rec){
   else man.opportunities.push(e);
   man.updated=new Date().toISOString().slice(0,10);
   await ghPutFile("library/manifest.json", JSON.stringify(man,null,2)+"\n", "Update manifest: "+rec.slug);
+  setHalfPublished(rec.slug, false);
 }
+async function publishOpp(rec){
+  await ghPutFile("opp/"+rec.slug+"/index.html", withBeacon(rec.html||""), "Publish opp/"+rec.slug);
+  setHalfPublished(rec.slug, true);          // from here the page is live whatever happens next
+  try{
+    await publishManifest(rec);
+  }catch(e){
+    logActivity("publish_half", rec.slug, String(e.message||e));
+    const err=new Error(t("pub_half")); err.half=true; err.slug=rec.slug; throw err;
+  }
+}
+/* Finish a publish that got halfway. The page is already live, so this writes only the entry
+   that lists it. */
+async function finishPublish(rec){ await publishManifest(rec); logActivity("publish", rec.slug, "finished"); }
 async function unpublishOpp(slug){
   await ghDeleteFile("opp/"+slug+"/index.html", "Unpublish opp/"+slug);
   const mf=await ghGetFile("library/manifest.json");
@@ -740,7 +885,7 @@ function saveDraft(rec){
   const a=getDrafts(); const i=a.findIndex(x=>x.slug===rec.slug);
   if(i>=0) a[i]={...a[i], ...rec}; else a.push(rec); setDrafts(a);
 }
-function removeDraft(slug){ setDrafts(getDrafts().filter(x=>x.slug!==slug)); }
+function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDrafts().filter(x=>x.slug!==slug)); }
 
 async function mergedOpps(){
   const {list}=await loadManifest();
@@ -755,6 +900,25 @@ async function mergedOpps(){
   return rows;
 }
 async function allSlugs(){ return (await mergedOpps()).map(o=>o.slug); }
+
+/* One disclosure, used by the two screens that had grown too many controls at rest. It counts
+   what is active inside itself, so folding something away never hides the fact that it is on. */
+function initMore(btnId, boxId, count){
+  const b=document.getElementById(btnId), box=document.getElementById(boxId);
+  if(!b || !box) return;
+  function label(){
+    const n=count? count() : 0;
+    b.textContent = t("lib_more") + (n? " ("+n+")" : "");
+    b.classList.toggle("has-on", !!n);
+  }
+  b.addEventListener("click", ()=>{
+    const open = box.hidden;
+    box.hidden = !open;
+    b.setAttribute("aria-expanded", open?"true":"false");
+  });
+  label();
+  return label;
+}
 
 /* ---------- dashboard ---------- */
 async function initDashboard(){
@@ -806,6 +970,7 @@ async function initDashboard(){
       pipelineEl.querySelectorAll("[data-stage-f]").forEach(b=>b.addEventListener("click",()=>{
         const s=b.getAttribute("data-stage-f");
         state.stage = (state.stage===s)?null:s;
+        if(moreLabel) setTimeout(moreLabel,0);
         if(state.stage && state.status==="followup"){ state.status="active"; if(statusFilt) statusFilt.value="active"; }
         render();
       }));
@@ -835,12 +1000,15 @@ async function initDashboard(){
         `<option value=""${declared?"":" selected"}>${t("stage_auto")}: ${t("stage_"+cur)}</option>`+
         STAGES.map(s=>`<option value="${s}"${s===declared?" selected":""}>${t("stage_"+s)}</option>`).join("")+`</select>`;
     }
+    const halves=halfPublished();
     grid.innerHTML = rows.map(o=>{
       const arch=o.archived, live=isLive(o), enc=encodeURIComponent(o.slug), fu=needsFollowup(o);
       /* Two different facts, told apart. The date on the record is the day the page was made.
          A send date exists only when a message actually went out, and only then is a view of
          that page an open rather than a visit. */
       const snd=sendsFor(o), sentDay=String(snd.last||snd.first||"").slice(0,10);
+      // The page went live and its entry did not. Named on the card, with the way to finish it.
+      const half=!!halves[o.slug];
       const linkRow = live
         ? `<a class="link" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${esc(liveUrl(o.slug))}</a>`
         : `<span class="link muted">${esc(liveUrl(o.slug))} · ${t("not_published")}</span>`;
@@ -859,6 +1027,7 @@ async function initDashboard(){
           ${live?`<span class="chip">${snd.count?t("ins_opens")+": "+outreachOpens(o):t("col_views")+": "+opensForSlug(o.slug)}</span>`:""}
           <span class="chip">${t("col_location")}: ${esc(o.location)||t("none")}</span>
           ${fu?`<span class="chip fu-chip">${t("followup")}</span>`:""}
+          ${half?`<span class="chip fu-chip">${t("pub_half_chip")}</span>`:""}
         </div>
         <div class="row">
           ${primary}
@@ -869,6 +1038,7 @@ async function initDashboard(){
           ${live?`<a class="btn ghost sm" href="${viewHref("compose","slug="+enc)}">${t("email_btn")}</a><button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:""}
           <a class="btn ghost sm" href="${viewHref("editor","slug="+enc)}">${t("edit")}</a>
           <button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>
+          ${half?`<button class="btn sm" data-finish="${esc(o.slug)}">${t("pub_finish")}</button>`:""}
           ${live?`<button class="btn ghost sm danger" data-unpub="${esc(o.slug)}">${t("unpublish")}</button>`:""}
           ${(o._local&&!o.published)?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:""}
         </div>
@@ -918,7 +1088,19 @@ async function initDashboard(){
         if(!html){ toast(t("no_content_publish")); b.disabled=false; b.textContent=t("publish"); return; }
         await publishOpp(Object.assign({}, o, {html})); saveDraft({slug, published:true}); o.published=true;
         logActivity("publish", slug, o.business); toast(t("published_live")); render();
-      }catch(e){ toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("publish"); }
+      }catch(e){
+        // A half publish is not a failed publish. The page is live and only its entry is
+        // missing, so say which half is done and leave the record able to finish.
+        if(e.half){ saveDraft({slug, published:true}); o.published=true; toast(t("pub_half")); render(); }
+        else { toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("publish"); }
+      }
+    }));
+    grid.querySelectorAll("[data-finish]").forEach(b=>b.addEventListener("click", async ()=>{
+      const slug=b.getAttribute("data-finish"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
+      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
+      b.disabled=true; b.textContent=t("publishing");
+      try{ await finishPublish(o); toast(t("published_live")); render(); }
+      catch(e){ toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("pub_finish"); }
     }));
     grid.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
       const slug=b.getAttribute("data-del");
@@ -940,12 +1122,16 @@ async function initDashboard(){
     }));
   }
 
+  /* Folded away, never hidden: the button carries the number of filters that are on, so a
+     library that is showing you a subset always says so. */
+  const moreLabel=initMore("libMoreBtn","libMore", ()=>
+    (state.sort!=="new"?1:0)+(state.tmpl!=="all"?1:0)+(state.status!=="active"?1:0));
   const debRender=debounce(render,140);
   onThrive("sync","library", async ()=>{ state.data=await mergedOpps(); render(); });
   search.addEventListener("input",e=>{ state.q=e.target.value; debRender(); });
-  sort.addEventListener("change",e=>{ state.sort=e.target.value; render(); });
-  filt.addEventListener("change",e=>{ state.tmpl=e.target.value; render(); });
-  if(statusFilt) statusFilt.addEventListener("change",e=>{ state.status=e.target.value; render(); });
+  sort.addEventListener("change",e=>{ state.sort=e.target.value; render(); if(moreLabel) moreLabel(); });
+  filt.addEventListener("change",e=>{ state.tmpl=e.target.value; render(); if(moreLabel) moreLabel(); });
+  if(statusFilt) statusFilt.addEventListener("change",e=>{ state.status=e.target.value; render(); if(moreLabel) moreLabel(); });
 
   document.getElementById("exportManifest").addEventListener("click", async ()=>{
     const {site}=await loadManifest();
@@ -1248,7 +1434,53 @@ function initActivity(){
       const s2=el("threadSearch"); if(s2){ s2.focus(); try{ s2.setSelectionRange(pos,pos); }catch(_){} } });
   }
   const renderCampaigns=renderThreads;
+
+  /* The week, read back as a week. This page is a log, and a log is a list of rows in which
+     nothing stands out, so a person who wants to know what happened has to reconstruct it in
+     their head. Above the rows the same events are now grouped by day and said in a sentence:
+     what went out, who answered, what was published, what was read. The table stays underneath
+     for the moment you need the exact row. */
+  function renderStory(){
+    const wrap=el("logStory"); if(!wrap) return;
+    const DAY=86400000, since=Date.now()-7*DAY;
+    const mail=getMailLog().filter(m=>tsMs(m.ts)>=since);
+    const acts=getActivity().filter(a=>tsMs(a.ts)>=since);
+    const hits=allHits().filter(e=>(!e.type||e.type==="open") && tsMs(e.ts)>=since);
+    const days={};
+    const day=k=>days[k]||(days[k]={sent:0, replies:0, published:0, opens:0, people:new Set()});
+    const dk=ts=>String(ts).slice(0,10);
+    mail.forEach(m=>{
+      const d=day(dk(m.ts));
+      if(m.direction==="in"||m.status==="replied") d.replies++;
+      else if(m.status==="sent"||m.status==="copied"){ d.sent++; if(m.to) d.people.add(String(m.to).toLowerCase()); }
+    });
+    acts.forEach(a=>{ if(a.action==="publish") day(dk(a.ts)).published++; });
+    hits.forEach(e=>{ day(dk(e.ts)).opens++; });
+    const keys=Object.keys(days).sort().reverse();
+    if(!keys.length){ wrap.innerHTML='<div class="empty">'+esc(t("act_story_quiet"))+'</div>'; return; }
+    const when=k=>{
+      const today=dk(new Date().toISOString()), yest=dk(new Date(Date.now()-DAY).toISOString());
+      if(k===today) return t("act_today");
+      if(k===yest) return t("act_yesterday");
+      try{ return new Date(k+"T12:00:00Z").toLocaleDateString(getLang()==="ar"?"ar":"en",{weekday:"long", day:"numeric", month:"long"}); }
+      catch(e){ return k; }
+    };
+    const n=v=>'<b>'+v+'</b>';
+    wrap.innerHTML='<h3 class="block-h">'+esc(t("act_story_h"))+'</h3>'+
+      '<p class="sub">'+esc(t("act_story_sub"))+'</p>'+
+      '<ol class="story-days">'+keys.map(k=>{
+        const d=days[k], said=[];
+        if(d.sent) said.push(t("act_s_sent").replace("{n}", n(d.sent)).replace("{p}", n(d.people.size)));
+        if(d.replies) said.push(t("act_s_replies").replace("{n}", n(d.replies)));
+        if(d.published) said.push(t("act_s_published").replace("{n}", n(d.published)));
+        if(d.opens) said.push(t("act_s_opens").replace("{n}", n(d.opens)));
+        return '<li><span class="story-when">'+esc(when(k))+'</span><span class="story-said">'+
+          (said.length? said.join(" ") : esc(t("act_s_nothing")))+'</span></li>';
+      }).join("")+'</ol>';
+  }
+
   function render(){
+    renderStory();
     renderCampaigns();
     let rows=getActivity().slice().reverse();
     if(cat!=="all") rows=rows.filter(r=>actCat(r.action)===cat);
@@ -1399,7 +1631,7 @@ function getEmailTemplates(){
 }
 function setEmailTemplates(a){ return lsSet(ETPL, JSON.stringify(a)); }
 function saveEmailTemplate(rec){ rec.up=Date.now(); const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
-function removeEmailTemplate(id){ setEmailTemplates(getEmailTemplates().filter(x=>x.id!==id)); }
+function removeEmailTemplate(id){ markRemoved("etpl", id); setEmailTemplates(getEmailTemplates().filter(x=>x.id!==id)); }
 /* Merge fields, two variants:
    - mergeFieldsText: plain replacements for the subject input (.value, never HTML).
    - mergeFieldsHtml: for the body. Values are escaped (a name like "<img onerror=…>" must never
@@ -1754,6 +1986,12 @@ async function initCompose(slugArg){
   if(nameEl) nameEl.addEventListener("input",syncMerge);
   if(firstEl) firstEl.addEventListener("change",syncMerge);
   if(monthEl) monthEl.addEventListener("input",syncMerge);
+  // Resolved when counted, not when wired: these two live further down the file, and reading
+  // them here by name threw before they existed.
+  initMore("cmpMoreBtn","cmpMore", ()=>{
+    const f=document.getElementById("efirst"), br=document.getElementById("ebrand");
+    return ((f&&f.checked)?1:0)+((br&&br.checked)?1:0);
+  });
   applyTemplate(currentTpl());
   refreshLinks();
   quick();
@@ -1810,6 +2048,18 @@ async function initCompose(slugArg){
   }
   function recName(){ return nameEl?nameEl.value.trim():""; }
   function preview(){ return plainText().replace(/\s+/g," ").trim().slice(0,600); }
+  /* Which opportunity this message is about, decided by what the message actually says rather
+     than by which page you happened to open the composer from. The composer keeps its slug for
+     a whole session, so fifteen monthly newsletters written in one sitting were all filed
+     against one prospect's page and that page reported fifteen sends it never received.
+     A message belongs to an opportunity when it carries that opportunity's link. */
+  function oppOf(){
+    const html=body.innerHTML||"";
+    if(slug && html.indexOf("/opp/"+slug) >= 0) return slug;
+    const m=html.match(/\/opp\/([a-z0-9-]+)/i);
+    if(m && m[1]) return m[1];
+    return "";
+  }
   el("eCopy").addEventListener("click", async ()=>{
     try{
       const html=brandWrap(htmlOut(), isBranded()), text=plainText();
@@ -1819,8 +2069,8 @@ async function initCompose(slugArg){
           "text/plain": new Blob([text],{type:"text/plain"}) })]);
       } else { await navigator.clipboard.writeText(text); }
       const to=el("eto").value.trim(), subject=el("esubject").value.trim(), m=tplMeta();
-      logActivity("email_copy", slug||"", (to?to+" · ":"")+subject);
-      logMail({ opp:slug||"", to:to, toName:recName(), subject:subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"gmail-copy", status:"copied" });
+      logActivity("email_copy", oppOf(), (to?to+" · ":"")+subject);
+      logMail({ opp:oppOf(), to:to, toName:recName(), subject:subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"gmail-copy", status:"copied" });
       toast(t("cmp_copied"));
     }catch(e){ toast(t("cmp_copy_err")); }
   });
@@ -1864,7 +2114,7 @@ async function initCompose(slugArg){
       const m=tplMeta();
       recordSend(); renderQuota();
       logActivity("email", slug||"", to+" · "+payload.subject);
-      logMail({ opp:slug||"", to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id });
+      logMail({ opp:oppOf(), to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id });
       toast(t("cmp_sent"));
     }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
     finally{ el("eSend").disabled=false; el("eSend").textContent=old; }
@@ -2119,9 +2369,19 @@ function initSettings(){
       const se=getSyncEndpoint(), ee=getEmailEndpoint();
       const agree=(se&&ee)? (se===ee?'<span class="ok-line">✓ '+esc(t("sy_one_relay"))+'</span>'
                                     :'<span class="warn-line">⚠ '+esc(t("sy_two_relays"))+'</span>') : "";
+      /* Every count that travels, so "is my other device the same as this one" is a thing you
+         read rather than a thing you hope. And anything this device is holding that the shared
+         store could not carry is named, because a mirror is allowed a physical limit and is
+         never allowed a quiet one. */
+      const held=unmirrored();
       c.innerHTML='<b>'+sent+'</b> '+t("sy_c_sent")+' · <b>'+getThreads().length+'</b> '+t("sy_c_threads")+
         ' · <b>'+getSendStamps().length+'</b> '+t("sy_c_stamps")+' · <b>'+getDrafts().length+'</b> '+t("sy_c_opps")+
-        (agree?'<br>'+agree:"");
+        ' · <b>'+getEmailTemplates().length+'</b> '+t("sy_c_msgtpl")+
+        ' · <b>'+getCustomTemplates().length+'</b> '+t("sy_c_pagetpl")+
+        ' · <b>'+Object.keys(tombs()).length+'</b> '+t("sy_c_removed")+
+        (agree?'<br>'+agree:"")+
+        (held.length? '<br><span class="warn-line">⚠ '+esc(t("sy_local_only").replace("{n}", held.length)
+          .replace("{list}", held.map(x=>String(x).replace(/^tpl:/,"")).join("، ")))+'</span>' : "");
     }
     function sySummary(){
       syCounts();
@@ -2363,9 +2623,45 @@ function initTemplates(){
     const txt=(d.textContent||"").replace(/\s+/g," ").trim();
     return txt.length>180 ? txt.slice(0,179).replace(/\s+\S*$/,"")+"\u2026" : txt;
   }
+  /* How each message has actually done, next to the message itself. The numbers already
+     existed on Insights, one screen away from the place where you choose between templates,
+     which is the only place the comparison is a decision rather than a fact. */
+  function etStats(){
+    const mail=getMailLog(), threads=getThreads(), by={};
+    const row=id=>by[id]||(by[id]={sent:0, opens:0, replies:0, people:new Set(), opps:new Set(), last:""});
+    mail.forEach(m=>{
+      if(m.direction==="in") return;
+      if(m.status!=="sent" && m.status!=="copied") return;
+      const r=row(m.templateId||"");
+      r.sent++;
+      if(m.to) r.people.add(String(m.to).toLowerCase());
+      if(m.opp) r.opps.add(m.opp);
+      if(m.ts>r.last) r.last=m.ts;
+    });
+    threads.forEach(th=>{
+      if(!th.replied) return;
+      const out=th.msgs.filter(m=>m.direction!=="in" && (m.status==="sent"||m.status==="copied"));
+      if(out[0] && by[out[0].templateId||""]) by[out[0].templateId||""].replies+=th.replied;
+    });
+    Object.keys(by).forEach(k=>{ by[k].opps.forEach(slug=>{ by[k].opens+=outreachOpens(slug); }); });
+    return by;
+  }
+  /* A template nobody has sent has no performance, and saying "0%" about it would be a claim
+     about a message that has never been tried. It says it has not been used instead. */
+  function etPerf(s){
+    if(!s || !s.sent) return '<p class="et-perf muted">'+esc(t("et_unused"))+'</p>';
+    const people=s.people.size||s.sent;
+    const rate=(a)=> Math.min(100, Math.round(a/people*100))+"%";
+    return '<p class="et-perf">'+
+      '<span><b>'+s.sent+'</b> '+esc(t("cmp_sent_n"))+'</span>'+
+      '<span><b>'+s.opens+'</b> '+esc(t("ins_opens_n"))+'</span>'+
+      '<span><b>'+rate(s.opens)+'</b> '+esc(t("home_tpl_openrate"))+'</span>'+
+      '<span'+(s.replies?' class="ok-n"':'')+'><b>'+s.replies+'</b> '+esc(t("cmp_replied_n"))+'</span>'+
+      '<span><b>'+rate(s.replies)+'</b> '+esc(t("home_tpl_replyrate"))+'</span></p>';
+  }
   function renderEmailTpls(){
     const wrap=el("emailTplList"); if(!wrap) return;
-    const list=getEmailTemplates();
+    const list=getEmailTemplates(), stats=etStats();
     if(!list.length){ wrap.innerHTML='<div class="empty">'+t("et_none")+'</div>'; return; }
     wrap.innerHTML = list.map(et=>{
       const usesMonth=tplUsesMonth(et);
@@ -2381,6 +2677,7 @@ function initTemplates(){
           </div>
           <p class="meta-line"><b>${esc(et.subject||"–")}</b></p>
           <p class="meta-line">${esc(etPreview(et.html))}</p>
+          ${etPerf(stats[et.id])}
           <div class="actions">
             <a class="btn sm" href="${viewHref("compose","etpl="+encodeURIComponent(et.id))}">${t("cmp_compose_with")}</a>
             <button class="btn ghost sm" data-etedit="${esc(et.id)}">${t("cmp_link_edit")}</button>
@@ -2632,7 +2929,11 @@ async function initHome(){
       r.opps.forEach(slug=>{ r.opens+=outOpens(slug); const p=pageBySlug[slug]; if(p) r.uniq+=p.vids.size; });
     });
     const tplRows=Object.values(byTpl).sort((a,b)=> b.sent-a.sent || String(a.name).localeCompare(String(b.name)));
-    const pct=(a,b)=> b? Math.round(a/b*100)+"%" : "<span class=\"zero\">0%</span>";
+    /* A rate is a share of something, so it cannot exceed the whole. The open rate divided
+       unique visitors by people written to, and a page visited by two browsers after one send
+       printed "200%", which is not a rate, it is a bug wearing a percent sign. Counted per
+       person and capped, because a person who opens twice is still one person who opened. */
+    const pct=(a,b)=> b? Math.min(100, Math.round(a/b*100))+"%" : "<span class=\"zero\">0%</span>";
     el("homeTemplates").innerHTML = tplRows.length
       ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
         '<th>'+t("home_tpl_name")+'</th>'+hth(t("cmp_sent_n"),t("tip_tpl_sent"))+

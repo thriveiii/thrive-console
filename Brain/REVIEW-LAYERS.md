@@ -205,18 +205,85 @@ announced to a screen reader and tapping a label focused nothing. And the langua
 36px tall next to a 33px lock, because Arabic sets a taller line box than Latin and the two
 identical controls were being sized by whichever script was inside them.
 
-## Queued, in this order
+---
 
-1. **Compose** (`compose.html`): the densest screen and the one used most under pressure.
-   Layer 2 and 4: fewer visible controls at rest, the link manager folded until there is a
-   link, the month field appearing only when the template asks for one.
-2. **Library** (`library.html`): layer 1. It currently offers search, sort, two filters and a
-   language toggle with equal weight. One primary path, the rest secondary.
-3. **Editor** (`editor.html`): layer 5. What happens when a publish fails halfway.
-4. **Templates** (`templates.html`): layer 2. Show each template's own performance next to it.
-   The numbers exist and are now counted honestly on Insights; this is putting them where the
-   choice between templates is actually made.
-5. **Activity** (`activity.html`): layer 1. It is a log; it should read as a story of the week.
+## The mirror
 
-Nothing here is cosmetic-only work. Each entry names the layer that fails today, so the pass
-can be judged rather than admired.
+A console that runs on four devices is one console or it is four, and it was four.
+
+"The ledger is the only send evidence, so a device that has not synced reads Ready rather than
+Sent" was the wrong answer, and it was mine. A message that went out went out. Which device it
+left from is an implementation detail of no interest to anybody, and dressing an incomplete
+sync as honesty is how a defect survives a review.
+
+Four holes, and one bug that made a fifth:
+
+1. **Removals never travelled.** Every merge was a union or a newest-wins-by-id, so deleting an
+   opportunity on the phone left it alive on the iPad, the iPad pushed it back, and it returned.
+   The console overruled a decision you had made. A removal is now a fact with a timestamp that
+   travels like any other, and an item comes back only if it was re-created after it was removed.
+2. **A tombstone was destroyed by `|0`.** The first version of the fix stored `Date.now()` and
+   filtered it with a bitwise operator. Bitwise truncates to 32 bits, and a millisecond
+   timestamp has not fitted in 32 bits since 25 January 1970, so every removal was wrapped into
+   garbage and then discarded as ancient. Found by the two-device test, not by reading.
+3. **Page templates never synced at all.** `thrive_templates_v1` was in neither the push list
+   nor the snapshot. You could upload a page template on one device and no other device would
+   ever know it existed.
+4. **A draft's page was stripped from the snapshot.** Sensible for a published page, which the
+   repository already holds. Wrong for one that was never published, which then existed on
+   exactly one device.
+5. **Stock messages re-seeded themselves.** Deleting one brought it back on the next load, on
+   every device.
+
+### The contract, now written down
+
+Everything the console holds is in exactly one of three classes, and there is no fourth.
+
+| Class | What | How it reaches every device |
+|---|---|---|
+| **Mirrored** | opportunities, the mail ledger, the activity log, send stamps, message templates, page template records, publishing credentials, settings, and the removals | the shared state, complete, deletions included |
+| **Published** | live pages, and a page template once published | the repository, which every device can already read |
+| **Local** | the collapsed tray, the language, the relay URL, the session key | never shared, on purpose |
+
+Page HTML is the one thing that runs to hundreds of kilobytes against a shared store measured
+in hundreds of kilobytes total. So it travels while it fits, newest first, and whatever did not
+fit is **named in Settings** with the way to fix it. A mirror is allowed a physical limit. It is
+not allowed a quiet one.
+
+`python3 tools/mirror.py` holds it: two devices and then a third, creating, editing, removing,
+re-creating, and comparing the whole state field by field. It is gate 4.
+
+### And the attribution behind it
+
+The composer keeps its slug for a whole session, so fifteen monthly newsletters written in one
+sitting were all filed against one prospect's page, and that page reported fifteen sends it had
+never received. A message belongs to an opportunity when it carries that opportunity's link,
+which is now how it is decided. Old entries are not rewritten: the console does not know which
+of them carried a link, and guessing would be the same defect wearing a repair.
+
+An open rate also printed **200%**, because unique visitors were divided by people written to.
+A rate is a share of something and cannot exceed the whole.
+
+---
+
+## The five that were queued, now done
+
+1. **Compose** (layer 2 and 4). At rest the screen asks four things: which message, to whom,
+   what it says, send. The sender address, the template management, and the two switches wait
+   behind one disclosure that counts what is on inside it, so folding never hides state.
+2. **Library** (layer 1). One primary path: search, the pills, New opportunity. Sorting, the
+   template filter, the status list and the exports moved behind the same disclosure, which
+   carries the number of filters currently applied.
+3. **Editor** (layer 5). Publishing is two writes, and between them the repository is in a state
+   that is neither published nor unpublished. If the second fails, the page is live and the
+   library still calls it a draft, which looks exactly like nothing happened. The halves are
+   named now: the card says "live, not listed" and offers to finish rather than to start again.
+4. **Templates** (layer 2). Each message carries its own sent, opens, open rate, replies and
+   reply rate, beside the message, which is the only place where the comparison is a decision.
+   A template nobody has sent says so instead of claiming 0%.
+5. **Activity** (layer 1). The week reads as a week: one line per day saying what went out, who
+   answered, what was published and how often the pages were read. The table stays underneath
+   for the moment you need the exact row.
+
+Nothing here was cosmetic. Each one names the layer that failed, so the pass can be judged
+rather than admired.
