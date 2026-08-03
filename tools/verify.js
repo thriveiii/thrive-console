@@ -247,6 +247,86 @@ head("Pages");
   else ok("every published page carries the analytics beacon (" + opps.length + " pages)");
 }
 
+/* ---------- symbols ----------
+   Three rules, all mechanical, all of which have cost somebody a day somewhere.
+
+   Explicit width and height on every instance: a viewBox alone is inferred by
+   Safari and not by Chromium on Windows, so a sprite that looks right on the
+   iPad it was built on renders as a 300 by 150 blank on a laptop.
+
+   Every symbol used at least once: a set that grows faster than the interface
+   is a set nobody prunes, and an unused symbol is a decision nobody made.
+
+   No emoji and no icon font: an emoji is a different typeface on every device
+   and an icon font is a network request that renders squares when it fails. */
+head("Symbols");
+{
+  const iconSrc = read(path.join(ROOT, "library/icons.js"));
+  const names = [];
+  let m;
+  const nm = /^\s{4}"?([a-z]+)"?:\s*'/gm;
+  while ((m = nm.exec(iconSrc))) names.push(m[1]);
+  names.length === 22 ? ok("twenty-two symbols are defined (" + names.length + ")")
+                      : bad("twenty-two symbols are defined", names.length + ": " + names.join(","));
+
+  /* every place a symbol can be asked for */
+  const surfaces = ["library/app.js", "tools/bundle.js"].concat(
+    fs.readdirSync(path.join(ROOT, "library")).filter(x => x.endsWith(".html")).map(x => "library/" + x));
+  const used = new Set();
+  for (const f of surfaces) {
+    const txt = read(path.join(ROOT, f));
+    let k;
+    const re = /data-icon="([a-z]+)"/g;
+    while ((k = re.exec(txt))) used.add(k[1]);
+    const re2 = /thriveIcon\(\s*"([a-z]+)"/g;
+    while ((k = re2.exec(txt))) used.add(k[1]);
+  }
+  /* asked for by value rather than by literal, so named here */
+  ["form", "dm", "whatsapp", "other", "web_form", "instagram", "linkedin", "x", "phone"]
+    .forEach(n => used.delete(n));
+  const missing = [...used].filter(n => names.indexOf(n) < 0);
+  missing.length ? bad("every symbol asked for is a symbol that exists", missing)
+                 : ok("every symbol asked for is a symbol that exists (" + used.size + " asked)");
+  /* Reserved, with a reason, and printed either way. A symbol nobody uses is a decision
+     nobody made, so a deferral is named here rather than left to be noticed later. */
+  const RESERVED = { drag: "the card grip, wired in phase 5" };
+  const unused = names.filter(n => !used.has(n) && !RESERVED[n]);
+  const reserved = names.filter(n => !used.has(n) && RESERVED[n]);
+  unused.length ? bad("every symbol defined is used at least once", unused)
+                : ok("every symbol defined is used at least once" +
+                     (reserved.length ? " (reserved: " + reserved.map(n => n + ", " + RESERVED[n]).join("; ") + ")" : ""));
+
+  /* the rule that cost Thrive once */
+  const noSize = [];
+  for (const f of surfaces.concat(["library/icons.js"])) {
+    const txt = read(path.join(ROOT, f));
+    const re = /<svg\s[^>]*>/g;
+    let k;
+    while ((k = re.exec(txt))) {
+      const tag = k[0];
+      if (!/\bwidth=/.test(tag) || !/\bheight=/.test(tag)) noSize.push(rel(path.join(ROOT, f)) + ": " + tag.slice(0, 70));
+    }
+    const re2 = /<use\s[^>]*>/g;
+    while ((k = re2.exec(txt))) {
+      const tag = k[0];
+      if (!/\bwidth=/.test(tag) || !/\bheight=/.test(tag)) noSize.push(rel(path.join(ROOT, f)) + ": " + tag.slice(0, 70));
+    }
+  }
+  noSize.length ? bad("every svg and every use carries explicit width and height", noSize)
+                : ok("every svg and every use carries explicit width and height");
+
+  const emoji = [];
+  for (const f of surfaces.concat(["library/i18n.js", "library/styles.css"])) {
+    const txt = read(path.join(ROOT, f));
+    /* Emoji, plus the two dingbats that a phone renders as emoji in colour. A check mark
+       and a cross are typographic marks in the text face and are not emoji, so they stay. */
+    if (/[\u{1F300}-\u{1FAFF}\u{FE0F}\u{26A0}\u{270F}]/u.test(txt)) emoji.push(rel(path.join(ROOT, f)));
+    if (/@font-face[^}]*icon/i.test(txt)) emoji.push(rel(path.join(ROOT, f)) + " (icon font)");
+  }
+  emoji.length ? bad("no emoji and no icon font reaches the interface", emoji)
+               : ok("no emoji and no icon font reaches the interface");
+}
+
 /* ---------- verdict ---------- */
 console.log("\n" + (failures ? "✕ " + failures + " of " + checks + " checks failed."
                              : "✓ all " + checks + " checks passed."));

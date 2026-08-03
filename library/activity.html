@@ -22,8 +22,8 @@
     <a href="console.html#home" data-i18n="nav_insights">Insights</a>
     <a href="console.html#library" data-i18n="nav_library">Library</a>
     <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
-    <button id="langbtn" class="langbtn">العربية</button>
-    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
+    <button id="langbtn" class="langbtn" data-icon="globe">العربية</button>
+    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-icon="lock" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
 
@@ -32,9 +32,9 @@
   <p class="sub" data-i18n="act_sub"></p>
 
   <div class="toolbar">
-    <button class="btn ghost" id="logRefresh" data-i18n="act_refresh">Refresh</button>
-    <button class="btn ghost" id="logReply" data-i18n="act_reply_btn">Log reply</button>
-    <button class="btn ghost" id="logExport" data-i18n="act_export">Export</button>
+    <button class="btn ghost" id="logRefresh" data-icon="undo" data-i18n="act_refresh">Refresh</button>
+    <button class="btn ghost" id="logReply" data-icon="mail" data-i18n="act_reply_btn">Log reply</button>
+    <button class="btn ghost" id="logExport" data-icon="archive" data-i18n="act_export">Export</button>
     <button class="btn ghost danger" id="logClear" data-i18n="act_clear">Clear</button>
   </div>
 
@@ -46,6 +46,7 @@
   <div id="logBody"></div>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="lifecycle.js" defer></script>

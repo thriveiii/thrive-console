@@ -27,7 +27,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <a href="#home" data-view="home" data-i18n="nav_insights"></a>
     <a href="#library" data-view="library" data-i18n="nav_library"></a>
     <a href="#settings" data-view="settings" data-i18n="nav_settings"></a>
-    <button id="langbtn" class="langbtn">العربية</button>
+    <button id="langbtn" class="langbtn" data-icon="globe">العربية</button>
     <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
@@ -48,11 +48,11 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <div class="verdict-sub" id="boardVerdictSub"></div>
     </div>
     <div class="toolbar" style="margin:0">
-      <a class="btn" href="#editor" data-i18n="new_opp">New opportunity</a>
-      <a class="btn ghost" href="#compose" data-i18n="home_send">Send an email</a>
-      <a class="btn ghost" href="#library" data-i18n="home_open_lib">Open library</a>
-      <a class="btn ghost" href="#home" data-i18n="board_numbers">See the numbers</a>
-      <button class="btn ghost" id="boardRefresh" data-i18n="ins_refresh">Refresh</button>
+      <a class="btn" href="#editor" data-icon="page" data-i18n="new_opp">New opportunity</a>
+      <a class="btn ghost" href="#compose" data-icon="send" data-i18n="home_send">Send an email</a>
+      <a class="btn ghost" href="#library" data-icon="archive" data-i18n="home_open_lib">Open library</a>
+      <a class="btn ghost" href="#home" data-icon="spark" data-i18n="board_numbers">See the numbers</a>
+      <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
     </div>
   </div>
 
@@ -60,7 +60,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <div class="board" id="boardLanes">
     <section class="lane" data-lane="draft">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_draft">Draft</span>
+        <span class="lane-ic" data-icon="edit" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_draft">Draft</span>
         <span class="lane-count" data-count="draft">0</span>
       </header>
       <div class="lane-body" data-body="draft"></div>
@@ -68,7 +68,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
     <section class="lane" data-lane="live">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_live">Live</span>
+        <span class="lane-ic" data-icon="check" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_live">Live</span>
         <span class="lane-count" data-count="live">0</span>
       </header>
       <div class="lane-body" data-body="live"></div>
@@ -76,7 +76,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
     <section class="lane" data-lane="sent">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_sent">Sent</span>
+        <span class="lane-ic" data-icon="send" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_sent">Sent</span>
         <span class="lane-count" data-count="sent">0</span>
       </header>
       <div class="lane-body" data-body="sent"></div>
@@ -84,7 +84,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
     <section class="lane" data-lane="opened">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_opened">Opened</span>
+        <span class="lane-ic" data-icon="spark" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_opened">Opened</span>
         <span class="lane-count" data-count="opened">0</span>
       </header>
       <div class="lane-body" data-body="opened"></div>
@@ -92,7 +92,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
     <section class="lane" data-lane="replied">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_replied">Replied</span>
+        <span class="lane-ic" data-icon="mail" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_replied">Replied</span>
         <span class="lane-count" data-count="replied">0</span>
       </header>
       <div class="lane-body" data-body="replied"></div>
@@ -106,10 +106,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <!-- Finished work. Counted, not competing for width. IDENTITY §3.3 -->
   <section class="tray" id="boardTray">
     <button class="tray-toggle" id="trayToggle" aria-expanded="false" aria-controls="trayBody">
-      <svg class="tray-chev" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <path d="M1 3.5 L5 7 L9 3.5" fill="none" stroke="currentColor" stroke-width="1.6"
-              stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <span class="tray-chev" data-icon="chevron" data-icon-size="12" aria-hidden="true"></span>
       <span data-i18n="tray_closed">Closed</span>
       <span class="lane-count" id="trayCount">0</span>
     </button>
@@ -120,9 +117,10 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
   <!-- Empty state. A designed state, not a missing one. IDENTITY §9.3 -->
   <div class="empty" id="boardEmpty" hidden>
+    <span class="empty-ic" data-icon="spark" data-icon-size="32" aria-hidden="true"></span>
     <h3 class="block-h" data-i18n="board_empty_h">No opportunities yet.</h3>
     <p class="sub" data-i18n="board_empty_p"></p>
-    <a class="btn" href="#editor" data-i18n="new_opp">New opportunity</a>
+    <a class="btn" href="#editor" data-icon="page" data-i18n="new_opp">New opportunity</a>
   </div>
 </main>
 <main class="wrap view" id="view-home" hidden>
@@ -131,34 +129,34 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <p class="lede" id="homeStory"></p>
 
   <div class="toolbar">
-    <a class="btn" href="#compose" data-i18n="home_send">Send an email</a>
-    <a class="btn ghost" href="#editor" data-i18n="new_opp">New opportunity</a>
-    <a class="btn ghost" href="#library" data-i18n="home_open_lib">Open library</a>
-    <button class="btn ghost" id="homeRefresh" data-i18n="ins_refresh">Refresh</button>
-    <button class="btn ghost" id="homeRepair" hidden data-i18n="home_repair">Fix analytics on live pages</button>
+    <a class="btn" href="#compose" data-icon="send" data-i18n="home_send">Send an email</a>
+    <a class="btn ghost" href="#editor" data-icon="page" data-i18n="new_opp">New opportunity</a>
+    <a class="btn ghost" href="#library" data-icon="archive" data-i18n="home_open_lib">Open library</a>
+    <button class="btn ghost" id="homeRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
+    <button class="btn ghost" id="homeRepair" hidden data-icon="undo" data-i18n="home_repair">Fix analytics on live pages</button>
   </div>
   <div class="note warn-note" id="homeRepairNote" hidden></div>
 
-  <h3 class="block-h" data-i18n="home_outreach">Outreach</h3>
+  <h3 class="block-h" data-icon="send" data-i18n="home_outreach">Outreach</h3>
   <div class="tiles" id="tilesOutreach"></div>
 
-  <h3 class="block-h" data-i18n="home_pages_h">Pages &amp; visitors</h3>
+  <h3 class="block-h" data-icon="page" data-i18n="home_pages_h">Pages &amp; visitors</h3>
   <div class="tiles" id="tilesPages"></div>
   <div class="note" id="homeDataNote"></div>
   <div class="note" id="homeProbe" hidden></div>
 
-  <h3 class="block-h" data-i18n="home_campaigns">Campaign performance</h3>
+  <h3 class="block-h" data-icon="spark" data-i18n="home_campaigns">Campaign performance</h3>
   <div id="homeCampaigns"></div>
 
-  <h3 class="block-h" data-i18n="home_tpl_h">Which message is working</h3>
+  <h3 class="block-h" data-icon="mail" data-i18n="home_tpl_h">Which message is working</h3>
   <p class="sub" data-i18n="home_tpl_sub"></p>
   <div id="homeTemplates"></div>
 
-  <h3 class="block-h" data-i18n="home_people_h">Who is paying attention</h3>
+  <h3 class="block-h" data-icon="channel" data-i18n="home_people_h">Who is paying attention</h3>
   <p class="sub" data-i18n="home_people_sub"></p>
   <div id="homePeople"></div>
 
-  <h3 class="block-h" data-i18n="home_top">Most opened pages</h3>
+  <h3 class="block-h" data-icon="page" data-i18n="home_top">Most opened pages</h3>
   <div id="homeTop"></div>
 </main>
 <main class="wrap view" id="view-library" hidden>
@@ -170,9 +168,9 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
        controls that are used rarely, so they wait behind one disclosure instead of competing
        with the search box for the same glance. -->
   <div class="toolbar">
-    <div class="search"><input id="q" type="search" data-i18n-ph="search_ph"></div>
-    <a class="btn" href="#editor" data-i18n="new_opp">New opportunity</a>
-    <button class="btn ghost" id="libMoreBtn" aria-expanded="false" aria-controls="libMore" data-i18n="lib_more">More</button>
+    <div class="search"><span class="fieldic" data-icon="search" aria-hidden="true"></span><input id="q" type="search" data-i18n-ph="search_ph"></div>
+    <a class="btn" href="#editor" data-icon="page" data-i18n="new_opp">New opportunity</a>
+    <button class="btn ghost" id="libMoreBtn" aria-expanded="false" aria-controls="libMore" data-icon="filter" data-i18n="lib_more">More</button>
   </div>
 
   <div id="libMore" class="more-bar" hidden>
@@ -188,9 +186,9 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <option value="archived" data-i18n="statusf_archived">Archived</option>
       <option value="all" data-i18n="statusf_all">All statuses</option>
     </select>
-    <button class="btn ghost" id="exportManifest" data-i18n="export_manifest">Export manifest.json</button>
-    <a class="btn ghost" href="#templates" data-i18n="nav_templates">Templates</a>
-    <a class="btn ghost" href="#activity" data-i18n="nav_activity">Activity</a>
+    <button class="btn ghost" id="exportManifest" data-icon="import" data-i18n="export_manifest">Export manifest.json</button>
+    <a class="btn ghost" href="#templates" data-icon="page" data-i18n="nav_templates">Templates</a>
+    <a class="btn ghost" href="#activity" data-icon="clock" data-i18n="nav_activity">Activity</a>
   </div>
 
   <div id="pipeline" class="pipeline"></div>
@@ -222,7 +220,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
            location, the phone and the quote are real and optional, so they wait behind one
            disclosure that counts how many of them you have filled in. -->
       <div class="bar" style="margin:0 0 12px">
-        <button class="btn ghost sm" id="edMoreBtn" aria-expanded="false" aria-controls="edMore" data-i18n="lib_more">More</button>
+        <button class="btn ghost sm" id="edMoreBtn" aria-expanded="false" aria-controls="edMore" data-icon="filter" data-i18n="lib_more">More</button>
       </div>
       <div id="edMore" class="more-bar" hidden>
         <div class="field"><label for="f_sent" data-i18n="f_sent">Send date</label><input id="f_sent" class="input" type="date"></div>
@@ -259,14 +257,14 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
           <button data-dev="desktop" class="on" data-i18n="dev_desktop">Desktop</button>
           <button data-dev="phone" data-i18n="dev_phone">Phone</button>
         </div>
-        <button class="btn ghost sm" id="openTab" data-i18n="preview_open">Open</button>
+        <button class="btn ghost sm" id="openTab" data-icon="page" data-i18n="preview_open">Open</button>
         <button class="btn ghost sm" id="copyLink" data-i18n="preview_copy">Copy link</button>
       </div>
       <div class="framewrap"><iframe id="frame" class="frame" title="preview"></iframe></div>
       <div class="bar bar-actions">
-        <button class="btn" id="publishBtn" data-i18n="publish">Publish</button>
-        <button class="btn ghost" id="saveLib" data-i18n="save_lib">Save to library</button>
-        <button class="btn ghost" id="dlPage" data-i18n="dl_page">Download</button>
+        <button class="btn" id="publishBtn" data-icon="send" data-i18n="publish">Publish</button>
+        <button class="btn ghost" id="saveLib" data-icon="check" data-i18n="save_lib">Save to library</button>
+        <button class="btn ghost" id="dlPage" data-icon="import" data-i18n="dl_page">Download</button>
         <button class="btn ghost" id="copyManifest" data-i18n="copy_manifest">Copy manifest entry</button>
       </div>
     </div>
@@ -283,7 +281,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <div class="etpl-bar">
       <label for="etpl" class="etpl-label" data-i18n="cmp_template">Message template</label>
       <select id="etpl" class="input"></select>
-      <button class="btn ghost sm" id="cmpMoreBtn" aria-expanded="false" aria-controls="cmpMore" data-i18n="lib_more">More</button>
+      <button class="btn ghost sm" id="cmpMoreBtn" aria-expanded="false" aria-controls="cmpMore" data-icon="filter" data-i18n="lib_more">More</button>
     </div>
     <!-- One tap to a starting message. The editor still opens blank: this offers, it does not
          decide. It is how a page you just published goes out without writing from nothing. -->
@@ -291,9 +289,9 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <div id="cmpMore" class="more-bar" hidden>
       <div class="field"><label for="efrom" data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
       <button class="btn ghost sm" id="eSaveTpl" data-i18n="cmp_save_tpl">Save as template</button>
-      <label class="btn ghost sm" for="eTplFile" data-i18n="cmp_tpl_upload">Import HTML as a message</label>
+      <label class="btn ghost sm" for="eTplFile" data-icon="import" data-i18n="cmp_tpl_upload">Import HTML as a message</label>
       <input id="eTplFile" type="file" accept=".html,.htm,text/html" hidden>
-      <a class="btn ghost sm" href="#templates?kind=mail" data-i18n="cmp_manage_tpl">Manage</a>
+      <a class="btn ghost sm" href="#templates?kind=mail" data-icon="edit" data-i18n="cmp_manage_tpl">Manage</a>
       <label class="chk"><input type="checkbox" id="efirst"> <span data-i18n="cmp_firstname">Greet by first name only (Hi Ahmed)</span></label>
       <label class="chk"><input type="checkbox" id="ebrand"> <span data-i18n="cmp_branded">Add logo header (for known contacts; a plain personal email reaches the inbox better)</span></label>
     </div>
@@ -347,9 +345,9 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     </div>
 
     <div class="bar bar-actions">
-      <button class="btn" id="eSend" data-i18n="cmp_send">Send</button>
-      <button class="btn ghost" id="eCopy" data-i18n="cmp_copy">Copy for Gmail</button>
-      <button class="btn ghost" id="eMail" data-i18n="cmp_mailto">Open in mail app</button>
+      <button class="btn" id="eSend" data-icon="send" data-i18n="cmp_send">Send</button>
+      <button class="btn ghost" id="eCopy" data-icon="copy" data-i18n="cmp_copy">Copy for Gmail</button>
+      <button class="btn ghost" id="eMail" data-icon="mail" data-i18n="cmp_mailto">Open in mail app</button>
       <div id="quotaMeter" class="quota-meter" title=""></div>
     </div>
   </section>
@@ -370,7 +368,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <p class="sub" data-i18n="tpl_page_sub"></p>
 
     <section class="panel upload-panel">
-      <h3 class="block-h" data-i18n="tpl_upload_h">Upload a page template</h3>
+      <h3 class="block-h" data-icon="import" data-i18n="tpl_upload_h">Upload a page template</h3>
       <p class="sub" data-i18n="tpl_upload_sub"></p>
       <div class="dz" id="tplDz" data-i18n="upload_dz">Drop a finished .html file here, or click to choose</div>
       <input id="tplFile" type="file" accept=".html,.htm,text/html" hidden>
@@ -380,21 +378,21 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
         <div class="field"><label for="tpl_lang" data-i18n="tpl_lang">Language</label>
           <select id="tpl_lang"><option value="EN">EN</option><option value="AR">AR</option></select></div>
       </div>
-      <button class="btn" id="tplAdd" data-i18n="tpl_add">Add template</button>
+      <button class="btn" id="tplAdd" data-icon="page" data-i18n="tpl_add">Add template</button>
     </section>
 
-    <h3 class="block-h" data-i18n="tpl_builtin_h">Approved page templates</h3>
+    <h3 class="block-h" data-icon="page" data-i18n="tpl_builtin_h">Approved page templates</h3>
     <div class="tpl" id="builtinList"></div>
 
-    <h3 class="block-h" style="margin-top:26px" data-i18n="tpl_custom_h">Your uploaded page templates</h3>
+    <h3 class="block-h" style="margin-top:26px" data-icon="page" data-i18n="tpl_custom_h">Your uploaded page templates</h3>
     <div class="tpl" id="customList"></div>
   </section>
 
   <section id="tplPaneMail" data-tplpane="mail" hidden>
-    <h3 class="block-h" id="email" data-i18n="tpl_email_h">Message templates</h3>
+    <h3 class="block-h" id="email" data-icon="mail" data-i18n="tpl_email_h">Message templates</h3>
     <p class="sub" data-i18n="tpl_mail_sub"></p>
     <div class="bar" style="margin-bottom:14px">
-      <button class="btn" id="etNew" data-i18n="et_new">New message template</button>
+      <button class="btn" id="etNew" data-icon="mail" data-i18n="et_new">New message template</button>
     </div>
 
     <section class="panel settings-panel" id="etEditor" hidden>
@@ -423,9 +421,9 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <p class="sub" data-i18n="act_sub"></p>
 
   <div class="toolbar">
-    <button class="btn ghost" id="logRefresh" data-i18n="act_refresh">Refresh</button>
-    <button class="btn ghost" id="logReply" data-i18n="act_reply_btn">Log reply</button>
-    <button class="btn ghost" id="logExport" data-i18n="act_export">Export</button>
+    <button class="btn ghost" id="logRefresh" data-icon="undo" data-i18n="act_refresh">Refresh</button>
+    <button class="btn ghost" id="logReply" data-icon="mail" data-i18n="act_reply_btn">Log reply</button>
+    <button class="btn ghost" id="logExport" data-icon="archive" data-i18n="act_export">Export</button>
     <button class="btn ghost danger" id="logClear" data-i18n="act_clear">Clear</button>
   </div>
 
@@ -441,7 +439,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <p class="sub" data-i18n="set_sub"></p>
 
   <section class="panel settings-panel" id="connPanel">
-    <h3 class="block-h" data-i18n="conn_h">Connection health</h3>
+    <h3 class="block-h" data-icon="check" data-i18n="conn_h">Connection health</h3>
     <p class="sub" data-i18n="conn_sub"></p>
     <ol class="conn-list" id="connList"></ol>
     <div class="bar">
@@ -454,7 +452,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_gh_h">GitHub publishing</h3>
+    <h3 class="block-h" data-icon="import" data-i18n="set_gh_h">GitHub publishing</h3>
     <p class="sub" data-i18n="set_gh_sub"></p>
     <div class="grid3">
       <div class="field"><label for="gh_owner" data-i18n="gh_owner_l">Owner</label><input id="gh_owner" class="input" autocomplete="off"></div>
@@ -472,14 +470,14 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_ep_h">Analytics endpoint</h3>
+    <h3 class="block-h" data-icon="spark" data-i18n="set_ep_h">Analytics endpoint</h3>
     <p class="sub" data-i18n="set_ep_sub"></p>
     <div class="field"><input id="ep2" class="input" type="url" data-i18n-ph="ins_endpoint_ph"></div>
     <button class="btn ghost" id="epSave2" data-i18n="ep_save">Save endpoint</button>
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_email_h">Email sending</h3>
+    <h3 class="block-h" data-icon="mail" data-i18n="set_email_h">Email sending</h3>
     <p class="sub" data-i18n="set_email_sub"></p>
     <div class="grid2">
       <div class="field"><label for="em_name" data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
@@ -490,7 +488,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_sync_h">Live sync across devices</h3>
+    <h3 class="block-h" data-icon="channel" data-i18n="set_sync_h">Live sync across devices</h3>
     <p class="sub" data-i18n="set_sync_sub"></p>
     <div class="field"><label for="sy_ep" data-i18n="sy_ep_l">Sync endpoint (the same relay /exec URL)</label>
       <input id="sy_ep" class="input" type="url" autocomplete="off"></div>
@@ -505,7 +503,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_quota_h">Sending limits (Resend free tier)</h3>
+    <h3 class="block-h" data-icon="clock" data-i18n="set_quota_h">Sending limits (Resend free tier)</h3>
     <p class="sub" data-i18n="set_quota_sub"></p>
     <div class="quota-readout" id="quotaReadout"></div>
     <div class="grid2">
@@ -516,11 +514,11 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_backup_h">Backup &amp; restore</h3>
+    <h3 class="block-h" data-icon="archive" data-i18n="set_backup_h">Backup &amp; restore</h3>
     <p class="sub" data-i18n="set_backup_sub"></p>
     <div class="bar">
-      <button class="btn" id="bkExport" data-i18n="bk_export">Export backup</button>
-      <label class="btn ghost" for="bkFile" data-i18n="bk_import">Restore from file</label>
+      <button class="btn" id="bkExport" data-icon="archive" data-i18n="bk_export">Export backup</button>
+      <label class="btn ghost" for="bkFile" data-icon="import" data-i18n="bk_import">Restore from file</label>
       <input id="bkFile" type="file" accept="application/json,.json" hidden>
     </div>
   </section>
@@ -534,17 +532,17 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <span class="pill" id="modalState"></span>
     </div>
     <div class="modal-acts">
-      <button class="btn ghost sm" id="modalCopy" type="button" data-i18n="mw_copy_link">Copy link</button>
-      <button class="modal-close" id="modalClose" type="button" data-i18n="dw_close">Close</button>
+      <button class="btn ghost sm" id="modalCopy" type="button" data-icon="link" data-i18n="mw_copy_link">Copy link</button>
+      <button class="modal-close" id="modalClose" type="button" data-icon="close" data-i18n="dw_close">Close</button>
     </div>
     <p class="modal-why" id="modalWhy" hidden></p>
   </header>
   <nav class="modal-tabs" id="modalTabs" role="tablist">
-    <button class="modal-tab on" role="tab" aria-selected="true"  data-tab="overview" data-i18n="mw_overview">Overview</button>
-    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="text"     data-i18n="mw_text">Text</button>
-    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="page"     data-i18n="mw_page">Page</button>
-    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="outreach" data-i18n="mw_outreach">Outreach</button>
-    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="history"  data-i18n="mw_history">History</button>
+    <button class="modal-tab on" role="tab" aria-selected="true"  data-tab="overview" data-icon="spark" data-i18n="mw_overview">Overview</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="text"     data-icon="text" data-i18n="mw_text">Text</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="page"     data-icon="page" data-i18n="mw_page">Page</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="outreach" data-icon="send" data-i18n="mw_outreach">Outreach</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="history"  data-icon="clock" data-i18n="mw_history">History</button>
   </nav>
   <div class="modal-body" id="modalBody">
     <div class="modal-panel" id="modalOverview"></div>
@@ -555,6 +553,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   </div>
 </div>
 
+<script src="icons.js"></script>
 <script src="i18n.js"></script>
 <script src="gate.js"></script>
 <script src="stage-model.js"></script>

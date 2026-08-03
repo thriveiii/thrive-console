@@ -882,6 +882,33 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   .mw-moves .btn,.oc-body,.toast-act{ min-height:44px }
 }
 
+
+/* --- the symbol set -------------------------------------------------------
+   Stroke only, inheriting currentColor, so a symbol is never a second colour
+   decision after the text beside it. Decoration in the accessibility sense: the
+   label carries the meaning, so every one of these is aria-hidden and every
+   control keeps its words.                                                   */
+
+.ic{ flex:0 0 auto; vertical-align:-.16em; opacity:.85 }
+/* An element given a symbol becomes a row, so the symbol and its label share a
+   baseline instead of the symbol pushing the line height around. */
+.has-ic{ display:inline-flex; align-items:center; gap:.45em }
+.btn.has-ic,.chip.has-ic,.modal-tab.has-ic{ gap:.4em }
+.block-h.has-ic,.title.has-ic,.mw-h.has-ic{ display:flex; align-items:center; gap:.5em }
+
+/* Warmth, item two of three: a lane header symbol takes its lane colour, which
+   is already in the token table and already carries a meaning. No new colour is
+   introduced, so IDENTITY §11 G3 has nothing to ask. */
+.lane-ic{ display:inline-flex; align-items:center; color:var(--lane-c) }
+.lane-ic .ic{ opacity:1 }
+.lane-head{ gap:var(--s-2) }
+.lane-head > .lane-title{ margin-inline-end:auto }
+
+/* Warmth, item one of three: every empty state gets one symbol above its
+   sentence, at 32px and 40%, and nothing else. */
+.mw-empty-i,.empty-ic{ color:var(--ink-3); opacity:.4 }
+.empty .empty-ic{ display:block; margin:0 auto var(--s-3) }
+
 /* --- the opportunity window ------------------------------------------------
    Centred, not pinned to an edge. The drawer was specified when this view was
    mostly a single action; it has become a workspace with several tabs, and a
