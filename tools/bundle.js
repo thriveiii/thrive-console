@@ -5,8 +5,8 @@
      ->  dist/thrive-console.html  the offline copy: everything inlined, opens from a file
 
    Both are generated from library/*.html, which stay the source of every view. One shell means
-   one editor and one composer in the document, which is what lets the drawer host them by
-   moving the existing nodes instead of duplicating markup.
+   one editor and one composer in the document, which is what lets the opportunity window host
+   them by moving the existing nodes instead of duplicating markup.
 
    Every page becomes a section of one document, the nav switches between them without a
    navigation, and each page's init runs the first time its section is shown. Styles, fonts,
@@ -76,22 +76,46 @@ const sectionsLinked = VIEWS.map(v =>
   rewrite(mainOf(v.file)).split(logo).join("../assets/thrive-logo.png") + "</main>"
 ).join("\n");
 
-/* The drawer host lives outside every view, because it opens from more than one of them and a
-   fixed element inside a [hidden] view is a bug waiting to happen. PR 4 moves the existing
-   editor and composer nodes into it, so the document holds exactly one of each. */
-const DRAWER = `
-<div class="drawer-scrim" id="drawerScrim" hidden></div>
-<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" hidden>
-  <header class="drawer-head">
-    <span class="drawer-title" id="drawerTitle"></span>
-    <button class="drawer-close" id="drawerClose" data-i18n="dw_close">Close</button>
+/* The opportunity window lives outside every view, because it opens from more than one of them
+   and a fixed element inside a [hidden] view is a bug waiting to happen. It MOVES the existing
+   editor and composer nodes into #modalHost, so the document holds exactly one of each.
+
+   Five tabs, three of which this window renders itself and two of which it borrows. The three
+   it renders sit beside #modalHost rather than inside it, so "did the window give back
+   everything it borrowed" stays a question with a one line answer: is #modalHost empty.
+
+   Why centred rather than pinned to an edge: the drawer was specified when this view was
+   mostly a single action. It has become a workspace with several tabs, and a 580px column
+   against the edge of a 1440px screen pushes the eye sideways while the board sits idle
+   behind it. A centred surface is the correct shape for a workspace. */
+const MODAL = `
+<div class="modal-scrim" id="modalScrim" hidden></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
+  <header class="modal-head">
+    <div class="modal-heading">
+      <h2 class="modal-title" id="modalTitle"></h2>
+      <span class="pill" id="modalState"></span>
+    </div>
+    <div class="modal-acts">
+      <button class="btn ghost sm" id="modalCopy" type="button" data-i18n="mw_copy_link">Copy link</button>
+      <button class="modal-close" id="modalClose" type="button" data-i18n="dw_close">Close</button>
+    </div>
+    <p class="modal-why" id="modalWhy" hidden></p>
   </header>
-  <nav class="drawer-tabs" id="drawerTabs">
-    <button class="drawer-tab on" data-tab="compose" data-i18n="dw_compose">Write email</button>
-    <button class="drawer-tab" data-tab="edit" data-i18n="dw_edit">Edit page</button>
+  <nav class="modal-tabs" id="modalTabs" role="tablist">
+    <button class="modal-tab on" role="tab" aria-selected="true"  data-tab="overview" data-i18n="mw_overview">Overview</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="text"     data-i18n="mw_text">Text</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="page"     data-i18n="mw_page">Page</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="outreach" data-i18n="mw_outreach">Outreach</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="history"  data-i18n="mw_history">History</button>
   </nav>
-  <div class="drawer-body" id="drawerBody"></div>
-</aside>`;
+  <div class="modal-body" id="modalBody">
+    <div class="modal-panel" id="modalOverview"></div>
+    <div class="modal-panel" id="modalText" hidden></div>
+    <div class="modal-panel" id="modalHistory" hidden></div>
+    <div class="modal-host" id="modalHost"></div>
+  </div>
+</div>`;
 
 /* Four destinations, not three. The numbers were reachable only from inside the Library after
    the reduction, which read as though they had been deleted. What you measure has to be one
@@ -147,7 +171,7 @@ ${head}
 </header>
 
 ${sections2}
-${DRAWER}
+${MODAL}
 
 ${body}
 <script>
@@ -182,13 +206,13 @@ ${body}
     var found = VIEWS.some(function(v){ return v.id === id; });
     if(!found) id = VIEWS[0].id;
     // Going somewhere closes the sheet you were working in, and the sheet hands its view back.
-    if(window.thriveDrawer && window.thriveDrawer.isOpen && window.thriveDrawer.isOpen())
-      window.thriveDrawer.close(true);   // now, not after the transition: the view is needed here
-    var host = document.getElementById("drawerBody");
+    if(window.thriveModal && window.thriveModal.isOpen && window.thriveModal.isOpen())
+      window.thriveModal.close(true);   // now, not after the transition: the view is needed here
+    var host = document.getElementById("modalHost");
     VIEWS.forEach(function(v){
       var el = document.getElementById("view-" + v.id);
       if(!el) return;
-      if(host && el.parentNode === host) return;   // the drawer owns this one right now
+      if(host && el.parentNode === host) return;   // the window owns this one right now
       el.hidden = (v.id !== id);
     });
     document.querySelectorAll(".nav a[data-view]").forEach(function(a){
@@ -210,11 +234,26 @@ ${body}
     }
     try{ window.scrollTo(0,0); }catch(e){}
   }
+  /* Handing a view to something that is not the shell.
+     The opportunity window borrows the composer and the editor by moving their nodes, and it
+     re-runs their init every time a tab is entered. Over a DOM that init already wired, that is
+     a SECOND set of listeners on every control in it, which on a composer means one click on
+     Send sending twice. So the borrower asks for the view to be put back the way it was at
+     boot first, exactly as this shell already does for itself, and the shell marks it stale so
+     it re-inits when somebody navigates to it directly. */
+  window.thriveViewReset = function(id){
+    var el = document.getElementById("view-" + id);
+    if(el && snapshot[id] != null){
+      el.innerHTML = snapshot[id];
+      if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
+    }
+    stale[id] = 1;
+  };
   window.addEventListener("hashchange", function(){ show(current()); });
   document.addEventListener("DOMContentLoaded", function(){
     snap();
     initLang();
-    if(typeof initDrawer === "function") initDrawer();
+    if(typeof initModal === "function") initModal();
     show(current());
     // A fresh unlock lands on the first view with its data already pulled. Registered like
     // every other listener, so it cannot displace the sync round or a view's own refresh.

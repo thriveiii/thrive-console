@@ -3351,16 +3351,16 @@ async function initBoard(){
     el("boardChips").hidden=empty;
     el("boardTray").hidden=empty;
 
-    // A token opens the work for that opportunity. PR 4 turns this into a drawer; until then
-    // it is an honest page change rather than a half-built panel.
+    // A token opens the whole opportunity: what it is, its text, its page, its outreach, and
+    // what has happened to it.
     playFlip(first);
 
     document.querySelectorAll(".tok").forEach(tk=>tk.addEventListener("click",()=>{
       const slug=tk.getAttribute("data-slug");
       const name=(tk.querySelector(".tok-name")||{}).textContent||slug;
-      // In the shell the work opens beside you. On a single page there is no drawer, and an
-      // honest page change beats a panel that is not there.
-      if(window.thriveDrawer) window.thriveDrawer.open(slug, "compose", name);
+      // In the shell the work opens in one centred window. On a single page there is no
+      // window, and an honest page change beats a panel that is not there.
+      if(window.thriveModal) window.thriveModal.open(slug, "overview", name);
       else goTo("compose","slug="+encodeURIComponent(slug));
     }));
   }
@@ -3392,25 +3392,36 @@ async function initBoard(){
   await render();
 }
 
-/* ---------- the drawer ----------
-   The editor and the composer open from the token that needs them, without a view change and
-   without losing your place. It MOVES the existing #view-editor and #view-compose nodes into
-   the drawer host rather than duplicating their markup, so the document keeps exactly one
-   editor, one composer, and one set of listeners. Duplicating them would mean two elements
-   with the same ids and a composer whose send button belongs to whichever copy loaded last.
-   Only the shell has a #drawer, so on a single page this whole layer stays dormant.
+/* ---------- the opportunity window ----------
+   One centred surface, over a dimmed board, with five tabs.
 
-   What it borrows it MUST give back. It did not, and that was the blank screen: once a token
-   had opened the drawer, #view-compose lived inside a closed drawer forever, the shell's own
-   navigation skipped it because the drawer owned it, and "Send an email" led to nothing.
-   A panel that takes a node out of the document owes the document that node back. */
-function initDrawer(){
+   It replaced a panel pinned to the inline-end edge. That panel was specified when this view
+   was mostly a single action; it has become a workspace with several tabs, and a 580px column
+   against the edge of a 1440px screen pushes the eye sideways while the board sits idle behind
+   it. The problem gets worse with every tab added. A centred surface is the correct shape for
+   a workspace, so this is the shape.
+
+   Three tabs it renders itself (Overview, Text, History) and two it BORROWS: it moves the
+   existing #view-editor and #view-compose nodes into #modalHost rather than duplicating their
+   markup, so the document keeps exactly one editor, one composer, and one set of listeners.
+   Duplicating would mean two elements carrying the same ids and a send button belonging to
+   whichever copy loaded last. Only the shell has a #modal, so on a single page this whole
+   layer stays dormant.
+
+   What it borrows it MUST give back, immediately when a navigation needs it rather than after
+   the closing transition. A window that takes a node out of the document owes the document
+   that node back. */
+function initModal(){
   const el=id=>document.getElementById(id);
-  const drawer=el("drawer"), scrim=el("drawerScrim"), body=el("drawerBody");
-  if(!drawer || !body) return null;
-  let opener=null, current="", open_=false;
+  const modal=el("modal"), scrim=el("modalScrim"), body=el("modalBody"), host=el("modalHost");
+  if(!modal || !body || !host) return null;
 
-  /* Where each borrowed view lives when the drawer does not have it. Recorded once, on the
+  const PANELS={ overview:"modalOverview", text:"modalText", history:"modalHistory" };
+  const BORROWED={ page:"view-editor", outreach:"view-compose" };
+
+  let opener=null, current="", rec=null, open_=false, scrollY=0;
+
+  /* Where each borrowed view lives when the window does not have it. Recorded once, on the
      first borrow, from the document itself rather than assumed. */
   const home={};
   function remember(view){
@@ -3418,82 +3429,253 @@ function initDrawer(){
     home[view.id]={ parent:view.parentNode, next:view.nextSibling };
   }
   function giveBack(){
-    Array.prototype.slice.call(body.children).forEach(n=>{
+    Array.prototype.slice.call(host.children).forEach(n=>{
       const h=home[n.id];
+      if(!h || !h.parent) return;
       n.hidden=true; n.classList.add("wrap");
-      if(h && h.parent) h.parent.insertBefore(n, h.next);
+      h.parent.insertBefore(n, h.next);
     });
   }
 
-  function host(tab){
-    const id = tab==="edit" ? "view-editor" : "view-compose";
-    const view=document.getElementById(id);
-    if(!view) return false;
-    // park every other view back where it belongs before adopting this one
-    giveBack();
-    remember(view);
-    if(view.parentNode!==body) body.appendChild(view);
-    view.hidden=false; view.classList.remove("wrap");
-    return true;
+  /* ---- small pieces shared by the panels ---------------------------------
+     A slug, a URL, an address and a timestamp are read left to right whatever the interface
+     language is, so they are isolated rather than left to the bidi algorithm, which would
+     otherwise reorder them inside an Arabic line and make them read as a different value. */
+  function ltr(s){ return '<span class="mono-iso">'+esc(s)+'</span>'; }
+  function row(label, value){
+    return '<div class="mw-row"><dt>'+esc(label)+'</dt><dd>'+value+'</dd></div>';
   }
-  function tabs(active){
-    drawer.querySelectorAll(".drawer-tab").forEach(b=>b.classList.toggle("on", b.getAttribute("data-tab")===active));
+  function stageName(st){
+    if(st==="won") return t("tray_won");
+    if(st==="lost") return t("tray_lost");
+    return t("lane_"+st);
+  }
+
+  /* ---- Overview ---------------------------------------------------------- */
+  function renderOverview(o){
+    const box=el("modalOverview"); if(!box) return;
+    if(!o){ box.innerHTML=""; return; }
+    const st=effStage(o);
+    const age=(typeof ThriveBoard!=="undefined" && ThriveBoard.ageDays)
+      ? ThriveBoard.ageDays(o, { mail:getMailLog() })
+      : daysSince(o.sent_on);
+    const rows=[];
+    rows.push(row(t("mw_o_slug"), ltr(o.slug)));
+    rows.push(row(t("mw_o_state"), '<span class="mw-state mw-state-'+esc(st)+'">'+esc(stageName(st))+'</span>'));
+    // The age carries a number, so it goes through the plural rule rather than a flat template:
+    // Arabic inflects the noun after the count and "3 يوم" is not Arabic.
+    rows.push(row(t("mw_o_age"), esc(boardText(getLang(),"tok_days",age))
+      .split(String(age)).join('<span class="n">'+age+'</span>')));
+    if(o.location) rows.push(row(t("mw_o_where"), esc(o.location)));
+    if(o.template) rows.push(row(t("mw_o_tpl"), esc(o.template)));
+    if(o.sent_on) rows.push(row(t("mw_o_made"), ltr(o.sent_on)));
+    rows.push(row(t("mw_o_page"), isLive(o)
+      ? '<a href="'+esc(liveUrl(o.slug))+'" target="_blank" rel="noopener">'+ltr(liveUrl(o.slug))+'</a>'
+      : '<span class="mw-muted">'+esc(t("mw_o_unpub"))+'</span>'));
+    box.innerHTML='<dl class="mw-rows">'+rows.join("")+'</dl>';
+  }
+
+  /* ---- Text -------------------------------------------------------------
+     Deliberately empty. The outreach text this tab will hold arrives in a later work order,
+     and an editor built now against a shape nobody has specified is an editor built twice. */
+  function renderText(){
+    const box=el("modalText"); if(!box) return;
+    box.innerHTML='<div class="mw-empty">'+
+      '<svg class="mw-empty-i" viewBox="0 0 24 24" width="32" height="32" fill="none" '+
+      'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" '+
+      'aria-hidden="true" focusable="false">'+
+      '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>'+
+      '<path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>'+
+      '<p>'+esc(t("mw_text_empty"))+'</p></div>';
+  }
+
+  /* ---- History ----------------------------------------------------------
+     The activity entries already recorded against this opportunity, newest first. Nothing new
+     is written or derived here: it is the same log the Activity page reads. */
+  function renderHistory(o){
+    const box=el("modalHistory"); if(!box) return;
+    const slug=(o&&o.slug)||current;
+    const rows=getActivity().filter(a=>a && a.slug===slug).reverse();
+    if(!rows.length){ box.innerHTML='<div class="mw-empty"><p>'+esc(t("mw_hist_empty"))+'</p></div>'; return; }
+    const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
+      {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
+    const label=a=>{ const k="act_"+a; const v=t(k); return v===k? a : v; };
+    box.innerHTML='<ol class="mw-hist">'+rows.map(a=>
+      '<li><span class="mw-hist-when">'+ltr(when(a.ts))+'</span>'+
+      '<span class="mw-hist-what">'+esc(label(a.action))+'</span>'+
+      (a.detail? '<span class="mw-hist-detail">'+esc(a.detail)+'</span>' : '')+
+      '</li>').join("")+'</ol>';
+  }
+
+  /* ---- tabs -------------------------------------------------------------- */
+  function show(tab){
+    Object.keys(PANELS).forEach(k=>{ const p=el(PANELS[k]); if(p) p.hidden=(k!==tab); });
+    host.hidden=!BORROWED[tab];
+    modal.querySelectorAll(".modal-tab").forEach(b=>{
+      const on=b.getAttribute("data-tab")===tab;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-selected", on?"true":"false");
+    });
+  }
+  async function switchTo(tab){
+    if(!PANELS[tab] && !BORROWED[tab]) tab="overview";
+    if(BORROWED[tab]){
+      const view=document.getElementById(BORROWED[tab]);
+      if(!view) return;
+      giveBack();                    // park any other borrowed view before adopting this one
+      remember(view);
+      if(view.parentNode!==host) host.appendChild(view);
+      view.hidden=false; view.classList.remove("wrap");
+      /* Back to how it looked at boot, before its init runs again. Re-running an init over a
+         DOM that init already wired gives every control in it a second copy of the same
+         listener, and on a composer that means one click on Send sending twice. */
+      if(typeof window.thriveViewReset==="function") window.thriveViewReset(BORROWED[tab].replace(/^view-/,""));
+      show(tab);
+      try{ if(tab==="page") await initEditor(current); else await initCompose(current); }catch(e){}
+      return;
+    }
+    giveBack();
+    show(tab);
+    if(tab==="overview") renderOverview(rec);
+    else if(tab==="text") renderText();
+    else renderHistory(rec);
+  }
+
+  /* ---- the copy link control --------------------------------------------
+     Both paths are invoked inside the click itself. Safari rejects a clipboard write that is
+     reached after an await, so nothing is awaited before either call is made. */
+  function legacyCopy(text){
+    try{
+      const ta=document.createElement("textarea");
+      ta.value=text;
+      ta.setAttribute("readonly","");
+      ta.className="mw-offscreen";
+      document.body.appendChild(ta);
+      ta.select();
+      try{ ta.setSelectionRange(0, text.length); }catch(e){}   // iOS wants the explicit range
+      const ok=document.execCommand("copy");
+      ta.remove();
+      return !!ok;
+    }catch(e){ return false; }
+  }
+  function copyLink(){
+    if(!rec || !isLive(rec)) return;
+    const url=liveUrl(rec.slug);
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(
+        ()=>toast(t("mw_copied")),
+        ()=>toast(legacyCopy(url)? t("mw_copied") : t("cmp_copy_err")));
+      return;
+    }
+    toast(legacyCopy(url)? t("mw_copied") : t("cmp_copy_err"));
+  }
+  function copyState(){
+    const b=el("modalCopy"), why=el("modalWhy");
+    const can=!!(rec && isLive(rec));
+    if(b) b.disabled=!can;
+    if(why){ why.hidden=can; why.textContent=can? "" : t("mw_copy_why"); }
+  }
+
+  /* ---- body scroll ------------------------------------------------------
+     Fixing the body is what actually holds on iOS, and fixing it loses the scroll position,
+     so the position is remembered and put back. A reader who opens a card near the bottom of
+     a long board must not be returned to the top of it. */
+  function lockScroll(){
+    scrollY=window.scrollY||window.pageYOffset||0;
+    document.body.style.top=(-scrollY)+"px";
+    document.body.classList.add("modal-open");
+  }
+  function unlockScroll(){
+    document.body.classList.remove("modal-open");
+    document.body.style.top="";
+    try{ window.scrollTo(0, scrollY); }catch(e){}
+  }
+
+  function focusables(){
+    const f=modal.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[contenteditable="true"],[tabindex]:not([tabindex="-1"])');
+    return Array.prototype.filter.call(f, n=>n.offsetParent!==null);
   }
 
   async function open(slug, tab, title){
-    tab=tab||"compose";
+    tab=tab||"overview";
     opener=document.activeElement;
     current=slug||"";
-    el("drawerTitle").textContent=title||slug||"";
-    if(!host(tab)) return;
-    tabs(tab);
+    rec=null;
+    if(current){ try{ rec=(await mergedOpps()).find(x=>x.slug===current)||null; }catch(e){} }
+    el("modalTitle").textContent=title||(rec&&rec.business)||slug||"";
+    const pill=el("modalState");
+    if(pill){
+      const st=rec? effStage(rec) : "";
+      pill.textContent=st? stageName(st) : "";
+      pill.className="pill"+(st? " mw-state-"+st : "");
+      pill.hidden=!st;
+    }
+    copyState();
+    await switchTo(tab);
     open_=true;
-    drawer.hidden=false; scrim.hidden=false;
+    modal.hidden=false; scrim.hidden=false;
     // let the browser paint the closed state before the transition starts
-    requestAnimationFrame(()=>{ drawer.classList.add("on"); scrim.classList.add("on"); });
-    document.body.style.overflow="hidden";
-    try{ if(tab==="edit") await initEditor(slug); else await initCompose(slug); }catch(e){}
-    const close=el("drawerClose"); if(close) close.focus();
+    requestAnimationFrame(()=>{ modal.classList.add("on"); scrim.classList.add("on"); });
+    lockScroll();
+    const list=focusables();
+    if(list.length) try{ list[0].focus(); }catch(e){}
   }
-  /* now=true when something else needs the borrowed view in this same tick, which is what a
+
+  /* now=true when something else needs a borrowed view in this same tick, which is what a
      navigation is. Waiting out the closing transition first would hand the view back after the
      shell had already decided what to display, and the reader would land on nothing. */
   function close(now){
     if(!open_) return;
     open_=false;
-    drawer.classList.remove("on"); scrim.classList.remove("on");
-    document.body.style.overflow="";
-    const settle=()=>{
-      drawer.hidden=true; scrim.hidden=true;
-      // and the composer and the editor go home, hidden, where the shell can find them again
-      giveBack();
-    };
+    modal.classList.remove("on"); scrim.classList.remove("on");
+    unlockScroll();
+    const settle=()=>{ modal.hidden=true; scrim.hidden=true; giveBack(); };
     if(now) settle(); else setTimeout(settle, 200);
     if(opener && opener.focus) try{ opener.focus(); }catch(e){}
     opener=null;
   }
-  el("drawerClose").addEventListener("click", ()=>close());
+
+  el("modalClose").addEventListener("click", ()=>close());
+  el("modalCopy").addEventListener("click", copyLink);
   scrim.addEventListener("click", ()=>close());
+  modal.querySelectorAll(".modal-tab").forEach(b=>
+    b.addEventListener("click", ()=>switchTo(b.getAttribute("data-tab"))));
   document.addEventListener("keydown", e=>{
-    if(drawer.hidden) return;
+    if(modal.hidden) return;
     if(e.key==="Escape"){ close(); return; }
     // aria-modal is a promise to assistive technology, and a promise the keyboard has to keep
     // too: without a trap, Tab walks out of the dialog into a board the reader cannot see.
     if(e.key!=="Tab") return;
-    const f=drawer.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])');
-    const list=Array.prototype.filter.call(f, el=>el.offsetParent!==null);
+    const list=focusables();
     if(!list.length) return;
     const first=list[0], last=list[list.length-1];
     if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
     else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
-    else if(!drawer.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
+    else if(!modal.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
   });
-  drawer.querySelectorAll(".drawer-tab").forEach(b=>b.addEventListener("click", ()=>{
-    const tab=b.getAttribute("data-tab");
-    if(!host(tab)) return;
-    tabs(tab);
-    try{ if(tab==="edit") initEditor(current); else initCompose(current); }catch(e){}
-  }));
-  window.thriveDrawer={ open:open, close:close, isOpen:()=>open_ };
-  return window.thriveDrawer;
+  function currentTab(){
+    const on=modal.querySelector(".modal-tab.on");
+    return on? on.getAttribute("data-tab") : "overview";
+  }
+  /* Switching language re-renders only what this window draws itself.
+     It must NOT re-run switchTo, and the reason is worth keeping: a borrowed tab resets its
+     view to boot markup, resetting calls applyLang so the restored markup is translated,
+     applyLang fires every lang hook, and this is one of them. Calling switchTo from here was
+     therefore a loop through applyLang that ended in "Maximum call stack size exceeded" and a
+     tab strip one click behind itself. A borrowed view has already been retranslated by the
+     applyLang that got us here, so there is nothing left for this hook to do to it. */
+  onThrive("lang","modal",()=>{
+    if(!open_) return;
+    const pill=el("modalState");
+    if(pill && rec){ const st=effStage(rec); pill.textContent=stageName(st); }
+    copyState();
+    const tab=currentTab();
+    if(BORROWED[tab]) return;
+    if(tab==="overview") renderOverview(rec);
+    else if(tab==="text") renderText();
+    else renderHistory(rec);
+  });
+
+  window.thriveModal={ open:open, close:close, isOpen:()=>open_ };
+  return window.thriveModal;
 }
