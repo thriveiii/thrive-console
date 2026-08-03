@@ -14,11 +14,32 @@ function slugify(s){
 function esc(s){ return (s==null?"":String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function liveUrl(slug){ return "https://"+SITE+OPP_PATH+slug; }
 function relOpp(slug){ return "../opp/"+slug+"/"; }
-function toast(msg){
+/* One toast in the document, and one only. It grew an action rather than gaining a sibling,
+   because two notification surfaces means two places a message can be missed. */
+function toast(msg, action){
   let el=document.getElementById("toast");
   if(!el){ el=document.createElement("div"); el.id="toast"; el.className="toast"; document.body.appendChild(el); }
-  el.textContent=msg; el.classList.add("show");
-  clearTimeout(window.__tt); window.__tt=setTimeout(()=>el.classList.remove("show"),2600);
+  el.innerHTML="";
+  const text=document.createElement("span");
+  text.className="toast-text"; text.textContent=msg;
+  el.appendChild(text);
+  el.classList.toggle("has-act", !!action);
+  let ms=2600;
+  if(action && typeof action.fn==="function"){
+    /* Ten seconds, because an undo you have to catch is not an undo. Long enough to read the
+       sentence, notice it was wrong, and reach the control. */
+    ms=action.ms||10000;
+    const b=document.createElement("button");
+    b.type="button"; b.className="toast-act"; b.textContent=action.label||t("lc_undo");
+    b.addEventListener("click",()=>{
+      el.classList.remove("show");
+      clearTimeout(window.__tt);
+      try{ action.fn(); }catch(e){}
+    });
+    el.appendChild(b);
+  }
+  el.classList.add("show");
+  clearTimeout(window.__tt); window.__tt=setTimeout(()=>el.classList.remove("show"), ms);
 }
 function download(name, text, type){
   const blob=new Blob([text], {type:type||"text/html;charset=utf-8"});
@@ -289,11 +310,40 @@ function sendIndex(){
   __sendCache=m; __sendTs=now; return m;
 }
 function invalidateSends(){ __sendCache=null; }
-/* Accepts a record or a slug. A record can also carry a hand declaration; a slug cannot. */
+/* Every hand contact recorded through somebody else's channel: their contact form, an
+   Instagram message, a phone call. Most of a batch has no email address at all, so without
+   these the board reports that nothing went out when something did.
+
+   It is evidence in exactly the way a ledger row is. The console did not witness either one:
+   it witnessed you telling it, and it says so on the record. What it must never do is invent
+   one, which is why sent_on is still not consulted anywhere here. */
+function manualSends(o){
+  if(!o || typeof o!=="object" || !Array.isArray(o.manual_contacts)) return { count:0, first:"", last:"" };
+  let first="", last="", count=0;
+  o.manual_contacts.forEach(c=>{
+    if(!c || !c.sent_on) return;
+    count++;
+    const ts=String(c.sent_on);
+    if(!first || ts<first) first=ts;
+    if(ts>last) last=ts;
+  });
+  return { count:count, first:first, last:last };
+}
+/* Accepts a record or a slug. A record can also carry hand contacts and a hand declaration;
+   a slug can carry neither. */
 function sendsFor(o){
   const slug=(typeof o==="string")? o : ((o&&o.slug)||"");
   const r=sendIndex()[slug];
-  if(r && r.count) return r;
+  const m=manualSends(o);
+  if(r && r.count){
+    if(!m.count) return r;
+    // Both kinds happened. The age of the record is measured from the most recent of them,
+    // and the first send is the earliest, because opens are counted from that moment.
+    return { count:r.count+m.count,
+             first:(m.first && m.first<r.first)? m.first : r.first,
+             last:(m.last && m.last>r.last)? m.last : r.last };
+  }
+  if(m.count) return m;
   if(o && typeof o==="object" && o.stage==="sent")
     return { count:1, first:o.sent_on||"", last:o.sent_on||"", declared:true };
   return { count:0, first:"", last:"" };
@@ -304,6 +354,14 @@ function outreachOpens(o){
   const s=sendsFor(o);
   if(!s.count) return 0;
   return opensSince((typeof o==="string")? o : o.slug, s.first);
+}
+/* The local day, as the date inputs and the manual contact records want it. Local rather than
+   UTC on purpose: a send made at nine in the evening in Alexandria belongs to that evening, not
+   to the next morning in London. */
+function today(){
+  const d=new Date();
+  const p=n=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
 }
 function debounce(fn, ms){ let h; return function(){ const a=arguments, c=this; clearTimeout(h); h=setTimeout(()=>fn.apply(c,a), ms||150); }; }
 
@@ -2616,10 +2674,29 @@ function initTemplates(){
           </div>
         </div>
       </div>`).join("");
-    el("customList").querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
+    /* Deleting a page template must never change a page that has already gone out. The built
+       pages stay exactly as they are and are flagged instead, so the modal can say where they
+       came from without pretending the template is still there.
+
+       Drafts are the one case that genuinely breaks: a draft has no built html and regenerates
+       from its template every time it is opened, so deleting the template underneath it leaves
+       a record that cannot produce a page. Those block the deletion, and the count is named,
+       because "cannot delete" without a number is a dead end rather than an instruction. */
+    el("customList").querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click", async ()=>{
       const id=b.getAttribute("data-del");
-      if(!confirm(t("tpl_confirm_del"))) return;
-      removeCustomTemplate(id); logActivity("tpl_remove", id, ""); renderCustom();
+      const opps=await mergedOpps();
+      const d=ThriveLifecycle.templateDeletion(id, opps);
+      if(!d.allowed){
+        toast(boardText(getLang(),"tpl_del_blocked",d.blocking.length,{list:d.blocking.slice(0,3).join(", ")}));
+        return;
+      }
+      if(!confirm(d.affected.length
+        ? boardText(getLang(),"tpl_del_affects",d.affected.length)
+        : t("tpl_confirm_del"))) return;
+      d.patches.forEach(pt=>saveDraft(pt));
+      removeCustomTemplate(id); logActivity("tpl_remove", id, "");
+      try{ scheduleSyncPush(); }catch(e){}
+      renderCustom();
     }));
     el("customList").querySelectorAll("[data-dl]").forEach(b=>b.addEventListener("click",()=>{
       const ct=getCustomTemplate(b.getAttribute("data-dl")); if(ct) download(ct.id+".html", ct.html||"");
@@ -3389,7 +3466,56 @@ async function initBoard(){
   onThrive("lang","board",render);
   onThrive("sync","board",render);
   onThrive("unlock","board",render);
+  /* One way back to a fresh board. A lifecycle move changes what the lanes should say, and
+     without this the board kept showing what was true before the click: the record was right,
+     the model was right, and the screen was wrong, which is the worst of the three. */
+  window.thriveBoardRefresh=render;
   await render();
+}
+
+/* ---------- running a lifecycle move ----------
+   ThriveLifecycle decides whether a move is legal and what it changes. This is the only place
+   that writes the answer down. Every surface that moves a card calls runMove, so a card cannot
+   end up in one state on the board and another in the library, and an activity entry cannot be
+   written by one path and skipped by another.
+
+   The undo is the patch ThriveLifecycle computed while the previous values were still known.
+   Working out an inverse afterwards means guessing at what was overwritten, and the guess is
+   wrong exactly when it matters. Undoing appends a correcting entry rather than deleting the
+   original one: the record of what happened is not improved by removing the part you regret. */
+const LC_CHANNEL_ICON={ web_form:"form", instagram:"dm", linkedin:"other", whatsapp:"whatsapp",
+                        x:"other", phone:"other", other:"other" };
+function lcChannelLabel(k){ return t("oc_ch_"+k) !== ("oc_ch_"+k) ? t("oc_ch_"+k) : k; }
+
+async function runMove(move, slug, opts){
+  opts=opts||{};
+  const all=await mergedOpps();
+  const o=all.find(x=>x.slug===slug);
+  if(!o) return { ok:false, error:"lc_err_illegal" };
+  const r=ThriveLifecycle.apply(move, o, opts);
+  if(!r.ok){ toast(t(r.error)); return r; }
+
+  saveDraft(Object.assign({ slug:slug }, r.patch));
+  logActivity(r.action, slug, r.detail||"");
+  invalidateSends();
+  try{ scheduleSyncPush(); }catch(e){}
+
+  const done=()=>{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+                   if(window.thriveModal && window.thriveModal.reread) window.thriveModal.reread(); };
+  done();
+
+  if(r.undoable){
+    toast(t("lc_"+move)+" · "+t("lc_done"), { label:t("lc_undo"), fn:()=>{
+      saveDraft(Object.assign({ slug:slug }, r.undo));
+      // The original entry stays. This one says it was taken back.
+      logActivity("lc_undo", slug, move);
+      invalidateSends();
+      try{ scheduleSyncPush(); }catch(e){}
+      done();
+      toast(t("lc_undone"));
+    }});
+  } else toast(t("lc_"+move)+" · "+t("lc_done"));
+  return r;
 }
 
 /* ---------- the opportunity window ----------
@@ -3416,7 +3542,10 @@ function initModal(){
   const modal=el("modal"), scrim=el("modalScrim"), body=el("modalBody"), host=el("modalHost");
   if(!modal || !body || !host) return null;
 
-  const PANELS={ overview:"modalOverview", text:"modalText", history:"modalHistory" };
+  const PANELS={ overview:"modalOverview", text:"modalText", outreach:"modalOutreach", history:"modalHistory" };
+  /* Outreach shows both: the off channel flow this window renders, and the composer it
+     borrows, stacked in that order. Off channel comes first because most of a batch has no
+     email address at all, so it is the common case rather than the exception. */
   const BORROWED={ page:"view-editor", outreach:"view-compose" };
 
   let opener=null, current="", rec=null, open_=false, scrollY=0;
@@ -3451,6 +3580,207 @@ function initModal(){
     return t("lane_"+st);
   }
 
+  /* ---- the standing prohibition band -------------------------------------
+     Thrive does not pitch design to a designer-owner, and two of the three in a typical batch
+     are makers. So this is a guard rather than a note: it cannot be dismissed, and it sits
+     above everything else in the window, because it has to be read before the message goes out
+     rather than after. */
+  function prohibitionBand(o){
+    if(!o || !o.prohibition) return "";
+    return '<div class="mw-band" role="note"><span class="mw-band-i" aria-hidden="true">!</span>'+
+      '<div><b>'+esc(t("md_prohibition"))+'</b><span>'+esc(o.prohibition)+'</span></div></div>';
+  }
+
+  /* ---- notes the record carries about itself ----------------------------- */
+  function recordNotes(o){
+    const out=[];
+    if(o.stage==="dropped" && o.drop_reason)
+      out.push('<div class="mw-note-row"><b>'+esc(t("lc_note_dropped"))+'</b> '+esc(o.drop_reason)+'</div>');
+    if(o.stage==="lost" && o.lost_reason)
+      out.push('<div class="mw-note-row"><b>'+esc(t("lc_note_lost"))+'</b> '+esc(t("lc_reason_"+o.lost_reason))+'</div>');
+    if(o.page_missing) out.push('<div class="mw-note-row">'+esc(t("lc_note_retired"))+'</div>');
+    if(o.template_retired) out.push('<div class="mw-note-row">'+esc(t("lc_note_tplgone"))+'</div>');
+    return out.length? '<div class="mw-notes">'+out.join("")+'</div>' : "";
+  }
+
+  /* ---- the moves bar -----------------------------------------------------
+     Only the moves that are legal from where this record actually stands. Illegal ones are
+     absent rather than disabled: a person should not have to read greyed options to work out
+     the rules, and a rule you learn by reading disabled controls is a rule you learn wrong. */
+  function movesBar(o){
+    if(!o) return "";
+    const moves=ThriveLifecycle.movesFor(o).filter(m=> m!=="send_email" && m!=="send_offchannel");
+    if(!moves.length) return "";
+    const primary={ publish:1, record_reply:1, restore:1, unarchive:1 };
+    return '<section class="mw-sec"><h4 class="mw-h">'+esc(t("lc_h"))+'</h4>'+
+      '<div class="mw-moves">'+moves.map(m=>
+        '<button type="button" class="btn '+(primary[m]?"":"ghost ")+'sm" data-move="'+esc(m)+'">'+
+        esc(t("lc_"+m))+'</button>').join("")+'</div></section>';
+  }
+
+  /* Each guarded move asks for exactly what its guard requires, and nothing else. The prompts
+     are deliberately plain: a confirm and a prompt are the two the document already has, and
+     WO-012 §10 asks for one of each rather than a third dialogue of my own. */
+  function bindMoves(box, o){
+    box.querySelectorAll("[data-move]").forEach(b=>b.addEventListener("click", async ()=>{
+      const m=b.getAttribute("data-move");
+      const opts={};
+      if(m==="drop"){
+        const r=prompt(t("lc_drop_q")); if(r===null) return;
+        if(!String(r).trim()){ toast(t("lc_err_reason_text")); return; }
+        opts.reason=r;
+      }
+      if(m==="mark_lost"){
+        const list=ThriveLifecycle.LOST_REASONS;
+        const r=prompt(t("lc_lost_q")+"\n"+list.map((x,i)=>(i+1)+". "+t("lc_reason_"+x)).join("\n"));
+        if(r===null) return;
+        const n=parseInt(String(r).trim(),10);
+        opts.reason=list[n-1]||"";
+        if(!opts.reason){ toast(t("lc_err_reason")); return; }
+      }
+      if(m==="record_reply"){
+        const r=prompt(t("lc_reply_q"), today()); if(r===null) return;
+        opts.replied_on=String(r).trim();
+      }
+      if(m==="reopen"){ if(!confirm(t("lc_reopen_q"))) return; opts.confirmed=true; }
+      if(m==="retire_page"){ if(!confirm(t("lc_retire_q"))) return; }
+      if(m==="publish"){
+        // Publishing is a network operation with its own screen. The lifecycle says it is
+        // legal; the editor is what performs it.
+        switchTo("page"); return;
+      }
+      await runMove(m, o.slug, opts);
+    }));
+  }
+
+  /* ---- Outreach: the off channel send ------------------------------------
+     Three steps, in the order a person actually performs them: read the message, open their
+     channel, then say what you did. The console cannot witness a send made through somebody
+     else's contact form, so it records your word for it and labels it as your word. What it
+     will not do is invent one, and what it will not allow is sending a message that still
+     says [LINK] where the page address should be. */
+  function renderOutreach(o){
+    const box=el("modalOutreach"); if(!box) return;
+    if(!o){ box.innerHTML=""; return; }
+    const text=(o.outreach_text||"");
+    const hasLink=text.indexOf("[LINK]")>=0;
+    const ch=(o.channel&&o.channel.kind)||"";
+    const url=(o.channel&&o.channel.to)||"";
+    const done=ThriveLifecycle.manualContacts(o);
+
+    const step=(n,title,inner)=>'<section class="mw-sec oc-step"><h4 class="mw-h">'+
+      '<span class="oc-n">'+n+'</span>'+esc(title)+'</h4>'+inner+'</section>';
+
+    let one;
+    if(!text) one='<p class="mw-empty">'+esc(t("ot_none"))+'</p>';
+    else one='<pre class="mw-pitch" dir="auto">'+esc(text)+'</pre>'+
+      (hasLink? '<p class="mw-warn-line">'+esc(t("oc_copy_blocked"))+'</p>' : '')+
+      '<div class="mw-acts"><button type="button" class="btn ghost sm" id="ocCopy"'+
+      (hasLink?" disabled":"")+'>'+esc(t("oc_copy"))+'</button></div>';
+
+    const target=url? (/^https?:/i.test(url)? url : "https://"+url) : "";
+    const two=target
+      ? '<a class="btn ghost sm" href="'+esc(target)+'" target="_blank" rel="noopener">'+
+        esc(t("oc_go"))+'</a><p class="mw-note">'+esc(lcChannelLabel(ch)||"")+' · '+
+        '<span class="mono-iso">'+esc(url)+'</span></p>'
+      : '<p class="mw-empty">'+esc(t("oc_no_url"))+'</p>';
+
+    const sel=ThriveLifecycle.CHANNELS.map(k=>
+      '<option value="'+k+'"'+(k===ch?" selected":"")+'>'+esc(lcChannelLabel(k))+'</option>').join("");
+    const three=
+      '<div class="mw-off-grid">'+
+        '<div class="field"><label for="ocCh">'+esc(t("oc_channel"))+'</label>'+
+          '<select id="ocCh" class="input">'+(ch?"":'<option value="">.</option>')+sel+'</select></div>'+
+        '<div class="field"><label for="ocWhen">'+esc(t("oc_when"))+'</label>'+
+          '<input id="ocWhen" class="input" type="date" max="'+today()+'" value="'+today()+'"></div>'+
+      '</div>'+
+      '<div class="field"><label for="ocBody">'+esc(t("oc_body"))+'</label>'+
+        '<textarea id="ocBody" class="input oc-body" rows="5">'+esc(text)+'</textarea></div>'+
+      '<div class="field"><label for="ocNote">'+esc(t("oc_note"))+'</label>'+
+        '<input id="ocNote" class="input" autocomplete="off"></div>'+
+      '<button class="btn" id="ocDo" type="button">'+esc(t("oc_confirm"))+'</button>';
+
+    const list=done.length
+      ? '<ul class="oc-list">'+done.map(c=>'<li><b>'+esc(lcChannelLabel(c.channel))+'</b>'+
+          '<span class="mono-iso">'+esc(c.sent_on)+'</span>'+
+          (c.note? '<span class="mw-note">'+esc(c.note)+'</span>':'')+'</li>').join("")+'</ul>'
+      : '<p class="mw-empty">'+esc(t("oc_none"))+'</p>';
+
+    box.innerHTML=prohibitionBand(o)+
+      '<section class="mw-sec"><h4 class="mw-h">'+esc(t("oc_h"))+'</h4>'+
+      '<p class="mw-note">'+esc(t("oc_p"))+'</p></section>'+
+      step(1,t("oc_step1"),one)+step(2,t("oc_step2"),two)+step(3,t("oc_step3"),three)+
+      '<section class="mw-sec"><h4 class="mw-h">'+esc(t("md_sends_h"))+'</h4>'+list+'</section>';
+
+    const copy=el("ocCopy");
+    if(copy) copy.addEventListener("click", ()=>{
+      if(hasLink){ toast(t("oc_copy_blocked")); return; }
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(()=>toast(t("oc_copied")),
+          ()=>toast(legacyCopy(text)? t("oc_copied") : t("cmp_copy_err")));
+        return;
+      }
+      toast(legacyCopy(text)? t("oc_copied") : t("cmp_copy_err"));
+    });
+    const go=el("ocDo");
+    if(go) go.addEventListener("click", async ()=>{
+      await runMove("send_offchannel", o.slug, {
+        channel: el("ocCh").value,
+        url: target,
+        sent_on: el("ocWhen").value,
+        body: el("ocBody").value,
+        note: el("ocNote").value
+      });
+    });
+  }
+
+  /* ---- Text: the outreach text, which is never a template -----------------
+     It is content used verbatim, not a form field to be edited, so it is shown as a block with
+     a copy control. The paste box exists because the batch importer that will fill this
+     automatically is a later phase, and a guard nobody can reach is a guard nobody has tested. */
+  function renderText(o){
+    const box=el("modalText"); if(!box) return;
+    const text=(o&&o.outreach_text)||"";
+    const hasLink=text.indexOf("[LINK]")>=0;
+    let inner;
+    if(!text){
+      inner='<div class="mw-empty">'+
+        '<svg class="mw-empty-i" viewBox="0 0 24 24" width="32" height="32" fill="none" '+
+        'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" '+
+        'aria-hidden="true" focusable="false">'+
+        '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>'+
+        '<path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>'+
+        '<p>'+esc(t("ot_none"))+'</p></div>';
+    } else {
+      inner='<pre class="mw-pitch" dir="auto">'+esc(text)+'</pre>'+
+        (hasLink? '<p class="mw-warn-line">'+esc(t("ot_link_warn"))+'</p>':'')+
+        '<div class="mw-acts"><button type="button" class="btn ghost sm" id="otCopy"'+
+        (hasLink?" disabled":"")+'>'+esc(t("oc_copy"))+'</button></div>';
+    }
+    box.innerHTML='<section class="mw-sec"><h4 class="mw-h">'+esc(t("ot_h"))+'</h4>'+inner+'</section>'+
+      '<details class="mw-more"><summary>'+esc(t("ot_paste"))+'</summary>'+
+      '<div class="field"><textarea id="otBox" class="input oc-body" rows="8">'+esc(text)+'</textarea></div>'+
+      '<button class="btn ghost sm" id="otSave" type="button">'+esc(t("ot_save"))+'</button></details>';
+
+    const c=el("otCopy");
+    if(c) c.addEventListener("click", ()=>{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(()=>toast(t("oc_copied")),
+          ()=>toast(legacyCopy(text)? t("oc_copied") : t("cmp_copy_err")));
+        return;
+      }
+      toast(legacyCopy(text)? t("oc_copied") : t("cmp_copy_err"));
+    });
+    const sv=el("otSave");
+    if(sv && o) sv.addEventListener("click", ()=>{
+      saveDraft({ slug:o.slug, outreach_text:el("otBox").value });
+      logActivity("text_attach", o.slug, "");
+      try{ scheduleSyncPush(); }catch(e){}
+      toast(t("ot_saved"));
+      reread();
+    });
+  }
+
   /* ---- Overview ---------------------------------------------------------- */
   function renderOverview(o){
     const box=el("modalOverview"); if(!box) return;
@@ -3472,21 +3802,9 @@ function initModal(){
     rows.push(row(t("mw_o_page"), isLive(o)
       ? '<a href="'+esc(liveUrl(o.slug))+'" target="_blank" rel="noopener">'+ltr(liveUrl(o.slug))+'</a>'
       : '<span class="mw-muted">'+esc(t("mw_o_unpub"))+'</span>'));
-    box.innerHTML='<dl class="mw-rows">'+rows.join("")+'</dl>';
-  }
-
-  /* ---- Text -------------------------------------------------------------
-     Deliberately empty. The outreach text this tab will hold arrives in a later work order,
-     and an editor built now against a shape nobody has specified is an editor built twice. */
-  function renderText(){
-    const box=el("modalText"); if(!box) return;
-    box.innerHTML='<div class="mw-empty">'+
-      '<svg class="mw-empty-i" viewBox="0 0 24 24" width="32" height="32" fill="none" '+
-      'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" '+
-      'aria-hidden="true" focusable="false">'+
-      '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>'+
-      '<path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>'+
-      '<p>'+esc(t("mw_text_empty"))+'</p></div>';
+    box.innerHTML=prohibitionBand(o)+recordNotes(o)+
+      '<dl class="mw-rows">'+rows.join("")+'</dl>'+movesBar(o);
+    bindMoves(box, o);
   }
 
   /* ---- History ----------------------------------------------------------
@@ -3522,6 +3840,7 @@ function initModal(){
     if(BORROWED[tab]){
       const view=document.getElementById(BORROWED[tab]);
       if(!view) return;
+      if(tab==="outreach") renderOutreach(rec);
       giveBack();                    // park any other borrowed view before adopting this one
       remember(view);
       if(view.parentNode!==host) host.appendChild(view);
@@ -3537,7 +3856,7 @@ function initModal(){
     giveBack();
     show(tab);
     if(tab==="overview") renderOverview(rec);
-    else if(tab==="text") renderText();
+    else if(tab==="text") renderText(rec);
     else renderHistory(rec);
   }
 
@@ -3568,6 +3887,20 @@ function initModal(){
       return;
     }
     toast(legacyCopy(url)? t("mw_copied") : t("cmp_copy_err"));
+  }
+  /* The header pill and the copy control both read the record, so they are refreshed together
+     and from one place. Two places that describe the same record drift the first time one of
+     them is forgotten. */
+  function stamp(){
+    const pill=el("modalState");
+    if(pill){
+      const st=rec? effStage(rec) : "";
+      const arch=rec && rec.archived;
+      pill.textContent=arch? t("badge_archived") : (st? stageName(st) : "");
+      pill.className="pill"+(arch? "" : (st? " mw-state-"+st : ""));
+      pill.hidden=!(arch||st);
+    }
+    copyState();
   }
   function copyState(){
     const b=el("modalCopy"), why=el("modalWhy");
@@ -3603,14 +3936,7 @@ function initModal(){
     rec=null;
     if(current){ try{ rec=(await mergedOpps()).find(x=>x.slug===current)||null; }catch(e){} }
     el("modalTitle").textContent=title||(rec&&rec.business)||slug||"";
-    const pill=el("modalState");
-    if(pill){
-      const st=rec? effStage(rec) : "";
-      pill.textContent=st? stageName(st) : "";
-      pill.className="pill"+(st? " mw-state-"+st : "");
-      pill.hidden=!st;
-    }
-    copyState();
+    stamp();
     await switchTo(tab);
     open_=true;
     modal.hidden=false; scrim.hidden=false;
@@ -3666,16 +3992,27 @@ function initModal(){
      applyLang that got us here, so there is nothing left for this hook to do to it. */
   onThrive("lang","modal",()=>{
     if(!open_) return;
-    const pill=el("modalState");
-    if(pill && rec){ const st=effStage(rec); pill.textContent=stageName(st); }
-    copyState();
+    stamp();
     const tab=currentTab();
+    if(tab==="outreach"){ renderOutreach(rec); return; }   // its own panel retranslates, the composer already did
     if(BORROWED[tab]) return;
     if(tab==="overview") renderOverview(rec);
-    else if(tab==="text") renderText();
+    else if(tab==="text") renderText(rec);
     else renderHistory(rec);
   });
 
-  window.thriveModal={ open:open, close:close, isOpen:()=>open_ };
+  /* A move made inside this window changes the record the window is showing, so the window
+     re-reads it rather than continuing to display what was true before the click. */
+  async function reread(){
+    if(!open_ || !current) return;
+    try{ rec=(await mergedOpps()).find(x=>x.slug===current)||rec; }catch(e){}
+    stamp();
+    const tab=currentTab();
+    if(tab==="overview") renderOverview(rec);
+    else if(tab==="text") renderText(rec);
+    else if(tab==="outreach") renderOutreach(rec);
+    else if(tab==="history") renderHistory(rec);
+  }
+  window.thriveModal={ open:open, close:close, isOpen:()=>open_, reread:reread };
   return window.thriveModal;
 }
