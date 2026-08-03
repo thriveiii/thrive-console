@@ -43,13 +43,25 @@
       <div class="verdict-sub" id="boardVerdictSub"></div>
     </div>
     <div class="toolbar" style="margin:0">
-      <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
-      <a class="btn ghost" href="compose.html" data-i18n="home_send">Send an email</a>
-      <a class="btn ghost" href="library.html" data-i18n="home_open_lib">Open library</a>
-      <a class="btn ghost" href="index.html" data-i18n="board_numbers">See the numbers</a>
-      <button class="btn ghost" id="boardRefresh" data-i18n="ins_refresh">Refresh</button>
+      <a class="btn" href="editor.html" data-icon="add" data-i18n="new_opp">New opportunity</a>
+      <a class="btn ghost" href="compose.html" data-icon="send" data-i18n="home_send">Send an email</a>
+      <a class="btn ghost" href="library.html" data-icon="library" data-i18n="home_open_lib">Open library</a>
+      <a class="btn ghost" href="index.html" data-icon="insights" data-i18n="board_numbers">See the numbers</a>
+      <button class="btn ghost" id="boardRefresh" data-icon="refresh" data-i18n="ins_refresh">Refresh</button>
     </div>
   </div>
+
+  <!-- The day's batch. A zip, a page, or a page with its brief; every opportunity it names
+       starts in the first lane with its own message attached. IDENTITY §9.1 -->
+  <section class="intake" id="intakeZone">
+    <div class="intake-head">
+      <h3 class="block-h"><span data-icon="upload"></span><span data-i18n="in_h">Today's batch</span></h3>
+      <label class="btn ghost sm" for="intakeFile" data-i18n="in_pick">Choose files</label>
+      <input id="intakeFile" type="file" multiple accept=".html,.htm,.md,.txt,.zip" hidden>
+    </div>
+    <p class="sub" data-i18n="in_p"></p>
+    <div class="intake-out" id="intakeOut"></div>
+  </section>
 
   <!-- Lanes. Order is the order of the gradient, and the order is the journey. -->
   <div class="board" id="boardLanes">
@@ -117,12 +129,14 @@
   <div class="empty" id="boardEmpty" hidden>
     <h3 class="block-h" data-i18n="board_empty_h">No opportunities yet.</h3>
     <p class="sub" data-i18n="board_empty_p"></p>
-    <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
+    <a class="btn" href="editor.html" data-icon="add" data-i18n="new_opp">New opportunity</a>
   </div>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
+<script src="intake.js" defer></script>
 <script src="app.js" defer></script>
 <script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initBoard(); });</script>
 </body>

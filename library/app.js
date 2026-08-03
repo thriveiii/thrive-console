@@ -1411,7 +1411,7 @@ async function initEditor(slugArg){
 }
 
 /* ---------- activity log page (categorised operations + campaigns) ---------- */
-const ACT_CAT={ email:"emails", email_copy:"emails", reply:"emails",
+const ACT_CAT={ email:"emails", email_copy:"emails", email_manual:"emails", reply:"emails",
   create:"pages", save:"pages", publish:"pages", unpublish:"pages", download:"pages",
   archive:"pages", unarchive:"pages", remove:"pages", stage:"pages", copy:"pages", reassign:"emails",
   upload:"templates", tpl_add:"templates", tpl_remove:"templates", tpl_publish:"templates",
@@ -1433,6 +1433,10 @@ function initActivity(){
   function statusLabel(m){
     if(m.direction==="in"||m.status==="replied") return t("mst_reply");
     if(m.status==="copied") return t("mst_copied");
+    /* A message sent through somebody's own form or a direct message left this desk, but no
+       mail server ever acknowledged it. The thread says which of the two it was, because the
+       difference matters when you are reading back what actually happened. */
+    if(m.provider==="manual" && m.status==="sent") return t("mst_manual");
     if(m.status==="sent") return t("mst_sent");
     return esc(m.status||"–");
   }
@@ -1459,9 +1463,11 @@ function initActivity(){
         const dir=(m.direction==="in")?'<span class="mdir in">←</span>':'<span class="mdir out">→</span>';
         const tp=m.templateName?'<span class="tag tag-templates">'+esc(m.templateName)+'</span>':'<span class="tag tag-plain">'+t("cmp_no_tpl")+'</span>';
         const br=m.branded?' <span class="tag">'+t("mst_branded")+'</span>':'';
+        // Which door it went through, when it went through one of theirs rather than a mail server.
+        const chg=m.channel?' <span class="tag">'+esc(channelLabel(m.channel))+'</span>':'';
         const pv=m.preview?'<div class="mprev">'+esc(m.preview)+'</div>':'';
         return '<div class="msg"><div class="msg-top">'+dir+'<span class="mono msg-time">'+esc(fmt(m.ts))+'</span>'+
-          '<span class="tag">'+statusLabel(m)+'</span>'+tp+br+'</div>'+
+          '<span class="tag">'+statusLabel(m)+'</span>'+tp+br+chg+'</div>'+
           '<div class="msg-subj">'+esc(m.subject||"–")+'</div>'+pv+'</div>';
       }).join("");
       /* Which opportunity this conversation is about, as a decision you can correct. The
@@ -1773,6 +1779,85 @@ function getThreads(){
     .sort((a,b)=> (a.last<b.last?1:-1));
 }
 
+/* ---------- reaching somebody who has no address ----------
+   Most of the businesses in a day's batch have no public inbox. They are reached through the
+   contact form on their own site, or through a direct message, and that message is sent by
+   hand because there is no API on the other end to send it through.
+
+   The console cannot witness that send, and it must not pretend it did. So it records exactly
+   what happened: a message went out, through this channel, on this day, on your word. The
+   ledger row carries provider "manual" and the channel, the activity log names it as a hand
+   send, and the thread shows it as such. It is real evidence of a real event, correctly
+   attributed, which is the only kind the board is allowed to move on.
+
+   The board then moves, because the board moves on evidence of a send and this is one. The
+   device it was sent from is irrelevant: it went out, so it is out. */
+const CHANNELS = ["email","form","dm","whatsapp","other"];
+function channelOf(o){
+  const c=(o && o.channel) || {};
+  return { kind:(CHANNELS.indexOf(c.kind)>=0? c.kind : ""), to:c.to||"", note:c.note||"" };
+}
+function channelLabel(kind){ return CHANNELS.indexOf(kind)>=0 ? t("md_ch_"+kind) : t("md_ch_none"); }
+/* An address you can type into a browser, when there is one. A form or a shop is a host, a
+   direct message is a handle, and a phone number is neither. */
+function channelUrl(ch){
+  if(!ch || !ch.to) return "";
+  if(ch.kind==="email") return "mailto:"+ch.to;
+  if(ch.kind==="whatsapp") return "https://wa.me/"+ch.to.replace(/[^\d]/g,"");
+  if(ch.kind==="dm") return /^@/.test(ch.to) ? "https://instagram.com/"+ch.to.slice(1)
+                                             : (/^https?:/i.test(ch.to)? ch.to : "https://"+ch.to);
+  return /^https?:/i.test(ch.to) ? ch.to : "https://"+ch.to;
+}
+function today(){ return new Date().toISOString().slice(0,10); }
+/* A hand send claimed for an earlier day is stamped at the START of that day, not the middle.
+   The stamp is what opens are measured against, and a view recorded that morning is far more
+   likely to have followed the message than to have preceded it. Claiming today stamps now,
+   because now is known. A day in the future is not a send, it is a plan, so it is refused. */
+function offChannelStamp(day){
+  const d=String(day||"").slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d) || d>=today()) return new Date().toISOString();
+  return d+"T00:00:00.000Z";
+}
+function recordOffChannelSend(o, kind, day, note){
+  if(CHANNELS.indexOf(kind)<0) return null;
+  const ch=channelOf(o);
+  const to=ch.to || channelLabel(kind);
+  const subject=(o.pitch && o.pitch.subject) || o.business || o.slug;
+  const rec=logMail({
+    opp:o.slug, to:to, toName:o.owner||"", subject:subject,
+    templateId:"", templateName:"",
+    preview:String(note||"").slice(0,600),
+    provider:"manual", channel:kind, status:"sent", direction:"out",
+    ts:offChannelStamp(day)
+  });
+  logActivity("email_manual", o.slug, channelLabel(kind)+(ch.to? " · "+ch.to : ""));
+  return rec;
+}
+/* Does this record already carry a hand send? Used to keep the window from offering the same
+   confirmation twice as though nothing had been recorded. */
+function offChannelSends(slug){
+  return getMailLog().filter(m=> m && m.opp===slug && m.provider==="manual" && m.direction!=="in").length;
+}
+
+/* ---------- order inside a lane ----------
+   A lane sorts by neglect: what has waited longest sits at the top, and that is the right
+   default because the board is a queue rather than a chronology. But a person who has looked
+   at the lane knows things the clock does not, and dragging a card is how they say so.
+
+   Once a lane has been ordered by hand every card in it carries an ord, and ord wins. A card
+   that arrives later has none, so it falls in below the ordered ones, sorted by age as before.
+   Moving a card to another lane clears its ord: the order was a statement about that lane. */
+function setLaneOrder(slugs){
+  /* Through saveDraft, one record at a time, so an ord lands as an overlay exactly the way a
+     stage or an archive flag does, carries the same freshness stamp, and merges across devices
+     by the same rule. A second way to write a record is a second thing to keep in step. */
+  slugs.forEach((s,i)=> saveDraft({ slug:s, ord:i+1 }));
+}
+function clearLaneOrder(slug){
+  const d=getDraft(slug);
+  if(d && d.ord) saveDraft({ slug:slug, ord:0 });
+}
+
 async function initCompose(slugArg){
   const el=id=>document.getElementById(id);
   const body=el("ebody");
@@ -2069,6 +2154,23 @@ async function initCompose(slugArg){
   applyTemplate(currentTpl());
   refreshLinks();
   quick();
+  /* A message that arrived with the opportunity, handed over from its window. It is not a
+     template: it was written for this one business, it is used once, and saving it into the
+     template gallery would fill that gallery with single-use text. The [LINK] slot becomes a
+     real anchor to this opportunity's page, which is also what files the send against this
+     record when it goes out. Nothing is sent here: it is loaded, and you still decide. */
+  const handed=takePitch(slug);
+  if(handed){
+    if(tplSel) tplSel.value="";                       // a written message is not a template
+    if(monthWrap) monthWrap.hidden=true;
+    subjectDirty=true;                                // it came with its own subject; do not recompute it
+    el("esubject").value=handed.subject||"";
+    body.innerHTML=pitchHtml(handed.body, slug);
+    if(handed.to && !el("eto").value) el("eto").value=handed.to;
+    if(handed.name && nameEl && !nameEl.value) nameEl.value=handed.name;
+    refreshLinks();
+    quick();
+  }
   onThrive("lang","compose-quick",quick);
   // Outgoing HTML: unwrap the merge spans so the sent email is clean markup.
   function htmlOut(){
@@ -3264,9 +3366,16 @@ async function initBoard(){
     else if(tk.lane==="replied") meta=txt("tok_answered");
     else if(tk.opens>0) meta=txt("tok_opens", tk.opens).replace(String(tk.opens), num(tk.opens));
     else meta=txt("tok_idle", tk.age).replace(String(tk.age), num(tk.age));
-    return '<button class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" type="button">'+
-      '<span class="tok-name">'+esc(tk.biz)+'</span>'+
-      '<span class="tok-meta">'+meta+'</span></button>';
+    /* The grip is not decoration and it is not only for looks. A finger that presses a card and
+       moves is, until proved otherwise, a finger scrolling the page, so on touch the card can
+       also be picked up by pressing and holding. The grip is the version of that you can see,
+       and it is the one that works the first time. */
+    return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
+      '<button class="tok-open" type="button">'+
+        '<span class="tok-name">'+esc(tk.biz)+'</span>'+
+        '<span class="tok-meta">'+meta+'</span>'+
+      '</button>'+
+      '<span class="tok-grip" data-icon="drag" aria-hidden="true"></span></div>';
   }
 
   /* FLIP: a token never teleports between lanes.
@@ -3351,18 +3460,64 @@ async function initBoard(){
     el("boardChips").hidden=empty;
     el("boardTray").hidden=empty;
 
-    // A token opens the work for that opportunity. PR 4 turns this into a drawer; until then
-    // it is an honest page change rather than a half-built panel.
     playFlip(first);
 
-    document.querySelectorAll(".tok").forEach(tk=>tk.addEventListener("click",()=>{
+    document.querySelectorAll(".tok-open").forEach(btn=>btn.addEventListener("click",()=>{
+      const tk=btn.closest(".tok");
       const slug=tk.getAttribute("data-slug");
       const name=(tk.querySelector(".tok-name")||{}).textContent||slug;
-      // In the shell the work opens beside you. On a single page there is no drawer, and an
-      // honest page change beats a panel that is not there.
-      if(window.thriveDrawer) window.thriveDrawer.open(slug, "compose", name);
+      /* A card opens the whole opportunity: what it is, what to send, and the page. In the
+         shell that is one window over the board. On a single page there is no window, and an
+         honest page change beats a panel that is not there. */
+      if(window.thriveModal) window.thriveModal.open(slug, "info", name);
       else goTo("compose","slug="+encodeURIComponent(slug));
     }));
+  }
+
+  /* ---- moving a card ------------------------------------------------------
+     Press, drag, drop, and the card goes where you put it, with the cards around it opening a
+     gap as you pass. It is the gesture everybody already knows.
+
+     What it is NOT allowed to do is declare something that did not happen. A board whose
+     position can be dragged to any lane is a board whose position means nothing, and the whole
+     claim this screen makes is that position is state. So a drop asks the same question the
+     rest of the console asks: what is the evidence?
+
+       Sent     needs a send. Dropping here opens the confirmation instead of declaring one.
+       Opened   is recorded by the page itself and cannot be declared at all.
+       Replied  is a decision you are entitled to make, so it is made.
+       Draft and Live are decided by whether the page is published, not by a gesture.
+       Anywhere within one lane is order, which is yours, and it is kept. */
+  function laneSlugs(lane){
+    return Array.prototype.map.call(
+      document.querySelectorAll('[data-body="'+lane+'"] .tok[data-slug]'),
+      n=>n.getAttribute("data-slug"));
+  }
+
+  async function drop(slug, from, to){
+    if(from===to){ setLaneOrder(laneSlugs(to)); toast(t("dg_ordered")); try{ scheduleSyncPush(); }catch(e){} await render(); return; }
+    const o=(await mergedOpps()).find(x=>x.slug===slug);
+    if(!o){ await render(); return; }
+    const s=sendsFor(o);
+
+    if(to==="opened"){ toast(t("dg_no_open")); await render(); return; }
+    if((from==="draft"&&to==="live")||(from==="live"&&to==="draft")){ toast(t("dg_publish")); await render(); return; }
+
+    if(to==="sent"){
+      // Already carries a send: what is holding it in another lane is a declaration, and
+      // clearing that is a move you may make. With no send there is nothing to clear, so ask.
+      if(s.count && !s.declared){ saveDraft({ slug:slug, stage:"", ord:0 }); logActivity("stage", slug, "sent"); toast(t("dg_back")); }
+      else if(window.thriveModal) { await render(); window.thriveModal.confirmSend(slug, o.business||slug); return; }
+      else { toast(t("dg_sent_ask")); await render(); return; }
+    }
+    else if(to==="replied"){ saveDraft({ slug:slug, stage:"replied", ord:0 }); logActivity("stage", slug, "replied"); toast(t("dg_replied")); }
+    else {
+      // Back towards the start. Evidence in the ledger cannot be dragged away; a declaration can.
+      if(s.count && !s.declared){ toast(t("dg_no_back")); await render(); return; }
+      saveDraft({ slug:slug, stage:"", ord:0 }); logActivity("stage", slug, "–"); toast(t("dg_back"));
+    }
+    try{ scheduleSyncPush(); }catch(e){}
+    await render();
   }
 
   // The tray is a posture, not a decision, so it stays on this device and never syncs.
@@ -3389,28 +3544,317 @@ async function initBoard(){
   onThrive("lang","board",render);
   onThrive("sync","board",render);
   onThrive("unlock","board",render);
+  /* One way back to a fresh board, so the batch drop and the send confirmation both land here
+     instead of each keeping its own idea of when the lanes are stale. */
+  window.thriveBoardRefresh=render;
+  initIntake();
+  initBoardDrag(drop);
   await render();
 }
 
-/* ---------- the drawer ----------
-   The editor and the composer open from the token that needs them, without a view change and
-   without losing your place. It MOVES the existing #view-editor and #view-compose nodes into
-   the drawer host rather than duplicating their markup, so the document keeps exactly one
-   editor, one composer, and one set of listeners. Duplicating them would mean two elements
-   with the same ids and a composer whose send button belongs to whichever copy loaded last.
-   Only the shell has a #drawer, so on a single page this whole layer stays dormant.
 
-   What it borrows it MUST give back. It did not, and that was the blank screen: once a token
-   had opened the drawer, #view-compose lived inside a closed drawer forever, the shell's own
-   navigation skipped it because the drawer owned it, and "Send an email" led to nothing.
-   A panel that takes a node out of the document owes the document that node back. */
-function initDrawer(){
+/* Pointer events, one code path for mouse, touch and pen. A placeholder holds the gap so the
+   lane never collapses under the card being carried, and the card itself leaves the flow and
+   follows the pointer.
+
+   It lives outside initBoard and binds to the document exactly once. The board re-initialises
+   whenever the shell re-enters it, and a document listener registered per init is a listener
+   that never leaves: after a morning of moving between views there would be a dozen of them,
+   each holding a dead board in its closure. The handler the board wants is swapped instead. */
+let __dragDrop=null;
+function initBoardDrag(onDrop){
+  __dragDrop=onDrop;
+  if(window.__thriveDragBound) return;
+  window.__thriveDragBound=1;
+  let st=null, hold=null, suppress=false;
+
+  function laneAt(x,y){
+    const e=document.elementFromPoint(x,y);
+    return e && e.closest ? e.closest(".lane-body[data-body]") : null;
+  }
+  function place(lane, y){
+    const sibs=Array.prototype.filter.call(lane.querySelectorAll(".tok"), n=>n!==st.tok);
+    let before=null;
+    for(let i=0;i<sibs.length;i++){
+      const r=sibs[i].getBoundingClientRect();
+      if(y < r.top + r.height/2){ before=sibs[i]; break; }
+    }
+    lane.insertBefore(st.ph, before);
+  }
+  function begin(){
+    const r=st.tok.getBoundingClientRect();
+    st.dragging=true;
+    st.ph=document.createElement("div");
+    st.ph.className="tok-ph";
+    st.ph.style.height=r.height+"px";
+    st.tok.parentNode.insertBefore(st.ph, st.tok);
+    st.tok.style.width=r.width+"px";
+    st.tok.style.height=r.height+"px";
+    st.tok.style.left=r.left+"px";
+    st.tok.style.top=r.top+"px";
+    st.tok.classList.add("is-drag");
+    document.body.classList.add("is-dragging");
+  }
+  function move(e){
+    if(!st) return;
+    if(!st.dragging){
+      const far=Math.abs(e.clientX-st.x0)>6 || Math.abs(e.clientY-st.y0)>6;
+      if(!far) return;
+      // A finger that moves before the hold expires was scrolling, not picking anything up.
+      if(!st.grip && st.pointer!=="mouse"){ cancelHold(); st=null; return; }
+      begin();
+    }
+    st.tok.style.transform="translate("+(e.clientX-st.x0)+"px,"+(e.clientY-st.y0)+"px)";
+    const lane=laneAt(e.clientX, e.clientY);
+    if(lane){ st.lane=lane.getAttribute("data-body"); place(lane, e.clientY); }
+  }
+  function finish(){
+    if(!st) return;
+    const cur=st;
+    st=null;
+    cancelHold();
+    document.body.classList.remove("is-dragging");
+    if(!cur.dragging) return;
+    // The click that follows this pointerup belongs to the drag, not to the card underneath.
+    suppress=true; setTimeout(()=>{ suppress=false; }, 0);
+    cur.tok.classList.remove("is-drag");
+    cur.tok.style.cssText="";
+    if(cur.ph && cur.ph.parentNode){ cur.ph.parentNode.insertBefore(cur.tok, cur.ph); cur.ph.remove(); }
+    if(__dragDrop) __dragDrop(cur.slug, cur.from, cur.lane||cur.from);
+  }
+  function cancelHold(){ if(hold){ clearTimeout(hold); hold=null; } }
+
+  document.addEventListener("pointerdown", e=>{
+    if(e.button!==undefined && e.button!==0) return;
+    if(!e.target.closest) return;
+    const tok=e.target.closest(".tok[data-slug]");
+    if(!tok || !tok.closest("#boardLanes")) return;
+    const grip=!!e.target.closest(".tok-grip");
+    st={ tok:tok, slug:tok.getAttribute("data-slug"), from:tok.getAttribute("data-lane"),
+         lane:tok.getAttribute("data-lane"), x0:e.clientX, y0:e.clientY,
+         pointer:e.pointerType, grip:grip, dragging:false, ph:null };
+    if(grip){ e.preventDefault(); begin(); return; }
+    // Press and hold picks a card up on touch. On a mouse there is nothing to disambiguate
+    // from, so the first few pixels of movement are enough.
+    if(e.pointerType!=="mouse"){
+      cancelHold();
+      hold=setTimeout(()=>{ if(st && !st.dragging) begin(); }, 380);
+    }
+  });
+  document.addEventListener("pointermove", move, {passive:true});
+  document.addEventListener("pointerup", finish);
+  document.addEventListener("pointercancel", finish);
+  /* touch-action cannot be turned off after a gesture has begun, so the scroll a long press
+     would otherwise start is refused here instead, and only while a card is actually held. */
+  document.addEventListener("touchmove", e=>{ if(st && st.dragging) e.preventDefault(); }, {passive:false});
+  // A click that ends a drag must not also open the window underneath it.
+  document.addEventListener("click", e=>{
+    if(suppress){ e.preventDefault(); e.stopPropagation(); }
+  }, true);
+}
+
+/* ---------- the day's batch ----------
+   A working day arrives as one drop: a zip of finished pages with a brief that says who each
+   page is for, how to reach them, and the exact words to send. Before this the console could
+   take a page and nothing else, so the words that came with the page were retyped by hand,
+   and the thing that decides whether a message lands was the thing being retyped.
+
+   Three shapes, one behaviour: a page on its own, a page with its brief, or a zip of both.
+   ThriveIntake reads all three and returns the same answer, so nothing here has to know which
+   of the three happened.
+
+   Everything lands in Draft. Not in Live, not in Sent: a page that has just arrived has been
+   published nowhere and sent to nobody, and the first lane is the only true one. It is also
+   the point of the exercise, which is to review each one before anything goes out.
+
+   Nothing is invented. A field the brief did not carry stays empty and is named as missing on
+   the card, so a thin brief produces a thin record rather than a confident wrong one. */
+function initIntake(){
   const el=id=>document.getElementById(id);
-  const drawer=el("drawer"), scrim=el("drawerScrim"), body=el("drawerBody");
-  if(!drawer || !body) return null;
-  let opener=null, current="", open_=false;
+  const zone=el("intakeZone"), input=el("intakeFile"), out=el("intakeOut");
+  if(!zone || !input || !out) return;
+  if(typeof ThriveIntake==="undefined"){ zone.hidden=true; return; }
 
-  /* Where each borrowed view lives when the drawer does not have it. Recorded once, on the
+  let found=[];              // entries as read, before anything is written
+  let existing={};           // slug -> true, so a name already in the library is flagged not merged
+
+  const WARN={ no_page:"in_w_no_page", no_brief:"in_w_no_brief", no_message:"in_w_no_message",
+               no_channel:"in_w_no_channel", no_business:"in_w_no_business" };
+
+  function status(msg, kind){
+    out.innerHTML='<p class="in-status '+(kind||"")+'">'+esc(msg)+'</p>';
+  }
+
+  /* The name this entry WOULD take, worked out exactly the way toRecord works it out. Two
+     answers to that question is how a card says "already in the library" about one slug while
+     the record is written under another. */
+  function slugFor(e){
+    return e.slugHint || ThriveIntake.slugify(e.business) ||
+           ThriveIntake.slugify(e.pageFile) || "opportunity";
+  }
+  /* A name already in the library is a collision, not a merge. Overwriting a record because a
+     new file happened to carry the same business name is how a week of correspondence gets
+     replaced by a fresh page, so the new one takes a suffix and both survive. */
+  function freeSlug(want){
+    let s=want || "opportunity", n=2;
+    while(existing[s]) s=(want||"opportunity")+"-"+(n++);
+    return s;
+  }
+
+  function card(e, i){
+    const ch=e.channel||{kind:"",to:""};
+    const warns=(e.warnings||[]).map(w=> WARN[w]? '<span class="in-warn">'+esc(t(WARN[w]))+'</span>' : "").join("");
+    const dup=existing[slugFor(e)] ? '<span class="in-warn">'+esc(t("in_exists"))+'</span>' : "";
+    const bits=[];
+    if(e.location) bits.push(esc(e.location));
+    if(e.descriptor) bits.push(esc(e.descriptor));
+    return '<label class="in-card"><input type="checkbox" class="in-pick" data-i="'+i+'" checked>'+
+      '<span class="in-body">'+
+        '<span class="in-name">'+esc(e.business||"–")+'</span>'+
+        (bits.length? '<span class="in-meta">'+bits.join(" · ")+'</span>' : "")+
+        '<span class="in-tags">'+
+          (ch.kind? '<span class="in-tag"><span data-icon="'+esc(ch.kind)+'"></span>'+esc(ch.to||channelLabel(ch.kind))+'</span>' : "")+
+          (e.file? '<span class="in-tag"><span data-icon="page"></span>'+esc(e.pageFile||e.file.name)+'</span>' : "")+
+          (e.message? '<span class="in-tag"><span data-icon="write"></span>'+esc(t("md_pitch"))+'</span>' : "")+
+          warns+dup+
+        '</span>'+
+      '</span></label>';
+  }
+
+  function review(){
+    if(!found.length){ status(t("in_none"), "warn"); return; }
+    const n=found.length;
+    const head='<div class="in-head"><b>'+esc(boardText(getLang(),"in_found",n))
+      .split(String(n)).join('<span class="n">'+n+'</span>')+'</b>'+
+      '<span class="in-actions">'+
+        '<button class="btn sm" id="intakeAdd" type="button"><span data-icon="add"></span>'+esc(t("in_add"))+'</button>'+
+        '<button class="btn ghost sm" id="intakeCancel" type="button">'+esc(t("in_cancel"))+'</button>'+
+      '</span></div>';
+    out.innerHTML=head+'<div class="in-list">'+found.map(card).join("")+'</div>';
+    if(typeof applyIcons==="function") applyIcons(out);
+    el("intakeCancel").addEventListener("click", reset);
+    el("intakeAdd").addEventListener("click", add);
+  }
+
+  function reset(){ found=[]; out.innerHTML=""; input.value=""; }
+
+  function add(){
+    const picked=[];
+    out.querySelectorAll(".in-pick").forEach(c=>{ if(c.checked) picked.push(found[+c.getAttribute("data-i")]); });
+    if(!picked.length){ reset(); return; }
+    picked.forEach(e=>{
+      const rec=ThriveIntake.toRecord(e, { today:today() });
+      rec.slug=freeSlug(rec.slug);
+      /* Draft, and nothing stronger. The record carries no stage, it is not published, and no
+         message has left, so every derivation downstream puts it in the first lane on its own. */
+      rec.stage="";
+      rec.status="draft";
+      rec.published=false;
+      rec.ord=0;
+      existing[rec.slug]=true;
+      saveDraft(rec);
+      logActivity("create", rec.slug, (rec.business||"")+" (batch)");
+    });
+    const n=picked.length;
+    toast(boardText(getLang(),"in_added",n));
+    reset();
+    try{ scheduleSyncPush(); }catch(e){}
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+  }
+
+  async function take(files){
+    if(!files || !files.length) return;
+    status(t("in_reading"));
+    try{ existing={}; (await mergedOpps()).forEach(o=>{ existing[o.slug]=true; }); }catch(e){}
+    try{
+      const r=await ThriveIntake.readDrop(files);
+      found=r.entries||[];
+      review();
+    }catch(e){
+      status(/zip|inflate/i.test(e && e.message || "") ? t("in_zip_err") : t("in_none"), "warn");
+    }
+  }
+
+  input.addEventListener("change", ()=>take(input.files));
+  ["dragenter","dragover"].forEach(k=>zone.addEventListener(k, e=>{
+    e.preventDefault(); zone.classList.add("on");
+  }));
+  ["dragleave","drop"].forEach(k=>zone.addEventListener(k, e=>{
+    e.preventDefault();
+    if(k==="dragleave" && zone.contains(e.relatedTarget)) return;
+    zone.classList.remove("on");
+  }));
+  zone.addEventListener("drop", e=>{
+    const dt=e.dataTransfer;
+    if(dt && dt.files && dt.files.length) take(dt.files);
+  });
+  /* A zip dropped an inch wide of the target is a browser navigating away to open it, and a
+     day's work replaced by a directory listing. Missing the box has to cost nothing. Bound to
+     the document once, and by selector rather than by node, because the board re-initialises
+     and a captured element goes stale while a listener does not. */
+  if(!window.__thriveDropGuard){
+    window.__thriveDropGuard=1;
+    ["dragover","drop"].forEach(k=>document.addEventListener(k, e=>{
+      if(e.target.closest && e.target.closest("#intakeZone")) return;
+      e.preventDefault();
+    }));
+  }
+  onThrive("lang","intake", ()=>{ if(found.length) review(); });
+}
+
+/* ---------- the opportunity window ----------
+   One window, in the middle of the screen, over a dimmed board. It replaced a panel that slid
+   in from the edge: a side panel puts the work you are reading in one half of the screen and
+   the work you are not reading in the other, and on a wide screen it pushes the message you
+   are about to send off to one side of your own attention. A centred window is where you
+   look already.
+
+   Three tabs, because there are three questions and mixing them is what made the old panel
+   hard to use: what is this opportunity, what am I sending, and what does the page say.
+
+   It MOVES the existing #view-editor and #view-compose nodes into the host rather than
+   duplicating their markup, so the document keeps exactly one editor, one composer, and one
+   set of listeners. Duplicating them would mean two elements with the same ids and a composer
+   whose send button belongs to whichever copy loaded last. Only the shell has a #modal, so on
+   a single page this whole layer stays dormant.
+
+   What it borrows it MUST give back. It did not once, and that was the blank screen: the
+   composer lived inside a closed panel forever, the shell's navigation skipped it because the
+   panel owned it, and "Send an email" led to nothing. A window that takes a node out of the
+   document owes the document that node back. */
+
+/* The message that came with an opportunity, handed from the Details tab to the composer.
+   Held for exactly one read, by the slug it was meant for, so a message can never end up in a
+   composer that was opened for somebody else. */
+let __pendingPitch=null;
+function queuePitch(p){ __pendingPitch=p||null; }
+function takePitch(slug){
+  const p=__pendingPitch;
+  if(p && p.slug===slug){ __pendingPitch=null; return p; }
+  return null;
+}
+/* [LINK] is where the brief wants the opportunity's own page to go. Replacing it with a real
+   anchor is not decoration: the composer decides which opportunity a message belongs to by
+   the link the message carries, so this is what files the send against the right record. */
+function pitchText(text, slug){
+  const url=slug? liveUrl(slug) : "";
+  return String(text||"").split("[LINK]").join(url);
+}
+function pitchHtml(text, slug){
+  const url=slug? liveUrl(slug) : "";
+  const anchor=url? '<a href="'+esc(url)+'" data-origin="template">'+esc(url)+'</a>' : "";
+  return String(text||"").replace(/\r\n?/g,"\n").split(/\n{2,}/)
+    .map(p=>'<p>'+p.split("\n").map(l=>esc(l)).join("<br>")+'</p>').join("")
+    .split("[LINK]").join(anchor);
+}
+
+function initModal(){
+  const el=id=>document.getElementById(id);
+  const modal=el("modal"), scrim=el("modalScrim"), body=el("modalBody"), info=el("modalInfo");
+  if(!modal || !body || !info) return null;
+  let opener=null, current="", currentRec=null, open_=false;
+
+  /* Where each borrowed view lives when the window does not have it. Recorded once, on the
      first borrow, from the document itself rather than assumed. */
   const home={};
   function remember(view){
@@ -3420,40 +3864,187 @@ function initDrawer(){
   function giveBack(){
     Array.prototype.slice.call(body.children).forEach(n=>{
       const h=home[n.id];
+      if(!h || !h.parent) return;
       n.hidden=true; n.classList.add("wrap");
-      if(h && h.parent) h.parent.insertBefore(n, h.next);
+      h.parent.insertBefore(n, h.next);
     });
   }
 
+  /* ---- the Details tab ---------------------------------------------------- */
+  function stageName(stage){
+    if(stage==="won") return t("tray_won");
+    if(stage==="lost") return t("tray_lost");
+    return t("lane_"+stage);
+  }
+  function stageLine(o){
+    const s=sendsFor(o), stage=effStage(o);
+    let note;
+    if(s.count){
+      // The digits are isolated, never the sentence: an Arabic line around a bare number is
+      // reordered by the bidi algorithm and then reads as a different number.
+      note=esc(boardText(getLang(),"md_sends",s.count))
+        .split(String(s.count)).join('<span class="n">'+s.count+'</span>');
+    } else note=esc(t("md_no_sends"));
+    return '<span class="mw-stage mw-stage-'+esc(stage)+'">'+esc(stageName(stage))+'</span>'+
+           '<span class="mw-stage-note">'+note+'</span>';
+  }
+  function warnRow(icon, label, text){
+    return '<div class="mw-warn"><span class="mw-warn-i" data-icon="'+icon+'"></span>'+
+      '<div><b>'+esc(label)+'</b><span>'+esc(text)+'</span></div></div>';
+  }
+  function renderInfo(o){
+    if(!o){ info.innerHTML='<p class="mw-empty">'+esc(t("md_gone"))+'</p>'; return; }
+    const ch=channelOf(o), url=channelUrl(ch);
+    const pitch=(o.pitch && o.pitch.body) || "";
+    const subject=(o.pitch && o.pitch.subject) || "";
+    const rows=[];
+
+    rows.push('<section class="mw-sec"><h4 class="mw-h"><span data-icon="clock"></span>'+
+      esc(t("md_where"))+'</h4><div class="mw-stagebar">'+stageLine(o)+'</div></section>');
+
+    let chBody;
+    if(!ch.kind) chBody='<p class="mw-empty">'+esc(t("md_ch_none"))+'</p>';
+    else{
+      const dest = ch.to
+        ? (url? '<a class="mw-dest" href="'+esc(url)+'" target="_blank" rel="noopener">'+esc(ch.to)+'</a>'
+              : '<span class="mw-dest">'+esc(ch.to)+'</span>')
+        : "";
+      chBody='<div class="mw-ch"><span class="mw-ch-i" data-icon="'+esc(ch.kind)+'"></span>'+
+        '<div><b>'+esc(channelLabel(ch.kind))+'</b>'+dest+
+        (ch.note? '<span class="mw-note">'+esc(ch.note)+'</span>':'')+'</div></div>';
+    }
+    rows.push('<section class="mw-sec"><h4 class="mw-h"><span data-icon="send"></span>'+
+      esc(t("md_channel"))+'</h4>'+chBody+'</section>');
+
+    if(o.owner || o.ownerNote || o.prohibition){
+      let who='';
+      if(o.owner) who+='<div class="mw-ch"><span class="mw-ch-i" data-icon="person"></span><div><b>'+
+        esc(o.owner)+'</b>'+(o.ownerNote? '<span class="mw-note">'+esc(o.ownerNote)+'</span>':'')+'</div></div>';
+      else if(o.ownerNote) who+='<p class="mw-note">'+esc(o.ownerNote)+'</p>';
+      /* A standing prohibition is the one thing on this screen that has to be read before the
+         message goes out rather than after, so it is not a note among notes. */
+      if(o.prohibition) who+=warnRow("warn", t("md_prohibition"), o.prohibition);
+      rows.push('<section class="mw-sec"><h4 class="mw-h"><span data-icon="person"></span>'+
+        esc(t("md_owner"))+'</h4>'+who+'</section>');
+    }
+
+    let msg;
+    if(!pitch) msg='<p class="mw-empty">'+esc(t("md_pitch_none"))+'</p>';
+    else msg='<pre class="mw-pitch" dir="auto">'+esc(pitchText(pitch, o.slug))+'</pre>'+
+      '<div class="mw-acts">'+
+      '<button class="btn ghost sm" id="mwCopy" type="button"><span data-icon="write"></span>'+esc(t("md_copy"))+'</button>'+
+      '<button class="btn sm" id="mwUse" type="button"><span data-icon="send"></span>'+esc(t("md_use"))+'</button>'+
+      '</div>';
+    rows.push('<section class="mw-sec"><h4 class="mw-h"><span data-icon="write"></span>'+
+      esc(t("md_pitch"))+(subject? ' <span class="mw-subj">'+esc(subject)+'</span>':'')+'</h4>'+msg+'</section>');
+
+    /* The confirmation. It writes a real ledger row, and the row says who witnessed it. */
+    const sel=CHANNELS.map(k=>'<option value="'+k+'"'+(k===ch.kind?" selected":"")+'>'+esc(channelLabel(k))+'</option>').join("");
+    rows.push('<section class="mw-sec mw-off" id="mwOff"><h4 class="mw-h"><span data-icon="check"></span>'+
+      esc(t("md_off_h"))+'</h4><p class="mw-note">'+esc(t("md_off_p"))+'</p>'+
+      '<div class="mw-off-grid">'+
+        '<div class="field"><label for="mwOffCh">'+esc(t("md_off_ch"))+'</label>'+
+          '<select id="mwOffCh" class="input">'+(ch.kind?"":'<option value="">–</option>')+sel+'</select></div>'+
+        '<div class="field"><label for="mwOffWhen">'+esc(t("md_off_when"))+'</label>'+
+          '<input id="mwOffWhen" class="input" type="date" max="'+today()+'" value="'+today()+'"></div>'+
+      '</div>'+
+      '<div class="field"><label for="mwOffNote">'+esc(t("md_off_note"))+'</label>'+
+        '<input id="mwOffNote" class="input" autocomplete="off"></div>'+
+      '<button class="btn" id="mwOffDo" type="button"><span data-icon="check"></span>'+esc(t("md_off_do"))+'</button>'+
+      '</section>');
+
+    /* The page, but only where it actually is. A live link to an unpublished page is a link
+       to a 404, and the record that most needs reading here is exactly the one that has not
+       been published yet, so it gets the local preview instead. */
+    let pageBtn="";
+    if(isLive(o)) pageBtn='<a class="btn ghost sm" id="mwPage" href="'+esc(liveUrl(o.slug))+
+      '" target="_blank" rel="noopener"><span data-icon="page"></span>'+esc(t("md_page"))+'</a>';
+    else if(o.html) pageBtn='<button class="btn ghost sm" id="mwPreview" type="button">'+
+      '<span data-icon="page"></span>'+esc(t("md_preview"))+'</button>';
+    if(pageBtn) rows.push('<div class="mw-acts mw-foot">'+pageBtn+'</div>');
+
+    info.innerHTML=rows.join("");
+    if(typeof applyIcons==="function") applyIcons(info);
+
+    const prev=el("mwPreview");
+    if(prev) prev.addEventListener("click", ()=>openLocalPreview(o.html));
+
+    const copy=el("mwCopy");
+    if(copy) copy.addEventListener("click", async ()=>{
+      try{ await navigator.clipboard.writeText(pitchText(pitch, o.slug)); toast(t("md_copied")); }
+      catch(e){ toast(t("cmp_copy_err")); }
+    });
+    const use=el("mwUse");
+    if(use) use.addEventListener("click", ()=>{
+      queuePitch({ slug:o.slug, subject:subject, body:pitch,
+                   to:(ch.kind==="email"? ch.to : ""), name:o.owner||"" });
+      switchTo("compose");
+    });
+    const doIt=el("mwOffDo");
+    if(doIt) doIt.addEventListener("click", ()=>{
+      const kind=el("mwOffCh").value;
+      if(!kind){ toast(t("md_off_need")); return; }
+      recordOffChannelSend(o, kind, el("mwOffWhen").value, el("mwOffNote").value);
+      toast(t("md_off_done"));
+      try{ scheduleSyncPush(); }catch(e){}
+      renderInfo(o);
+      if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    });
+  }
+
+  /* ---- tabs --------------------------------------------------------------- */
   function host(tab){
+    if(tab==="info"){ giveBack(); info.hidden=false; return true; }
     const id = tab==="edit" ? "view-editor" : "view-compose";
     const view=document.getElementById(id);
     if(!view) return false;
-    // park every other view back where it belongs before adopting this one
-    giveBack();
+    giveBack();                       // park every other borrowed view before adopting this one
+    info.hidden=true;
     remember(view);
     if(view.parentNode!==body) body.appendChild(view);
     view.hidden=false; view.classList.remove("wrap");
     return true;
   }
   function tabs(active){
-    drawer.querySelectorAll(".drawer-tab").forEach(b=>b.classList.toggle("on", b.getAttribute("data-tab")===active));
+    modal.querySelectorAll(".modal-tab").forEach(b=>{
+      const on=b.getAttribute("data-tab")===active;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-selected", on?"true":"false");
+    });
+  }
+  async function switchTo(tab){
+    if(!host(tab)) return;
+    tabs(tab);
+    try{
+      if(tab==="edit") await initEditor(current);
+      else if(tab==="compose") await initCompose(current);
+      else renderInfo(currentRec);
+    }catch(e){}
+    if(typeof applyIcons==="function") applyIcons(modal);
   }
 
   async function open(slug, tab, title){
-    tab=tab||"compose";
+    tab=tab||"info";
     opener=document.activeElement;
     current=slug||"";
-    el("drawerTitle").textContent=title||slug||"";
-    if(!host(tab)) return;
-    tabs(tab);
+    currentRec=null;
+    if(current){ try{ currentRec=(await mergedOpps()).find(x=>x.slug===current)||null; }catch(e){} }
+    el("modalTitle").textContent=title||(currentRec&&currentRec.business)||slug||"";
+    const sub=el("modalSub");
+    if(sub){
+      const bits=[];
+      if(currentRec && currentRec.location) bits.push(currentRec.location);
+      if(currentRec && currentRec.descriptor) bits.push(currentRec.descriptor);
+      sub.textContent=bits.join(" · ");
+      sub.hidden=!bits.length;
+    }
+    await switchTo(tab);
     open_=true;
-    drawer.hidden=false; scrim.hidden=false;
+    modal.hidden=false; scrim.hidden=false;
     // let the browser paint the closed state before the transition starts
-    requestAnimationFrame(()=>{ drawer.classList.add("on"); scrim.classList.add("on"); });
+    requestAnimationFrame(()=>{ modal.classList.add("on"); scrim.classList.add("on"); });
     document.body.style.overflow="hidden";
-    try{ if(tab==="edit") await initEditor(slug); else await initCompose(slug); }catch(e){}
-    const close=el("drawerClose"); if(close) close.focus();
+    const close=el("modalClose"); if(close) close.focus();
   }
   /* now=true when something else needs the borrowed view in this same tick, which is what a
      navigation is. Waiting out the closing transition first would hand the view back after the
@@ -3461,39 +4052,47 @@ function initDrawer(){
   function close(now){
     if(!open_) return;
     open_=false;
-    drawer.classList.remove("on"); scrim.classList.remove("on");
+    modal.classList.remove("on"); scrim.classList.remove("on");
     document.body.style.overflow="";
     const settle=()=>{
-      drawer.hidden=true; scrim.hidden=true;
-      // and the composer and the editor go home, hidden, where the shell can find them again
-      giveBack();
+      modal.hidden=true; scrim.hidden=true;
+      giveBack();               // the composer and the editor go home, hidden, where the shell finds them
     };
     if(now) settle(); else setTimeout(settle, 200);
     if(opener && opener.focus) try{ opener.focus(); }catch(e){}
     opener=null;
   }
-  el("drawerClose").addEventListener("click", ()=>close());
+  el("modalClose").addEventListener("click", ()=>close());
   scrim.addEventListener("click", ()=>close());
   document.addEventListener("keydown", e=>{
-    if(drawer.hidden) return;
+    if(modal.hidden) return;
     if(e.key==="Escape"){ close(); return; }
     // aria-modal is a promise to assistive technology, and a promise the keyboard has to keep
     // too: without a trap, Tab walks out of the dialog into a board the reader cannot see.
     if(e.key!=="Tab") return;
-    const f=drawer.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])');
+    const f=modal.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])');
     const list=Array.prototype.filter.call(f, el=>el.offsetParent!==null);
     if(!list.length) return;
     const first=list[0], last=list[list.length-1];
     if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
     else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
-    else if(!drawer.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
+    else if(!modal.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
   });
-  drawer.querySelectorAll(".drawer-tab").forEach(b=>b.addEventListener("click", ()=>{
-    const tab=b.getAttribute("data-tab");
-    if(!host(tab)) return;
-    tabs(tab);
-    try{ if(tab==="edit") initEditor(current); else initCompose(current); }catch(e){}
-  }));
-  window.thriveDrawer={ open:open, close:close, isOpen:()=>open_ };
-  return window.thriveDrawer;
+  modal.querySelectorAll(".modal-tab").forEach(b=>b.addEventListener("click", ()=>switchTo(b.getAttribute("data-tab"))));
+
+  /* The board asks for this when a card is dropped on Sent: open the record on the one control
+     that can honestly move it, and put the reader in front of it. */
+  async function confirmSend(slug, title){
+    await open(slug, "info", title);
+    const box=el("mwOff");
+    if(box){
+      try{ box.scrollIntoView({behavior:"smooth", block:"center"}); }catch(e){ box.scrollIntoView(); }
+      box.classList.add("mw-flash");
+      setTimeout(()=>box.classList.remove("mw-flash"), 1400);
+      const sel=el("mwOffCh"); if(sel) sel.focus();
+    }
+  }
+
+  window.thriveModal={ open:open, close:close, isOpen:()=>open_, confirmSend:confirmSend };
+  return window.thriveModal;
 }

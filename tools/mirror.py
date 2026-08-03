@@ -177,6 +177,38 @@ with sync_playwright() as p:
        B.evaluate("()=>!!(getDrafts().find(d=>d.slug==='mirror-one')||{}).archived"))
     ck("the sender name reaches B", B.evaluate("()=>getFromName()") == "Thrive Team")
 
+    # ------------------------------------------------- 6b. a hand send, and an order
+    # The correction that started this: it does not matter which device the message left from.
+    # It left. A send made by hand on A through somebody's contact form has to reach B as a
+    # send, and B's board has to move on it, or the two consoles are not one console.
+    A.evaluate("""()=>{ saveDraft({slug:'mirror-two', business:'Form Co', published:false,
+                                   mode:'fill', fields:{}, channel:{kind:'form',to:'formco.example',note:''},
+                                   pitch:{subject:'S', body:'Hi [LINK]'}, owner:'Owner'});
+        const o={slug:'mirror-two', business:'Form Co', channel:{kind:'form',to:'formco.example'},
+                 pitch:{subject:'S'}, owner:'Owner'};
+        recordOffChannelSend(o,'form','','through their form'); }""")
+    sync(A)
+    sync(B)
+    hand = B.evaluate("""()=>{const r=getMailLog().filter(m=>m.opp==='mirror-two');
+        return r.length? {provider:r[0].provider, channel:r[0].channel, status:r[0].status} : null;}""")
+    ck("a send made by hand on A reaches B's ledger", hand is not None, hand)
+    ck("and B can still see it was your confirmation, not a mail server",
+       bool(hand) and hand["provider"] == "manual", hand)
+    ck("and B can see which door it went through", bool(hand) and hand["channel"] == "form", hand)
+    ck("B's board moves it to Sent on that evidence",
+       B.evaluate("""async ()=>{const o=(await mergedOpps()).find(x=>x.slug==='mirror-two');
+           return effStage(o);}""") == "sent")
+
+    # An order arranged by hand on one device is a decision, and decisions mirror.
+    B.evaluate("()=>setLaneOrder(['mirror-two'])")
+    sync(B)
+    sync(A)
+    ck("an order arranged on B reaches A",
+       A.evaluate("()=>(getDrafts().find(d=>d.slug==='mirror-two')||{}).ord") == 1)
+    A.evaluate("()=>removeDraft('mirror-two')")
+    sync(A)
+    sync(B)
+
     # ---------------------------------------------------------------- 7. the whole state
     sa, sb = state(A), state(B)
     for k in ("drafts", "mail", "etpl", "tpl", "stages", "archived", "removed"):

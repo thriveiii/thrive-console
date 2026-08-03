@@ -90,13 +90,13 @@
           <button data-dev="desktop" class="on" data-i18n="dev_desktop">Desktop</button>
           <button data-dev="phone" data-i18n="dev_phone">Phone</button>
         </div>
-        <button class="btn ghost sm" id="openTab" data-i18n="preview_open">Open</button>
+        <button class="btn ghost sm" id="openTab" data-icon="page" data-i18n="preview_open">Open</button>
         <button class="btn ghost sm" id="copyLink" data-i18n="preview_copy">Copy link</button>
       </div>
       <div class="framewrap"><iframe id="frame" class="frame" title="preview"></iframe></div>
       <div class="bar bar-actions">
-        <button class="btn" id="publishBtn" data-i18n="publish">Publish</button>
-        <button class="btn ghost" id="saveLib" data-i18n="save_lib">Save to library</button>
+        <button class="btn" id="publishBtn" data-icon="upload" data-i18n="publish">Publish</button>
+        <button class="btn ghost" id="saveLib" data-icon="check" data-i18n="save_lib">Save to library</button>
         <button class="btn ghost" id="dlPage" data-i18n="dl_page">Download</button>
         <button class="btn ghost" id="copyManifest" data-i18n="copy_manifest">Copy manifest entry</button>
       </div>
@@ -104,6 +104,7 @@
   </div>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="app.js" defer></script>

@@ -28,7 +28,7 @@
 </header>
 
 <main class="wrap">
-  <div class="page-h"><h1 class="title" data-i18n="lib_title">Opportunity Library</h1></div>
+  <div class="page-h"><h1 class="title" data-icon="library" data-i18n="lib_title">Opportunity Library</h1></div>
   <p class="sub" data-i18n="lib_sub"></p>
 
   <!-- One primary path: find it, or make one. Search, the pills under it, and New
@@ -37,8 +37,8 @@
        with the search box for the same glance. -->
   <div class="toolbar">
     <div class="search"><input id="q" type="search" data-i18n-ph="search_ph"></div>
-    <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
-    <button class="btn ghost" id="libMoreBtn" aria-expanded="false" aria-controls="libMore" data-i18n="lib_more">More</button>
+    <a class="btn" href="editor.html" data-icon="add" data-i18n="new_opp">New opportunity</a>
+    <button class="btn ghost" id="libMoreBtn" data-icon="search" aria-expanded="false" aria-controls="libMore" data-i18n="lib_more">More</button>
   </div>
 
   <div id="libMore" class="more-bar" hidden>
@@ -54,7 +54,7 @@
       <option value="archived" data-i18n="statusf_archived">Archived</option>
       <option value="all" data-i18n="statusf_all">All statuses</option>
     </select>
-    <button class="btn ghost" id="exportManifest" data-i18n="export_manifest">Export manifest.json</button>
+    <button class="btn ghost" id="exportManifest" data-icon="page" data-i18n="export_manifest">Export manifest.json</button>
     <a class="btn ghost" href="templates.html" data-i18n="nav_templates">Templates</a>
     <a class="btn ghost" href="activity.html" data-i18n="nav_activity">Activity</a>
   </div>
@@ -63,6 +63,7 @@
   <div id="grid" class="grid"></div>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="app.js" defer></script>

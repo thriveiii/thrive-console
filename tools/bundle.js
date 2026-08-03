@@ -5,8 +5,8 @@
      ->  dist/thrive-console.html  the offline copy: everything inlined, opens from a file
 
    Both are generated from library/*.html, which stay the source of every view. One shell means
-   one editor and one composer in the document, which is what lets the drawer host them by
-   moving the existing nodes instead of duplicating markup.
+   one editor and one composer in the document, which is what lets the opportunity window host
+   them by moving the existing nodes instead of duplicating markup.
 
    Every page becomes a section of one document, the nav switches between them without a
    navigation, and each page's init runs the first time its section is shown. Styles, fonts,
@@ -39,7 +39,9 @@ const VIEWS = [
 /* ---- assets ---- */
 const logo = "data:image/png;base64," + fs.readFileSync(path.join(ROOT, "assets/thrive-logo.png")).toString("base64");
 const css = read(path.join(LIB, "fonts.css")) + "\n" + read(path.join(LIB, "styles.css"));
+const icons = read(path.join(LIB, "icons.js"));
 const i18n = read(path.join(LIB, "i18n.js"));
+const intake = read(path.join(LIB, "intake.js"));
 const gate = read(path.join(LIB, "gate.js"));
 const model = read(path.join(LIB, "stage-model.js"));
 const app = read(path.join(LIB, "app.js"));
@@ -76,22 +78,33 @@ const sectionsLinked = VIEWS.map(v =>
   rewrite(mainOf(v.file)).split(logo).join("../assets/thrive-logo.png") + "</main>"
 ).join("\n");
 
-/* The drawer host lives outside every view, because it opens from more than one of them and a
-   fixed element inside a [hidden] view is a bug waiting to happen. PR 4 moves the existing
-   editor and composer nodes into it, so the document holds exactly one of each. */
-const DRAWER = `
-<div class="drawer-scrim" id="drawerScrim" hidden></div>
-<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" hidden>
-  <header class="drawer-head">
-    <span class="drawer-title" id="drawerTitle"></span>
-    <button class="drawer-close" id="drawerClose" data-i18n="dw_close">Close</button>
+/* The opportunity window lives outside every view, because it opens from more than one of them
+   and a fixed element inside a [hidden] view is a bug waiting to happen. It MOVES the existing
+   editor and composer nodes into #modalBody, so the document holds exactly one of each.
+
+   #modalInfo is the window's own panel and is never borrowed, which is why it sits beside
+   #modalBody rather than inside it: #modalBody stays empty whenever nothing is on loan, and
+   "did the window give everything back" stays a question with a simple answer. */
+const MODAL = `
+<div class="modal-scrim" id="modalScrim" hidden></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
+  <header class="modal-head">
+    <div class="modal-heading">
+      <span class="modal-title" id="modalTitle"></span>
+      <span class="modal-sub" id="modalSub" hidden></span>
+    </div>
+    <button class="modal-close" id="modalClose" data-i18n="dw_close">Close</button>
   </header>
-  <nav class="drawer-tabs" id="drawerTabs">
-    <button class="drawer-tab on" data-tab="compose" data-i18n="dw_compose">Write email</button>
-    <button class="drawer-tab" data-tab="edit" data-i18n="dw_edit">Edit page</button>
+  <nav class="modal-tabs" id="modalTabs" role="tablist">
+    <button class="modal-tab on" role="tab" aria-selected="true" data-tab="info"><span data-icon="info"></span><span data-i18n="mw_details">Details</span></button>
+    <button class="modal-tab" role="tab" aria-selected="false" data-tab="compose"><span data-icon="send"></span><span data-i18n="dw_compose">Write email</span></button>
+    <button class="modal-tab" role="tab" aria-selected="false" data-tab="edit"><span data-icon="page"></span><span data-i18n="dw_edit">Edit page</span></button>
   </nav>
-  <div class="drawer-body" id="drawerBody"></div>
-</aside>`;
+  <div class="modal-scroll">
+    <div class="modal-info" id="modalInfo"></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>`;
 
 /* Four destinations, not three. The numbers were reachable only from inside the Library after
    the reduction, which read as though they had been deleted. What you measure has to be one
@@ -110,10 +123,11 @@ const head = inline
     '\n<style>.view[hidden]{display:none!important}</style>';
 const body = inline
   ? '<script>window.THRIVE_SYNC_JSON = ' + JSON.stringify(published) + ';</script>' +
-    '\n<script>\n' + i18n + '\n</script>\n<script>\n' + gate + '\n</script>' +
-    '\n<script>\n' + model + '\n</script>\n<script>\n' + app + '\n</script>'
-  : '<script src="i18n.js"></script>\n<script src="gate.js"></script>' +
-    '\n<script src="stage-model.js"></script>\n<script src="app.js"></script>';
+    '\n<script>\n' + icons + '\n</script>\n<script>\n' + i18n + '\n</script>' +
+    '\n<script>\n' + gate + '\n</script>\n<script>\n' + model + '\n</script>' +
+    '\n<script>\n' + intake + '\n</script>\n<script>\n' + app + '\n</script>'
+  : '<script src="icons.js"></script>\n<script src="i18n.js"></script>\n<script src="gate.js"></script>' +
+    '\n<script src="stage-model.js"></script>\n<script src="intake.js"></script>\n<script src="app.js"></script>';
 const icon = inline ? logo : "../assets/thrive-logo.png";
 const mark = inline ? logo : "../assets/thrive-logo.png";
 const sections2 = inline ? sections : sectionsLinked;
@@ -147,7 +161,7 @@ ${head}
 </header>
 
 ${sections2}
-${DRAWER}
+${MODAL}
 
 ${body}
 <script>
@@ -182,13 +196,13 @@ ${body}
     var found = VIEWS.some(function(v){ return v.id === id; });
     if(!found) id = VIEWS[0].id;
     // Going somewhere closes the sheet you were working in, and the sheet hands its view back.
-    if(window.thriveDrawer && window.thriveDrawer.isOpen && window.thriveDrawer.isOpen())
-      window.thriveDrawer.close(true);   // now, not after the transition: the view is needed here
-    var host = document.getElementById("drawerBody");
+    if(window.thriveModal && window.thriveModal.isOpen && window.thriveModal.isOpen())
+      window.thriveModal.close(true);   // now, not after the transition: the view is needed here
+    var host = document.getElementById("modalBody");
     VIEWS.forEach(function(v){
       var el = document.getElementById("view-" + v.id);
       if(!el) return;
-      if(host && el.parentNode === host) return;   // the drawer owns this one right now
+      if(host && el.parentNode === host) return;   // the window owns this one right now
       el.hidden = (v.id !== id);
     });
     document.querySelectorAll(".nav a[data-view]").forEach(function(a){
@@ -205,6 +219,7 @@ ${body}
         el.innerHTML = snapshot[id];
         if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
       }
+      if(typeof applyIcons === "function") try{ applyIcons(el || document); }catch(e){}
       started[id] = want; delete stale[id];
       try{ window[v.init](); }catch(e){ console.error(e); }
     }
@@ -214,7 +229,7 @@ ${body}
   document.addEventListener("DOMContentLoaded", function(){
     snap();
     initLang();
-    if(typeof initDrawer === "function") initDrawer();
+    if(typeof initModal === "function") initModal();
     show(current());
     // A fresh unlock lands on the first view with its data already pulled. Registered like
     // every other listener, so it cannot displace the sync round or a view's own refresh.

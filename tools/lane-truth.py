@@ -160,6 +160,60 @@ with sync_playwright() as p:
     ppl = pg.eval_on_selector("#homePeople", "e=>e.innerText")
     ck("per-person response is present", "Lillian" in ppl or "a@b.com" in ppl)
 
+    # ---- a message that went out through their own door ----------------------
+    # Most of these businesses have no inbox. The message goes through the contact form on
+    # their own site, by hand, and the console cannot witness that. What it can do is record
+    # exactly what happened and attribute it correctly, and that is evidence of a send, so the
+    # board moves. The device it was sent from has never been the question.
+    pg.goto(f"{base}/library/console.html#board"); pg.wait_for_timeout(2600)
+    off = pg.evaluate("""async ()=>{
+      const o=(await mergedOpps()).find(x=>x.slug==='2-faces');
+      recordOffChannelSend(o,'form','','through the form on their site');
+      const o2=(await mergedOpps()).find(x=>x.slug==='2-faces');
+      const row=getMailLog().filter(m=>m.opp==='2-faces').slice(-1)[0];
+      return { stage:effStage(o2), count:sendsFor(o2).count, provider:row.provider,
+               channel:row.channel, status:row.status, dir:row.direction, to:row.to };
+    }""")
+    print("off channel:", off)
+    ck("a send through their own channel is a send", off["stage"] == "sent")
+    ck("and it counts as one send, not as a bare declaration", off["count"] == 1)
+    ck("the ledger records who witnessed it", off["provider"] == "manual")
+    ck("and which door it went through", off["channel"] == "form")
+    ck("it is outbound and it is sent", off["dir"] == "out" and off["status"] == "sent")
+    ck("a send claimed for a future day is stamped now, not then",
+       pg.evaluate("()=>offChannelStamp('2099-01-01').slice(0,4)") != "2099")
+    ck("a send claimed for an earlier day keeps that day",
+       pg.evaluate("()=>offChannelStamp('2026-01-05').slice(0,10)") == "2026-01-05")
+    pg.reload(); pg.wait_for_timeout(2800)
+    lanes2 = pg.evaluate("""()=>{const o={};document.querySelectorAll('[data-body]').forEach(e=>
+        o[e.getAttribute('data-body')]=[...e.querySelectorAll('.tok')].map(t=>t.getAttribute('data-slug')));return o}""")
+    print("lanes after the hand send:", lanes2)
+    ck("the board moves it to Sent on that evidence", "2-faces" in lanes2["sent"])
+    ck("and it is no longer sitting in Ready", "2-faces" not in lanes2["live"])
+
+    # ---- the day's batch ------------------------------------------------------
+    ck("the batch reader self test passes", pg.evaluate("()=>ThriveIntake.selfTest()")["pass"])
+    ck("the board offers somewhere to drop the day's batch",
+       pg.eval_on_selector("#intakeZone", "e=>!e.hidden") is True)
+    # A batch lands in the first lane and nowhere else: nothing is published, nothing has been
+    # sent, and any other lane would be a claim the record cannot support.
+    added = pg.evaluate("""async ()=>{
+      const rec=ThriveIntake.toRecord({business:'Gate Test Co', location:'Vienna', descriptor:'',
+        channel:{kind:'form',to:'gatetest.example',note:''}, pageFile:'', slugHint:'gate-test-co',
+        subject:'S', owner:'O', ownerNote:'', prohibition:'', message:'Hi [LINK]', warnings:[],
+        file:{name:'g.html', html:'<h1>g</h1>'}}, {today:'2026-08-03'});
+      rec.stage=''; rec.status='draft'; rec.published=false;
+      saveDraft(rec);
+      const o=(await mergedOpps()).find(x=>x.slug==='gate-test-co');
+      return { stage:effStage(o), sends:sendsFor(o).count, kind:o.channel.kind, pitch:o.pitch.body };
+    }""")
+    print("batch record:", added)
+    ck("a record from the batch starts in the first lane", added["stage"] == "draft")
+    ck("and it claims no send", added["sends"] == 0)
+    ck("it carries the channel the brief named", added["kind"] == "form")
+    ck("and the words that came with it, link slot intact", "[LINK]" in added["pitch"])
+    pg.evaluate("()=>removeDraft('gate-test-co')")
+
     ck("no page error", not errs)
     if errs: print(errs)
     b.close()

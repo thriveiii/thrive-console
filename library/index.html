@@ -33,37 +33,38 @@
   <p class="lede" id="homeStory"></p>
 
   <div class="toolbar">
-    <a class="btn" href="compose.html" data-i18n="home_send">Send an email</a>
-    <a class="btn ghost" href="editor.html" data-i18n="new_opp">New opportunity</a>
-    <a class="btn ghost" href="library.html" data-i18n="home_open_lib">Open library</a>
-    <button class="btn ghost" id="homeRefresh" data-i18n="ins_refresh">Refresh</button>
-    <button class="btn ghost" id="homeRepair" hidden data-i18n="home_repair">Fix analytics on live pages</button>
+    <a class="btn" href="compose.html" data-icon="send" data-i18n="home_send">Send an email</a>
+    <a class="btn ghost" href="editor.html" data-icon="add" data-i18n="new_opp">New opportunity</a>
+    <a class="btn ghost" href="library.html" data-icon="library" data-i18n="home_open_lib">Open library</a>
+    <button class="btn ghost" id="homeRefresh" data-icon="refresh" data-i18n="ins_refresh">Refresh</button>
+    <button class="btn ghost" id="homeRepair" hidden data-icon="refresh" data-i18n="home_repair">Fix analytics on live pages</button>
   </div>
   <div class="note warn-note" id="homeRepairNote" hidden></div>
 
-  <h3 class="block-h" data-i18n="home_outreach">Outreach</h3>
+  <h3 class="block-h" data-icon="send" data-i18n="home_outreach">Outreach</h3>
   <div class="tiles" id="tilesOutreach"></div>
 
-  <h3 class="block-h" data-i18n="home_pages_h">Pages &amp; visitors</h3>
+  <h3 class="block-h" data-icon="page" data-i18n="home_pages_h">Pages &amp; visitors</h3>
   <div class="tiles" id="tilesPages"></div>
   <div class="note" id="homeDataNote"></div>
   <div class="note" id="homeProbe" hidden></div>
 
-  <h3 class="block-h" data-i18n="home_campaigns">Campaign performance</h3>
+  <h3 class="block-h" data-icon="insights" data-i18n="home_campaigns">Campaign performance</h3>
   <div id="homeCampaigns"></div>
 
-  <h3 class="block-h" data-i18n="home_tpl_h">Which message is working</h3>
+  <h3 class="block-h" data-icon="sparkle" data-i18n="home_tpl_h">Which message is working</h3>
   <p class="sub" data-i18n="home_tpl_sub"></p>
   <div id="homeTemplates"></div>
 
-  <h3 class="block-h" data-i18n="home_people_h">Who is paying attention</h3>
+  <h3 class="block-h" data-icon="person" data-i18n="home_people_h">Who is paying attention</h3>
   <p class="sub" data-i18n="home_people_sub"></p>
   <div id="homePeople"></div>
 
-  <h3 class="block-h" data-i18n="home_top">Most opened pages</h3>
+  <h3 class="block-h" data-icon="opened" data-i18n="home_top">Most opened pages</h3>
   <div id="homeTop"></div>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="app.js" defer></script>

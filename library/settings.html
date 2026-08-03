@@ -32,7 +32,7 @@
   <p class="sub" data-i18n="set_sub"></p>
 
   <section class="panel settings-panel" id="connPanel">
-    <h3 class="block-h" data-i18n="conn_h">Connection health</h3>
+    <h3 class="block-h" data-icon="check" data-i18n="conn_h">Connection health</h3>
     <p class="sub" data-i18n="conn_sub"></p>
     <ol class="conn-list" id="connList"></ol>
     <div class="bar">
@@ -45,7 +45,7 @@
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_gh_h">GitHub publishing</h3>
+    <h3 class="block-h" data-icon="upload" data-i18n="set_gh_h">GitHub publishing</h3>
     <p class="sub" data-i18n="set_gh_sub"></p>
     <div class="grid3">
       <div class="field"><label for="gh_owner" data-i18n="gh_owner_l">Owner</label><input id="gh_owner" class="input" autocomplete="off"></div>
@@ -63,14 +63,14 @@
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_ep_h">Analytics endpoint</h3>
+    <h3 class="block-h" data-icon="insights" data-i18n="set_ep_h">Analytics endpoint</h3>
     <p class="sub" data-i18n="set_ep_sub"></p>
     <div class="field"><input id="ep2" class="input" type="url" data-i18n-ph="ins_endpoint_ph"></div>
     <button class="btn ghost" id="epSave2" data-i18n="ep_save">Save endpoint</button>
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_email_h">Email sending</h3>
+    <h3 class="block-h" data-icon="email" data-i18n="set_email_h">Email sending</h3>
     <p class="sub" data-i18n="set_email_sub"></p>
     <div class="grid2">
       <div class="field"><label for="em_name" data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
@@ -81,7 +81,7 @@
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_sync_h">Live sync across devices</h3>
+    <h3 class="block-h" data-icon="refresh" data-i18n="set_sync_h">Live sync across devices</h3>
     <p class="sub" data-i18n="set_sync_sub"></p>
     <div class="field"><label for="sy_ep" data-i18n="sy_ep_l">Sync endpoint (the same relay /exec URL)</label>
       <input id="sy_ep" class="input" type="url" autocomplete="off"></div>
@@ -96,7 +96,7 @@
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_quota_h">Sending limits (Resend free tier)</h3>
+    <h3 class="block-h" data-icon="clock" data-i18n="set_quota_h">Sending limits (Resend free tier)</h3>
     <p class="sub" data-i18n="set_quota_sub"></p>
     <div class="quota-readout" id="quotaReadout"></div>
     <div class="grid2">
@@ -107,16 +107,17 @@
   </section>
 
   <section class="panel settings-panel">
-    <h3 class="block-h" data-i18n="set_backup_h">Backup &amp; restore</h3>
+    <h3 class="block-h" data-icon="page" data-i18n="set_backup_h">Backup &amp; restore</h3>
     <p class="sub" data-i18n="set_backup_sub"></p>
     <div class="bar">
-      <button class="btn" id="bkExport" data-i18n="bk_export">Export backup</button>
-      <label class="btn ghost" for="bkFile" data-i18n="bk_import">Restore from file</label>
+      <button class="btn" id="bkExport" data-icon="upload" data-i18n="bk_export">Export backup</button>
+      <label class="btn ghost" for="bkFile" data-icon="upload" data-i18n="bk_import">Restore from file</label>
       <input id="bkFile" type="file" accept="application/json,.json" hidden>
     </div>
   </section>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="app.js" defer></script>

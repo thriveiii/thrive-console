@@ -46,7 +46,7 @@
     <div id="cmpMore" class="more-bar" hidden>
       <div class="field"><label for="efrom" data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
       <button class="btn ghost sm" id="eSaveTpl" data-i18n="cmp_save_tpl">Save as template</button>
-      <label class="btn ghost sm" for="eTplFile" data-i18n="cmp_tpl_upload">Import HTML as a message</label>
+      <label class="btn ghost sm" for="eTplFile" data-icon="upload" data-i18n="cmp_tpl_upload">Import HTML as a message</label>
       <input id="eTplFile" type="file" accept=".html,.htm,text/html" hidden>
       <a class="btn ghost sm" href="templates.html?kind=mail" data-i18n="cmp_manage_tpl">Manage</a>
       <label class="chk"><input type="checkbox" id="efirst"> <span data-i18n="cmp_firstname">Greet by first name only (Hi Ahmed)</span></label>
@@ -102,14 +102,15 @@
     </div>
 
     <div class="bar bar-actions">
-      <button class="btn" id="eSend" data-i18n="cmp_send">Send</button>
-      <button class="btn ghost" id="eCopy" data-i18n="cmp_copy">Copy for Gmail</button>
-      <button class="btn ghost" id="eMail" data-i18n="cmp_mailto">Open in mail app</button>
+      <button class="btn" id="eSend" data-icon="send" data-i18n="cmp_send">Send</button>
+      <button class="btn ghost" id="eCopy" data-icon="write" data-i18n="cmp_copy">Copy for Gmail</button>
+      <button class="btn ghost" id="eMail" data-icon="email" data-i18n="cmp_mailto">Open in mail app</button>
       <div id="quotaMeter" class="quota-meter" title=""></div>
     </div>
   </section>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="app.js" defer></script>

@@ -168,9 +168,21 @@
     });
 
     /* Within a lane, the thing that has waited longest comes first. The board
-       is a queue of neglect, not a chronology of activity.                   */
+       is a queue of neglect, not a chronology of activity.
+
+       Unless somebody has said otherwise. Dragging a card stamps an ord on every
+       card in that lane, and an ord outranks the clock, because a person who has
+       looked at the lane knows things the clock does not. Cards that arrive after
+       the ordering have no ord and fall in below, still sorted by age, so a new
+       arrival never silently jumps a queue somebody arranged by hand.          */
     LANES.forEach(function(k){
-      lanes[k].sort(function(a,b){ return b.age - a.age; });
+      lanes[k].sort(function(a,b){
+        var ao = a.ord || 0, bo = b.ord || 0;
+        if (ao && bo) return ao - bo;
+        if (ao) return -1;
+        if (bo) return 1;
+        return b.age - a.age;
+      });
     });
 
     return { lanes: lanes, closed: closed, archived: archived, summary: summary(lanes, closed) };
@@ -187,6 +199,8 @@
       opens: hostOpens(o.slug, ctx),
       views: hostViews(o.slug, ctx),
       age: ageDays(o, ctx),
+      /* Position somebody chose, when they chose one. Zero means nobody has. */
+      ord: Number(o.ord) || 0,
       stalled: isStalled(o, ctx),
       hot: isHot(o, ctx),
       provisional: lane === "draft" && !o.published,
@@ -277,6 +291,24 @@
     }
     if (b.lanes.sent.concat(b.lanes.opened).some(function(t){ return t.slug === "h" || t.slug === "b"; }))
       fails.push("a record with no send reached a send lane");
+
+    /* A hand order outranks the clock, and a card with no order falls in below. */
+    var ordOpps = [
+      { slug:"o1", biz:"One",   _local:false, sent_on:"2026-07-01", ord:2 },
+      { slug:"o2", biz:"Two",   _local:false, sent_on:"2026-07-20", ord:1 },
+      { slug:"o3", biz:"Three", _local:false, sent_on:"2026-06-01" }
+    ];
+    var ob = build(ordOpps, { opens:{o1:0,o2:0,o3:0}, views:{o1:0,o2:0,o3:0}, mail:[] });
+    var order = ob.lanes.live.map(function(x){ return x.slug; }).join(",");
+    /* o3 is the oldest, so age alone would put it first. It has no ord, so it does not. */
+    if (order !== "o2,o1,o3") fails.push("hand order expected o2,o1,o3 got " + order);
+
+    /* Evidence of a hand send is evidence of a send: the lane moves. */
+    var manual = [{ slug:"m1", biz:"Form co", _local:false, sent_on:"2026-07-01" }];
+    var mb = build(manual, { opens:{m1:0}, views:{m1:0},
+      mail:[{ opp:"m1", direction:"out", status:"sent", provider:"manual", channel:"form", ts:iso(1) }] });
+    if (mb.lanes.sent.length !== 1) fails.push("a hand send must move the lane to sent");
+
     return { pass: fails.length === 0, fails: fails };
   }
 

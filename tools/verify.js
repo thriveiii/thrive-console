@@ -247,6 +247,59 @@ head("Pages");
   else ok("every published page carries the analytics beacon (" + opps.length + " pages)");
 }
 
+/* ---------- wiring ----------
+   A name that is called and never declared is a runtime error nobody sees until the screen
+   that calls it is opened, and `node --check` is happy with it because it is valid syntax.
+   That is how a renamed init survived a rebuild and a full pass of the string checks, and
+   only turned up when a browser walked the board.
+
+   Two questions, both answerable from the source alone: does every console function this
+   code calls exist, and does every icon it asks for exist. */
+head("Wiring");
+{
+  const src = ["library/app.js", "library/i18n.js", "library/gate.js",
+               "library/stage-model.js", "library/intake.js", "library/icons.js"]
+    .map(f => read(path.join(ROOT, f))).join("\n");
+
+  const declared = new Set();
+  let m;
+  const decl = /(?:^|\s)(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g;
+  while ((m = decl.exec(src))) declared.add(m[1]);
+  /* the ones the shell and the pages define, plus what a browser provides */
+  ["applyIcons", "thriveIcon", "initLang", "applyLang"].forEach(n => declared.add(n));
+
+  /* Only the console's own naming conventions. Anything else is a browser or a library call
+     and this check has no business guessing at it. */
+  const called = new Set();
+  const call = /\b((?:init|render|refresh|apply|record|queue|take|mark|merge|sync|publish|finish)[A-Z][\w$]*)\s*\(/g;
+  while ((m = call.exec(src))) called.add(m[1]);
+  const missing = [...called].filter(n => !declared.has(n) &&
+    !new RegExp("(?:const|let|var)\\s+" + n + "\\b|" + n + "\\s*[:=]").test(src));
+  missing.length ? bad("every console function called is a console function declared", missing)
+                 : ok("every console function called is a console function declared (" + called.size + " names)");
+
+  /* An icon that does not exist renders as nothing at all, silently, which reads as a
+     forgotten control rather than as a bug. */
+  const iconSrc = read(path.join(ROOT, "library/icons.js"));
+  const names = new Set();
+  const nm = /^\s{4}([a-z]+):\s+'/gm;
+  while ((m = nm.exec(iconSrc))) names.add(m[1]);
+  const asked = new Set();
+  const use = /data-icon="([a-z]+)"/g;
+  for (const f of ["library/app.js", ...fs.readdirSync(path.join(ROOT, "library"))
+        .filter(x => x.endsWith(".html")).map(x => "library/" + x),
+        "tools/bundle.js"]) {
+    const txt = read(path.join(ROOT, f));
+    let k; const re = new RegExp(use.source, "g");
+    while ((k = re.exec(txt))) asked.add(k[1]);
+  }
+  /* the channel kinds are asked for by value, not by literal, so they are named here */
+  ["email", "form", "dm", "whatsapp", "other"].forEach(n => asked.add(n));
+  const noSuch = [...asked].filter(n => !names.has(n));
+  noSuch.length ? bad("every icon asked for is an icon that exists", noSuch)
+                : ok("every icon asked for is an icon that exists (" + asked.size + " asked, " + names.size + " drawn)");
+}
+
 /* ---------- verdict ---------- */
 console.log("\n" + (failures ? "✕ " + failures + " of " + checks + " checks failed."
                              : "✓ all " + checks + " checks passed."));

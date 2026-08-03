@@ -6,7 +6,7 @@ something got through: the numbered notes say what.
 
   1  Boot          every page and every view starts, with nothing blank and nothing thrown
   2  Doors         every link leads somewhere real, and its parameters arrive
-  3  Round trip    what the drawer borrows it gives back; a view re-entered is a view reloaded
+  3  Round trip    what the window borrows it gives back; a view re-entered is a view reloaded
   4  Truth         lanes, pills and tables report the same facts, and only facts with evidence,
                 and two devices sharing one store are the same console, removals included
   5  Bilingual     both languages complete, no key on screen, plural forms correct
@@ -142,6 +142,19 @@ def session(b, lang="en", width=1280, relay=relay_ok, seed=True, page="console.h
     return ctx, pg, errs
 
 
+def centred(pg):
+    """A window in the middle of the screen, not against an edge. Measured, because
+    "centred" is a claim about pixels and the old panel satisfied every other check
+    in this file while sitting hard against the trailing edge."""
+    return pg.evaluate("""()=>{const m=document.getElementById('modal');
+      if(!m||m.hidden) return false;
+      const r=m.getBoundingClientRect(), w=innerWidth, h=innerHeight;
+      if(r.width>=w-2) return true;                       // full width on a phone is centred
+      const dx=Math.abs((r.left+r.right)/2 - w/2);
+      const dy=Math.abs((r.top+r.bottom)/2 - h/2);
+      return dx<=w*0.03 && dy<=h*0.06;}""")
+
+
 def visible(pg, vid):
     return pg.evaluate("""(id)=>{const e=document.getElementById('view-'+id)||document.querySelector('main.wrap');
       if(!e) return {miss:true};
@@ -273,18 +286,23 @@ def gate3(b):
     pg.evaluate("()=>location.hash='#board'")
     pg.wait_for_timeout(1400)
 
-    tok = pg.query_selector(".tok[data-slug]")
-    ck("there is a token to open", tok is not None)
+    tok = pg.query_selector(".tok[data-slug] .tok-open")
+    ck("there is a card to open", tok is not None)
     if tok:
         tok.click()
         pg.wait_for_timeout(1500)
-        ck("the drawer opens over the board", pg.eval_on_selector("#drawer", "e=>!e.hidden"))
-        ck("and it is holding the composer",
-           pg.evaluate("()=>!!document.querySelector('#drawerBody #view-compose')"))
+        ck("the window opens over the board", pg.eval_on_selector("#modal", "e=>!e.hidden"))
+        ck("and it opens on the details, which is the question you asked",
+           pg.eval_on_selector("#modalInfo", "e=>!e.hidden && e.textContent.trim().length>40"))
+        ck("it is centred rather than pinned to an edge", centred(pg))
+        pg.click("#modalTabs [data-tab='compose']")
+        pg.wait_for_timeout(1400)
+        ck("the composer tab is holding the composer",
+           pg.evaluate("()=>!!document.querySelector('#modalBody #view-compose')"))
         pg.keyboard.press("Escape")
         pg.wait_for_timeout(900)
         ck("closing it gives the composer back to the document",
-           pg.evaluate("()=>!document.querySelector('#drawerBody #view-compose')"))
+           pg.evaluate("()=>!document.querySelector('#modalBody #view-compose')"))
         for v in ("compose", "editor"):
             pg.evaluate("x=>location.hash='#'+x", v)
             pg.wait_for_timeout(1600)
@@ -295,13 +313,15 @@ def gate3(b):
         # navigating away while it is open must close it and hand the view back
         pg.evaluate("()=>location.hash='#board'")
         pg.wait_for_timeout(1200)
-        pg.query_selector(".tok[data-slug]").click()
+        pg.query_selector(".tok[data-slug] .tok-open").click()
         pg.wait_for_timeout(1400)
+        pg.click("#modalTabs [data-tab='compose']")
+        pg.wait_for_timeout(1200)
         pg.evaluate("()=>location.hash='#library'")
         pg.wait_for_timeout(1500)
-        ck("navigating away closes the sheet", pg.eval_on_selector("#drawer", "e=>e.hidden") is True)
+        ck("navigating away closes the window", pg.eval_on_selector("#modal", "e=>e.hidden") is True)
         ck("and nothing is left inside it",
-           pg.eval_on_selector("#drawerBody", "e=>e.children.length") == 0)
+           pg.eval_on_selector("#modalBody", "e=>e.children.length") == 0)
 
     # a view re-entered with different parameters is a view reloaded, not a stale one
     def composed_for(slug):

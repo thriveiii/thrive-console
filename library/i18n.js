@@ -403,6 +403,7 @@ const I18N = {
     act_tpl_publish: "Publish template",
     act_email: "Email",
     act_email_copy: "Copy email",
+    act_email_manual: "Sent by hand",
     email_btn: "Email",
     nav_compose: "Email",
     cmp_title: "Compose email",
@@ -457,6 +458,72 @@ const I18N = {
     set_quota_daily: "Daily cap",
     set_quota_monthly: "Monthly cap",
     clear_filters: "Clear filters",
+
+    /* ---- the opportunity window ------------------------------------------
+       One window, in the middle of the screen, with the work sorted into tabs:
+       what this opportunity is, the message to send, the page itself. */
+    mw_details:     "Details",
+    md_where:       "Where it stands",
+    md_channel:     "How you reach them",
+    md_ch_email:    "Email",
+    md_ch_form:     "Their website contact form",
+    md_ch_dm:       "Instagram direct message",
+    md_ch_whatsapp: "WhatsApp",
+    md_ch_other:    "Another channel",
+    md_ch_none:     "No channel was recorded for this one.",
+    md_owner:       "Owner",
+    md_note:        "Notes",
+    md_prohibition: "Standing prohibition",
+    md_pitch:       "The message that came with this opportunity",
+    md_pitch_none:  "No message came with this opportunity.",
+    md_copy:        "Copy the message",
+    md_copied:      "Copied, with the live link already in it.",
+    md_use:         "Load it into the composer",
+    md_page:        "Open the page",
+    md_preview:     "Preview the page",
+    md_gone:        "This opportunity is no longer in the library.",
+    md_no_sends:    "Nothing has gone out yet.",
+
+    /* Off-channel sending. Most of these prospects have no public address: the
+       message goes through their own form or a direct message, by hand. The
+       console cannot witness that, so it records it as what it is, your
+       confirmation, and says so on the record it writes. */
+    md_off_h:       "Sent through their own channel",
+    md_off_p:       "Record a message you sent by hand, through their form, a direct message, or anywhere else. It is filed as your confirmation rather than as a mail-server receipt, and it moves this opportunity to Sent.",
+    md_off_ch:      "Channel",
+    md_off_when:    "When",
+    md_off_note:    "Note (optional)",
+    md_off_do:      "Confirm the send",
+    md_off_done:    "Recorded. This opportunity is now in Sent.",
+    md_off_need:    "Choose the channel you sent through.",
+    md_off_by_hand: "your confirmation",
+
+    /* ---- today's batch ---------------------------------------------------- */
+    in_h:        "Today's batch",
+    in_p:        "Drop a zip, a page, or a page with its brief. Every opportunity the brief names starts in Draft with its own message attached, ready for you to read before anything goes out.",
+    in_pick:     "Choose files",
+    in_drop:     "Drop them here",
+    in_reading:  "Reading…",
+    in_none:     "Nothing readable in that. The console reads .html, .md, .txt and .zip.",
+    in_add:      "Add to Draft",
+    in_cancel:   "Discard",
+    in_exists:   "already in the library",
+    in_zip_err:  "That zip could not be read in this browser.",
+    in_w_no_page:    "no page",
+    in_w_no_brief:   "no brief",
+    in_w_no_message: "no message",
+    in_w_no_channel: "no channel",
+    in_w_no_business:"no name",
+
+    /* ---- moving a card by hand -------------------------------------------- */
+    dg_no_open:  "An open is recorded by the page itself, so it cannot be set by hand.",
+    dg_no_back:  "A message has already gone out, so this cannot go back to a lane that means nothing was sent.",
+    dg_replied:  "Marked as answered.",
+    dg_back:     "Back to where it stood before anything went out.",
+    dg_ordered:  "The new order is kept.",
+    dg_publish:  "Draft and Live are decided by whether the page is published, not by a gesture. Publish it, and it moves itself.",
+    dg_sent_ask: "Say how it went out, and it moves.",
+
     cmp_template: "Message template",
     cmp_quick_h: "Start from",
     cmp_quick_blank: "Blank message",
@@ -522,6 +589,7 @@ const I18N = {
     cmp_tpl_uploaded: "Template uploaded and selected.",
     mst_sent: "Sent",
     mst_copied: "Copied",
+    mst_manual: "Sent by hand",
     mst_reply: "Reply",
     mst_branded: "Logo",
     cmp_quota_today: "Today:",
@@ -931,6 +999,7 @@ const I18N = {
     act_tpl_publish: "نشر قالب",
     act_email: "بريد",
     act_email_copy: "نسخ بريد",
+    act_email_manual: "إرسال يدوي",
     email_btn: "بريد",
     nav_compose: "البريد",
     cmp_title: "إنشاء بريد",
@@ -985,6 +1054,63 @@ const I18N = {
     set_quota_daily: "السقف اليومي",
     set_quota_monthly: "السقف الشهري",
     clear_filters: "مسح الفلاتر",
+
+    mw_details:     "التفاصيل",
+    md_where:       "أين تقف",
+    md_channel:     "كيف تصل إليهم",
+    md_ch_email:    "بريد إلكتروني",
+    md_ch_form:     "نموذج التواصل في موقعهم",
+    md_ch_dm:       "رسالة مباشرة على إنستغرام",
+    md_ch_whatsapp: "واتساب",
+    md_ch_other:    "قناة أخرى",
+    md_ch_none:     "لم تُسجَّل قناة لهذه الفرصة.",
+    md_owner:       "صاحب النشاط",
+    md_note:        "ملاحظات",
+    md_prohibition: "محظور دائم",
+    md_pitch:       "النص الذي وصل مع هذه الفرصة",
+    md_pitch_none:  "لم يصل نص مع هذه الفرصة.",
+    md_copy:        "نسخ النص",
+    md_copied:      "نُسخ النص، ومعه الرابط المنشور.",
+    md_use:         "افتحه في محرّر الرسائل",
+    md_page:        "فتح الصفحة",
+    md_preview:     "معاينة الصفحة",
+    md_gone:        "لم تعد هذه الفرصة في المكتبة.",
+    md_no_sends:    "لم يخرج شيء بعد.",
+
+    md_off_h:       "أرسلتها عبر قناتهم",
+    md_off_p:       "سجّل رسالة أرسلتها بيدك عبر نموذجهم أو رسالة مباشرة أو أي قناة أخرى. تُقيَّد على أنها تأكيدك أنت لا إيصالًا من خادم بريد، وتنقل هذه الفرصة إلى «أُرسلت».",
+    md_off_ch:      "القناة",
+    md_off_when:    "التاريخ",
+    md_off_note:    "ملاحظة (اختيارية)",
+    md_off_do:      "تأكيد الإرسال",
+    md_off_done:    "سُجِّل. الفرصة الآن في «أُرسلت».",
+    md_off_need:    "اختر القناة التي أرسلت عبرها.",
+    md_off_by_hand: "بتأكيدك",
+
+    in_h:        "دفعة اليوم",
+    in_p:        "أفلت ملف zip أو صفحة أو صفحة مع ملف تعليماتها. كل فرصة يذكرها الملف تبدأ في «مسودة» ومعها نصها، جاهزة لتقرأها قبل أن يخرج أي شيء.",
+    in_pick:     "اختر الملفات",
+    in_drop:     "أفلتها هنا",
+    in_reading:  "جارٍ القراءة…",
+    in_none:     "لا شيء قابل للقراءة هنا. يقرأ الكونسول html وmd وtxt وzip.",
+    in_add:      "أضِف إلى المسودة",
+    in_cancel:   "تجاهل",
+    in_exists:   "موجودة في المكتبة",
+    in_zip_err:  "تعذّرت قراءة هذا الملف المضغوط في هذا المتصفح.",
+    in_w_no_page:    "بلا صفحة",
+    in_w_no_brief:   "بلا تعليمات",
+    in_w_no_message: "بلا نص",
+    in_w_no_channel: "بلا قناة",
+    in_w_no_business:"بلا اسم",
+
+    dg_no_open:  "الفتح تسجّله الصفحة نفسها، فلا يمكن ضبطه باليد.",
+    dg_no_back:  "خرجت رسالة بالفعل، فلا يمكن إعادتها إلى عمود يعني أن شيئًا لم يُرسل.",
+    dg_replied:  "سُجِّل أنه ردّ.",
+    dg_back:     "عادت إلى ما كانت عليه قبل أي إرسال.",
+    dg_ordered:  "حُفظ الترتيب الجديد.",
+    dg_publish:  "«مسودة» و«جاهزة» يقرّرهما نشر الصفحة، لا حركة اليد. انشرها وستنتقل وحدها.",
+    dg_sent_ask: "قل كيف خرجت، وستنتقل.",
+
     cmp_template: "قالب الرسالة",
     cmp_quick_h: "ابدأ من",
     cmp_quick_blank: "رسالة فارغة",
@@ -1050,6 +1176,7 @@ const I18N = {
     cmp_tpl_uploaded: "رُفع القالب واختير.",
     mst_sent: "مُرسَل",
     mst_copied: "منسوخ",
+    mst_manual: "أُرسلت يدويًا",
     mst_reply: "رد",
     mst_branded: "شعار",
     cmp_quota_today: "اليوم:",
@@ -1077,6 +1204,10 @@ function applyLang(){
   document.querySelectorAll("[data-i18n-ph]").forEach(el=>{ el.setAttribute("placeholder", t(el.getAttribute("data-i18n-ph")).replace(/&lt;/g,"<").replace(/&gt;/g,">")); });
   const lb = document.getElementById("langbtn");
   if(lb) lb.textContent = (l==="en") ? "العربية" : "English";
+  /* Every data-i18n element was just rewritten from the dictionary, which wipes any icon
+     that lived inside it. Refilling here means one call covers the whole document and the
+     language switch, and applyIcons is idempotent, so it costs nothing when nothing changed. */
+  if(typeof applyIcons === "function") applyIcons();
   if(window.onLangApplied) window.onLangApplied();
 }
 /* Explanations for metrics: hover on a pointer device, tap the ⓘ on touch.
@@ -1265,6 +1396,14 @@ var I18N_BOARD = {
     /* Read by somebody who was never written to. Real, and not an open. */
     tok_views:      { one:"no email yet, {n} view", other:"no email yet, {n} views" },
     tok_answered:   "answered",
+
+    /* Counting sentences in the opportunity window and in the day's batch. Form
+       objects, never flat templates: Arabic inflects the noun after the number
+       and a single "{n} فرصة" is wrong for most values. */
+    md_sends:  { one:"{n} message has gone out.", other:"{n} messages have gone out." },
+    in_found:  { one:"{n} opportunity read.",     other:"{n} opportunities read." },
+    in_added:  { one:"{n} opportunity added to Draft.",
+                 other:"{n} opportunities added to Draft." },
 
     dw_edit:        "Edit page",
     dw_compose:     "Write email",
@@ -1471,6 +1610,20 @@ var I18N_BOARD = {
       few:"بلا رسالة، {n} مشاهدات", many:"بلا رسالة، {n} مشاهدة", other:"بلا رسالة، {n} مشاهدة"
     },
     tok_answered: "ردّ",
+
+    md_sends: {
+      one:"خرجت رسالة واحدة.", two:"خرجت رسالتان.",
+      few:"خرجت {n} رسائل.", many:"خرجت {n} رسالة.", other:"خرجت {n} رسالة."
+    },
+    in_found: {
+      one:"قُرئت فرصة واحدة.", two:"قُرئت فرصتان.",
+      few:"قُرئت {n} فرص.", many:"قُرئت {n} فرصة.", other:"قُرئت {n} فرصة."
+    },
+    in_added: {
+      one:"أُضيفت فرصة واحدة إلى المسودة.", two:"أُضيفت فرصتان إلى المسودة.",
+      few:"أُضيفت {n} فرص إلى المسودة.", many:"أُضيفت {n} فرصة إلى المسودة.",
+      other:"أُضيفت {n} فرصة إلى المسودة."
+    },
 
     dw_edit:      "تحرير الصفحة",
     dw_compose:   "كتابة رسالة",

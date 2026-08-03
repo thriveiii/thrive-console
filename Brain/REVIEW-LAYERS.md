@@ -47,20 +47,49 @@ purpose is unclear is the most expensive way to waste a day.
 
 ---
 
-### The shell and the drawer (`library/console.html`)
+### The shell and the opportunity window (`library/console.html`)
 
-- **Purpose.** One document, seven views, three destinations in the bar. The console stopped
+- **Purpose.** One document, eight views, four destinations in the bar. The console stopped
   being a set of pages and became an application, which is what makes it bearable on a phone.
-- **Story.** The work opens beside the board rather than instead of it. You never lose your
-  place, because your place never went anywhere.
-- **Truth.** The drawer *moves* the existing editor and composer nodes rather than copying
+- **Story.** A card opens the whole opportunity in one centred window, sorted into three tabs
+  because there are three questions and mixing them is what made the earlier panel hard to
+  use: what is this, what am I sending, and what does the page say.
+- **Truth.** The window *moves* the existing editor and composer nodes rather than copying
   them, so the document holds exactly one of each and one set of listeners. Two copies would
-  mean duplicate ids and a send button belonging to whichever loaded last.
-- **Craft.** On a phone the drawer stops at 92vw, leaving a strip of the board visible and a
-  scrim to tap. A full-width sheet leaves only a button a thumb cannot always reach.
+  mean duplicate ids and a send button belonging to whichever loaded last. Its own Details
+  panel is never borrowed, so `#modalBody` is empty whenever nothing is on loan and "did it
+  give everything back" stays a question with a one-line answer.
+- **Craft.** Centred, not against an edge: a side panel puts what you are reading in one half
+  of the screen and what you are not in the other, and on a wide screen that pushes the message
+  you are about to send to the edge of your own attention. On a phone it takes the screen,
+  because a floating card there wastes the only space there is. The gates measure the centring
+  rather than trusting it.
 - **Resilience.** Escape closes it, the scrim closes it, focus moves to the close control on
-  open and returns to the token on close. The single pages still work with no drawer at all:
-  the layer stays dormant when `#drawer` is absent.
+  open and returns to the card on close. The single pages still work with no window at all:
+  the layer stays dormant when `#modal` is absent.
+
+### Off-channel sending, the batch, and moving a card
+
+- **Purpose.** Most businesses in a day's batch have no public inbox: they are reached through
+  the contact form on their own site or a direct message, by hand. That send was invisible to
+  the console, so the board reported nothing had gone out when something had. The Details tab
+  records it.
+- **Story.** A day arrives as one drop. The brief that came with the pages is read, and every
+  opportunity it names appears in the first lane with its own words attached, ready to review
+  one at a time before anything goes out.
+- **Truth.** The console cannot witness a hand send, and it does not pretend to. It records
+  what happened, through which channel, on which day, and marks the row as your confirmation
+  rather than a mail-server receipt. That is real evidence of a real event, correctly
+  attributed, which is the only kind the board is allowed to move on. Nothing is invented
+  from a brief: a field it did not carry stays empty and is named as missing on the card.
+- **Craft.** Cards move by pointer, one code path for mouse, touch and pen, with a grip a
+  finger can aim at and a press-and-hold for the rest of the card. A placeholder holds the gap
+  so the lane never collapses under the card being carried.
+- **Resilience.** A drag can reorder and it can make a decision, but it can never declare
+  something that did not happen. Dropping on Sent opens the confirmation instead of writing
+  one. Opened is recorded by the page itself and cannot be set by hand at all. Draft and Live
+  are decided by whether the page is published, and the console says so rather than pretending
+  the gesture worked.
 
 ## The audit of the new platform
 
@@ -85,9 +114,9 @@ finger now gets 40. The chips gained a real hit area at every width, because a c
 filter before it is a label.
 
 **3. `aria-modal` was a promise the keyboard did not keep. (Layer 5)**
-The drawer declared itself modal, and a pointer was correctly held out by the scrim, but Tab
+The window declared itself modal, and a pointer was correctly held out by the scrim, but Tab
 walked straight out of the dialog into a board the reader could not see. Focus is trapped
-inside it now, and still returns to the token on close.
+inside it now, and still returns to the card on close.
 
 **4. The gate input tracked its Arabic placeholder. (Layer 4)**
 Found by the checklist in phase 6. Letter-spacing on Arabic breaks the joins. Latin only.
@@ -155,7 +184,7 @@ and the gates exist because things got through them.
 |---|---|---|---|
 | 1 | **Boot** | Does every page and every view start, with nothing blank and nothing thrown? | |
 | 2 | **Doors** | Does every link lead somewhere real, and do its parameters arrive? | Every parameter-carrying link in the console |
-| 3 | **Round trip** | Does the drawer give back what it borrows? Is a view re-entered a view reloaded? | The blank composer |
+| 3 | **Round trip** | Does the window give back what it borrows? Is a view re-entered a view reloaded? | The blank composer |
 | 4 | **Truth** | Do the lanes, the pills and the tables report the same facts, and only facts with evidence? | |
 | 5 | **Bilingual** | Both languages complete, no key on screen, plural forms correct at 1, 2, 3, 11, 100 | |
 | 6 | **Typography** | One Latin face and one Arabic face, everywhere, measured rather than assumed | Alyamama's serif Latin |
@@ -171,10 +200,10 @@ Gate 8 ends by sending a real message through a relay that answers and remembers
 
 ### The five defects the gates found
 
-**1. The drawer never gave back what it borrowed. (Gate 3)**
-This is the one that was reported: tap "Send an email", get a blank page. The drawer hosts the
+**1. The panel never gave back what it borrowed. (Gate 3)**
+This is the one that was reported: tap "Send an email", get a blank page. The window hosts the
 composer by moving `#view-compose` into itself, which is right, and on close it moved it
-nowhere, which is not. The shell skips any view the drawer owns, so from the first time a token
+nowhere, which is not. The shell skips any view the window owns, so from the first time a card
 was tapped, the composer and the editor were unreachable for the rest of the session. A panel
 that takes a node out of the document owes the document that node back, and it now does,
 immediately when a navigation needs it rather than after the closing transition.

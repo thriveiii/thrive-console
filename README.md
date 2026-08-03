@@ -38,8 +38,8 @@ node tools/bundle.js
 
 `library/*.html` remain the source of every view. Both outputs are generated from them, so the
 served console and the downloadable file can never drift. One document is also what lets the
-drawer host the editor and the composer by moving the existing nodes instead of duplicating
-them. Regenerate whenever a view changes. `library/console.html` is committed because it is
+opportunity window host the editor and the composer by moving the existing nodes instead of
+duplicating them. Regenerate whenever a view changes. `library/console.html` is committed because it is
 what the site serves; `dist/` is ignored and rebuilt on demand.
 
 One self-contained file: every page becomes a view, styles, fonts, scripts and the logo are
