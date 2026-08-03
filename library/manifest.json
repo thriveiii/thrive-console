@@ -1,7 +1,7 @@
 {
   "site": "console.thriveiii.com",
   "base_path": "/opp/",
-  "updated": "2026-07-31",
+  "updated": "2026-08-03",
   "opportunities": [
     {
       "slug": "ludic-lillian",
@@ -36,6 +36,15 @@
       "template": "custom",
       "sent_on": "2026-07-31",
       "location": "",
+      "phone": "",
+      "status": "sent"
+    },
+    {
+      "slug": "مدرسة-المدار-الدولية",
+      "business": "مدارس المدار الدولية",
+      "template": "ar-opp1",
+      "sent_on": "2026-08-03",
+      "location": "المطلاع - الكويت",
       "phone": "",
       "status": "sent"
     }
