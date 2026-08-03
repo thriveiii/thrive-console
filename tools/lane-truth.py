@@ -60,9 +60,11 @@ from playwright.sync_api import sync_playwright
 base = f"http://127.0.0.1:{PORT}"; CH = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 EP = f"http://127.0.0.1:{PORT}/exec"
 fails = []
-def ck(n, c):
+def ck(n, c, d=None):
     print(("PASS" if c else "FAIL"), n)
-    if not c: fails.append(n)
+    if not c:
+        fails.append(n)
+        if d is not None: print("      " + str(d)[:400])
 
 # The four real opportunities, exactly as the manifest carries them, and the two real sends.
 # Page views on wise-butterfly happened with nothing sent; on ludic and thrive-july they
