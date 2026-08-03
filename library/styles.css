@@ -884,6 +884,38 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 
 
 
+
+/* --- two libraries, one per document language ------------------------------
+   The badge exists so it is never ambiguous which library you are editing, and
+   the direction of a document field comes from the document, never from the
+   chrome around it.                                                          */
+
+.loc-tabs{ margin-block-end:var(--s-3) }
+.loc-count{ display:block; margin-block-start:var(--s-2); font-size:var(--fs-xs); color:var(--ink-4) }
+.loc-badge{
+  display:inline-flex; align-items:center; gap:.4em;
+  font-size:var(--fs-micro); font-weight:var(--w-head);
+  padding:4px 10px; border-radius:var(--r-pill);
+  border:1px solid var(--hair); color:var(--ink-3);
+  margin-block-end:var(--s-3);
+}
+.loc-badge.loc-ar{ border-color:var(--lane-replied); color:var(--lane-replied) }
+.loc-badge.loc-en{ border-color:var(--lane-draft); color:var(--lane-draft) }
+/* An Arabic document keeps Arabic typography whatever the chrome says: the Arabic
+   face, no letter-spacing, no uppercase. */
+.doc-ar{ font-family:var(--font-ar); letter-spacing:normal; text-transform:none }
+
+.loc-mig{ margin-block-start:var(--s-5); padding:var(--s-4);
+  border:1px solid rgba(246,207,91,.30); border-radius:var(--r-sm);
+  background:var(--state-stall-t) }
+.loc-mig-row{ display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap;
+  padding:var(--s-2) 0; border-block-end:1px solid var(--hair-2) }
+.loc-mig-name{ font-size:var(--fs-sm); color:var(--ink); font-weight:var(--w-head); min-width:0 }
+.loc-mig-kind,.loc-mig-read{ font-size:var(--fs-micro); color:var(--ink-4) }
+.loc-mig-read b{ color:var(--ink-2) }
+.loc-mig-sel{ margin-inline-start:auto }
+.loc-mig .btn{ margin-block-start:var(--s-3) }
+
 /* --- the day's batch ------------------------------------------------------
    The report comes before anything is written, so it is the tallest thing in
    this block. An import that quietly drops two of eleven is worse than one that
