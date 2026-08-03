@@ -299,6 +299,20 @@ def gate3(b):
         pg.wait_for_timeout(1400)
         ck("the composer tab is holding the composer",
            pg.evaluate("()=>!!document.querySelector('#modalBody #view-compose')"))
+        # Entering a tab a second time must not wire an already-wired DOM. It did, and one
+        # click on Copy wrote TWO ledger rows, which on Send would have been two messages to
+        # one prospect. Counted, because "it looks fine" cannot see a duplicate listener.
+        ctx.grant_permissions(["clipboard-read", "clipboard-write"])
+        pg.click("#modalTabs [data-tab='edit']")
+        pg.wait_for_timeout(1300)
+        pg.click("#modalTabs [data-tab='compose']")
+        pg.wait_for_timeout(1500)
+        before = pg.evaluate("()=>getMailLog().length")
+        pg.click("#eCopy")
+        pg.wait_for_timeout(1200)
+        ck("one click writes one ledger row, after any number of tab changes",
+           pg.evaluate("()=>getMailLog().length") - before == 1,
+           pg.evaluate("()=>getMailLog().length") - before)
         pg.keyboard.press("Escape")
         pg.wait_for_timeout(900)
         ck("closing it gives the composer back to the document",

@@ -4003,6 +4003,11 @@ function initModal(){
     remember(view);
     if(view.parentNode!==body) body.appendChild(view);
     view.hidden=false; view.classList.remove("wrap");
+    /* Back to how it looked at boot, before its init runs again. Without this, entering the
+       composer tab a second time wires a DOM that is already wired, and every control in it
+       ends up with two of the same listener: one click on Copy wrote two ledger rows, and one
+       click on Send would have sent twice. Measured, not assumed. */
+    if(typeof window.thriveViewReset==="function") window.thriveViewReset(id.replace(/^view-/,""));
     return true;
   }
   function tabs(active){

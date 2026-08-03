@@ -625,6 +625,22 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     }
     try{ window.scrollTo(0,0); }catch(e){}
   }
+  /* Handing a view to something that is not the shell.
+     The opportunity window borrows the composer and the editor by moving their nodes, and it
+     re-runs their init every time a tab is entered. Over one wired DOM that is a second set of
+     listeners, and a second set of listeners on the composer means one click on Copy writing
+     two ledger rows and one click on Send sending twice. So the borrower asks for the view to
+     be put back the way it was at boot first, exactly as this shell does for itself, and the
+     shell marks it stale so it re-inits when somebody navigates to it directly. */
+  window.thriveViewReset = function(id){
+    var el = document.getElementById("view-" + id);
+    if(el && snapshot[id] != null){
+      el.innerHTML = snapshot[id];
+      if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
+      if(typeof applyIcons === "function") try{ applyIcons(el); }catch(e){}
+    }
+    stale[id] = 1;
+  };
   window.addEventListener("hashchange", function(){ show(current()); });
   document.addEventListener("DOMContentLoaded", function(){
     snap();

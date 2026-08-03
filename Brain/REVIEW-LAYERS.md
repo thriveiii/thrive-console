@@ -198,7 +198,7 @@ computed style would have answered it: the stack said Alyamama and the stack was
 
 Gate 8 ends by sending a real message through a relay that answers and remembers what it was handed, then watching the opportunity move from Ready to Sent, the quota count it, and the message it went out with become measurable. Gate 9 takes that same session, exports a backup, wipes the device and restores it. Those two are the loops the console exists for, and until now neither had been proven end to end by anything but use.
 
-### The seven defects the gates found
+### The eight defects the gates found
 
 **1. The panel never gave back what it borrowed. (Gate 3)**
 This is the one that was reported: tap "Send an email", get a blank page. The window hosts the
@@ -241,7 +241,16 @@ clears 44 on a coarse pointer now, and so do a card's open area, its drag grip, 
 the batch review. The gate measures those four selectors as well, so the next control put on
 the board is measured rather than assumed.
 
-**7. A renamed function passed every static check. (Gate 2, then `tools/verify.js`)**
+**7. One click on Copy wrote two ledger rows. (Gate 3)**
+The window re-runs a view's init every time its tab is entered, over a DOM that init had
+already wired, so every control in the composer collected a second copy of its own listener.
+Copy wrote two rows. Send would have sent the same message to the same prospect twice. The
+shell already resets a view to its boot markup before re-initialising it, and the window now
+asks the shell to do exactly that before it hands a borrowed view back to its init, then the
+shell marks the view stale so navigating to it directly still gets a fresh start. Gate 3
+counts the rows one click writes, because looking at a screen cannot see a duplicate listener.
+
+**8. A renamed function passed every static check. (Gate 2, then `tools/verify.js`)**
 `initDrag` became `initBoardDrag` and one call site kept the old name. It is valid JavaScript,
 so `node --check` was happy, the build succeeded, all nineteen string checks passed, and the
 board threw on every load. `verify.js` now asks whether every console function called is a
