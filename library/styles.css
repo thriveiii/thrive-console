@@ -886,6 +886,20 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 
 
 
+
+/* --- storage, and the sync that is the only durable copy -------------------- */
+.st-bar{ height:8px; border-radius:var(--r-pill); background:var(--hair-2); overflow:hidden;
+  margin-block-end:var(--s-3) }
+.st-bar span{ display:block; height:100%; background:var(--grad) }
+.st-line{ margin:var(--s-2) 0 0; font-size:var(--fs-xs); color:var(--ink-3) }
+.st-miss{ color:var(--state-stall) }
+.st-keys{ list-style:none; margin:var(--s-2) 0 0; padding:0; display:grid; gap:4px }
+.st-keys li{ display:flex; gap:var(--s-2); font-size:var(--fs-micro); color:var(--ink-4) }
+.st-keys .mono-iso{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis }
+#boardBand:not([hidden]){ margin-block-end:var(--s-4) }
+#boardBand .mw-band{ margin:0; align-items:center }
+#boardBand .btn{ margin-inline-start:auto; flex:0 0 auto }
+
 /* --- moving a card ---------------------------------------------------------
    The card is a row: the label opens the window, the overflow control lists
    every legal destination, and the grip picks it up. WCAG 2.2 SC 2.5.7 is why

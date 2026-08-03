@@ -52,7 +52,29 @@ function download(name, text, type){
 /* Everything here is mirrored across devices. Writing any of them schedules a push, so a
    change made anywhere reaches everywhere without being asked. */
 const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thrive_activity_v1:1,
+  /* Derived, but a device whose log has truncated cannot rebuild it, so it travels. */
+  thrive_rollup_v1:1,
   thrive_email_templates_v1:1, thrive_templates_v1:1, thrive_removed_v1:1, thrive_etpl_seed_v1:1 };
+/* WebKit deletes ALL script writeable storage for an origin with no user interaction in the
+   last seven days of browser use. Not part of it: all of it, at once. And localStorage throws
+   past roughly 5 MiB. So a write that fails is not a detail, it is the moment the console stops
+   being able to remember anything, and it has to say so rather than return false into a caller
+   that ignores it. */
+let __quotaHit=0;
+function storageBytes(){
+  let total=0; const by={};
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      const v=localStorage.getItem(k)||"";
+      const n=(k.length+v.length)*2;      // UTF-16 code units, which is what the quota counts
+      by[k]=n; total+=n;
+    }
+  }catch(e){}
+  return { total:total, by:by,
+           top:Object.keys(by).sort((a,b)=>by[b]-by[a]).slice(0,6).map(k=>({key:k,bytes:by[k]})) };
+}
+const STORAGE_CEILING=5*1024*1024;
 function lsSet(key, str){
   try{ localStorage.setItem(key, str); if(SYNCED_KEYS[key]) try{ scheduleSyncPush(); }catch(_){} return true; }
   catch(e){
@@ -60,7 +82,16 @@ function lsSet(key, str){
       const h=JSON.parse(localStorage.getItem("thrive_hits_v1")||"[]"); if(h.length>150) localStorage.setItem("thrive_hits_v1", JSON.stringify(h.slice(-150)));
       const a=JSON.parse(localStorage.getItem("thrive_activity_v1")||"[]"); if(a.length>200) localStorage.setItem("thrive_activity_v1", JSON.stringify(a.slice(-200)));
       localStorage.setItem(key, str); if(SYNCED_KEYS[key]) try{ scheduleSyncPush(); }catch(_){} return true;
-    }catch(e2){ try{ toast(t("storage_full")); }catch(_){} return false; }
+    }catch(e2){
+      /* Both writes failed, so this device can no longer remember anything new. It is told
+         once, loudly, with what to do, rather than a toast that scrolls away: the next thing
+         the reader types would otherwise be lost without a word. */
+      __quotaHit=Date.now();
+      try{ toast(t("st_full_act"), { label:t("nav_settings"), ms:14000,
+        fn:()=>{ try{ goTo("settings"); }catch(_){ location.hash="#settings"; } } }); }catch(_){}
+      try{ logActivity("storage_full", key, String((storageBytes().total/1048576).toFixed(2))+" MiB"); }catch(_){}
+      return false;
+    }
   }
 }
 
@@ -2431,6 +2462,7 @@ async function connCheck(candidate, onStep){
 }
 
 function initSettings(){
+  renderStorageMeter();
   const el=id=>document.getElementById(id);
   const c=ghConfig();
   el("gh_owner").value=c.owner||"thriveiii";
@@ -3594,6 +3626,8 @@ async function initBoard(){
      the model was right, and the screen was wrong, which is the worst of the three. */
   window.thriveBoardRefresh=render;
   initIntake();
+  renderSyncBand();
+  refreshRollup();
   initCardMenu();
   initCardDrag();
   await render();
@@ -3719,6 +3753,132 @@ function bindMigration(scope, after){
     if(after) after();
   });
 }
+/* ---------- storage survival ----------
+   WebKit deletes ALL script writeable storage for an origin with no user interaction in the
+   last seven days of browser use. Not part of it. All of it, at once.
+
+   The console's entire data layer is localStorage on an iPad. So one quiet week away can erase
+   every opportunity, every draft and the whole mail ledger on that device, and nothing about it
+   is a bug anybody could have found by testing. The relay is the only durable copy, and until
+   now nothing checked that it actually held one.
+
+   Three things, in order of how much they matter:
+     the band, which fires at three days rather than seven so it lands before the window closes;
+     the completeness check, because a backup nobody has verified is a belief;
+     the meter, so "what is using the space" has an answer before the space runs out. */
+
+const SYNC_STALE_DAYS=3;
+function daysSinceSync(){
+  const last=syncLast();
+  if(!last) return Infinity;
+  const ms=Date.parse(last);
+  if(isNaN(ms)) return Infinity;
+  return Math.floor((Date.now()-ms)/86400000);
+}
+/* The band sits on the board, above the lanes, and it is not dismissable. A warning you can
+   dismiss is a warning you dismiss on the day you are busiest, which is the day it matters. */
+function renderSyncBand(){
+  const host=document.getElementById("boardBand");
+  if(!host) return;
+  if(!getSyncEndpoint()){ host.hidden=true; host.innerHTML=""; return; }
+  const n=daysSinceSync();
+  if(n < SYNC_STALE_DAYS){ host.hidden=true; host.innerHTML=""; return; }
+  const line = (n===Infinity)
+    ? esc(t("st_never"))
+    : esc(boardText(getLang(),"st_stale_n",n)).split(String(n)).join('<span class="n">'+n+'</span>');
+  host.hidden=false;
+  host.innerHTML='<div class="mw-band"><span class="mw-band-i" aria-hidden="true">!</span>'+
+    '<div><b>'+esc(t("st_stale_h"))+'</b><span>'+line+' '+esc(t("st_stale_p"))+'</span></div>'+
+    '<button class="btn sm" id="bandSync" type="button">'+esc(t("st_sync_now"))+'</button></div>';
+  const b=document.getElementById("bandSync");
+  if(b) b.addEventListener("click", async ()=>{
+    b.disabled=true;
+    try{ await syncNow(); }catch(e){}
+    b.disabled=false;
+    renderSyncBand();
+  });
+}
+
+/* Does the relay actually hold what this device holds? Counts per key, compared, and any
+   difference reported rather than summarised into a reassuring sentence. */
+async function relayCompleteness(){
+  const ep=getSyncEndpoint();
+  if(!ep) return { ok:false, reason:"no_endpoint" };
+  let remote=null;
+  try{
+    const r=await fetch(ep, { method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({ op:"state_get", auth:syncAuth() }) });
+    const j=await r.json();
+    if(!j || j.ok===false) return { ok:false, reason:"relay_error" };
+    /* The relay is handed an object and hands one back, but a relay of a different vintage,
+       or a device that stored the blob as text, returns a string. Both are read, because a
+       check that only works against one shape is a check that reports a problem that is not
+       there. This one could only ever fail before: JSON.parse of an object throws. */
+    remote = (typeof j.data === "string") ? JSON.parse(j.data) : (j.data || null);
+  }catch(e){ return { ok:false, reason:"unreachable", detail:String(e&&e.message||e) }; }
+  if(!remote) return { ok:false, reason:"empty" };
+
+  const count=(v)=>{ try{ const p=typeof v==="string"? JSON.parse(v):v; return Array.isArray(p)? p.length : (p&&typeof p==="object"? Object.keys(p).length : 0); }catch(e){ return 0; } };
+  const rows=[];
+  Object.keys(SYNCED_KEYS).forEach(k=>{
+    const mine=count(localStorage.getItem(k));
+    const theirs=count(remote[k]);
+    if(mine || theirs) rows.push({ key:k, mine:mine, theirs:theirs, short:Math.max(0, mine-theirs) });
+  });
+  const missing=rows.filter(r=>r.short>0);
+  return { ok:true, rows:rows, missing:missing, complete:missing.length===0 };
+}
+
+function renderStorageMeter(){
+  const host=document.getElementById("stMeter");
+  if(!host) return;
+  const s=storageBytes();
+  const mb=(n)=>(n/1048576).toFixed(2);
+  const pct=Math.min(100, Math.round((s.total/STORAGE_CEILING)*100));
+  host.innerHTML=
+    '<div class="st-bar"><span style="width:'+pct+'%"></span></div>'+
+    '<p class="st-line"><b>'+esc(t("st_used"))+'</b> <span class="n">'+mb(s.total)+'</span> MiB '+
+      esc(t("st_of"))+' <span class="n">5</span> MiB (<span class="n">'+pct+'</span>%)</p>'+
+    '<p class="st-line"><b>'+esc(t("st_largest"))+'</b></p>'+
+    '<ul class="st-keys">'+s.top.map(x=>'<li><span class="mono-iso">'+esc(x.key)+'</span>'+
+      '<span class="n">'+mb(x.bytes)+'</span> MiB</li>').join("")+'</ul>'+
+    '<button class="btn ghost sm" id="stCheck" type="button">'+esc(t("st_check"))+'</button>'+
+    '<div id="stCheckOut" class="st-line"></div>';
+  const b=document.getElementById("stCheck");
+  if(b) b.addEventListener("click", async ()=>{
+    const out=document.getElementById("stCheckOut");
+    out.textContent=t("st_checking");
+    const r=await relayCompleteness();
+    if(!r.ok){ out.textContent=t(r.reason==="no_endpoint"? "sy_need_ep" : "st_cmp_err"); return; }
+    if(r.complete){ out.textContent=t("st_complete"); return; }
+    out.innerHTML='<b class="st-miss">'+esc(t("st_missing"))+'</b><ul class="st-keys">'+
+      r.missing.map(x=>'<li><span class="mono-iso">'+esc(x.key)+'</span>'+
+        '<span class="n">'+x.theirs+'</span> / <span class="n">'+x.mine+'</span></li>').join("")+'</ul>';
+  });
+}
+
+/* ---------- the monthly rollup ----------
+   Written when a month closes and never again, because the log it would be recounted from may
+   since have lost its head and the smaller answer would silently replace the true one. */
+const ROLLUP="thrive_rollup_v1";
+function getRollup(){ try{ return JSON.parse(localStorage.getItem(ROLLUP)||"{}"); }catch(e){ return {}; } }
+function setRollup(o){ return lsSet(ROLLUP, JSON.stringify(o)); }
+async function refreshRollup(){
+  if(typeof ThriveNumbers==="undefined") return;
+  const opps=await mergedOpps();
+  const next=ThriveNumbers.buildRollup({ mail:getMailLog(), opps:opps, month:ThriveNumbers.localMonth() }, getRollup());
+  if(JSON.stringify(next)!==JSON.stringify(getRollup())) setRollup(next);
+}
+
+/* The one context every number is computed from, assembled in one place so no surface has to
+   remember which ledgers a quantity needs. */
+async function numberCtx(){
+  const opps=await mergedOpps();
+  return { mail:getMailLog(), hits:allHits({self:true}), opps:opps,
+           activity:getActivity(), rollup:getRollup(),
+           today:ThriveNumbers.localDay(), month:ThriveNumbers.localMonth() };
+}
+
 /* ---------- moving a card ----------
    WCAG 2.2 Success Criterion 2.5.7: any function that uses dragging must also be operable with
    a single pointer without dragging, unless dragging is essential. It is not essential here.

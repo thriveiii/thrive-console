@@ -45,6 +45,7 @@ const gate = read(path.join(LIB, "gate.js"));
 const model = read(path.join(LIB, "stage-model.js"));
 const life = read(path.join(LIB, "lifecycle.js"));
 const intake = read(path.join(LIB, "intake.js"));
+const numbers = read(path.join(LIB, "numbers.js"));
 const app = read(path.join(LIB, "app.js"));
 let published = {};
 try { published = JSON.parse(read(path.join(LIB, "sync.json"))); } catch (e) {}
@@ -142,10 +143,11 @@ const body = inline
     '\n<script>\n' + gate + '\n</script>' +
     '\n<script>\n' + model + '\n</script>\n<script>\n' + life + '\n</script>'+
     '\n<script>\n' + intake + '\n</script>'+
+    '\n<script>\n' + numbers + '\n</script>'+
     '\n<script>\n' + app + '\n</script>'
   : '<script src="icons.js"></script>\n<script src="i18n.js"></script>\n<script src="gate.js"></script>' +
     '\n<script src="stage-model.js"></script>\n<script src="lifecycle.js"></script>' +
-    '\n<script src="intake.js"></script>\n<script src="app.js"></script>';
+    '\n<script src="intake.js"></script>\n<script src="numbers.js"></script>\n<script src="app.js"></script>';
 const icon = inline ? logo : "../assets/thrive-logo.png";
 const mark = inline ? logo : "../assets/thrive-logo.png";
 const sections2 = inline ? sections : sectionsLinked;
