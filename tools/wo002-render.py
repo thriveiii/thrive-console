@@ -116,12 +116,15 @@ with sync_playwright() as p:
             if w == 1024:
                 pg.click("#modalTabs [data-tab='text']")
                 pg.wait_for_timeout(800)
+                # The rule is about the empty state, not about everything that shares its
+                # panel. Scoped to .mw-empty and tightened: exactly one icon, exactly one
+                # sentence, and nothing operable inside it.
                 ck(f"{tag}: the text empty state is one icon, one sentence, no action",
-                   pg.eval_on_selector("#modalText",
-                     "e=>!!e.querySelector('svg') && e.querySelectorAll('button,a').length===0 "
-                     "&& e.querySelectorAll('p').length===1"))
+                   pg.eval_on_selector("#modalText .mw-empty",
+                     "e=>e.querySelectorAll('svg').length===1 && e.querySelectorAll('p').length===1 "
+                     "&& e.querySelectorAll('button,a,input,textarea,select').length===0"))
                 ck(f"{tag}: the icon is 32px and dimmed to 40%", pg.eval_on_selector(
-                   "#modalText svg",
+                   "#modalText .mw-empty svg",
                    "e=>{const r=e.getBoundingClientRect();"
                    "return Math.round(r.width)===32 && Math.abs(parseFloat(getComputedStyle(e).opacity)-0.4)<0.01;}"))
                 pg.screenshot(path=os.path.join(OUT, f"text-tab-{lang}.png"))

@@ -17,7 +17,11 @@
   "use strict";
 
   var LANES = ["draft","live","sent","opened","replied"];
-  var CLOSED = ["won","lost"];
+  /* Finished work, kept out of the lanes by IDENTITY Law 3.3. Dropped joins won and lost
+     rather than taking a lane of its own: a lane would need a colour, and IDENTITY §11 G3
+     asks what that colour would mean. "Not pursuing this" is an absence, not a state of the
+     pipeline, so it belongs with the other finished work. */
+  var CLOSED = ["won","lost","dropped"];
 
   /* Follow-up threshold already lives in the console's needsFollowup at 3 days.
      Stall is a separate, longer signal: a record that has stopped moving.     */
@@ -83,6 +87,19 @@
 
   function sendInfo(slug, ctx, o){
     var first = "", last = "", count = 0;
+    /* A contact made by hand through somebody else's channel counts exactly as a ledger row
+       counts. Most of a batch has no email address, and without these those cards sit in
+       Ready forever while the board reports that nothing went out. */
+    if (o && Array.isArray(o.manual_contacts)) {
+      for (var k = 0; k < o.manual_contacts.length; k++) {
+        var c = o.manual_contacts[k];
+        if (!c || !c.sent_on) continue;
+        count++;
+        var cs = String(c.sent_on);
+        if (!first || cs < first) first = cs;
+        if (cs > last) last = cs;
+      }
+    }
     var log = (ctx && ctx.mail) || [];
     for (var i = 0; i < log.length; i++){
       var m = log[i];
@@ -152,7 +169,7 @@
 
   function build(opps, ctx){
     ctx = ctx || {};
-    var lanes = {}, closed = { won: [], lost: [] }, archived = 0;
+    var lanes = {}, closed = { won: [], lost: [], dropped: [] }, archived = 0;
     LANES.forEach(function(k){ lanes[k] = []; });
 
     (opps || []).forEach(function(o){
@@ -160,7 +177,7 @@
       var lane = laneOf(o, ctx);
       if (lane === "closed"){
         var s = hostEffStage(o, ctx);
-        closed[s === "won" ? "won" : "lost"].push(o);
+        closed[CLOSED.indexOf(s) >= 0 ? s : "lost"].push(o);
         return;
       }
       if (!lane) return;
@@ -211,7 +228,8 @@
         opened: lanes.opened.length,
         replied: lanes.replied.length,
         won: closed.won.length,
-        lost: closed.lost.length
+        lost: closed.lost.length,
+        dropped: closed.dropped.length
       }
     };
   }

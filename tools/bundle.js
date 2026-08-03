@@ -42,6 +42,7 @@ const css = read(path.join(LIB, "fonts.css")) + "\n" + read(path.join(LIB, "styl
 const i18n = read(path.join(LIB, "i18n.js"));
 const gate = read(path.join(LIB, "gate.js"));
 const model = read(path.join(LIB, "stage-model.js"));
+const life = read(path.join(LIB, "lifecycle.js"));
 const app = read(path.join(LIB, "app.js"));
 let published = {};
 try { published = JSON.parse(read(path.join(LIB, "sync.json"))); } catch (e) {}
@@ -112,6 +113,7 @@ const MODAL = `
   <div class="modal-body" id="modalBody">
     <div class="modal-panel" id="modalOverview"></div>
     <div class="modal-panel" id="modalText" hidden></div>
+    <div class="modal-panel" id="modalOutreach" hidden></div>
     <div class="modal-panel" id="modalHistory" hidden></div>
     <div class="modal-host" id="modalHost"></div>
   </div>
@@ -135,9 +137,11 @@ const head = inline
 const body = inline
   ? '<script>window.THRIVE_SYNC_JSON = ' + JSON.stringify(published) + ';</script>' +
     '\n<script>\n' + i18n + '\n</script>\n<script>\n' + gate + '\n</script>' +
-    '\n<script>\n' + model + '\n</script>\n<script>\n' + app + '\n</script>'
+    '\n<script>\n' + model + '\n</script>\n<script>\n' + life + '\n</script>'+
+    '\n<script>\n' + app + '\n</script>'
   : '<script src="i18n.js"></script>\n<script src="gate.js"></script>' +
-    '\n<script src="stage-model.js"></script>\n<script src="app.js"></script>';
+    '\n<script src="stage-model.js"></script>\n<script src="lifecycle.js"></script>' +
+    '\n<script src="app.js"></script>';
 const icon = inline ? logo : "../assets/thrive-logo.png";
 const mark = inline ? logo : "../assets/thrive-logo.png";
 const sections2 = inline ? sections : sectionsLinked;

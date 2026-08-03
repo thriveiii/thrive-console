@@ -150,7 +150,15 @@ select{cursor:pointer}
 .note{font-size:12.5px;color:var(--ink-3);background:var(--panel-2);border:1px solid var(--hair);border-radius:10px;padding:12px 14px;line-height:1.6;margin-top:14px}
 .note code{color:var(--teal);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
 .toast{position:fixed;inset-inline-end:20px;bottom:20px;z-index:50;background:#16161d;border:1px solid var(--purple);color:var(--ink);padding:13px 18px;border-radius:12px;font-size:13.5px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none}
-.toast.show{opacity:1;transform:none}
+.toast.show{opacity:1;transform:none;pointer-events:auto}
+/* An undo you have to catch is not an undo, so the toast that carries one is a control and
+   accepts a pointer. The plain toast stays inert so it never blocks what is under it. */
+.toast:not(.has-act){pointer-events:none}
+.toast.has-act{display:flex;align-items:center;gap:var(--s-3)}
+.toast-act{background:transparent;border:1px solid var(--purple);border-radius:var(--r-sm);
+  color:var(--ink);font:inherit;font-size:var(--fs-sm);font-weight:var(--w-head);
+  padding:6px 12px;cursor:pointer;flex:0 0 auto}
+.toast-act:hover{background:rgba(150,133,202,.18)}
 
 /* templates gallery */
 .tpl{display:grid;grid-template-columns:1fr;gap:16px}
@@ -810,6 +818,69 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 }
 .tray-item.won{ color:var(--state-good); border-color:rgba(126,224,184,.30) }
 .tray-item.lost{ color:var(--ink-4) }
+
+
+/* --- the lifecycle: moves, notes, and the standing prohibition -------------
+   The band is the one thing in this window that is not grey, because it has to
+   be read before the message goes out rather than after. It cannot be dismissed
+   and it is not a toast: a toast is something you missed, and this is something
+   you must not miss.                                                        */
+
+.mw-band{
+  display:flex; align-items:flex-start; gap:var(--s-3);
+  margin-block-end:var(--s-4); padding:var(--s-3);
+  border:1px solid rgba(246,207,91,.34); border-radius:var(--r-sm);
+  background:var(--state-stall-t);
+}
+.mw-band-i{
+  flex:0 0 auto; width:20px; height:20px; border-radius:var(--r-pill);
+  display:inline-flex; align-items:center; justify-content:center;
+  background:var(--state-stall); color:#15121b;
+  font-size:var(--fs-xs); font-weight:900;
+}
+.mw-band b{ display:block; font-size:var(--fs-xs); color:var(--state-stall) }
+.mw-band span{ display:block; margin-block-start:2px; font-size:var(--fs-xs);
+  color:var(--ink-2); line-height:var(--lh-base) }
+
+.mw-notes{ display:grid; gap:var(--s-2); margin-block-end:var(--s-4) }
+.mw-note-row{
+  font-size:var(--fs-xs); color:var(--ink-3);
+  padding:var(--s-2) var(--s-3);
+  border:1px solid var(--hair-2); border-radius:var(--r-sm);
+}
+.mw-note-row b{ color:var(--ink-2) }
+.mw-warn-line{ margin:var(--s-2) 0 0; font-size:var(--fs-xs); color:var(--state-stall) }
+
+/* Only the legal moves, and they are buttons rather than a menu of greyed rules. */
+.mw-moves{ display:flex; flex-wrap:wrap; gap:var(--s-2) }
+
+/* --- the off channel send, three numbered steps --------------------------- */
+
+.oc-step .mw-h{ gap:var(--s-2) }
+.oc-n{
+  flex:0 0 auto; width:20px; height:20px; border-radius:var(--r-pill);
+  display:inline-flex; align-items:center; justify-content:center;
+  background:rgba(150,133,202,.18); border:1px solid var(--purple); color:var(--ink);
+  font-family:var(--font-lat); font-size:var(--fs-micro); font-weight:900;
+  direction:ltr; unicode-bidi:isolate;
+}
+.oc-body{ width:100%; resize:vertical; line-height:var(--lh-base); font-family:inherit }
+.oc-list{ list-style:none; margin:0; padding:0; display:grid; gap:var(--s-2) }
+.oc-list li{
+  display:flex; gap:var(--s-3); flex-wrap:wrap; align-items:baseline;
+  padding:var(--s-2) var(--s-3);
+  border:1px solid var(--hair-2); border-radius:var(--r-sm);
+  font-size:var(--fs-xs); color:var(--ink-3);
+}
+.oc-list b{ color:var(--ink) }
+
+.mw-more{ margin-block-start:var(--s-4); border-top:1px solid var(--hair-2); padding-block-start:var(--s-3) }
+.mw-more summary{ cursor:pointer; font-size:var(--fs-xs); color:var(--ink-3); font-weight:var(--w-head) }
+.mw-more .field{ margin-block-start:var(--s-3) }
+
+@media (pointer:coarse){
+  .mw-moves .btn,.oc-body,.toast-act{ min-height:44px }
+}
 
 /* --- the opportunity window ------------------------------------------------
    Centred, not pinned to an edge. The drawer was specified when this view was
