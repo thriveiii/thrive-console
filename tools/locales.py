@@ -80,6 +80,18 @@ with sync_playwright() as p:
         pg.wait_for_timeout(2200)
         tabs = pg.eval_on_selector_all("#emailTplList [data-loc], #customList [data-loc]", "e=>e.map(x=>x.dataset.loc)")
         ck(f"{ui}: exactly two locale tabs and no combined view", set(tabs) == {"EN", "AR"} and len(tabs) in (2, 4), tabs)
+        # Which tab is open when you arrive is the reader's own library, so this is asserted
+        # here, before anything clicks a tab. An Arabic reader used to land on the English one.
+        ck(f"{ui}: the templates page opens on the reader's own library",
+           pg.eval_on_selector("#emailTplList [aria-selected='true']", "e=>e.dataset.loc")
+           == ("AR" if ui == "ar" else "EN"))
+        # And the English tab is now clicked rather than assumed, because in Arabic it is no
+        # longer the one you arrive on and the check was silently testing the default instead.
+        # The mail library is behind its own sub-tab, so that is opened first: the old check
+        # read innerText, which falls back to textContent on a hidden node and so never
+        # noticed it was reading a list nobody could see.
+        pg.click("#tplTabs [data-tpltab='mail']"); pg.wait_for_timeout(700)
+        pg.click("#emailTplList .loc-tabs [data-loc='EN']"); pg.wait_for_timeout(900)
         shown = pg.eval_on_selector("#emailTplList", "e=>e.innerText")
         ck(f"{ui}: the English tab shows English templates only",
            "Monthly update" in shown and "التحديث الشهري" not in shown, shown[:160])
@@ -92,14 +104,19 @@ with sync_playwright() as p:
            pg.eval_on_selector_all(".loc-mig-sel", "e=>e.length") >= 1)
         ck(f"{ui}: and nothing was assigned before confirming",
            pg.evaluate("()=>!getEmailTemplates().find(x=>x.id==='t-none').locale"))
-        pg.click(".loc-tabs [data-loc='AR']"); pg.wait_for_timeout(900)
+        # Scoped to the mail list, whose text the next assertion reads. Unscoped it resolved to
+        # two tab bars and clicked the page-templates one, which is a different control.
+        pg.click("#emailTplList .loc-tabs [data-loc='AR']"); pg.wait_for_timeout(900)
         ar_shown = pg.eval_on_selector("#emailTplList", "e=>e.innerText")
         ck(f"{ui}: the Arabic tab shows a real count",
            "التحديث الشهري" in ar_shown and "Monthly update" not in ar_shown, ar_shown[:160])
 
         # confirming the migration writes exactly what was shown
-        pg.evaluate("()=>{const s=document.querySelector('.loc-mig-sel'); if(s) s.value='AR';}")
-        pg.click(".loc-mig-save"); pg.wait_for_timeout(1200)
+        # Scoped to the mail library's own migration panel. There are two panels on this page
+        # and the assertion below is about a MAIL template, so the unscoped selector was
+        # driving the page-template panel and checking the other one for the result.
+        pg.evaluate("()=>{const s=document.querySelector('#emailTplList .loc-mig-sel'); if(s) s.value='AR';}")
+        pg.click("#emailTplList .loc-mig-save"); pg.wait_for_timeout(1200)
         ck(f"{ui}: confirming writes the language that was on screen",
            pg.evaluate("()=>(getEmailTemplates().find(x=>x.id==='t-none')||{}).locale") == "AR")
 
@@ -114,6 +131,26 @@ with sync_playwright() as p:
            pg.eval_on_selector("#f_slug", "e=>e.getAttribute('dir')") == "ltr")
         ck(f"{ui}: the editor is grouped into four sections",
            pg.eval_on_selector_all(".sec-h", "e=>e.length") >= 4)
+
+        # Templates opens on the reader's own library, and "Compose with" delivers the template
+        # it names. Both were broken together in Arabic: the tab hard-defaulted to English, so
+        # the link carried an English id into a composer filtered to Arabic, and the composer
+        # opened blank with no word about why. One tap, one template, no silent drop.
+        want = "AR" if ui == "ar" else "EN"
+        pg.evaluate("()=>location.hash='#templates'"); pg.wait_for_timeout(1800)
+        pg.click("#tplTabs [data-tpltab='mail']"); pg.wait_for_timeout(700)
+        pg.click(f"#emailTplList .loc-tabs [data-loc='{want}']"); pg.wait_for_timeout(900)
+        href = pg.evaluate("""()=>{const a=[...document.querySelectorAll('a[href]')]
+            .find(x=>(x.getAttribute('href')||'').indexOf('#compose?etpl=')===0);
+            return a?a.getAttribute('href'):'';}""")
+        ck(f"{ui}: the mail library offers a compose link", bool(href), href)
+        if href:
+            asked = href.split("etpl=")[1]
+            pg.click(f"a[href='{href}']"); pg.wait_for_timeout(2400)
+            ck(f"{ui}: compose with delivers the template it named",
+               pg.eval_on_selector("#etpl", "e=>e.value") == asked,
+               (asked, pg.eval_on_selector("#etpl", "e=>e.value")))
+
         ck(f"{ui}: nothing threw", not errs, errs[:3])
         ctx.close()
     b.close()

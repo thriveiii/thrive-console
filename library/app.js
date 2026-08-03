@@ -2106,13 +2106,21 @@ async function initCompose(slugArg){
     const plainOpt=document.createElement("option"); plainOpt.value=""; plainOpt.textContent=t("cmp_no_tpl"); plainOpt.setAttribute("data-i18n","cmp_no_tpl"); tplSel.appendChild(plainOpt);
     /* The drop-down obeys the same rule as the chips. Two controls offering different sets is
        how a person learns to distrust both. */
-    const selWant = oppObj ? docLang(oppObj) : (getLang()==="ar" ? "AR" : "EN");
-    tplCache.filter(tp=>(localeOf(tp) || (isArabicText((tp.subject||"")+(tp.html||"")) ? "AR" : "EN"))===selWant)
+    const preT=params.get("etpl");
+    /* An explicit ask outranks an inference. "Compose with" names one template, and if the
+       drop-down is filtered to the other library the ask is silently dropped: the composer
+       opens blank with no word about why. So when a template is named, the locale of THAT
+       template is the locale of the list. Inference is only for when nobody said. */
+    const askedTpl = preT ? tplCache.find(tp=>tp.id===preT) : null;
+    const localeOfTpl = tp=>(localeOf(tp) || (isArabicText((tp.subject||"")+(tp.html||"")) ? "AR" : "EN"));
+    const selWant = askedTpl ? localeOfTpl(askedTpl)
+                  : oppObj ? docLang(oppObj)
+                  : (getLang()==="ar" ? "AR" : "EN");
+    tplCache.filter(tp=>localeOfTpl(tp)===selWant)
       .forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
     // ALWAYS start blank: an empty editor with no template. A template is only pre-selected when
     // the writer explicitly asked for one via ?etpl=<id> (e.g. "Compose with" from Templates).
     tplSel.value="";
-    const preT=params.get("etpl");
     if(preT && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
     tplSel.addEventListener("change",()=>{
       if(tplSel.value===""){ clearCompose(); }        // plain: back to an empty editor
@@ -2696,7 +2704,7 @@ function initTemplates(){
   }
   function renderCustom(){
     const all=getCustomTemplates();
-    const list=localeTemplates(all, __localeTab);
+    const list=localeTemplates(all, localeTab());
     const host=el("customList");
     host.innerHTML=localeTabBar("tplLocTabs")+
       (list.length? list.map(ct=>`
@@ -2707,13 +2715,13 @@ function initTemplates(){
           </div>
           <div class="tpl-a">
             <a class="btn ghost sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("use_template")}</a>
-            <button class="btn ghost sm" data-cp="${esc(ct.id)}">${t(__localeTab==="EN"?"loc_counterpart":"loc_counterpart_en")}</button>
+            <button class="btn ghost sm" data-cp="${esc(ct.id)}">${t(localeTab()==="EN"?"loc_counterpart":"loc_counterpart_en")}</button>
             <button class="btn ghost sm" data-pubtpl="${esc(ct.id)}">${t("publish")}</button>
             <button class="btn ghost sm" data-dl="${esc(ct.id)}">${t("dl_template")}</button>
             <button class="btn ghost sm danger" data-del="${esc(ct.id)}">${t("tpl_delete")}</button>
           </div>
         </div>`).join("") : "")+
-      localeEmpty(__localeTab, list.length)+
+      localeEmpty(localeTab(), list.length)+
       migrationPanel();
     if(typeof applyIcons==="function") applyIcons(host);
     window.__renderPageTpls=renderCustom;
@@ -2723,14 +2731,14 @@ function initTemplates(){
        translates: a translated shelf reads as a shelf until somebody sends from it. */
     host.querySelectorAll("[data-cp]").forEach(b=>b.addEventListener("click",()=>{
       const src=getCustomTemplate(b.getAttribute("data-cp")); if(!src) return;
-      const other=__localeTab==="EN"?"AR":"EN";
+      const other=localeTab()==="EN"?"AR":"EN";
       let id=src.id+"-"+other.toLowerCase(); let n=2;
       while(getCustomTemplate(id)) id=src.id+"-"+other.toLowerCase()+"-"+(n++);
       saveCustomTemplate({ id:id, name:(src.name||src.id)+" ("+t("loc_"+other.toLowerCase())+")",
         locale:other, lang:other, html:"", created:new Date().toISOString() });
       logActivity("tpl_add", id, "counterpart");
       toast(t("loc_counterpart_made"));
-      __localeTab=other; renderCustom();
+      setLocaleTab(other);   /* redraws both lists, so the counterpart is on screen already */
     }));
     host.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click", async ()=>{
       const id=b.getAttribute("data-del");
@@ -2878,9 +2886,9 @@ function initTemplates(){
     const wrap=el("emailTplList"); if(!wrap) return;
     const all=getEmailTemplates(), stats=etStats();
     /* One locale, same rule as the page templates and same rule as the composer. */
-    const list=localeTemplates(all, __localeTab);
+    const list=localeTemplates(all, localeTab());
     const chrome=localeTabBar("etLocTabs");
-    const tail=localeEmpty(__localeTab, list.length)+migrationPanel();
+    const tail=localeEmpty(localeTab(), list.length)+migrationPanel();
     const bindTabs=()=>{
       window.__renderMsgTpls=renderEmailTpls;
       wrap.querySelectorAll("[data-loc]").forEach(b=>b.addEventListener("click",()=>setLocaleTab(b.getAttribute("data-loc"))));
@@ -3590,7 +3598,17 @@ function unlocalised(list){ return (list||[]).filter(x=>!localeOf(x)); }
    only place a locale can be given, and the migration proposes rather than assigns: it shows
    what it read and asks. Assigning silently would put somebody's Arabic template in the
    English library and there would be no trace of the decision. */
-let __localeTab="EN";
+/* It starts on the library the reader is already in. A hard "EN" meant an Arabic reader opened
+   Templates on the English library, tapped "Compose with", and landed in a composer whose
+   drop-down holds only Arabic templates, so the template they asked for was silently not
+   selected. Two surfaces choosing a locale by two different rules is the leak WO-012 §7 opens
+   with, and this was the same leak one layer up. Read once, lazily, because the language is
+   settled by the time any list draws and not necessarily when this file is evaluated. */
+let __localeTab=null;
+function localeTab(){
+  if(__localeTab===null){ try{ __localeTab = getLang()==="ar" ? "AR" : "EN"; }catch(e){ __localeTab="EN"; } }
+  return __localeTab;
+}
 function setLocaleTab(L){
   __localeTab=L;
   /* Both libraries share the tab, so both redraw. One list obeying the tab while the other
@@ -3600,8 +3618,8 @@ function setLocaleTab(L){
 }
 function localeTabBar(id){
   return '<div class="seg loc-tabs" role="tablist" id="'+id+'">'+
-    LOCALES.map(L=>'<button role="tab" data-loc="'+L+'" class="'+(L===__localeTab?"on":"")+'" '+
-      'aria-selected="'+(L===__localeTab?"true":"false")+'">'+esc(t("loc_"+L.toLowerCase()))+'</button>').join("")+
+    LOCALES.map(L=>'<button role="tab" data-loc="'+L+'" class="'+(L===localeTab()?"on":"")+'" '+
+      'aria-selected="'+(L===localeTab()?"true":"false")+'">'+esc(t("loc_"+L.toLowerCase()))+'</button>').join("")+
     '</div>';
 }
 function localeEmpty(L, n){
