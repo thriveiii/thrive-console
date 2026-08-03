@@ -458,6 +458,24 @@ const I18N = {
     set_quota_monthly: "Monthly cap",
     clear_filters: "Clear filters",
 
+    /* ---- moving a card ------------------------------------------------------
+       WCAG 2.2 SC 2.5.7: any function that uses dragging must also be operable
+       with a single pointer without dragging. Dragging is not essential here, so
+       the menu is built first and the drag is built on top of it. */
+    mv_menu:      "Move this card",
+    mv_up:        "Move up",
+    mv_down:      "Move down",
+    mv_none:      "Nothing can be done with this one from here.",
+    mv_ordered:   "The new order is kept.",
+    mv_grab:      "Grabbed {name} from {lane}. Tab to choose a destination, Space to drop, Escape to cancel.",
+    mv_dropped:   "{name} moved to {lane}.",
+    mv_cancel:    "Cancelled.",
+    mv_undo_del:  "Deleted.",
+    mv_404_q:     "Check whether this page is really gone? The console will request it once.",
+    mv_404_gone:  "The page did not answer. Marked as gone.",
+    mv_404_there: "The page answered, so it is still there. Nothing was changed.",
+    mv_404_err:   "Could not reach the page to check. Nothing was changed.",
+
     /* ---- two libraries, one per document language -------------------------- */
     loc_en:        "English",
     loc_ar:        "العربية",
@@ -1160,6 +1178,20 @@ const I18N = {
     set_quota_monthly: "السقف الشهري",
     clear_filters: "مسح الفلاتر",
 
+    mv_menu:      "نقل هذه البطاقة",
+    mv_up:        "تقديم",
+    mv_down:      "تأخير",
+    mv_none:      "لا يمكن فعل شيء بهذه من هنا.",
+    mv_ordered:   "حُفظ الترتيب الجديد.",
+    mv_grab:      "أمسكت {name} من {lane}. استخدم Tab لاختيار الوجهة، ومسافة للإفلات، وEscape للإلغاء.",
+    mv_dropped:   "نُقلت {name} إلى {lane}.",
+    mv_cancel:    "أُلغي.",
+    mv_undo_del:  "حُذفت.",
+    mv_404_q:     "أنتحقق من أن هذه الصفحة اختفت فعلًا؟ سيطلبها الكونسول مرة واحدة.",
+    mv_404_gone:  "لم تجب الصفحة. سُجِّل أنها اختفت.",
+    mv_404_there: "أجابت الصفحة، فهي ما زالت موجودة. لم يتغيّر شيء.",
+    mv_404_err:   "تعذّر الوصول إلى الصفحة للتحقق. لم يتغيّر شيء.",
+
     loc_en:        "English",
     loc_ar:        "العربية",
     loc_h:         "بأي لغة هذا المستند؟",
@@ -1605,6 +1637,9 @@ var I18N_BOARD = {
     tok_views:      { one:"no email yet, {n} view", other:"no email yet, {n} views" },
     tok_answered:   "answered",
 
+    mv_over:   { one:"Over {lane}. {n} card. Press Space to drop here.",
+                 other:"Over {lane}. {n} cards. Press Space to drop here." },
+
     loc_count: { one:"{n} template", other:"{n} templates" },
 
     in_found:  { one:"{n} opportunity read.", other:"{n} opportunities read." },
@@ -1820,6 +1855,15 @@ var I18N_BOARD = {
       few:"بلا رسالة، {n} مشاهدات", many:"بلا رسالة، {n} مشاهدة", other:"بلا رسالة، {n} مشاهدة"
     },
     tok_answered: "ردّ",
+
+    mv_over: {
+      zero:"فوق {lane}. لا بطاقات. اضغط مسافة للإفلات هنا.",
+      one:"فوق {lane}. بطاقة واحدة. اضغط مسافة للإفلات هنا.",
+      two:"فوق {lane}. بطاقتان. اضغط مسافة للإفلات هنا.",
+      few:"فوق {lane}. {n} بطاقات. اضغط مسافة للإفلات هنا.",
+      many:"فوق {lane}. {n} بطاقة. اضغط مسافة للإفلات هنا.",
+      other:"فوق {lane}. {n} بطاقة. اضغط مسافة للإفلات هنا."
+    },
 
     loc_count: {
       one:"قالب واحد", two:"قالبان",

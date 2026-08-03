@@ -358,6 +358,17 @@ function outreachOpens(o){
 /* The local day, as the date inputs and the manual contact records want it. Local rather than
    UTC on purpose: a send made at nine in the evening in Alexandria belongs to that evening, not
    to the next morning in London. */
+/* Does the published page still answer? true gone, false there, null could not tell.
+   The third answer matters: a proxy, an offline iPad or a blocked host is not a missing page,
+   and recording one as the other would put a false note on a record nobody would question. */
+async function pageIsGone(slug){
+  try{
+    const r=await fetch(liveUrl(slug), { method:"GET", cache:"no-store", redirect:"follow" });
+    if(r.status===404 || r.status===410) return true;
+    if(r.ok) return false;
+    return null;
+  }catch(e){ return null; }
+}
 function today(){
   const d=new Date();
   const p=n=>String(n).padStart(2,"0");
@@ -983,6 +994,27 @@ function saveDraft(rec){
   if(i>=0) a[i]={...a[i], ...rec}; else a.push(rec); setDrafts(a);
 }
 function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDrafts().filter(x=>x.slug!==slug)); }
+/* Carried forward from phase 1. A delete is the move a person most regrets, and it was the one
+   without an undo. The whole record is kept in the closure until the toast expires, so undoing
+   restores what was there rather than a reconstruction of it, and the tombstone is lifted so
+   the record does not get removed again by the next sync. */
+function removeDraftUndoable(slug, label){
+  const rec=getDraft(slug);
+  if(!rec) return false;
+  const copy=JSON.parse(JSON.stringify(rec));
+  removeDraft(slug);
+  logActivity("remove", slug, label||"");
+  try{ scheduleSyncPush(); }catch(e){}
+  toast(t("mv_undo_del"), { label:t("lc_undo"), fn:()=>{
+    const tb=tombs(); delete tb["opp:"+slug]; setTombs(tb);
+    saveDraft(copy);
+    logActivity("lc_undo", slug, "remove");
+    try{ scheduleSyncPush(); }catch(e){}
+    toast(t("lc_undone"));
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+  }});
+  return true;
+}
 
 async function mergedOpps(){
   const {list}=await loadManifest();
@@ -1202,8 +1234,11 @@ async function initDashboard(){
     grid.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
       const slug=b.getAttribute("data-del");
       if(!confirm(t("confirm_remove"))) return;
-      removeDraft(slug); logActivity("remove", slug, "");
+      const gone=state.data.find(o=>o.slug===slug);
+      removeDraftUndoable(slug, (gone&&gone.business)||"");
       state.data=state.data.filter(o=>!(o._local&&o.slug===slug)); render();
+      /* The undo puts the record back, so the list has to be able to see it again. */
+      window.thriveBoardRefresh=window.thriveBoardRefresh||null;
     }));
     grid.querySelectorAll("[data-arch]").forEach(b=>b.addEventListener("click",()=>{
       const slug=b.getAttribute("data-arch"); const val=b.getAttribute("data-val")==="1";
@@ -3410,9 +3445,17 @@ async function initBoard(){
     else if(tk.lane==="replied") meta=txt("tok_answered");
     else if(tk.opens>0) meta=txt("tok_opens", tk.opens).replace(String(tk.opens), num(tk.opens));
     else meta=txt("tok_idle", tk.age).replace(String(tk.age), num(tk.age));
-    return '<button class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" type="button">'+
-      '<span class="tok-name">'+esc(tk.biz)+'</span>'+
-      '<span class="tok-meta">'+meta+'</span></button>';
+    /* The card is a row now, not a single button: the label opens the window, the grip picks it
+       up, and the overflow control is the path that needs no dragging at all. */
+    const ic=(n,sz)=> (typeof thriveIcon==="function"? thriveIcon(n,{size:sz||14}) : "");
+    return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
+      '<button class="tok-open" type="button">'+
+        '<span class="tok-name">'+esc(tk.biz)+'</span>'+
+        '<span class="tok-meta">'+meta+'</span>'+
+      '</button>'+
+      '<button class="tok-more" type="button" aria-haspopup="menu" aria-label="'+esc(t("mv_menu"))+'">'+ic("chevron")+'</button>'+
+      '<span class="tok-grip" aria-hidden="true">'+ic("drag")+'</span>'+
+      '</div>';
   }
 
   /* FLIP: a token never teleports between lanes.
@@ -3457,6 +3500,16 @@ async function initBoard(){
       const count=document.querySelector('[data-count="'+k+'"]');
       if(count) count.textContent=b.lanes[k].length;
       if(!body) return;
+      /* The order somebody arranged on this device, applied on top of the lane's own sort.
+         Anything not in the stored order keeps its place after the ones that are. */
+      const ord=(cardOrder()[k]||[]);
+      if(ord.length) b.lanes[k].sort((x,y)=>{
+        const i=ord.indexOf(x.slug), j=ord.indexOf(y.slug);
+        if(i<0 && j<0) return 0;
+        if(i<0) return 1;
+        if(j<0) return -1;
+        return i-j;
+      });
       body.innerHTML = b.lanes[k].length
         ? b.lanes[k].map((tk,i)=> tokenHtml(tk).replace('class="tok ', 'class="tok '+(i<3?"enter enter-"+(i+1)+" ":"")) ).join("")
         : '<div class="lane-empty">'+esc(t("lane_"+k+"_empty"))+'</div>';
@@ -3501,7 +3554,8 @@ async function initBoard(){
     // what has happened to it.
     playFlip(first);
 
-    document.querySelectorAll(".tok").forEach(tk=>tk.addEventListener("click",()=>{
+    document.querySelectorAll(".tok-open").forEach(btn=>btn.addEventListener("click",()=>{
+      const tk=btn.closest(".tok");
       const slug=tk.getAttribute("data-slug");
       const name=(tk.querySelector(".tok-name")||{}).textContent||slug;
       // In the shell the work opens in one centred window. On a single page there is no
@@ -3540,6 +3594,8 @@ async function initBoard(){
      the model was right, and the screen was wrong, which is the worst of the three. */
   window.thriveBoardRefresh=render;
   initIntake();
+  initCardMenu();
+  initCardDrag();
   await render();
 }
 
@@ -3663,6 +3719,330 @@ function bindMigration(scope, after){
     if(after) after();
   });
 }
+/* ---------- moving a card ----------
+   WCAG 2.2 Success Criterion 2.5.7: any function that uses dragging must also be operable with
+   a single pointer without dragging, unless dragging is essential. It is not essential here.
+
+   So the menu is built first and the drag is built on top of it, in that order, because a
+   non-drag path added at the end is a non-drag path that gets cut when the phase runs long.
+   Everything below goes through one function, applyDrop, so the menu, the drag and the
+   keyboard cannot disagree about what a move means.
+
+   A drop does not set a lane. It performs the MOVE from the lifecycle table that corresponds to
+   the destination, with its guards. Dropping on Sent opens the off channel dialogue rather than
+   silently marking a send, because a send is an event that happened in the world and the
+   console must not invent one. */
+
+/* Manual order is a posture, not a decision, so it stays on this device and never syncs.
+   WO-012 §5.2 is explicit about that, and it is right: an order that follows you between
+   devices is an order you did not ask for on the second one. */
+const CARD_ORDER="thrive_card_order_v1";
+function cardOrder(){ try{ return JSON.parse(localStorage.getItem(CARD_ORDER)||"{}"); }catch(e){ return {}; } }
+function setCardOrder(o){ try{ localStorage.setItem(CARD_ORDER, JSON.stringify(o)); }catch(e){} }
+function orderLane(lane, slugs){ const o=cardOrder(); o[lane]=slugs.slice(); setCardOrder(o); }
+
+/* Which lifecycle move a destination lane corresponds to. A lane is not a state you set; it is
+   a state you reach, and this is the mapping between the two. */
+function moveForLane(from, to){
+  if(to==="sent")    return "send_offchannel";
+  if(to==="replied") return "record_reply";
+  if(to==="draft")   return "unpublish";
+  if(to==="live")    return "publish";
+  return "";
+}
+
+function laneLabel(k){ return t("lane_"+k); }
+
+/* One announcer for the whole board. Assistive technology needs to be told what happened,
+   and it needs to be told once. */
+function announce(msg){
+  let el=document.getElementById("boardLive");
+  if(!el){
+    el=document.createElement("div");
+    el.id="boardLive"; el.className="sr-only";
+    el.setAttribute("aria-live","polite"); el.setAttribute("aria-atomic","true");
+    document.body.appendChild(el);
+  }
+  el.textContent=msg;
+}
+
+/* The one place a card changes lane, whatever gesture asked for it. */
+async function applyDrop(slug, from, to, opts){
+  opts=opts||{};
+  if(from===to){
+    orderLane(to, opts.order||[]);
+    toast(t("mv_ordered"));
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    return { ok:true, reordered:true };
+  }
+  const all=await mergedOpps();
+  const o=all.find(x=>x.slug===slug);
+  if(!o) return { ok:false };
+
+  if(to==="opened"){
+    /* An open is recorded by the page itself. It is the one lane a person cannot put a card in,
+       and saying so is more useful than a disabled control nobody can explain. */
+    toast(t("dg_no_open"));
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    return { ok:false, error:"lc_err_illegal" };
+  }
+  const move=moveForLane(from, to);
+  if(!move || !ThriveLifecycle.can(move, o)){
+    toast(t("lc_err_illegal"));
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    return { ok:false, error:"lc_err_illegal" };
+  }
+  /* Sent needs evidence. The window opens on the control that can produce it. */
+  if(move==="send_offchannel"){
+    if(window.thriveModal) window.thriveModal.open(slug, "outreach", o.business||slug);
+    else toast(t("dg_sent_ask"));
+    return { ok:false, asked:true };
+  }
+  if(move==="record_reply"){
+    const d=prompt(t("lc_reply_q"), today());
+    if(d===null) return { ok:false };
+    return await runMove("record_reply", slug, { replied_on:String(d).trim() });
+  }
+  if(move==="publish"){
+    if(window.thriveModal) window.thriveModal.open(slug, "page", o.business||slug);
+    return { ok:false, asked:true };
+  }
+  return await runMove(move, slug, opts);
+}
+
+/* ---- the non-drag path, built first -------------------------------------
+   Every card carries a control that lists every legal destination for that card, plus move up
+   and move down. Illegal destinations are ABSENT, not disabled: a person should not have to
+   read greyed options to work out the rules, and a rule learned that way is learned wrong. */
+function cardMenuFor(o, lane){
+  const out=[];
+  ThriveBoard.LANES.forEach(k=>{
+    if(k===lane || k==="opened") return;
+    const mv=moveForLane(lane, k);
+    if(mv && ThriveLifecycle.can(mv, o)) out.push({ kind:"lane", to:k, label:laneLabel(k) });
+  });
+  ThriveLifecycle.movesFor(o).forEach(m=>{
+    if(["publish","unpublish","send_email","send_offchannel","record_reply"].indexOf(m)>=0) return;
+    out.push({ kind:"move", move:m, label:t("lc_"+m) });
+  });
+  return out;
+}
+
+function initCardMenu(){
+  const board=document.getElementById("boardLanes");
+  if(!board || window.__thriveMenuBound) return;
+  window.__thriveMenuBound=1;
+  let open=null;
+
+  function close(){ if(open){ open.remove(); open=null; } }
+  document.addEventListener("click", e=>{
+    if(open && !e.target.closest(".cardmenu") && !e.target.closest(".tok-more")) close();
+  });
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape") close(); });
+
+  board.addEventListener("click", async e=>{
+    const btn=e.target.closest && e.target.closest(".tok-more");
+    if(!btn) return;
+    e.preventDefault(); e.stopPropagation();
+    close();
+    const tok=btn.closest(".tok");
+    const slug=tok.getAttribute("data-slug"), lane=tok.getAttribute("data-lane");
+    const o=(await mergedOpps()).find(x=>x.slug===slug);
+    if(!o) return;
+    const items=cardMenuFor(o, lane);
+    const menu=document.createElement("div");
+    menu.className="cardmenu"; menu.setAttribute("role","menu");
+    menu.innerHTML = (items.length
+        ? items.map((it,i)=>'<button role="menuitem" type="button" data-mi="'+i+'">'+esc(it.label)+'</button>').join("")
+        : '<span class="cardmenu-none">'+esc(t("mv_none"))+'</span>')+
+      '<div class="cardmenu-sep"></div>'+
+      '<button role="menuitem" type="button" data-ord="up">'+esc(t("mv_up"))+'</button>'+
+      '<button role="menuitem" type="button" data-ord="down">'+esc(t("mv_down"))+'</button>';
+    tok.appendChild(menu);
+    open=menu;
+    const first=menu.querySelector("button"); if(first) first.focus();
+
+    menu.querySelectorAll("[data-mi]").forEach(b=>b.addEventListener("click", async ()=>{
+      const it=items[+b.getAttribute("data-mi")];
+      close();
+      if(it.kind==="lane") await applyDrop(slug, lane, it.to, {});
+      else await runMove(it.move, slug, movePrompt(it.move));
+    }));
+    menu.querySelectorAll("[data-ord]").forEach(b=>b.addEventListener("click", ()=>{
+      const dir=b.getAttribute("data-ord")==="up" ? -1 : 1;
+      close();
+      const body=tok.closest(".lane-body");
+      const slugs=Array.prototype.map.call(body.querySelectorAll(".tok[data-slug]"), n=>n.getAttribute("data-slug"));
+      const i=slugs.indexOf(slug), j=i+dir;
+      if(i<0 || j<0 || j>=slugs.length) return;
+      slugs.splice(j,0,slugs.splice(i,1)[0]);
+      orderLane(lane, slugs);
+      toast(t("mv_ordered"));
+      if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    }));
+  });
+}
+
+/* The prompts each guarded move needs, in one place so the menu, the window and the keyboard
+   ask the same questions. */
+function movePrompt(m){
+  const opts={};
+  if(m==="drop"){
+    const r=prompt(t("lc_drop_q")); if(r===null) return null;
+    opts.reason=r;
+  }
+  if(m==="mark_lost"){
+    const list=ThriveLifecycle.LOST_REASONS;
+    const r=prompt(t("lc_lost_q")+"\n"+list.map((x,i)=>(i+1)+". "+t("lc_reason_"+x)).join("\n"));
+    if(r===null) return null;
+    opts.reason=list[parseInt(String(r).trim(),10)-1]||"";
+  }
+  if(m==="reopen"){ if(!confirm(t("lc_reopen_q"))) return null; opts.confirmed=true; }
+  if(m==="retire_page"){ if(!confirm(t("mv_404_q"))) return null; }
+  return opts;
+}
+
+/* ---- drag, and the keyboard, on top of the menu -------------------------
+   Pointer Events rather than mouse events, so touch and trackpad take the same path. The
+   handlers bind to the document once: the board re-initialises whenever the shell re-enters
+   it, and a document listener registered per init is a listener that never leaves. */
+function initCardDrag(){
+  if(window.__thriveDragBound) return;
+  window.__thriveDragBound=1;
+  let st=null, hold=null, suppress=false, kb=null;
+
+  function laneAt(x,y){
+    const e=document.elementFromPoint(x,y);
+    return e && e.closest ? e.closest(".lane-body[data-body]") : null;
+  }
+  function place(lane, y){
+    const sibs=Array.prototype.filter.call(lane.querySelectorAll(".tok"), n=>n!==st.tok);
+    let before=null;
+    for(let i=0;i<sibs.length;i++){
+      const r=sibs[i].getBoundingClientRect();
+      if(y < r.top + r.height/2){ before=sibs[i]; break; }
+    }
+    lane.insertBefore(st.ph, before);
+  }
+  function begin(){
+    const r=st.tok.getBoundingClientRect();
+    st.dragging=true;
+    st.ph=document.createElement("div");
+    st.ph.className="tok-ph"; st.ph.style.height=r.height+"px";
+    st.tok.parentNode.insertBefore(st.ph, st.tok);
+    st.tok.style.width=r.width+"px"; st.tok.style.height=r.height+"px";
+    st.tok.style.left=r.left+"px"; st.tok.style.top=r.top+"px";
+    st.tok.classList.add("is-drag");
+    document.body.classList.add("is-dragging");
+    announce(t("mv_grab").replace("{name}", st.name).replace("{lane}", laneLabel(st.from)));
+  }
+  function move(e){
+    if(!st) return;
+    if(!st.dragging){
+      const far=Math.abs(e.clientX-st.x0)>6 || Math.abs(e.clientY-st.y0)>6;
+      if(!far) return;
+      /* A finger that moves before the hold expires was scrolling, not picking anything up.
+         A plain tap, which never gets here, still opens the window. */
+      if(!st.grip && st.pointer!=="mouse"){ cancelHold(); st=null; return; }
+      begin();
+    }
+    st.tok.style.transform="translate("+(e.clientX-st.x0)+"px,"+(e.clientY-st.y0)+"px)";
+    const lane=laneAt(e.clientX, e.clientY);
+    if(lane){ st.lane=lane.getAttribute("data-body"); place(lane, e.clientY); }
+    /* Auto scroll within 60px of an edge of the board, so a lane off screen is reachable. */
+    const board=document.getElementById("boardLanes");
+    if(board){
+      const r=board.getBoundingClientRect();
+      if(e.clientX > r.right-60) board.scrollLeft += 12;
+      else if(e.clientX < r.left+60) board.scrollLeft -= 12;
+    }
+  }
+  function land(cur){
+    cur.tok.classList.remove("is-drag");
+    cur.tok.style.cssText="";
+    if(cur.ph && cur.ph.parentNode){ cur.ph.parentNode.insertBefore(cur.tok, cur.ph); cur.ph.remove(); }
+  }
+  function finish(){
+    if(!st) return;
+    const cur=st; st=null; cancelHold();
+    document.body.classList.remove("is-dragging");
+    if(!cur.dragging) return;
+    suppress=true; setTimeout(()=>{ suppress=false; }, 0);
+    land(cur);
+    const to=cur.lane||cur.from;
+    const body=document.querySelector('[data-body="'+to+'"]');
+    const order=body? Array.prototype.map.call(body.querySelectorAll(".tok[data-slug]"), n=>n.getAttribute("data-slug")) : [];
+    announce(t("mv_dropped").replace("{name}", cur.name).replace("{lane}", laneLabel(to)));
+    applyDrop(cur.slug, cur.from, to, { order:order });
+  }
+  function cancelHold(){ if(hold){ clearTimeout(hold); hold=null; } }
+
+  document.addEventListener("pointerdown", e=>{
+    if(e.button!==undefined && e.button!==0) return;
+    if(!e.target.closest) return;
+    if(e.target.closest(".tok-more") || e.target.closest(".cardmenu")) return;
+    const tok=e.target.closest(".tok[data-slug]");
+    if(!tok || !tok.closest("#boardLanes")) return;
+    const grip=!!e.target.closest(".tok-grip");
+    st={ tok:tok, slug:tok.getAttribute("data-slug"), from:tok.getAttribute("data-lane"),
+         lane:tok.getAttribute("data-lane"), x0:e.clientX, y0:e.clientY,
+         name:(tok.querySelector(".tok-name")||{}).textContent||"",
+         pointer:e.pointerType, grip:grip, dragging:false, ph:null };
+    if(grip){ e.preventDefault(); begin(); return; }
+    /* 120ms of hold, or 6px of travel with a mouse. A plain tap opens the window. */
+    if(e.pointerType!=="mouse"){ cancelHold(); hold=setTimeout(()=>{ if(st && !st.dragging) begin(); }, 120); }
+  });
+  document.addEventListener("pointermove", move, {passive:true});
+  document.addEventListener("pointerup", finish);
+  document.addEventListener("pointercancel", finish);
+  /* touch-action cannot be turned off once a gesture has begun, so the scroll a long press
+     would otherwise start is refused here, and only while a card is actually held. */
+  document.addEventListener("touchmove", e=>{ if(st && st.dragging) e.preventDefault(); }, {passive:false});
+  document.addEventListener("click", e=>{ if(suppress){ e.preventDefault(); e.stopPropagation(); } }, true);
+
+  /* ---- the keyboard path -----------------------------------------------
+     Space picks up, Tab moves between destination lanes, Space drops, Escape cancels. It is
+     the same applyDrop underneath, so a keyboard user and a finger reach the same guards. */
+  document.addEventListener("keydown", e=>{
+    const tok=document.activeElement && document.activeElement.closest &&
+              document.activeElement.closest(".tok[data-slug]");
+    if(e.key==="Escape" && kb){
+      const held=kb; kb=null;
+      held.tok.classList.remove("is-held");
+      announce(t("mv_cancel"));
+      return;
+    }
+    if(e.key===" " || e.key==="Spacebar"){
+      if(!kb){
+        if(!tok || !tok.closest("#boardLanes")) return;
+        e.preventDefault();
+        kb={ tok:tok, slug:tok.getAttribute("data-slug"), from:tok.getAttribute("data-lane"),
+             lane:tok.getAttribute("data-lane"),
+             name:(tok.querySelector(".tok-name")||{}).textContent||"" };
+        tok.classList.add("is-held");
+        announce(t("mv_grab").replace("{name}", kb.name).replace("{lane}", laneLabel(kb.from)));
+        return;
+      }
+      e.preventDefault();
+      const held=kb; kb=null;
+      held.tok.classList.remove("is-held");
+      announce(t("mv_dropped").replace("{name}", held.name).replace("{lane}", laneLabel(held.lane)));
+      applyDrop(held.slug, held.from, held.lane, {});
+      return;
+    }
+    if(e.key==="Tab" && kb){
+      e.preventDefault();
+      const lanes=ThriveBoard.LANES;
+      let i=lanes.indexOf(kb.lane);
+      i=(i + (e.shiftKey? -1 : 1) + lanes.length) % lanes.length;
+      kb.lane=lanes[i];
+      const body=document.querySelector('[data-body="'+kb.lane+'"]');
+      const n=body? body.querySelectorAll(".tok[data-slug]").length : 0;
+      announce(boardText(getLang(),"mv_over",n,{lane:laneLabel(kb.lane)}));
+    }
+  });
+}
+
 /* ---------- the day's batch ----------
    Three shapes, one behaviour: a page alone, a page with its manifest, or a zip of both.
 
@@ -4000,7 +4380,16 @@ function initModal(){
         opts.replied_on=String(r).trim();
       }
       if(m==="reopen"){ if(!confirm(t("lc_reopen_q"))) return; opts.confirmed=true; }
-      if(m==="retire_page"){ if(!confirm(t("lc_retire_q"))) return; }
+      if(m==="retire_page"){
+        /* Carried forward from phase 1, where this recorded your statement and checked nothing.
+           It now asks the page once. A network answer is evidence; a network failure is not, so
+           an unreachable page changes nothing rather than being recorded as gone. */
+        if(!confirm(t("mv_404_q"))) return;
+        const gone=await pageIsGone(o.slug);
+        if(gone===null){ toast(t("mv_404_err")); return; }
+        if(gone===false){ toast(t("mv_404_there")); return; }
+        toast(t("mv_404_gone"));
+      }
       if(m==="publish"){
         // Publishing is a network operation with its own screen. The lifecycle says it is
         // legal; the editor is what performs it.
