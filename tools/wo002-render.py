@@ -111,6 +111,23 @@ with sync_playwright() as p:
 
             pg.screenshot(path=os.path.join(OUT, f"modal-{lang}-{w}.png"))
 
+            # The Text tab is the one the acceptance list names in both languages, so it is
+            # photographed rather than only asserted. One width is enough for an empty state.
+            if w == 1024:
+                pg.click("#modalTabs [data-tab='text']")
+                pg.wait_for_timeout(800)
+                ck(f"{tag}: the text empty state is one icon, one sentence, no action",
+                   pg.eval_on_selector("#modalText",
+                     "e=>!!e.querySelector('svg') && e.querySelectorAll('button,a').length===0 "
+                     "&& e.querySelectorAll('p').length===1"))
+                ck(f"{tag}: the icon is 32px and dimmed to 40%", pg.eval_on_selector(
+                   "#modalText svg",
+                   "e=>{const r=e.getBoundingClientRect();"
+                   "return Math.round(r.width)===32 && Math.abs(parseFloat(getComputedStyle(e).opacity)-0.4)<0.01;}"))
+                pg.screenshot(path=os.path.join(OUT, f"text-tab-{lang}.png"))
+                pg.click("#modalTabs [data-tab='overview']")
+                pg.wait_for_timeout(600)
+
             # The behaviours that need one width, not six. Run on the widest English pass.
             if lang == "en" and w == 1440:
                 # the clipboard, and its fallback. Chromium is not Safari, but a fallback that
@@ -163,6 +180,27 @@ with sync_playwright() as p:
                        return document.getElementById('modal').hidden===true;}"""))
 
             ctx.close()
+    # A reader who asked for less motion keeps the fade and loses the travel. Asserted in a
+    # context that actually reports the preference, not by reading the stylesheet.
+    ctx = b.new_context(viewport={"width": 1280, "height": 900}, reduced_motion="reduce")
+    ctx.route("https://api.github.com/**", lambda r: r.abort())
+    pg = ctx.new_page()
+    pg.goto(f"{base}/library/console.html"); pg.wait_for_timeout(400)
+    if pg.query_selector("#thriveGate"):
+        pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(1400)
+    pg.reload(); pg.wait_for_timeout(2600)
+    pg.evaluate("()=>location.hash='#board'"); pg.wait_for_timeout(1600)
+    pg.query_selector(".tok[data-slug]").click(); pg.wait_for_timeout(1200)
+    rm = pg.evaluate("""()=>{const m=document.getElementById('modal'), s=getComputedStyle(m);
+      return {transform:s.transform, props:s.transitionProperty, dur:s.transitionDuration};}""")
+    print("  reduced motion:", json.dumps(rm))
+    ck("reduced motion drops the transform",
+       rm["transform"] in ("none", "matrix(1, 0, 0, 1, 0, 0)"), rm)
+    ck("reduced motion keeps an opacity fade",
+       "opacity" in rm["props"] and "transform" not in rm["props"], rm)
+    ck("and the fade is the quick duration", rm["dur"].startswith("0.16"), rm["dur"])
+    ctx.close()
+
     b.close()
 
 httpd.shutdown()
