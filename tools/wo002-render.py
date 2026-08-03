@@ -63,7 +63,9 @@ with sync_playwright() as p:
                 ck(f"{tag}: there is a card to open", False)
                 ctx.close()
                 continue
-            tok.click()
+            # The centre of the card, which is where a finger lands, and re-resolved at click
+            # time because remote hits landing re-render the board.
+            pg.click(".tok[data-slug]")
             pg.wait_for_timeout(1400)
 
             geo = pg.evaluate("""()=>{const m=document.getElementById('modal');
@@ -159,9 +161,15 @@ with sync_playwright() as p:
                 pg.wait_for_timeout(900)
                 ck("clicking the backdrop closes the window",
                    pg.eval_on_selector("#modal", "e=>e.hidden") is True)
+                # Stricter than it was. The card is now a container whose control is the
+                # button, so "focus is on an element carrying .tok" no longer describes the
+                # right thing. What matters is that focus came back to the control of the
+                # SPECIFIC card that opened the window, which the old assertion never checked.
                 ck("and focus returns to the card that opened it",
-                   pg.evaluate("()=>{const a=document.activeElement;"
-                               "return !!(a && a.classList && a.classList.contains('tok'));}"))
+                   pg.evaluate("""(slug)=>{const a=document.activeElement; if(!a) return false;
+                     const c=a.closest && a.closest('.tok[data-slug]');
+                     return !!(c && c.dataset.slug===slug && a.classList.contains('tok-open'));}""",
+                               opened_from))
                 ck("the body scrolls again once it is closed",
                    pg.evaluate("()=>getComputedStyle(document.body).position!=='fixed'"))
 
@@ -169,14 +177,14 @@ with sync_playwright() as p:
                 pg.evaluate("()=>window.scrollTo(0, 260)")
                 pg.wait_for_timeout(400)
                 was = pg.evaluate("()=>Math.round(window.scrollY)")
-                pg.query_selector(".tok[data-slug]").click()
+                pg.click(".tok[data-slug]")
                 pg.wait_for_timeout(1200)
                 pg.keyboard.press("Escape")
                 pg.wait_for_timeout(900)
                 now = pg.evaluate("()=>Math.round(window.scrollY)")
                 ck("the scroll position is put back on close", abs(now - was) <= 2, (was, now))
                 ck("the close control closes it too", pg.evaluate(
-                    """async ()=>{document.querySelector('.tok[data-slug]').click();
+                    """async ()=>{document.querySelector('.tok[data-slug] .tok-open').click();
                        await new Promise(r=>setTimeout(r,1200));
                        document.getElementById('modalClose').click();
                        await new Promise(r=>setTimeout(r,900));
@@ -193,7 +201,7 @@ with sync_playwright() as p:
         pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(1400)
     pg.reload(); pg.wait_for_timeout(2600)
     pg.evaluate("()=>location.hash='#board'"); pg.wait_for_timeout(1600)
-    pg.query_selector(".tok[data-slug]").click(); pg.wait_for_timeout(1200)
+    pg.click(".tok[data-slug]"); pg.wait_for_timeout(1200)
     rm = pg.evaluate("""()=>{const m=document.getElementById('modal'), s=getComputedStyle(m);
       return {transform:s.transform, props:s.transitionProperty, dur:s.transitionDuration};}""")
     print("  reduced motion:", json.dumps(rm))

@@ -288,7 +288,10 @@ def gate3(b):
     tok = pg.query_selector(".tok[data-slug]")
     ck("there is a card to open", tok is not None)
     if tok:
-        tok.click()
+        # Re-resolved at click time rather than held. Remote hits landing from the relay
+        # re-render the board, which is the board doing its job, and a handle taken before
+        # that arrives is detached by the time Playwright finishes its actionability checks.
+        pg.click(".tok[data-slug] .tok-open")
         pg.wait_for_timeout(1500)
         ck("the window opens over the board", pg.eval_on_selector("#modal", "e=>!e.hidden"))
         ck("it opens on the overview, which is the question the card asked",
@@ -356,7 +359,7 @@ def gate3(b):
         # navigating away while it is open must close it and hand the view back
         pg.evaluate("()=>location.hash='#board'")
         pg.wait_for_timeout(1200)
-        pg.query_selector(".tok[data-slug]").click()
+        pg.click(".tok[data-slug] .tok-open")
         pg.wait_for_timeout(1400)
         pg.click("#modalTabs [data-tab='outreach']")
         pg.wait_for_timeout(1300)
@@ -552,6 +555,26 @@ def gate7(b):
                     "els=>els.filter(e=>e.offsetParent&&e.getBoundingClientRect().height<40)"
                     ".map(e=>(e.innerText||e.className).slice(0,24))")
                 ck(f"{lang}/{w}: every control a finger uses clears 40px", not small, small)
+                # A control can clear 40 and still starve the thing beside it. The card's two
+                # controls are 44 wide under a finger, and in a 132px lane that left the card
+                # body 10px: the name unreadable and a tap on the middle of the card landing
+                # on the overflow control. Height alone could not see it.
+                crushed = pg.eval_on_selector_all(
+                    ".tok[data-slug]",
+                    """els=>els.filter(e=>{const o=e.querySelector('.tok-open');
+                       return !o || o.getBoundingClientRect().width < 96;})
+                       .map(e=>e.dataset.slug+':'+Math.round(
+                         (e.querySelector('.tok-open')||{getBoundingClientRect:()=>({width:0})})
+                           .getBoundingClientRect().width))""")
+                ck(f"{lang}/{w}: the card body is not starved by its own controls",
+                   not crushed, crushed)
+                # And the middle of a card is what opens it. This is the tap, not a proxy.
+                pg.click(".tok[data-slug]")
+                pg.wait_for_timeout(1200)
+                ck(f"{lang}/{w}: tapping the middle of a card opens the opportunity",
+                   pg.eval_on_selector("#modal", "e=>!e.hidden"))
+                pg.keyboard.press("Escape")
+                pg.wait_for_timeout(600)
             if w >= 390:
                 pg.evaluate("()=>location.hash='#board'")
                 pg.wait_for_timeout(1000)

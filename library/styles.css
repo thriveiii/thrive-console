@@ -885,6 +885,81 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 
 
 
+
+/* --- moving a card ---------------------------------------------------------
+   The card is a row: the label opens the window, the overflow control lists
+   every legal destination, and the grip picks it up. WCAG 2.2 SC 2.5.7 is why
+   the overflow control exists at all, and it was built before the drag so it
+   could not be cut at the end.                                               */
+
+.tok{ display:flex; align-items:center; gap:var(--s-1); position:relative }
+.tok-open{
+  flex:1 1 auto; min-width:0;
+  background:transparent; border:0; padding:0; margin:0;
+  font:inherit; color:inherit; text-align:start; cursor:pointer; display:block;
+}
+.tok-open:focus-visible,.tok-more:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
+.tok-more,.tok-grip{
+  flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
+  min-width:28px; min-height:28px;
+  background:transparent; border:0; padding:0;
+  color:var(--ink-4); cursor:pointer;
+}
+.tok-grip{ touch-action:none; cursor:grab; opacity:.5 }
+.tok:hover .tok-grip,.tok:hover .tok-more{ opacity:.95; color:var(--ink-3) }
+body.is-dragging .tok-grip{ cursor:grabbing }
+
+.tok.is-drag{
+  position:fixed; z-index:90; margin:0;
+  pointer-events:none;
+  box-shadow:var(--el-raised); border-color:var(--purple);
+  transform-origin:center; opacity:.96;
+}
+.tok-ph{ border:1px dashed var(--purple); border-radius:var(--r-md); background:rgba(150,133,202,.07) }
+.tok.is-held{ border-color:var(--purple); box-shadow:0 0 0 3px rgba(150,133,202,.22) }
+body.is-dragging{ cursor:grabbing; user-select:none }
+
+/* Only the legal destinations, never a list of greyed rules. */
+.cardmenu{
+  position:absolute; z-index:40; inset-block-start:100%; inset-inline-end:0;
+  min-width:180px; padding:var(--s-1);
+  background:var(--panel-2); border:1px solid var(--hair); border-radius:var(--r-sm);
+  box-shadow:var(--el-raised);
+  display:flex; flex-direction:column; gap:2px;
+}
+.cardmenu button{
+  background:transparent; border:0; border-radius:var(--r-sm);
+  color:var(--ink-2); font:inherit; font-size:var(--fs-xs); font-weight:var(--w-strong);
+  padding:8px 10px; text-align:start; cursor:pointer;
+}
+.cardmenu button:hover,.cardmenu button:focus-visible{ background:rgba(150,133,202,.16); color:var(--ink) }
+.cardmenu-sep{ height:1px; background:var(--hair-2); margin:var(--s-1) 0 }
+.cardmenu-none{ padding:8px 10px; font-size:var(--fs-xs); color:var(--ink-4) }
+
+/* Announcements are for assistive technology, so they are read and never seen. */
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
+
+@media (pointer:coarse){
+  /* The whole card is the handle, and it clears 44 by 44. */
+  .tok{ min-height:44px }
+  .tok-open{ min-height:40px; display:flex; flex-direction:column; justify-content:center }
+  .tok-more,.tok-grip{ min-width:44px; min-height:44px }
+  .cardmenu button{ min-height:44px }
+
+  /* A lane wide enough to hold what the card now contains. The card gained two
+     controls in WO-012 phase 5, and under a finger they are 44 wide each. The
+     chrome therefore costs 122px: 24 of inline padding, 2 of border, 88 of
+     controls and 8 of gap. In a 132px lane that left the name 10px, measured,
+     so the whole card body collapsed to a sliver and a tap on the middle of a
+     card landed on the overflow control instead of opening the opportunity.
+     236 leaves the name 114, which is the number this lane was sized for
+     before the card had controls at all. */
+  :root{ --lane-min:236px }
+}
+
 /* --- two libraries, one per document language ------------------------------
    The badge exists so it is never ambiguous which library you are editing, and
    the direction of a document field comes from the document, never from the

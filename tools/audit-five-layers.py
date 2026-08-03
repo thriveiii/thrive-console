@@ -154,8 +154,11 @@ with sync_playwright() as p:
                pg.evaluate("""()=>[...document.querySelectorAll('.n')].every(e=>getComputedStyle(e).direction==='ltr')"""))
 
         # ---- L5 resilience ----
-        tok=pg.query_selector(".tok")
-        tok.click(); pg.wait_for_timeout(1200)
+        # The centre of the card, not a named child. This is where a finger lands, and it is
+        # the click that caught the card body collapsing to 10px inside a 132px lane once the
+        # card gained two 44px controls. Re-resolved rather than held: remote hits landing
+        # re-render the board.
+        pg.click(".tok[data-slug]"); pg.wait_for_timeout(1200)
         ck(5,tag+": the opportunity window opens over the board", pg.eval_on_selector("#modal","e=>!e.hidden"))
         ck(5,tag+": the window fits the screen",
            pg.eval_on_selector("#modal","e=>e.getBoundingClientRect().width")<=w)
