@@ -2383,7 +2383,7 @@ function initSettings(){
     if(running){ note.hidden=false; note.textContent=t("testing"); note.className="gh-result"; return; }
     const all=CONN_STEPS.every(k=>byKey[k]&&byKey[k].ok);
     note.hidden=false;
-    note.textContent = all? "✓ "+t("conn_all_ok") : "⚠ "+t("conn_broken");
+    note.textContent = all? t("conn_all_ok") : t("conn_broken");
     note.className="gh-result "+(all?"ok":"warn");
   }
   // Rows fill in as each check answers, and a throw still ends with a verdict on screen
@@ -2412,7 +2412,7 @@ function initSettings(){
   if(el("connFix")) el("connFix").addEventListener("click", async ()=>{
     const note=el("connNote");
     const ep=((el("sy_ep")&&el("sy_ep").value)||getSyncEndpoint()||"").trim();
-    if(!ep){ note.hidden=false; note.className="gh-result warn"; note.textContent="⚠ "+t("sy_need_ep"); return; }
+    if(!ep){ note.hidden=false; note.className="gh-result warn"; note.textContent=t("sy_need_ep"); return; }
     connRender([], true);
     // 1. never adopt a URL that is not a v4 relay
     let version="";
@@ -2441,7 +2441,7 @@ function initSettings(){
     logActivity("settings","","relay repair");
     const steps=await connCheck(ep);
     connRender(steps, false);
-    if(repoMsg){ note.hidden=false; note.className="gh-result warn"; note.textContent="⚠ "+t("sy_local_only")+" "+repoMsg; }
+    if(repoMsg){ note.hidden=false; note.className="gh-result warn"; note.textContent=t("sy_local_only")+" "+repoMsg; }
   });
   connRun("");
   // A device that just unlocked gains its publishing credentials a moment later, when the
@@ -2512,7 +2512,7 @@ function initSettings(){
       // produced, so the page states plainly whether they are the same relay.
       const se=getSyncEndpoint(), ee=getEmailEndpoint();
       const agree=(se&&ee)? (se===ee?'<span class="ok-line">✓ '+esc(t("sy_one_relay"))+'</span>'
-                                    :'<span class="warn-line">⚠ '+esc(t("sy_two_relays"))+'</span>') : "";
+                                    :'<span class="warn-line" data-icon="alert">'+esc(t("sy_two_relays"))+'</span>') : "";
       /* Every count that travels, so "is my other device the same as this one" is a thing you
          read rather than a thing you hope. And anything this device is holding that the shared
          store could not carry is named, because a mirror is allowed a physical limit and is
@@ -2524,7 +2524,7 @@ function initSettings(){
         ' · <b>'+getCustomTemplates().length+'</b> '+t("sy_c_pagetpl")+
         ' · <b>'+Object.keys(tombs()).length+'</b> '+t("sy_c_removed")+
         (agree?'<br>'+agree:"")+
-        (held.length? '<br><span class="warn-line">⚠ '+boardText(getLang(),"sy_held",held.length,
+        (held.length? '<br><span class="warn-line" data-icon="alert">'+boardText(getLang(),"sy_held",held.length,
           {list: esc(held.map(x=>String(x).replace(/^tpl:/,"")).join("، "))})+'</span>' : "")+
         sizeLine();
     }
@@ -2584,7 +2584,7 @@ function initSettings(){
       const ok=await syncNow();
       // A relay saved on one device only is not "published to all devices". Saying so in green
       // is how a phone kept calling a dead URL while the iPad reported success.
-      if(!published){ syCounts(); syShow("⚠ "+t("sy_local_only")+" "+epErr, "warn"); return; }
+      if(!published){ syCounts(); syShow(t("sy_local_only")+" "+epErr, "warn"); return; }
       if(ok) sySummary(); else if(syncErrHint()) syShow("✕ "+t("sy_fail")+": "+syncErrHint(),"warn");
     });
     el("syNow").addEventListener("click", async ()=>{

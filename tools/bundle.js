@@ -39,6 +39,7 @@ const VIEWS = [
 /* ---- assets ---- */
 const logo = "data:image/png;base64," + fs.readFileSync(path.join(ROOT, "assets/thrive-logo.png")).toString("base64");
 const css = read(path.join(LIB, "fonts.css")) + "\n" + read(path.join(LIB, "styles.css"));
+const icons = read(path.join(LIB, "icons.js"));
 const i18n = read(path.join(LIB, "i18n.js"));
 const gate = read(path.join(LIB, "gate.js"));
 const model = read(path.join(LIB, "stage-model.js"));
@@ -98,17 +99,17 @@ const MODAL = `
       <span class="pill" id="modalState"></span>
     </div>
     <div class="modal-acts">
-      <button class="btn ghost sm" id="modalCopy" type="button" data-i18n="mw_copy_link">Copy link</button>
-      <button class="modal-close" id="modalClose" type="button" data-i18n="dw_close">Close</button>
+      <button class="btn ghost sm" id="modalCopy" type="button" data-icon="link" data-i18n="mw_copy_link">Copy link</button>
+      <button class="modal-close" id="modalClose" type="button" data-icon="close" data-i18n="dw_close">Close</button>
     </div>
     <p class="modal-why" id="modalWhy" hidden></p>
   </header>
   <nav class="modal-tabs" id="modalTabs" role="tablist">
-    <button class="modal-tab on" role="tab" aria-selected="true"  data-tab="overview" data-i18n="mw_overview">Overview</button>
-    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="text"     data-i18n="mw_text">Text</button>
-    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="page"     data-i18n="mw_page">Page</button>
-    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="outreach" data-i18n="mw_outreach">Outreach</button>
-    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="history"  data-i18n="mw_history">History</button>
+    <button class="modal-tab on" role="tab" aria-selected="true"  data-tab="overview" data-icon="spark" data-i18n="mw_overview">Overview</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="text"     data-icon="text" data-i18n="mw_text">Text</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="page"     data-icon="page" data-i18n="mw_page">Page</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="outreach" data-icon="send" data-i18n="mw_outreach">Outreach</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="history"  data-icon="clock" data-i18n="mw_history">History</button>
   </nav>
   <div class="modal-body" id="modalBody">
     <div class="modal-panel" id="modalOverview"></div>
@@ -136,10 +137,11 @@ const head = inline
     '\n<style>.view[hidden]{display:none!important}</style>';
 const body = inline
   ? '<script>window.THRIVE_SYNC_JSON = ' + JSON.stringify(published) + ';</script>' +
-    '\n<script>\n' + i18n + '\n</script>\n<script>\n' + gate + '\n</script>' +
+    '\n<script>\n' + icons + '\n</script>\n<script>\n' + i18n + '\n</script>' +
+    '\n<script>\n' + gate + '\n</script>' +
     '\n<script>\n' + model + '\n</script>\n<script>\n' + life + '\n</script>'+
     '\n<script>\n' + app + '\n</script>'
-  : '<script src="i18n.js"></script>\n<script src="gate.js"></script>' +
+  : '<script src="icons.js"></script>\n<script src="i18n.js"></script>\n<script src="gate.js"></script>' +
     '\n<script src="stage-model.js"></script>\n<script src="lifecycle.js"></script>' +
     '\n<script src="app.js"></script>';
 const icon = inline ? logo : "../assets/thrive-logo.png";
@@ -169,7 +171,7 @@ ${head}
   <a class="brand" href="#board"><img src="${mark}" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
   <nav class="nav">
     ${nav}
-    <button id="langbtn" class="langbtn">العربية</button>
+    <button id="langbtn" class="langbtn" data-icon="globe">العربية</button>
     <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>

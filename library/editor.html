@@ -22,8 +22,8 @@
     <a href="console.html#home" data-i18n="nav_insights">Insights</a>
     <a href="console.html#library" data-i18n="nav_library">Library</a>
     <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
-    <button id="langbtn" class="langbtn">العربية</button>
-    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
+    <button id="langbtn" class="langbtn" data-icon="globe">العربية</button>
+    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-icon="lock" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
 
@@ -53,7 +53,7 @@
            location, the phone and the quote are real and optional, so they wait behind one
            disclosure that counts how many of them you have filled in. -->
       <div class="bar" style="margin:0 0 12px">
-        <button class="btn ghost sm" id="edMoreBtn" aria-expanded="false" aria-controls="edMore" data-i18n="lib_more">More</button>
+        <button class="btn ghost sm" id="edMoreBtn" aria-expanded="false" aria-controls="edMore" data-icon="filter" data-i18n="lib_more">More</button>
       </div>
       <div id="edMore" class="more-bar" hidden>
         <div class="field"><label for="f_sent" data-i18n="f_sent">Send date</label><input id="f_sent" class="input" type="date"></div>
@@ -90,20 +90,21 @@
           <button data-dev="desktop" class="on" data-i18n="dev_desktop">Desktop</button>
           <button data-dev="phone" data-i18n="dev_phone">Phone</button>
         </div>
-        <button class="btn ghost sm" id="openTab" data-i18n="preview_open">Open</button>
+        <button class="btn ghost sm" id="openTab" data-icon="page" data-i18n="preview_open">Open</button>
         <button class="btn ghost sm" id="copyLink" data-i18n="preview_copy">Copy link</button>
       </div>
       <div class="framewrap"><iframe id="frame" class="frame" title="preview"></iframe></div>
       <div class="bar bar-actions">
-        <button class="btn" id="publishBtn" data-i18n="publish">Publish</button>
-        <button class="btn ghost" id="saveLib" data-i18n="save_lib">Save to library</button>
-        <button class="btn ghost" id="dlPage" data-i18n="dl_page">Download</button>
+        <button class="btn" id="publishBtn" data-icon="send" data-i18n="publish">Publish</button>
+        <button class="btn ghost" id="saveLib" data-icon="check" data-i18n="save_lib">Save to library</button>
+        <button class="btn ghost" id="dlPage" data-icon="import" data-i18n="dl_page">Download</button>
         <button class="btn ghost" id="copyManifest" data-i18n="copy_manifest">Copy manifest entry</button>
       </div>
     </div>
   </div>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="app.js" defer></script>

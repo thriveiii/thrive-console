@@ -22,8 +22,8 @@
     <a href="console.html#home" data-i18n="nav_insights">Insights</a>
     <a href="console.html#library" data-i18n="nav_library">Library</a>
     <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
-    <button id="langbtn" class="langbtn">العربية</button>
-    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
+    <button id="langbtn" class="langbtn" data-icon="globe">العربية</button>
+    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-icon="lock" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
 
@@ -43,11 +43,11 @@
       <div class="verdict-sub" id="boardVerdictSub"></div>
     </div>
     <div class="toolbar" style="margin:0">
-      <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
-      <a class="btn ghost" href="compose.html" data-i18n="home_send">Send an email</a>
-      <a class="btn ghost" href="library.html" data-i18n="home_open_lib">Open library</a>
-      <a class="btn ghost" href="index.html" data-i18n="board_numbers">See the numbers</a>
-      <button class="btn ghost" id="boardRefresh" data-i18n="ins_refresh">Refresh</button>
+      <a class="btn" href="editor.html" data-icon="page" data-i18n="new_opp">New opportunity</a>
+      <a class="btn ghost" href="compose.html" data-icon="send" data-i18n="home_send">Send an email</a>
+      <a class="btn ghost" href="library.html" data-icon="archive" data-i18n="home_open_lib">Open library</a>
+      <a class="btn ghost" href="index.html" data-icon="spark" data-i18n="board_numbers">See the numbers</a>
+      <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
     </div>
   </div>
 
@@ -55,7 +55,7 @@
   <div class="board" id="boardLanes">
     <section class="lane" data-lane="draft">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_draft">Draft</span>
+        <span class="lane-ic" data-icon="edit" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_draft">Draft</span>
         <span class="lane-count" data-count="draft">0</span>
       </header>
       <div class="lane-body" data-body="draft"></div>
@@ -63,7 +63,7 @@
 
     <section class="lane" data-lane="live">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_live">Live</span>
+        <span class="lane-ic" data-icon="check" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_live">Live</span>
         <span class="lane-count" data-count="live">0</span>
       </header>
       <div class="lane-body" data-body="live"></div>
@@ -71,7 +71,7 @@
 
     <section class="lane" data-lane="sent">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_sent">Sent</span>
+        <span class="lane-ic" data-icon="send" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_sent">Sent</span>
         <span class="lane-count" data-count="sent">0</span>
       </header>
       <div class="lane-body" data-body="sent"></div>
@@ -79,7 +79,7 @@
 
     <section class="lane" data-lane="opened">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_opened">Opened</span>
+        <span class="lane-ic" data-icon="spark" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_opened">Opened</span>
         <span class="lane-count" data-count="opened">0</span>
       </header>
       <div class="lane-body" data-body="opened"></div>
@@ -87,7 +87,7 @@
 
     <section class="lane" data-lane="replied">
       <header class="lane-head">
-        <span class="lane-title" data-i18n="lane_replied">Replied</span>
+        <span class="lane-ic" data-icon="mail" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_replied">Replied</span>
         <span class="lane-count" data-count="replied">0</span>
       </header>
       <div class="lane-body" data-body="replied"></div>
@@ -101,10 +101,7 @@
   <!-- Finished work. Counted, not competing for width. IDENTITY §3.3 -->
   <section class="tray" id="boardTray">
     <button class="tray-toggle" id="trayToggle" aria-expanded="false" aria-controls="trayBody">
-      <svg class="tray-chev" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <path d="M1 3.5 L5 7 L9 3.5" fill="none" stroke="currentColor" stroke-width="1.6"
-              stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <span class="tray-chev" data-icon="chevron" data-icon-size="12" aria-hidden="true"></span>
       <span data-i18n="tray_closed">Closed</span>
       <span class="lane-count" id="trayCount">0</span>
     </button>
@@ -115,12 +112,14 @@
 
   <!-- Empty state. A designed state, not a missing one. IDENTITY §9.3 -->
   <div class="empty" id="boardEmpty" hidden>
+    <span class="empty-ic" data-icon="spark" data-icon-size="32" aria-hidden="true"></span>
     <h3 class="block-h" data-i18n="board_empty_h">No opportunities yet.</h3>
     <p class="sub" data-i18n="board_empty_p"></p>
-    <a class="btn" href="editor.html" data-i18n="new_opp">New opportunity</a>
+    <a class="btn" href="editor.html" data-icon="page" data-i18n="new_opp">New opportunity</a>
   </div>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="lifecycle.js" defer></script>

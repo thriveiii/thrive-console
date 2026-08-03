@@ -22,8 +22,8 @@
     <a href="console.html#home" data-i18n="nav_insights">Insights</a>
     <a href="console.html#library" data-i18n="nav_library">Library</a>
     <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
-    <button id="langbtn" class="langbtn">العربية</button>
-    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
+    <button id="langbtn" class="langbtn" data-icon="globe">العربية</button>
+    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-icon="lock" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
 
@@ -38,7 +38,7 @@
     <div class="etpl-bar">
       <label for="etpl" class="etpl-label" data-i18n="cmp_template">Message template</label>
       <select id="etpl" class="input"></select>
-      <button class="btn ghost sm" id="cmpMoreBtn" aria-expanded="false" aria-controls="cmpMore" data-i18n="lib_more">More</button>
+      <button class="btn ghost sm" id="cmpMoreBtn" aria-expanded="false" aria-controls="cmpMore" data-icon="filter" data-i18n="lib_more">More</button>
     </div>
     <!-- One tap to a starting message. The editor still opens blank: this offers, it does not
          decide. It is how a page you just published goes out without writing from nothing. -->
@@ -46,9 +46,9 @@
     <div id="cmpMore" class="more-bar" hidden>
       <div class="field"><label for="efrom" data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
       <button class="btn ghost sm" id="eSaveTpl" data-i18n="cmp_save_tpl">Save as template</button>
-      <label class="btn ghost sm" for="eTplFile" data-i18n="cmp_tpl_upload">Import HTML as a message</label>
+      <label class="btn ghost sm" for="eTplFile" data-icon="import" data-i18n="cmp_tpl_upload">Import HTML as a message</label>
       <input id="eTplFile" type="file" accept=".html,.htm,text/html" hidden>
-      <a class="btn ghost sm" href="templates.html?kind=mail" data-i18n="cmp_manage_tpl">Manage</a>
+      <a class="btn ghost sm" href="templates.html?kind=mail" data-icon="edit" data-i18n="cmp_manage_tpl">Manage</a>
       <label class="chk"><input type="checkbox" id="efirst"> <span data-i18n="cmp_firstname">Greet by first name only (Hi Ahmed)</span></label>
       <label class="chk"><input type="checkbox" id="ebrand"> <span data-i18n="cmp_branded">Add logo header (for known contacts; a plain personal email reaches the inbox better)</span></label>
     </div>
@@ -102,14 +102,15 @@
     </div>
 
     <div class="bar bar-actions">
-      <button class="btn" id="eSend" data-i18n="cmp_send">Send</button>
-      <button class="btn ghost" id="eCopy" data-i18n="cmp_copy">Copy for Gmail</button>
-      <button class="btn ghost" id="eMail" data-i18n="cmp_mailto">Open in mail app</button>
+      <button class="btn" id="eSend" data-icon="send" data-i18n="cmp_send">Send</button>
+      <button class="btn ghost" id="eCopy" data-icon="copy" data-i18n="cmp_copy">Copy for Gmail</button>
+      <button class="btn ghost" id="eMail" data-icon="mail" data-i18n="cmp_mailto">Open in mail app</button>
       <div id="quotaMeter" class="quota-meter" title=""></div>
     </div>
   </section>
 </main>
 
+<script src="icons.js" defer></script>
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="app.js" defer></script>
