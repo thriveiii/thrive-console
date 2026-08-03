@@ -4026,7 +4026,7 @@ function initCardMenu(){
       const it=items[+b.getAttribute("data-mi")];
       close();
       if(it.kind==="lane") await applyDrop(slug, lane, it.to, {});
-      else await runMove(it.move, slug, movePrompt(it.move));
+      else { const op=await movePrompt(it.move, o); if(op!==null) await runMove(it.move, slug, op); }
     }));
     menu.querySelectorAll("[data-ord]").forEach(b=>b.addEventListener("click", ()=>{
       const dir=b.getAttribute("data-ord")==="up" ? -1 : 1;
@@ -4045,10 +4045,13 @@ function initCardMenu(){
 
 /* The prompts each guarded move needs, in one place so the menu, the window and the keyboard
    ask the same questions. */
-function movePrompt(m){
+/* The one place a guarded move asks for what it needs. Returns null when the person backed out,
+   which every caller treats as "do nothing" without needing to know which question was asked. */
+async function movePrompt(m, o){
   const opts={};
   if(m==="drop"){
     const r=prompt(t("lc_drop_q")); if(r===null) return null;
+    if(!String(r).trim()){ toast(t("lc_err_reason_text")); return null; }
     opts.reason=r;
   }
   if(m==="mark_lost"){
@@ -4056,9 +4059,22 @@ function movePrompt(m){
     const r=prompt(t("lc_lost_q")+"\n"+list.map((x,i)=>(i+1)+". "+t("lc_reason_"+x)).join("\n"));
     if(r===null) return null;
     opts.reason=list[parseInt(String(r).trim(),10)-1]||"";
+    if(!opts.reason){ toast(t("lc_err_reason")); return null; }
+  }
+  if(m==="record_reply"){
+    const r=prompt(t("lc_reply_q"), today()); if(r===null) return null;
+    opts.replied_on=String(r).trim();
   }
   if(m==="reopen"){ if(!confirm(t("lc_reopen_q"))) return null; opts.confirmed=true; }
-  if(m==="retire_page"){ if(!confirm(t("mv_404_q"))) return null; }
+  if(m==="retire_page"){
+    /* It asks the page once. A network answer is evidence; a network failure is not, so an
+       unreachable page changes nothing rather than being recorded as gone. */
+    if(!confirm(t("mv_404_q"))) return null;
+    const gone=await pageIsGone((o&&o.slug)||"");
+    if(gone===null){ toast(t("mv_404_err")); return null; }
+    if(gone===false){ toast(t("mv_404_there")); return null; }
+    toast(t("mv_404_gone"));
+  }
   return opts;
 }
 
@@ -4519,42 +4535,17 @@ function initModal(){
      are deliberately plain: a confirm and a prompt are the two the document already has, and
      WO-012 §10 asks for one of each rather than a third dialogue of my own. */
   function bindMoves(box, o){
+    /* One question per move, asked from one place. The window and the card menu both call
+       movePrompt, so the two can never ask differently or forget the same guard. */
     box.querySelectorAll("[data-move]").forEach(b=>b.addEventListener("click", async ()=>{
       const m=b.getAttribute("data-move");
-      const opts={};
-      if(m==="drop"){
-        const r=prompt(t("lc_drop_q")); if(r===null) return;
-        if(!String(r).trim()){ toast(t("lc_err_reason_text")); return; }
-        opts.reason=r;
-      }
-      if(m==="mark_lost"){
-        const list=ThriveLifecycle.LOST_REASONS;
-        const r=prompt(t("lc_lost_q")+"\n"+list.map((x,i)=>(i+1)+". "+t("lc_reason_"+x)).join("\n"));
-        if(r===null) return;
-        const n=parseInt(String(r).trim(),10);
-        opts.reason=list[n-1]||"";
-        if(!opts.reason){ toast(t("lc_err_reason")); return; }
-      }
-      if(m==="record_reply"){
-        const r=prompt(t("lc_reply_q"), today()); if(r===null) return;
-        opts.replied_on=String(r).trim();
-      }
-      if(m==="reopen"){ if(!confirm(t("lc_reopen_q"))) return; opts.confirmed=true; }
-      if(m==="retire_page"){
-        /* Carried forward from phase 1, where this recorded your statement and checked nothing.
-           It now asks the page once. A network answer is evidence; a network failure is not, so
-           an unreachable page changes nothing rather than being recorded as gone. */
-        if(!confirm(t("mv_404_q"))) return;
-        const gone=await pageIsGone(o.slug);
-        if(gone===null){ toast(t("mv_404_err")); return; }
-        if(gone===false){ toast(t("mv_404_there")); return; }
-        toast(t("mv_404_gone"));
-      }
       if(m==="publish"){
         // Publishing is a network operation with its own screen. The lifecycle says it is
         // legal; the editor is what performs it.
         switchTo("page"); return;
       }
+      const opts=await movePrompt(m, o);
+      if(opts===null) return;
       await runMove(m, o.slug, opts);
     }));
   }
