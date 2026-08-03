@@ -356,11 +356,11 @@ def gate4(b):
     # cannot know which one it belonged to and must not guess.
     pg.evaluate("()=>location.hash='#activity'")
     pg.wait_for_timeout(2400)
-    # the control lives inside the conversation, which you open to look at it first
-    pg.evaluate("()=>{const d=document.querySelector('details.thread'); if(d) d.open=true;}")
-    pg.wait_for_timeout(500)
     sel = pg.query_selector(".th-opp")
     ck("a conversation can be moved to the opportunity it is really about", sel is not None)
+    ck("and the control is on the row, not hidden inside it",
+       pg.evaluate("""()=>{const s=document.querySelector('.th-opp');
+           return !!(s && s.closest('summary'));}"""))
     if sel:
         opts = pg.evaluate("()=>[...document.querySelector('.th-opp').options].map(o=>o.value)")
         ck("and every live opportunity is offered", len(opts) >= 2, opts)
@@ -401,10 +401,18 @@ def gate5(b):
             ck(f"{lang}: no untranslated key is on screen in {v}", not leak, leak[:6])
         # a number-bearing sentence has to inflect, which is the whole reason for the form objects
         if lang == "ar":
-            forms = pg.evaluate("""()=>{const out={};
-                [0,1,2,3,11,100].forEach(n=>out[n]=boardText('ar','vd_opened',n));return out;}""")
-            ck("ar: the verdict inflects at 1, 2, 3, 11 and 100",
-               len(set(forms.values())) >= 5, forms)
+            for key in ("vd_opened", "story_sent", "story_opens", "act_s_replies",
+                        "act_s_published", "home_data_self", "export_local_note"):
+                forms = pg.evaluate("""(k)=>{const out={};
+                    [1,2,3,11,100].forEach(n=>out[n]=boardText('ar',k,n));return out;}""", key)
+                ck(f"ar: {key} inflects at 1, 2, 3, 11 and 100",
+                   len(set(forms.values())) >= 5, forms)
+            # and no sentence on screen may leave a raw placeholder behind
+            pg.evaluate("()=>location.hash='#home'")
+            pg.wait_for_timeout(2600)
+            raw = pg.evaluate("""()=>{const t=document.getElementById('view-home').innerText;
+                const m=t.match(/\{[a-z]+\}/g); return m?[...new Set(m)]:[];}""")
+            ck("ar: no placeholder is left unfilled on Insights", not raw, raw)
         ck(f"{lang}: nothing threw", not errs, errs[:4])
         ctx.close()
 
@@ -535,6 +543,31 @@ def gate8(b):
            "wise-butterfly" in bod and "<a " in bod, bod[:200])
         ck("and the offer withdraws once there is something to lose",
            pg.evaluate("()=>document.getElementById('etplQuick').hidden") is True)
+
+    # the editor's optional half is folded, and folding never hides something you typed
+    pg.evaluate("()=>location.hash='#editor'")
+    pg.wait_for_timeout(1800)
+    ck("the editor folds its optional fields away",
+       pg.evaluate("()=>!!document.getElementById('edMore') && document.getElementById('edMore').hidden"))
+    ck("and asks for the required content at rest",
+       pg.evaluate("""()=>['f_biz','f_slug','f_proof1','f_proof2','f_proof3','f_want']
+           .every(id=>{const e=document.getElementById(id);return e && e.offsetParent!==null;})"""))
+    pg.click("#edMoreBtn")                     # you open it, exactly as a person would
+    pg.wait_for_timeout(400)
+    ck("opening it shows the optional fields",
+       pg.evaluate("()=>!document.getElementById('edMore').hidden"))
+    # the send date is filled in for you, so the count starts above zero: what matters is that
+    # it follows what you type rather than that it happens to be one
+    def more_count():
+        txt = pg.evaluate("()=>document.getElementById('edMoreBtn').textContent")
+        m = re.search(r"\((\d+)\)", txt)
+        return int(m.group(1)) if m else 0
+    before_n = more_count()
+    pg.fill("#f_location", "Fairfax, VA")
+    pg.wait_for_timeout(500)
+    ck("and the button counts what is filled in behind it",
+       more_count() == before_n + 1,
+       (before_n, pg.evaluate("()=>document.getElementById('edMoreBtn').textContent")))
 
     # every input a person types into has a label
     for v in ("compose", "editor", "settings"):

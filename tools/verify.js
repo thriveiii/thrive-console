@@ -94,7 +94,7 @@ head("Secrets");
 
 /* ================= 3. bilingual parity (Brain/02 §8.7) ================= */
 head("Bilingual");
-let I18N = null;
+let I18N = null, BOARD = null;
 {
   const src = read(path.join(ROOT, "library/i18n.js"));
   const stub = () => {};
@@ -107,8 +107,8 @@ let I18N = null;
     console, out: null,
   };
   try {
-    vm.runInNewContext(src + "\n;out = I18N;", sandbox, { timeout: 5000 });
-    I18N = sandbox.out;
+    vm.runInNewContext(src + "\n;out = { flat: I18N, forms: I18N_BOARD };", sandbox, { timeout: 5000 });
+    I18N = sandbox.out.flat; BOARD = sandbox.out.forms;
   } catch (e) { bad("library/i18n.js loads", e.message); }
 
   if (I18N) {
@@ -118,6 +118,41 @@ let I18N = null;
     (missAr.length || missEn.length)
       ? bad("EN/AR key parity", missAr.map(k => "missing in ar: " + k).concat(missEn.map(k => "missing in en: " + k)))
       : ok("EN/AR key parity (" + en.length + " keys each way)");
+
+    /* A sentence that carries a count must be a form object, because English needs two forms
+       and Arabic needs five. "{n} أشخاص" is not Arabic at 3 and not Arabic at 11, and a flat
+       template can only ever be right for one value. The rule was written down in i18n.js and
+       nothing enforced it, so fourteen sentences quietly broke the second language. */
+    if (BOARD) {
+      const ben = Object.keys(BOARD.en), bar = Object.keys(BOARD.ar);
+      const bMissAr = ben.filter(k => !(k in BOARD.ar)), bMissEn = bar.filter(k => !(k in BOARD.en));
+      (bMissAr.length || bMissEn.length)
+        ? bad("EN/AR parity in the counting strings", bMissAr.map(k => "missing in ar: " + k).concat(bMissEn.map(k => "missing in en: " + k)))
+        : ok("EN/AR parity in the counting strings (" + ben.length + " keys each way)");
+      /* Where English varies by count, Arabic must carry all five categories. A form object
+         holding only `other` is a constant with no count in it (a verdict with no number, a
+         chip label), and asking it for five forms would be asking for four copies. */
+      const thin = bar.filter(k => {
+        const en0 = BOARD.en[k], v = BOARD.ar[k];
+        if (!v || typeof v !== "object" || !en0 || typeof en0 !== "object") return false;
+        if (Object.keys(en0).length < 2) return false;          // constant, not a count
+        return !(v.one && v.two && v.few && v.many && v.other);
+      });
+      thin.length ? bad("every Arabic count has its five forms", thin)
+                  : ok("every Arabic count has its five forms");
+    }
+    const flat = [];
+    [["I18N", I18N], ["I18N_BOARD", BOARD]].forEach(([name, dict]) => {
+      if (!dict) return;
+      ["en", "ar"].forEach(lang => {
+        Object.keys(dict[lang] || {}).forEach(k => {
+          const v = dict[lang][k];
+          if (typeof v === "string" && /\{n\}/.test(v)) flat.push(name + "." + lang + "." + k);
+        });
+      });
+    });
+    flat.length ? bad("no count-bearing string is a flat template", flat)
+                : ok("no count-bearing string is a flat template");
 
     const empty = en.filter(k => typeof I18N.en[k] === "string" && !I18N.en[k].trim())
       .concat(ar.filter(k => typeof I18N.ar[k] === "string" && !I18N.ar[k].trim()));
