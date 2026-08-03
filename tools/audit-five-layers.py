@@ -134,13 +134,34 @@ with sync_playwright() as p:
              return c[1]==='0' && c[2]==='3' && c[3]==='0';}"""))
         pg.evaluate("()=>location.hash='#board'"); pg.wait_for_timeout(1200)
 
+        # ---- the day's batch, and the send with no inbox ----
+        ck(1,tag+": the board offers one place to put the day's batch",
+           pg.eval_on_selector("#intakeZone","e=>!e.hidden"))
+        ck(2,tag+": and it says in a sentence what will happen to what you drop",
+           len(pg.eval_on_selector("#intakeZone .sub","e=>e.innerText").strip())>40)
+        ck(1,tag+": every card can be picked up, by a finger as well as a pointer",
+           pg.eval_on_selector_all(".tok","els=>els.length>0 && els.every(e=>!!e.querySelector('.tok-grip'))"))
+        ck(3,tag+": a card carries the lane it is actually in, so a drop knows where it came from",
+           pg.eval_on_selector_all(".tok","els=>els.every(e=>e.dataset.lane===e.closest('.lane').dataset.lane)"))
+        pg.query_selector(".tok .tok-open").click(); pg.wait_for_timeout(1400)
+        ck(1,tag+": the window offers the send that goes through their own channel",
+           pg.eval_on_selector("#mwOff","e=>!!e"))
+        ck(2,tag+": and explains that it is your confirmation, not a receipt",
+           len(pg.eval_on_selector("#mwOff .mw-note","e=>e.innerText").strip())>40)
+        ck(3,tag+": it will not record a send with no channel named",
+           pg.evaluate("""()=>{const s=document.getElementById('mwOffCh');
+             return !!s && [...s.options].every(o=>o.value===''||['email','form','dm','whatsapp','other'].includes(o.value));}"""))
+        ck(3,tag+": and it cannot be dated into the future",
+           pg.eval_on_selector("#mwOffWhen","e=>e.max===new Date().toISOString().slice(0,10)"))
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(700)
+
         # ---- L4 craft ----
         ck(4,tag+": the page never scrolls sideways",
            pg.evaluate("()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth+1"))
         ck(4,tag+": no untranslated key leaks anywhere on screen",
            pg.evaluate("""()=>!/\\b(board_|lane_|tok_|vd_|dw_|md_|mw_|in_w_|dg_|conn_|home_|sy_)[a-z_]+\\b/.test(document.body.innerText)"""))
         floor = 40 if w<=430 else 28
-        small = pg.eval_on_selector_all(".nav a,.btn,.tok,.chip,.langbtn",
+        small = pg.eval_on_selector_all(".nav a,.btn,.tok,.tok-open,.tok-grip,.in-card,.chip,.langbtn",
            "(els,f)=>els.filter(e=>e.offsetParent && e.getBoundingClientRect().height<f).map(e=>(e.innerText||e.className).slice(0,20))", floor)
         ck(4,tag+f": every tap target clears {floor}px", len(small)==0)
         if small: print("    small:", small)

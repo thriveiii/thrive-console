@@ -1084,7 +1084,14 @@ body.is-dragging .tok-grip{ cursor:grabbing }
   .nav a,.langbtn{min-height:40px;display:inline-flex;align-items:center}
   .chip{min-height:40px;display:inline-flex;align-items:center}
   .tok{min-height:44px}
+  .tok-open{min-height:40px;display:flex;flex-direction:column;justify-content:center}
+  /* The grip is its own target: it is what a finger aims at to pick a card up, and a target
+     that has to be hit precisely is a feature nobody uses twice. */
+  .tok-grip{min-width:40px;min-height:40px;justify-content:center}
   .modal-tab,.modal-close{min-height:40px}
-  .tok-grip{min-width:32px;min-height:32px;justify-content:center}
+  .in-card{min-height:44px}
+  /* Every button, including the small ones. "Choose files" is the control that starts a whole
+     working day and it measured 33px on a phone, which is how the day starts with a miss. */
+  .btn,.btn.sm{min-height:44px}
   .tray-toggle{min-height:40px}
 }

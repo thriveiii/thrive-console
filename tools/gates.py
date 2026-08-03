@@ -505,7 +505,7 @@ def gate7(b):
                 pg.evaluate("()=>location.hash='#board'")
                 pg.wait_for_timeout(1200)
                 small = pg.eval_on_selector_all(
-                    ".nav a,.btn,.tok,.chip,.langbtn,.seg button",
+                    ".nav a,.btn,.tok,.tok-open,.tok-grip,.in-card,.chip,.langbtn,.seg button",
                     "els=>els.filter(e=>e.offsetParent&&e.getBoundingClientRect().height<40)"
                     ".map(e=>(e.innerText||e.className).slice(0,24))")
                 ck(f"{lang}/{w}: every control a finger uses clears 40px", not small, small)

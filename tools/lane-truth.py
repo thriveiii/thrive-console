@@ -17,6 +17,45 @@ ROOT = "/home/user/thrive-console"; PORT = 8917
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 httpd = socketserver.TCPServer(("127.0.0.1",0),Handler); PORT=httpd.server_address[1]; httpd.daemon_threads = True
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
+# A real zip, built here rather than committed, so the fixture and the test cannot drift.
+# Deflated on purpose: stored entries would never exercise the browser's own inflater.
+import zipfile, tempfile
+BRIEF = "\n".join([
+    "# READY TO SEND",
+    "Prose that is not an opportunity.",
+    "",
+    "## 1 \u00b7 Alpha Bakery (Vienna) \u00b7 sourdough and long mornings",
+    "- **Send to:** website contact form at alphabakery.example (no public email)",
+    "- **Page:** alpha.html",
+    "- **Subject:** Bread worth the walk",
+    "- **Owner:** Amal. **Standing prohibition:** she bakes, she does not pose.",
+    "```",
+    "Hi Amal,",
+    "",
+    "We put a short page together. [LINK]",
+    "```",
+    "",
+    "## 2 \u00b7 Beta Boutique (Fairfax) \u00b7 a small shop",
+    "- **Send to:** hello@betaboutique.example",
+    "- **Page:** beta.html",
+    "- **Subject:** The shop on the corner",
+    "```",
+    "Hi there, [LINK]",
+    "```",
+    "",
+    "## 3 \u00b7 Gamma Studio",
+    "",
+    "## Money at a glance",
+    "Not an opportunity.",
+])
+ZIP = os.path.join(tempfile.mkdtemp(), "batch.zip")
+with zipfile.ZipFile(ZIP, "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("alpha.html", "<h1>Alpha Bakery</h1>" + ("<p>x</p>" * 40))
+    z.writestr("beta.html", "<h1>Beta Boutique</h1>" + ("<p>x</p>" * 40))
+    z.writestr("gamma.html", "<h1>Gamma Studio</h1>")
+    z.writestr("READY.md", BRIEF)
+    z.writestr("__MACOSX/._alpha.html", "junk")
+
 from playwright.sync_api import sync_playwright
 base = f"http://127.0.0.1:{PORT}"; CH = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 EP = f"http://127.0.0.1:{PORT}/exec"
@@ -213,6 +252,50 @@ with sync_playwright() as p:
     ck("it carries the channel the brief named", added["kind"] == "form")
     ck("and the words that came with it, link slot intact", "[LINK]" in added["pitch"])
     pg.evaluate("()=>removeDraft('gate-test-co')")
+
+    # ---- the whole drop, in a browser ----------------------------------------
+    # The parser has a unit test. This is the rest of it: a real zip, read by the platform's
+    # own inflater, through the drop the console actually offers, ending as cards in the first
+    # lane. Every step between those two has been a place something quietly went wrong.
+    pg.goto(f"{base}/library/console.html#board"); pg.wait_for_timeout(2600)
+    pg.set_input_files("#intakeFile", ZIP)
+    pg.wait_for_timeout(2000)
+    cards = pg.eval_on_selector_all(".in-card .in-name", "els=>els.map(e=>e.textContent.trim())")
+    print("read from the zip:", cards)
+    ck("a zip is read in the browser with nothing installed", len(cards) == 3, cards)
+    ck("and the businesses are the ones in the brief",
+       cards == ["Alpha Bakery", "Beta Boutique", "Gamma Studio"], cards)
+    tags = pg.eval_on_selector_all(".in-card .in-tag", "els=>els.map(e=>e.textContent.trim())")
+    ck("the channel the brief named is on the card", any("alphabakery.example" in x for x in tags), tags)
+    ck("the page that came with it is on the card", any("beta.html" in x for x in tags), tags)
+    warns = pg.eval_on_selector_all(".in-warn", "els=>els.map(e=>e.textContent.trim())")
+    print("named as missing:", warns)
+    ck("what the brief did not say is named, not guessed", len(warns) > 0, warns)
+
+    pg.click("#intakeAdd")
+    pg.wait_for_timeout(2600)
+    lanes3 = pg.evaluate("""()=>{const o={};document.querySelectorAll('[data-body]').forEach(e=>
+        o[e.getAttribute('data-body')]=[...e.querySelectorAll('.tok')].map(t=>t.getAttribute('data-slug')));return o}""")
+    print("lanes after the drop:", lanes3)
+    for slug in ("alpha-bakery", "beta-boutique", "gamma-studio"):
+        ck(f"{slug} starts in the first lane", slug in lanes3["draft"], lanes3)
+        ck(f"{slug} is in no other lane",
+           not any(slug in lanes3[k] for k in lanes3 if k != "draft"), lanes3)
+    kept = pg.evaluate("""async ()=>{const o=(await mergedOpps()).find(x=>x.slug==='alpha-bakery');
+        return { ch:o.channel, pitch:o.pitch, owner:o.owner, html:(o.html||'').length };}""")
+    print("alpha:", kept)
+    ck("the record keeps the channel", kept["ch"]["kind"] == "form")
+    ck("the record keeps the words, link slot intact", "[LINK]" in kept["pitch"]["body"])
+    ck("the record keeps the owner the brief named", kept["owner"] == "Amal")
+    ck("and the page that came in the zip", kept["html"] > 0)
+    # The window opens on those facts, which is the point of reviewing before sending.
+    pg.click('.tok[data-slug="alpha-bakery"] .tok-open'); pg.wait_for_timeout(1500)
+    info = pg.eval_on_selector("#modalInfo", "e=>e.innerText")
+    ck("the opportunity window shows the message that came with it", "[LINK]" not in info and "Amal" in info, info[:200])
+    ck("and it offers the confirmation for a channel with no inbox",
+       pg.eval_on_selector("#mwOffCh", "e=>e.value") == "form")
+    pg.keyboard.press("Escape"); pg.wait_for_timeout(600)
+    pg.evaluate("()=>{removeDraft('alpha-bakery');removeDraft('beta-boutique');removeDraft('gamma-studio');}")
 
     ck("no page error", not errs)
     if errs: print(errs)
