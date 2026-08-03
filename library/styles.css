@@ -883,6 +883,67 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 }
 
 
+
+/* --- the day's batch ------------------------------------------------------
+   The report comes before anything is written, so it is the tallest thing in
+   this block. An import that quietly drops two of eleven is worse than one that
+   refuses: the two that vanished look exactly like two that were never there. */
+
+.intake{
+  border:1px dashed var(--hair); border-radius:var(--r-md);
+  padding:var(--s-4); margin-block-end:var(--s-5);
+  transition:border-color var(--t-quick) var(--e-standard), background var(--t-quick) var(--e-standard);
+}
+.intake.on{ border-color:var(--purple); background:rgba(150,133,202,.07) }
+.intake-head{ display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap }
+.intake-head .block-h{ margin:0 }
+.intake-head label{ margin-inline-start:auto }
+.intake .sub{ margin:var(--s-2) 0 0; font-size:var(--fs-xs) }
+.intake-out:not(:empty){ margin-block-start:var(--s-4) }
+
+.in-status{ font-size:var(--fs-xs); color:var(--ink-4); margin:0 }
+.in-status.warn{ color:var(--state-stall) }
+.in-head{ display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap; margin-block-end:var(--s-3) }
+.in-head b{ font-size:var(--fs-sm); color:var(--ink) }
+.in-actions{ display:flex; gap:var(--s-2); margin-inline-start:auto }
+
+.in-report{ padding:var(--s-3); border:1px solid var(--hair-2); border-radius:var(--r-sm);
+  margin-block-end:var(--s-3) }
+.in-counts{ display:flex; flex-wrap:wrap; gap:var(--s-4) }
+.in-count{ display:flex; flex-direction:column; gap:2px }
+.in-count b{ font-family:var(--font-lat); font-size:var(--fs-lg); font-weight:900; color:var(--ink);
+  direction:ltr; unicode-bidi:isolate }
+.in-count span{ font-size:var(--fs-micro); color:var(--ink-4) }
+.in-count.warn b{ color:var(--state-stall) }
+.in-named{ list-style:none; margin:var(--s-3) 0 0; padding:0; display:flex; flex-wrap:wrap; gap:var(--s-2) }
+.in-named li{ font-size:var(--fs-micro); color:var(--state-stall); padding:3px 9px;
+  border:1px solid rgba(246,207,91,.30); border-radius:var(--r-pill) }
+
+.in-list{ display:grid; gap:var(--s-2) }
+.in-card{ display:flex; align-items:flex-start; gap:var(--s-3);
+  border:1px solid var(--hair); border-radius:var(--r-sm);
+  padding:var(--s-3); background:var(--panel); cursor:pointer }
+.in-card:hover{ border-color:var(--purple) }
+.in-card.is-dupe{ border-color:rgba(246,207,91,.34) }
+.in-body{ min-width:0; flex:1 }
+.in-name{ display:block; font-size:var(--fs-sm); font-weight:var(--w-head); color:var(--ink);
+  unicode-bidi:plaintext; text-align:start }
+.in-meta{ display:block; margin-block-start:2px; font-size:var(--fs-xs); color:var(--ink-4) }
+.in-tags{ display:flex; flex-wrap:wrap; gap:var(--s-1); margin-block-start:var(--s-2) }
+.in-tag,.in-warn{ display:inline-flex; align-items:center; gap:.4em;
+  font-size:var(--fs-micro); font-weight:var(--w-strong);
+  padding:3px 9px; border-radius:var(--r-pill);
+  border:1px solid var(--hair); color:var(--ink-4);
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+/* What the manifest did not say. Named, never hidden: a thin manifest must
+   produce a thin record you can see, not a confident wrong one. */
+.in-warn{ color:var(--state-stall); border-color:rgba(246,207,91,.30); background:var(--state-stall-t) }
+.in-dupe-row{ display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap;
+  margin-block-start:var(--s-2); font-size:var(--fs-xs); color:var(--state-stall) }
+.in-dupe-row .btn.on{ border-color:var(--purple); color:var(--ink) }
+
+@media (pointer:coarse){ .in-card{ min-height:44px } }
+
 /* --- the symbol set -------------------------------------------------------
    Stroke only, inheriting currentColor, so a symbol is never a second colour
    decision after the text beside it. Decoration in the accessibility sense: the
