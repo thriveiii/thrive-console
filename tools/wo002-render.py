@@ -1,0 +1,172 @@
+"""WO-002 layer 3: render quality for the centred opportunity window.
+
+Six shots, three widths in each direction, with the window open on a real opportunity. It asserts
+what a screenshot cannot: that the document never scrolls sideways, that the margins are equal,
+that the window respects 88vh, that only its body scrolls, and that below 720 it is a sheet on
+the bottom edge rather than a centred card.
+
+Run it: python3 tools/wo002-render.py
+Shots land in shots/wo002/.
+"""
+import threading, http.server, socketserver, functools, os, sys, json
+
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CH = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
+OUT = os.path.join(ROOT, "shots", "wo002")
+os.makedirs(OUT, exist_ok=True)
+
+Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
+socketserver.TCPServer.allow_reuse_address = True
+httpd = socketserver.TCPServer(("127.0.0.1", 0), Handler)
+PORT = httpd.server_address[1]
+httpd.daemon_threads = True
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+base = f"http://127.0.0.1:{PORT}"
+
+from playwright.sync_api import sync_playwright
+
+fails = []
+def ck(n, c, d=None):
+    print(("PASS " if c else "FAIL ") + n)
+    if not c:
+        fails.append(n)
+        if d is not None: print("      " + str(d)[:300])
+
+WIDTHS = (390, 1024, 1440)
+
+with sync_playwright() as p:
+    b = p.chromium.launch(executable_path=CH)
+    for lang in ("en", "ar"):
+        for w in WIDTHS:
+            tag = f"{lang}/{w}"
+            ctx = b.new_context(viewport={"width": w, "height": 900},
+                                has_touch=(w <= 430), is_mobile=(w <= 430))
+            ctx.route("https://api.github.com/**", lambda r: r.abort())
+            pg = ctx.new_page()
+            errs = []
+            pg.on("pageerror", lambda e: errs.append(str(e)))
+            pg.goto(f"{base}/library/console.html")
+            pg.wait_for_timeout(400)
+            pg.evaluate("l=>localStorage.setItem('thrive_lang',l)", lang)
+            if pg.query_selector("#thriveGate"):
+                pg.fill("#gateInput", "ConThrive2030")
+                pg.click(".gate-btn")
+                pg.wait_for_timeout(1400)
+            pg.reload()
+            pg.wait_for_timeout(2600)
+            pg.evaluate("()=>location.hash='#board'")
+            pg.wait_for_timeout(1600)
+
+            tok = pg.query_selector(".tok[data-slug]")
+            if not tok:
+                ck(f"{tag}: there is a card to open", False)
+                ctx.close()
+                continue
+            tok.click()
+            pg.wait_for_timeout(1400)
+
+            geo = pg.evaluate("""()=>{const m=document.getElementById('modal');
+              const r=m.getBoundingClientRect();
+              const b=document.getElementById('modalBody');
+              const h=document.querySelector('.modal-head');
+              return {left:r.left, right:innerWidth-r.right, top:r.top, bottom:innerHeight-r.bottom,
+                      width:r.width, height:r.height, vw:innerWidth, vh:innerHeight,
+                      bodyScroll:getComputedStyle(b).overflowY,
+                      headScroll:getComputedStyle(h).overflowY,
+                      docW:document.documentElement.scrollWidth,
+                      cliW:document.documentElement.clientWidth};}""")
+            print(f"  {tag}: {json.dumps(geo)}")
+
+            ck(f"{tag}: the document never scrolls sideways", geo["docW"] <= geo["cliW"] + 1,
+               (geo["docW"], geo["cliW"]))
+            ck(f"{tag}: the inline margins are equal", abs(geo["left"] - geo["right"]) <= 2,
+               (geo["left"], geo["right"]))
+            ck(f"{tag}: only the body scrolls",
+               geo["bodyScroll"] == "auto" and geo["headScroll"] != "auto",
+               (geo["bodyScroll"], geo["headScroll"]))
+            if w > 720:
+                ck(f"{tag}: it is centred on the block axis too",
+                   abs(geo["top"] - geo["bottom"]) <= 2, (geo["top"], geo["bottom"]))
+                ck(f"{tag}: it never exceeds 88vh", geo["height"] <= geo["vh"] * 0.881,
+                   (geo["height"], geo["vh"]))
+                ck(f"{tag}: width is min(920, 92vw)",
+                   abs(geo["width"] - min(920, geo["vw"] * 0.92)) <= 2, geo["width"])
+            else:
+                # a sheet on the bottom edge, same header and same tabs
+                ck(f"{tag}: it sits on the bottom edge", geo["bottom"] <= 1, geo["bottom"])
+                ck(f"{tag}: it is a full height sheet", geo["height"] >= geo["vh"] * 0.9,
+                   (geo["height"], geo["vh"]))
+                ck(f"{tag}: the sheet keeps the same five tabs",
+                   pg.eval_on_selector_all("#modalTabs .modal-tab", "e=>e.length") == 5)
+
+            ck(f"{tag}: nothing overflows its own container", pg.evaluate(
+                """()=>{const m=document.getElementById('modal');
+                  const r=m.getBoundingClientRect();
+                  return [...m.querySelectorAll('*')].every(e=>{
+                    const q=e.getBoundingClientRect();
+                    if(!q.width && !q.height) return true;
+                    return q.left>=r.left-1 && q.right<=r.right+1;});}"""))
+            ck(f"{tag}: nothing threw", not errs, errs[:2])
+
+            pg.screenshot(path=os.path.join(OUT, f"modal-{lang}-{w}.png"))
+
+            # The behaviours that need one width, not six. Run on the widest English pass.
+            if lang == "en" and w == 1440:
+                # the clipboard, and its fallback. Chromium is not Safari, but a fallback that
+                # cannot run at all here will not run there either.
+                ctx.grant_permissions(["clipboard-read", "clipboard-write"])
+                ck("copy link is offered for a published opportunity",
+                   pg.eval_on_selector("#modalCopy", "e=>!e.disabled"))
+                pg.click("#modalCopy")
+                pg.wait_for_timeout(700)
+                ck("and it puts the opportunity's own URL on the clipboard",
+                   "/opp/" in pg.evaluate("()=>navigator.clipboard.readText()"))
+                ck("the fallback path copies on its own, without the clipboard API",
+                   pg.evaluate("""()=>{const before=document.body.childElementCount;
+                     const ok=(function(text){
+                       try{ const ta=document.createElement('textarea');
+                         ta.value=text; ta.setAttribute('readonly','');
+                         ta.className='mw-offscreen'; document.body.appendChild(ta);
+                         ta.select(); ta.setSelectionRange(0,text.length);
+                         const r=document.execCommand('copy'); ta.remove(); return !!r;
+                       }catch(e){ return false; }})('probe');
+                     return ok && document.body.childElementCount===before;}"""))
+
+                # backdrop click closes, and focus goes back to the card that opened it
+                opened_from = pg.evaluate("()=>document.querySelector('.tok[data-slug]').dataset.slug")
+                pg.evaluate("()=>document.getElementById('modalScrim').click()")
+                pg.wait_for_timeout(900)
+                ck("clicking the backdrop closes the window",
+                   pg.eval_on_selector("#modal", "e=>e.hidden") is True)
+                ck("and focus returns to the card that opened it",
+                   pg.evaluate("()=>{const a=document.activeElement;"
+                               "return !!(a && a.classList && a.classList.contains('tok'));}"))
+                ck("the body scrolls again once it is closed",
+                   pg.evaluate("()=>getComputedStyle(document.body).position!=='fixed'"))
+
+                # the scroll position survives opening and closing
+                pg.evaluate("()=>window.scrollTo(0, 260)")
+                pg.wait_for_timeout(400)
+                was = pg.evaluate("()=>Math.round(window.scrollY)")
+                pg.query_selector(".tok[data-slug]").click()
+                pg.wait_for_timeout(1200)
+                pg.keyboard.press("Escape")
+                pg.wait_for_timeout(900)
+                now = pg.evaluate("()=>Math.round(window.scrollY)")
+                ck("the scroll position is put back on close", abs(now - was) <= 2, (was, now))
+                ck("the close control closes it too", pg.evaluate(
+                    """async ()=>{document.querySelector('.tok[data-slug]').click();
+                       await new Promise(r=>setTimeout(r,1200));
+                       document.getElementById('modalClose').click();
+                       await new Promise(r=>setTimeout(r,900));
+                       return document.getElementById('modal').hidden===true;}"""))
+
+            ctx.close()
+    b.close()
+
+httpd.shutdown()
+print("\n%d failed" % len(fails))
+for f in fails: print("  -", f)
+print("shots in", OUT)
+sys.exit(1 if fails else 0)

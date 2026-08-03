@@ -6,7 +6,7 @@ something got through: the numbered notes say what.
 
   1  Boot          every page and every view starts, with nothing blank and nothing thrown
   2  Doors         every link leads somewhere real, and its parameters arrive
-  3  Round trip    what the drawer borrows it gives back; a view re-entered is a view reloaded
+  3  Round trip    what the window borrows it gives back; a view re-entered is a view reloaded
   4  Truth         lanes, pills and tables report the same facts, and only facts with evidence,
                 and two devices sharing one store are the same console, removals included
   5  Bilingual     both languages complete, no key on screen, plural forms correct
@@ -142,6 +142,18 @@ def session(b, lang="en", width=1280, relay=relay_ok, seed=True, page="console.h
     return ctx, pg, errs
 
 
+def centred(pg):
+    """Equal margins on all four sides, measured. Under 720 the same component is a bottom
+    sheet, which is centred on the inline axis and deliberately not on the block axis."""
+    return pg.evaluate("""()=>{const m=document.getElementById('modal');
+      if(!m||m.hidden) return false;
+      const r=m.getBoundingClientRect(), w=innerWidth, h=innerHeight;
+      const near=(a,b,tol)=>Math.abs(a-b)<=tol;
+      if(!near(r.left, w-r.right, 2)) return false;
+      if(w<=720) return true;
+      return near(r.top, h-r.bottom, 2);}""")
+
+
 def visible(pg, vid):
     return pg.evaluate("""(id)=>{const e=document.getElementById('view-'+id)||document.querySelector('main.wrap');
       if(!e) return {miss:true};
@@ -274,17 +286,60 @@ def gate3(b):
     pg.wait_for_timeout(1400)
 
     tok = pg.query_selector(".tok[data-slug]")
-    ck("there is a token to open", tok is not None)
+    ck("there is a card to open", tok is not None)
     if tok:
         tok.click()
         pg.wait_for_timeout(1500)
-        ck("the drawer opens over the board", pg.eval_on_selector("#drawer", "e=>!e.hidden"))
-        ck("and it is holding the composer",
-           pg.evaluate("()=>!!document.querySelector('#drawerBody #view-compose')"))
+        ck("the window opens over the board", pg.eval_on_selector("#modal", "e=>!e.hidden"))
+        ck("it opens on the overview, which is the question the card asked",
+           pg.eval_on_selector("#modalOverview", "e=>!e.hidden && e.textContent.trim().length>20"))
+        # Centred with equal margins, measured. The panel this replaced satisfied every other
+        # check in this file while sitting hard against the inline-end edge.
+        ck("it is centred with equal margins on both sides", centred(pg))
+        ck("it never exceeds 88vh", pg.evaluate(
+            "()=>document.getElementById('modal').getBoundingClientRect().height <= innerHeight*0.881"))
+        ck("only its body scrolls, the head and the tabs stay put", pg.evaluate(
+            """()=>{const b=document.getElementById('modalBody');
+                 const h=document.querySelector('.modal-head'), t=document.getElementById('modalTabs');
+                 const sc=e=>getComputedStyle(e).overflowY;
+                 return sc(b)==='auto' && sc(h)!=='auto' && sc(t)!=='auto';}"""))
+        ck("all five tabs are present",
+           pg.eval_on_selector_all("#modalTabs .modal-tab", "e=>e.map(x=>x.dataset.tab).join(',')")
+           == "overview,text,page,outreach,history")
+        pg.click("#modalTabs [data-tab='text']")
+        pg.wait_for_timeout(700)
+        ck("the text tab shows its empty state, one icon and one sentence",
+           pg.eval_on_selector("#modalText", "e=>!!e.querySelector('svg') && e.querySelectorAll('button,a').length===0"))
+        pg.click("#modalTabs [data-tab='outreach']")
+        pg.wait_for_timeout(1500)
+        ck("the outreach tab is holding the composer itself, not a copy",
+           pg.evaluate("()=>!!document.querySelector('#modalHost #view-compose')"))
+        ck("and there is exactly one of every composer field in the document",
+           pg.evaluate("()=>['eto','esubject','ebody','eSend'].every(i=>document.querySelectorAll('#'+i).length===1)"))
+        pg.click("#modalTabs [data-tab='page']")
+        pg.wait_for_timeout(1500)
+        ck("the page tab is holding the editor itself, not a copy",
+           pg.evaluate("()=>!!document.querySelector('#modalHost #view-editor')"))
+        ck("and there is exactly one of every editor field in the document",
+           pg.evaluate("()=>['f_biz','f_slug','publishBtn'].every(i=>document.querySelectorAll('#'+i).length===1)"))
+        # Re-entering a tab must not wire an already-wired DOM. That doubles every listener on
+        # it, and on a composer a doubled listener means one click on Send sending twice.
+        ctx.grant_permissions(["clipboard-read", "clipboard-write"])
+        pg.click("#modalTabs [data-tab='outreach']")
+        pg.wait_for_timeout(1500)
+        before = pg.evaluate("()=>getMailLog().length")
+        pg.click("#eCopy")
+        pg.wait_for_timeout(1100)
+        ck("one click writes one ledger row, after any number of tab changes",
+           pg.evaluate("()=>getMailLog().length") - before == 1)
+        ck("the body cannot scroll while the window is open",
+           pg.evaluate("()=>getComputedStyle(document.body).position==='fixed'"))
         pg.keyboard.press("Escape")
         pg.wait_for_timeout(900)
         ck("closing it gives the composer back to the document",
-           pg.evaluate("()=>!document.querySelector('#drawerBody #view-compose')"))
+           pg.evaluate("()=>!document.querySelector('#modalHost #view-compose')"))
+        ck("and the body scrolls again",
+           pg.evaluate("()=>getComputedStyle(document.body).position!=='fixed'"))
         for v in ("compose", "editor"):
             pg.evaluate("x=>location.hash='#'+x", v)
             pg.wait_for_timeout(1600)
@@ -297,11 +352,13 @@ def gate3(b):
         pg.wait_for_timeout(1200)
         pg.query_selector(".tok[data-slug]").click()
         pg.wait_for_timeout(1400)
+        pg.click("#modalTabs [data-tab='outreach']")
+        pg.wait_for_timeout(1300)
         pg.evaluate("()=>location.hash='#library'")
         pg.wait_for_timeout(1500)
-        ck("navigating away closes the sheet", pg.eval_on_selector("#drawer", "e=>e.hidden") is True)
-        ck("and nothing is left inside it",
-           pg.eval_on_selector("#drawerBody", "e=>e.children.length") == 0)
+        ck("navigating away closes the window", pg.eval_on_selector("#modal", "e=>e.hidden") is True)
+        ck("and nothing borrowed is left inside it",
+           pg.eval_on_selector("#modalHost", "e=>e.children.length") == 0)
 
     # a view re-entered with different parameters is a view reloaded, not a stale one
     def composed_for(slug):

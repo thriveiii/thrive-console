@@ -457,6 +457,34 @@ const I18N = {
     set_quota_daily: "Daily cap",
     set_quota_monthly: "Monthly cap",
     clear_filters: "Clear filters",
+
+    /* ---- the opportunity window ------------------------------------------
+       One centred surface with five tabs. The tab names are nouns, not verbs:
+       they name the thing you are looking at, because a tab strip is a place
+       you are, and a verb reads as a button you press. */
+    mw_overview:    "Overview",
+    mw_text:        "Text",
+    mw_page:        "Page",
+    mw_outreach:    "Outreach",
+    mw_history:     "History",
+
+    mw_copy_link:   "Copy link",
+    mw_copied:      "Link copied.",
+    mw_copy_why:    "Not published yet, so there is no link to copy.",
+
+    mw_text_empty:  "No outreach text attached yet.",
+    mw_hist_empty:  "Nothing has happened to this opportunity yet.",
+
+    mw_o_slug:      "Name in the URL",
+    mw_o_state:     "State",
+    mw_o_age:       "Last touched",
+    mw_o_page:      "Page",
+    mw_o_open:      "Open the page",
+    mw_o_where:     "Location",
+    mw_o_tpl:       "Template",
+    mw_o_made:      "Made on",
+    mw_o_unpub:     "Not published",
+
     cmp_template: "Message template",
     cmp_quick_h: "Start from",
     cmp_quick_blank: "Blank message",
@@ -985,6 +1013,30 @@ const I18N = {
     set_quota_daily: "السقف اليومي",
     set_quota_monthly: "السقف الشهري",
     clear_filters: "مسح الفلاتر",
+
+    mw_overview:    "نظرة عامة",
+    mw_text:        "النص",
+    mw_page:        "الصفحة",
+    mw_outreach:    "التواصل",
+    mw_history:     "السجل",
+
+    mw_copy_link:   "نسخ الرابط",
+    mw_copied:      "نُسخ الرابط.",
+    mw_copy_why:    "لم تُنشر بعد، فلا يوجد رابط لنسخه.",
+
+    mw_text_empty:  "لا يوجد نص تواصل مرفق بعد.",
+    mw_hist_empty:  "لم يحدث شيء لهذه الفرصة بعد.",
+
+    mw_o_slug:      "الاسم في الرابط",
+    mw_o_state:     "الحالة",
+    mw_o_age:       "آخر حركة",
+    mw_o_page:      "الصفحة",
+    mw_o_open:      "فتح الصفحة",
+    mw_o_where:     "الموقع",
+    mw_o_tpl:       "القالب",
+    mw_o_made:      "أُنشئت في",
+    mw_o_unpub:     "غير منشورة",
+
     cmp_template: "قالب الرسالة",
     cmp_quick_h: "ابدأ من",
     cmp_quick_blank: "رسالة فارغة",

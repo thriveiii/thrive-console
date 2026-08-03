@@ -33,7 +33,7 @@
   --fs-md:15px; --fs-lg:17px; --fs-xl:22px; --fs-2xl:30px;
   --lh-tight:1.25; --lh-base:1.55; --lh-read:1.85;
   /* ---- elevation: objects only, never surfaces ---- */
-  --el-raised:0 6px 18px rgba(0,0,0,.40); --el-drawer:0 0 60px rgba(0,0,0,.60);
+  --el-raised:0 6px 18px rgba(0,0,0,.40); --el-modal:0 0 60px rgba(0,0,0,.60);
   --el-accent:0 8px 24px rgba(150,133,202,.28);
   /* ---- motion: five durations, three easings, nothing outside the scale ---- */
   --t-instant:90ms; --t-quick:160ms; --t-base:240ms; --t-slow:320ms; --t-page:420ms;
@@ -740,7 +740,7 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 [dir="rtl"] .tok-name,
 [dir="rtl"] .card .biz,
 [dir="rtl"] .tray-item,
-[dir="rtl"] .drawer-title,
+[dir="rtl"] .modal-title,
 [dir="rtl"] .logtable td:first-child{ unicode-bidi:plaintext; text-align:right }
 
 /* The meta line is mixed content: an Arabic phrase around Latin digits. It stays
@@ -811,68 +811,212 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .tray-item.won{ color:var(--state-good); border-color:rgba(126,224,184,.30) }
 .tray-item.lost{ color:var(--ink-4) }
 
-/* --- drawer chrome -------------------------------------------------------- */
+/* --- the opportunity window ------------------------------------------------
+   Centred, not pinned to an edge. The drawer was specified when this view was
+   mostly a single action; it has become a workspace with several tabs, and a
+   580px column against the edge of a 1440px screen pushes the eye sideways
+   while the board sits idle behind it. The problem grows with every tab added.
+   A centred surface is the correct shape for a workspace.
 
-.drawer-head{
-  display:flex; align-items:center; gap:var(--s-3);
-  padding:var(--s-4) var(--s-5);
-  border-bottom:1px solid var(--hair);
+   Logical properties only. No left, no right, no mirrored stylesheet, and no
+   letter-spacing anywhere in this block: letter-spacing breaks the joins
+   between Arabic letters, and the safest way not to apply it to Arabic is not
+   to write it.                                                              */
+
+.modal-scrim{
+  position:fixed; inset:0; z-index:80;
+  background:rgba(0,0,0,.62);
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+  opacity:0; pointer-events:none;
+  transition:opacity calc(var(--t-quick) * .7) var(--e-exit);
 }
-.drawer-title{ font-size:var(--fs-md); font-weight:var(--w-head); color:var(--ink);
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-.drawer-close{
-  margin-inline-start:auto; background:transparent; border:1px solid var(--hair);
+.modal-scrim.on{
+  opacity:1; pointer-events:auto;
+  transition:opacity var(--t-quick) var(--e-enter);
+}
+
+.modal{
+  position:fixed; z-index:81;
+  inset:0; margin:auto;                     /* equal margins on all four sides */
+  width:min(920px,92vw);
+  height:max-content;
+  max-height:88vh;
+  background:var(--panel);
+  border:1px solid var(--hair);
+  border-radius:var(--r-xl);
+  box-shadow:var(--el-modal);
+  display:flex; flex-direction:column;
+  overflow:hidden;                          /* so the rounded corners clip the body */
+  opacity:0;
+  transform:translateY(10px) scale(.985);
+  pointer-events:none;
+  /* Exit leaves at 70% of the enter duration, on the exit curve. */
+  transition:opacity calc(var(--t-base) * .7) var(--e-exit),
+             transform calc(var(--t-base) * .7) var(--e-exit);
+}
+.modal.on{
+  opacity:1; transform:none; pointer-events:auto;
+  transition:opacity var(--t-base) var(--e-enter),
+             transform var(--t-base) var(--e-enter);
+}
+
+/* Travel is what causes vestibular trouble, not opacity, and a hard cut between
+   two full surfaces is its own kind of disorienting. So the transform goes and
+   the fade stays. */
+@media (prefers-reduced-motion:reduce){
+  .modal, .modal.on{
+    transform:none!important;
+    transition:opacity var(--t-quick) var(--e-standard)!important;
+  }
+  .modal-scrim, .modal-scrim.on{
+    transition:opacity var(--t-quick) var(--e-standard)!important;
+  }
+}
+
+/* --- header: fixed, never scrolls ------------------------------------------ */
+
+.modal-head{
+  flex:0 0 auto;
+  display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap;
+  padding:var(--s-4) var(--s-5);
+  border-block-end:1px solid var(--hair);
+}
+.modal-heading{
+  min-width:0; flex:1 1 auto;
+  display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap;
+}
+.modal-title{
+  margin:0;
+  font-size:var(--fs-md); font-weight:var(--w-head); color:var(--ink);
+  line-height:var(--lh-tight);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  min-width:0;
+}
+/* A business name is a name, not a sentence: it keeps its own reading order so
+   "2 Faces" is not reordered into "Faces 2" on an Arabic screen. */
+[dir="rtl"] .modal-title{ unicode-bidi:plaintext; text-align:start }
+.modal-acts{ display:flex; align-items:center; gap:var(--s-2); flex:0 0 auto }
+.modal-close{
+  background:transparent; border:1px solid var(--hair);
   border-radius:var(--r-sm); color:var(--ink-3); cursor:pointer;
   padding:6px 12px; font:inherit; font-size:var(--fs-sm); font-weight:var(--w-head);
 }
-.drawer-close:hover{ border-color:var(--purple); color:var(--ink) }
-.drawer-body{ padding:var(--s-5) }
-.drawer-tabs{ display:flex; gap:var(--s-1); padding:0 var(--s-5) var(--s-3) }
-.drawer-tab{
+.modal-close:hover{ border-color:var(--purple); color:var(--ink) }
+.modal-close:focus-visible,.modal-tab:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
+/* A disabled control that does not say why is a control that reads as broken. */
+.modal-why{
+  flex:1 0 100%; margin:0;
+  font-size:var(--fs-xs); color:var(--ink-4);
+}
+
+/* --- tabs: fixed, never scroll --------------------------------------------- */
+
+.modal-tabs{
+  flex:0 0 auto;
+  display:flex; gap:var(--s-1); flex-wrap:wrap;
+  padding:var(--s-3) var(--s-5) 0;
+}
+.modal-tab{
   background:transparent; border:1px solid var(--hair); border-radius:var(--r-sm);
   color:var(--ink-3); font:inherit; font-size:var(--fs-sm); font-weight:var(--w-head);
   padding:7px 13px; cursor:pointer;
 }
-.drawer-tab.on{ color:var(--ink); background:rgba(150,133,202,.16); border-color:var(--purple) }
+.modal-tab.on{ color:var(--ink); background:rgba(150,133,202,.16); border-color:var(--purple) }
 
-/* --- drawer ---------------------------------------------------------------
-   The work opens beside you, from the trailing edge, so the board stays where it was and you
-   never lose your place. Only transform and opacity move; the panel travels 16px, because a
-   drawer that slides the width of the screen reads as theatre. Exit is shorter than enter. */
-.drawer-scrim{
-  position:fixed; inset:0; z-index:80; background:var(--scrim);
-  opacity:0; pointer-events:none;
-  transition:opacity var(--t-quick) var(--e-standard);
+/* --- body: the only thing that scrolls ------------------------------------- */
+
+.modal-body{
+  flex:1 1 auto; min-height:0; overflow:auto;
+  padding:var(--s-5);
 }
-.drawer-scrim.on{ opacity:1; pointer-events:auto }
-.drawer{
-  position:fixed; z-index:81; inset-block:0; inset-inline-end:0;
-  /* A full-width drawer on a phone leaves no scrim to tap, so the only way out is a button a
-     thumb cannot always reach. It keeps a strip of the board visible instead: you can see what
-     you came from, and tapping it closes. */
-  width:min(560px,92vw);
-  background:var(--panel); border-inline-start:1px solid var(--hair);
-  box-shadow:var(--el-drawer);
-  display:flex; flex-direction:column;
-  opacity:0; transform:translateX(calc(16px * var(--dir))); pointer-events:none;
-  transition:opacity calc(var(--t-slow) * .7) var(--e-exit),
-             transform calc(var(--t-slow) * .7) var(--e-exit);
+/* A view the window has adopted stops being a page and becomes panel content. */
+.modal-host > .view{ max-width:none; margin:0; padding:0 }
+
+/* --- the panels this window renders itself --------------------------------- */
+
+.mw-rows{ margin:0; display:grid; gap:var(--s-3) }
+.mw-row{ display:grid; grid-template-columns:minmax(0,10rem) minmax(0,1fr); gap:var(--s-3); align-items:baseline }
+@media(max-width:560px){ .mw-row{ grid-template-columns:minmax(0,1fr) } }
+.mw-row dt{ font-size:var(--fs-xs); color:var(--ink-4); font-weight:var(--w-strong) }
+.mw-row dd{ margin:0; font-size:var(--fs-sm); color:var(--ink-2); min-width:0; word-break:break-word }
+.mw-row dd a{ color:var(--purple) }
+.mw-row dd a:hover{ text-decoration:underline }
+.mw-muted{ color:var(--ink-4) }
+
+/* A slug, a URL, an address and a timestamp read left to right whatever the
+   interface language is. Without the isolation the bidi algorithm reorders them
+   inside an Arabic line and the value then reads as simply wrong. */
+.mono-iso{
+  font-family:var(--font-lat);
+  direction:ltr; unicode-bidi:isolate;
+  display:inline-block;
 }
-.drawer.on{
-  opacity:1; transform:none; pointer-events:auto;
-  transition:opacity var(--t-slow) var(--e-enter), transform var(--t-slow) var(--e-enter);
+
+.mw-state{
+  font-size:var(--fs-xs); font-weight:var(--w-head);
+  padding:4px 10px; border-radius:var(--r-pill);
+  border:1px solid var(--hair); color:var(--ink);
+  display:inline-block;
 }
-.drawer-body{ flex:1; min-height:0; overflow:auto; opacity:0; transform:translateY(8px) }
-.drawer.on .drawer-body{
-  opacity:1; transform:none;
-  transition:opacity var(--t-base) var(--e-enter) 60ms, transform var(--t-base) var(--e-enter) 60ms;
+.mw-state-draft{   border-color:var(--lane-draft);   color:var(--lane-draft) }
+.mw-state-live{    border-color:var(--lane-live);    color:var(--lane-live) }
+.mw-state-sent{    border-color:var(--lane-sent);    color:var(--lane-sent) }
+.mw-state-opened{  border-color:var(--lane-opened);  color:var(--lane-opened) }
+.mw-state-replied{ border-color:var(--lane-replied); color:var(--lane-replied) }
+
+/* An empty state is a designed state, not a missing one. One icon, one
+   sentence, and no action, because the action does not exist yet and offering
+   one that does nothing is worse than offering none. */
+.mw-empty{
+  display:flex; flex-direction:column; align-items:center; gap:var(--s-3);
+  padding:var(--s-8) var(--s-4);
+  text-align:center;
 }
-/* A view the drawer has adopted stops being a page and becomes panel content. */
-.drawer-body > .view{ max-width:none; margin:0; padding:0 }
-@media (prefers-reduced-motion:reduce){
-  .drawer,.drawer.on,.drawer-scrim,.drawer-body,.drawer.on .drawer-body{
-    transition-property:opacity!important; transform:none!important;
+.mw-empty-i{ color:var(--ink-3); opacity:.4 }
+.mw-empty p{ margin:0; font-size:var(--fs-sm); color:var(--ink-4) }
+
+.mw-hist{ list-style:none; margin:0; padding:0; display:grid; gap:var(--s-2) }
+.mw-hist li{
+  display:flex; gap:var(--s-3); flex-wrap:wrap; align-items:baseline;
+  padding:var(--s-2) var(--s-3);
+  border:1px solid var(--hair-2); border-radius:var(--r-sm);
+}
+.mw-hist-when{ font-size:var(--fs-micro); color:var(--ink-4); flex:0 0 auto }
+.mw-hist-what{ font-size:var(--fs-xs); color:var(--ink); font-weight:var(--w-head) }
+.mw-hist-detail{ font-size:var(--fs-xs); color:var(--ink-4); min-width:0; word-break:break-word }
+
+/* The textarea the clipboard fallback selects. Off the canvas, never display:none,
+   because a hidden element cannot be selected and the copy would silently fail. */
+.mw-offscreen{
+  position:fixed; inset-block-start:0; inset-inline-start:-9999px;
+  width:1px; height:1px; opacity:0; pointer-events:none;
+}
+
+/* --- under 720: the same component, a different set of values --------------
+   A full height sheet on the bottom edge. The enter transform is unchanged, so
+   it rises the same 10px it does everywhere else and never slides in from an
+   edge.                                                                      */
+@media(max-width:720px){
+  .modal{
+    inset-block:var(--s-4) 0;
+    inset-inline:var(--s-2);
+    width:auto;
+    height:auto;
+    max-height:none;
+    margin:0;
+    border-radius:var(--r-xl) var(--r-xl) 0 0;
+    border-block-end:0;
   }
+}
+
+/* Locking the body is what actually holds on iOS. It costs the scroll position,
+   which initModal remembers and puts back. */
+body.modal-open{
+  position:fixed;
+  inset-inline:0;
+  width:100%;
+  overflow:hidden;
 }
 
 /* A token in flight is raised above its lane and drops the raise when it lands. The lane
@@ -887,6 +1031,7 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   .nav a,.langbtn{min-height:40px;display:inline-flex;align-items:center}
   .chip{min-height:40px;display:inline-flex;align-items:center}
   .tok{min-height:44px}
-  .drawer-tab,.drawer-close{min-height:40px}
+  .modal-tab,.modal-close{min-height:40px}
+  .btn,.btn.sm{min-height:44px}
   .tray-toggle{min-height:40px}
 }

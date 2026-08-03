@@ -138,7 +138,7 @@ with sync_playwright() as p:
         ck(4,tag+": the page never scrolls sideways",
            pg.evaluate("()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth+1"))
         ck(4,tag+": no untranslated key leaks anywhere on screen",
-           pg.evaluate("""()=>!/\\b(board_|lane_|tok_|vd_|dw_|conn_|home_|sy_)[a-z_]+\\b/.test(document.body.innerText)"""))
+           pg.evaluate("""()=>!/\\b(board_|lane_|tok_|vd_|dw_|mw_|conn_|home_|sy_)[a-z_]+\\b/.test(document.body.innerText)"""))
         floor = 40 if w<=430 else 28
         small = pg.eval_on_selector_all(".nav a,.btn,.tok,.chip,.langbtn",
            "(els,f)=>els.filter(e=>e.offsetParent && e.getBoundingClientRect().height<f).map(e=>(e.innerText||e.className).slice(0,20))", floor)
@@ -156,20 +156,27 @@ with sync_playwright() as p:
         # ---- L5 resilience ----
         tok=pg.query_selector(".tok")
         tok.click(); pg.wait_for_timeout(1200)
-        ck(5,tag+": the drawer opens over the board", pg.eval_on_selector("#drawer","e=>!e.hidden"))
-        ck(5,tag+": the drawer fits the screen",
-           pg.eval_on_selector("#drawer","e=>e.getBoundingClientRect().width")<=w)
-        ck(5,tag+": a strip of the board is still reachable to close it",
-           pg.eval_on_selector("#drawer","e=>e.getBoundingClientRect().width")<w)
+        ck(5,tag+": the opportunity window opens over the board", pg.eval_on_selector("#modal","e=>!e.hidden"))
+        ck(5,tag+": the window fits the screen",
+           pg.eval_on_selector("#modal","e=>e.getBoundingClientRect().width")<=w)
+        ck(5,tag+": its margins are equal on both sides",
+           pg.evaluate("""(w)=>{const r=document.getElementById('modal').getBoundingClientRect();
+             return Math.abs(r.left-(w-r.right))<=2;}""", w))
+        ck(5,tag+": it never exceeds 88vh",
+           pg.evaluate("()=>document.getElementById('modal').getBoundingClientRect().height<=innerHeight*0.881"))
+        ck(1,tag+": all five tabs are there",
+           pg.eval_on_selector_all("#modalTabs .modal-tab","e=>e.length")==5)
+        ck(5,tag+": the board behind it cannot be scrolled",
+           pg.evaluate("()=>getComputedStyle(document.body).position==='fixed'"))
         # a modal is modal: the bar behind it is out of reach, on purpose
-        ck(5,tag+": the page behind the drawer is out of reach while it is open",
+        ck(5,tag+": the page behind the window is out of reach while it is open",
            pg.evaluate("""()=>{const r=document.getElementById('langbtn').getBoundingClientRect();
              const el=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);
              return !el || el.id!=='langbtn';}"""))
         # and the keyboard cannot walk out of it either
         pg.keyboard.press("Tab"); pg.keyboard.press("Tab"); pg.keyboard.press("Tab")
         ck(5,tag+": focus stays inside the dialog",
-           pg.evaluate("()=>document.getElementById('drawer').contains(document.activeElement)"))
+           pg.evaluate("()=>document.getElementById('modal').contains(document.activeElement)"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(700)
         pg.click("#langbtn"); pg.wait_for_timeout(1200)
         ck(5,tag+": the language switch still works once it is closed",
