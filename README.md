@@ -72,12 +72,17 @@ device and restores it. Run one gate on its own with `python3 tools/gates.py 3`.
 `lane-truth.py` is the regression: an opportunity reaches Sent or Opened only when the mail
 ledger proves a message went out, a page read before that first send keeps its views without
 being called an open, and the board, the library and the Insights tables all say the same
-thing. `verify.js` is the one that must pass before every push; it parses every script,
+thing. It also builds a real zip in memory, drops it into the console, and follows the
+opportunities it names into the first lane with their channels and their words intact.
+`verify.js` is the one that must pass before every push; it parses every script,
 refuses any secret-shaped string, asserts EN/AR key parity and that
 every `data-i18n` key exists in both languages, and enforces the house copy rules (no em
 dash, Western numerals, straight quotes in English, guillemets in Arabic, tanwin on the
-letter). It also checks that every console page carries the boot failsafe and that every
-published prospect page carries the analytics beacon. `Brain/CHECKLIST.md` covers the rest,
+letter). It also checks that every console page carries the boot failsafe, that every
+published prospect page carries the analytics beacon, that every console function called is a
+console function declared, and that every icon asked for is an icon that exists. Those last
+two exist because a renamed function is valid JavaScript: it passes `node --check`, builds
+cleanly, and throws in the browser. `Brain/CHECKLIST.md` covers the rest,
 the part that still needs a person.
 
 ### What is mirrored across devices

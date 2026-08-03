@@ -1065,9 +1065,12 @@ body.is-dragging{ cursor:grabbing; user-select:none }
    touch is a board you cannot move through. */
 .tok-grip{
   flex:0 0 auto; color:var(--ink-4); opacity:.5;
+  /* A mouse has to aim at this too. Sized to the icon it was 22px, which is a target you
+     miss and then stop reaching for. Twenty-eight with a pointer, forty with a finger. */
+  min-width:28px; min-height:28px;
   padding:2px; margin-inline-start:2px;
   touch-action:none; cursor:grab;
-  display:inline-flex; align-items:center;
+  display:inline-flex; align-items:center; justify-content:center;
 }
 .tok:hover .tok-grip{ opacity:.9 }
 body.is-dragging .tok-grip{ cursor:grabbing }

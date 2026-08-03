@@ -188,7 +188,7 @@ and the gates exist because things got through them.
 | 4 | **Truth** | Do the lanes, the pills and the tables report the same facts, and only facts with evidence? | |
 | 5 | **Bilingual** | Both languages complete, no key on screen, plural forms correct at 1, 2, 3, 11, 100 | |
 | 6 | **Typography** | One Latin face and one Arabic face, everywhere, measured rather than assumed | Alyamama's serif Latin |
-| 7 | **Layout** | Nothing scrolls sideways, everything a finger uses clears 40px, at six widths | Two heights in one bar |
+| 7 | **Layout** | Nothing scrolls sideways, everything a finger uses clears 40px, at six widths | Two heights in one bar; "Choose files" at 33px |
 | 8 | **Forms** | Is every control labelled and reachable, and does sending actually send? | 35 labels pointing at nothing |
 | 9 | **Resilience** | Relay down, relay old, no data, and does a backup round trip? | |
 | 10 | **Build** | The verify gate passes, the shell is what its source produces, the offline file is whole | |
@@ -198,7 +198,7 @@ computed style would have answered it: the stack said Alyamama and the stack was
 
 Gate 8 ends by sending a real message through a relay that answers and remembers what it was handed, then watching the opportunity move from Ready to Sent, the quota count it, and the message it went out with become measurable. Gate 9 takes that same session, exports a backup, wipes the device and restores it. Those two are the loops the console exists for, and until now neither had been proven end to end by anything but use.
 
-### The five defects the gates found
+### The seven defects the gates found
 
 **1. The panel never gave back what it borrowed. (Gate 3)**
 This is the one that was reported: tap "Send an email", get a blank page. The window hosts the
@@ -233,6 +233,20 @@ Every field was written as a `<label>` beside its input rather than for it, so n
 announced to a screen reader and tapping a label focused nothing. And the language switch stood
 36px tall next to a 33px lock, because Arabic sets a taller line box than Latin and the two
 identical controls were being sized by whichever script was inside them.
+
+**6. The control that starts a working day was 33px. (Gate 7)**
+"Choose files" is how a batch enters the console, and it is a small button, and the touch-target
+rule covered the bar, the chips, the tray and the cards but never the buttons. Every `.btn`
+clears 44 on a coarse pointer now, and so do a card's open area, its drag grip, and the rows in
+the batch review. The gate measures those four selectors as well, so the next control put on
+the board is measured rather than assumed.
+
+**7. A renamed function passed every static check. (Gate 2, then `tools/verify.js`)**
+`initDrag` became `initBoardDrag` and one call site kept the old name. It is valid JavaScript,
+so `node --check` was happy, the build succeeded, all nineteen string checks passed, and the
+board threw on every load. `verify.js` now asks whether every console function called is a
+console function declared, and whether every icon asked for is an icon that exists. Both were
+proven by breaking them on purpose.
 
 ---
 
