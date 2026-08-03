@@ -27,7 +27,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <a href="#home" data-view="home" data-i18n="nav_insights"></a>
     <a href="#library" data-view="library" data-i18n="nav_library"></a>
     <a href="#settings" data-view="settings" data-i18n="nav_settings"></a>
-    <button id="langbtn" class="langbtn" data-icon="globe">العربية</button>
+    <button id="langbtn" class="langbtn">العربية</button>
     <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
@@ -55,6 +55,17 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
     </div>
   </div>
+
+  <!-- The day's batch. Nothing is written until the report has been read. -->
+  <section class="intake" id="intakeZone">
+    <div class="intake-head">
+      <h3 class="block-h" data-icon="import" data-i18n="in_h">Today's batch</h3>
+      <label class="btn ghost sm" for="intakeFile" data-i18n="in_pick">Choose files</label>
+      <input id="intakeFile" type="file" multiple accept=".html,.htm,.md,.txt,.zip" hidden>
+    </div>
+    <p class="sub" data-i18n="in_p"></p>
+    <div class="intake-out" id="intakeOut"></div>
+  </section>
 
   <!-- Lanes. Order is the order of the gradient, and the order is the journey. -->
   <div class="board" id="boardLanes">
@@ -558,6 +569,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="gate.js"></script>
 <script src="stage-model.js"></script>
 <script src="lifecycle.js"></script>
+<script src="intake.js"></script>
 <script src="app.js"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly

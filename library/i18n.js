@@ -458,6 +458,36 @@ const I18N = {
     set_quota_monthly: "Monthly cap",
     clear_filters: "Clear filters",
 
+    /* ---- the day's batch --------------------------------------------------- */
+    in_h:        "Today's batch",
+    in_p:        "Drop a zip, a page, or a page with its manifest. Nothing is written until you have read the report.",
+    in_pick:     "Choose files",
+    in_reading:  "Reading…",
+    in_none:     "Nothing readable in that. The console reads .html, .md, .txt and .zip.",
+    in_zip_err:  "That zip could not be read in this browser.",
+    in_add:      "Import the matched ones",
+    in_cancel:   "Discard",
+    in_report_h: "Before anything is written",
+    in_pages:    "Pages found",
+    in_parsed:   "Opportunities in the manifest",
+    in_matched:  "Matched pairs",
+    in_orphan_p: "Pages with no manifest entry",
+    in_orphan_e: "Manifest entries with no page",
+    in_dupes_h:  "Already in the library",
+    in_dupe_skip:"Skip",
+    in_dupe_repl:"Replace",
+    in_notes_h:  "Batch notes, kept with every opportunity in this batch",
+    in_w_no_business:"no name",
+    in_w_no_body:    "no message",
+    in_w_no_channel: "no channel",
+    in_w_no_page:    "no page",
+    in_w_no_page_named:"no page named",
+    in_w_no_manifest_entry:"no manifest entry",
+    in_tier:     "Tier",
+    in_alt:      "also",
+    in_batch_h:  "Batch notes",
+    in_link_sub: "The live address replaced [LINK] in the outreach text. The original is kept.",
+
     /* ---- the opportunity lifecycle ---------------------------------------
        One name per move, used by the button, by the activity log and by the
        undo toast, so the three can never describe the same event differently. */
@@ -1104,6 +1134,35 @@ const I18N = {
     set_quota_monthly: "السقف الشهري",
     clear_filters: "مسح الفلاتر",
 
+    in_h:        "دفعة اليوم",
+    in_p:        "أفلت ملف zip أو صفحة أو صفحة مع ملف تعليماتها. لا يُكتب شيء قبل أن تقرأ التقرير.",
+    in_pick:     "اختر الملفات",
+    in_reading:  "جارٍ القراءة…",
+    in_none:     "لا شيء قابل للقراءة هنا. يقرأ الكونسول html وmd وtxt وzip.",
+    in_zip_err:  "تعذّرت قراءة هذا الملف المضغوط في هذا المتصفح.",
+    in_add:      "استورد المتطابقة",
+    in_cancel:   "تجاهل",
+    in_report_h: "قبل أن يُكتب أي شيء",
+    in_pages:    "الصفحات الموجودة",
+    in_parsed:   "الفرص في ملف التعليمات",
+    in_matched:  "الأزواج المتطابقة",
+    in_orphan_p: "صفحات بلا مدخل في التعليمات",
+    in_orphan_e: "مداخل تعليمات بلا صفحة",
+    in_dupes_h:  "موجودة في المكتبة",
+    in_dupe_skip:"تخطٍّ",
+    in_dupe_repl:"استبدال",
+    in_notes_h:  "ملاحظات الدفعة، تُحفظ مع كل فرصة فيها",
+    in_w_no_business:"بلا اسم",
+    in_w_no_body:    "بلا نص",
+    in_w_no_channel: "بلا قناة",
+    in_w_no_page:    "بلا صفحة",
+    in_w_no_page_named:"لم تُذكر صفحة",
+    in_w_no_manifest_entry:"بلا مدخل تعليمات",
+    in_tier:     "الفئة",
+    in_alt:      "وأيضًا",
+    in_batch_h:  "ملاحظات الدفعة",
+    in_link_sub: "حلّ العنوان المنشور محل [LINK] في نص التواصل. النص الأصلي محفوظ.",
+
     lc_h:             "ما يمكنك فعله الآن",
     lc_publish:       "نشر الصفحة",
     lc_unpublish:     "إلغاء النشر",
@@ -1496,6 +1555,9 @@ var I18N_BOARD = {
     tok_views:      { one:"no email yet, {n} view", other:"no email yet, {n} views" },
     tok_answered:   "answered",
 
+    in_found:  { one:"{n} opportunity read.", other:"{n} opportunities read." },
+    in_added:  { one:"{n} opportunity imported into Draft.", other:"{n} opportunities imported into Draft." },
+
     tpl_del_blocked:  { one:"Cannot delete it: {n} opportunity is still a draft on this page template ({list}). Publish or drop it first.",
                         other:"Cannot delete it: {n} opportunities are still drafts on this page template ({list}). Publish or drop them first." },
     tpl_del_affects:  { one:"{n} opportunity was built from this page template. Its page is kept exactly as it is. Delete the template?",
@@ -1706,6 +1768,16 @@ var I18N_BOARD = {
       few:"بلا رسالة، {n} مشاهدات", many:"بلا رسالة، {n} مشاهدة", other:"بلا رسالة، {n} مشاهدة"
     },
     tok_answered: "ردّ",
+
+    in_found: {
+      one:"قُرئت فرصة واحدة.", two:"قُرئت فرصتان.",
+      few:"قُرئت {n} فرص.", many:"قُرئت {n} فرصة.", other:"قُرئت {n} فرصة."
+    },
+    in_added: {
+      one:"استُوردت فرصة واحدة إلى المسودة.", two:"استُوردت فرصتان إلى المسودة.",
+      few:"استُوردت {n} فرص إلى المسودة.", many:"استُوردت {n} فرصة إلى المسودة.",
+      other:"استُوردت {n} فرصة إلى المسودة."
+    },
 
     tpl_del_blocked: {
       one:"لا يمكن حذفه: فرصة واحدة ما زالت مسودة على قالب الصفحة هذا ({list}). انشرها أو استبعدها أولًا.",

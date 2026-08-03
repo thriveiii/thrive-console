@@ -3470,7 +3470,175 @@ async function initBoard(){
      without this the board kept showing what was true before the click: the record was right,
      the model was right, and the screen was wrong, which is the worst of the three. */
   window.thriveBoardRefresh=render;
+  initIntake();
   await render();
+}
+
+/* ---------- the day's batch ----------
+   Three shapes, one behaviour: a page alone, a page with its manifest, or a zip of both.
+
+   Nothing is written until the report has been shown. An import that quietly drops two of
+   eleven is worse than an import that refuses, because the two that vanished are indistinguishable
+   from two that were never in the file. So every page with no manifest entry and every manifest
+   entry with no page is named, and a name already in the library asks per item rather than
+   guessing which of the two you meant to keep.
+
+   Everything lands in Draft. Not Ready, not Sent: it is published nowhere and sent to nobody,
+   and the first lane is the only true one. */
+function initIntake(){
+  const el=id=>document.getElementById(id);
+  const zone=el("intakeZone"), input=el("intakeFile"), out=el("intakeOut");
+  if(!zone || !input || !out) return;
+  if(typeof ThriveIntake==="undefined"){ zone.hidden=true; return; }
+
+  let found=null, existing={}, choice={};
+
+  const WARN=["no_business","no_body","no_channel","no_page","no_page_named","no_manifest_entry"];
+  function status(msg, kind){ out.innerHTML='<p class="in-status '+(kind||"")+'">'+esc(msg)+'</p>'; }
+  function slugFor(e){
+    return e.slug_hint || ThriveIntake.slugify(e.business) ||
+           ThriveIntake.slugify(e.page_file) || "opportunity";
+  }
+  function count(label, n, cls){
+    return '<div class="in-count '+(cls||"")+'"><b>'+n+'</b><span>'+esc(label)+'</span></div>';
+  }
+
+  function card(e,i){
+    const slug=slugFor(e);
+    const dup=!!existing[slug];
+    const warns=(e.warnings||[]).filter(w=>WARN.indexOf(w)>=0)
+      .map(w=>'<span class="in-warn">'+esc(t("in_w_"+w))+'</span>').join("");
+    const bits=[];
+    if(e.city) bits.push(esc(e.city));
+    if(e.descriptor) bits.push(esc(e.descriptor));
+    const alt=(e.alternates||[]).map(a=>esc(lcChannelLabel(a.channel))).join(", ");
+    return '<label class="in-card'+(dup?" is-dupe":"")+'">'+
+      '<input type="checkbox" class="in-pick" data-i="'+i+'"'+(dup?"":" checked")+'>'+
+      '<span class="in-body">'+
+        '<span class="in-name">'+esc(e.business||"–")+'</span>'+
+        (bits.length? '<span class="in-meta">'+bits.join(" · ")+'</span>':'')+
+        '<span class="in-tags">'+
+          (e.channel? '<span class="in-tag">'+esc(lcChannelLabel(e.channel))+
+             (e.url? ' <span class="mono-iso">'+esc(e.url.replace(/^https?:\/\//,"").replace(/^mailto:/,""))+'</span>':'')+'</span>':'')+
+          (alt? '<span class="in-tag">'+esc(t("in_alt"))+' '+alt+'</span>':'')+
+          (e.tier? '<span class="in-tag">'+esc(t("in_tier"))+' '+esc(e.tier)+'</span>':'')+
+          (e.file? '<span class="in-tag">'+esc(e.page_file||e.file.name)+'</span>':'')+
+          (e.body? '<span class="in-tag">'+esc(t("ot_h"))+'</span>':'')+
+          (e.prohibition? '<span class="in-warn">'+esc(t("md_prohibition"))+'</span>':'')+
+          warns+
+        '</span>'+
+        (dup? '<span class="in-dupe-row"><b>'+esc(t("in_dupes_h"))+'</b>'+
+          '<span class="mono-iso">'+esc(slug)+'</span>'+
+          '<button type="button" class="btn ghost sm" data-dupe="skip" data-i="'+i+'">'+esc(t("in_dupe_skip"))+'</button>'+
+          '<button type="button" class="btn ghost sm danger" data-dupe="replace" data-i="'+i+'">'+esc(t("in_dupe_repl"))+'</button>'+
+          '</span>' : '')+
+      '</span></label>';
+  }
+
+  function review(){
+    const r=found;
+    if(!r || !r.entries.length){ status(t("in_none"),"warn"); return; }
+    const matched=r.entries.filter(e=>e.file).length;
+    const n=r.entries.length;
+    const named=(list)=> list.length
+      ? '<ul class="in-named">'+list.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>' : "";
+
+    out.innerHTML=
+      '<div class="in-head"><b>'+esc(boardText(getLang(),"in_found",n))
+        .split(String(n)).join('<span class="n">'+n+'</span>')+'</b>'+
+        '<span class="in-actions">'+
+          '<button class="btn sm" id="intakeAdd" type="button" data-icon="import">'+esc(t("in_add"))+'</button>'+
+          '<button class="btn ghost sm" id="intakeCancel" type="button">'+esc(t("in_cancel"))+'</button>'+
+        '</span></div>'+
+      '<section class="in-report"><h4 class="mw-h">'+esc(t("in_report_h"))+'</h4>'+
+        '<div class="in-counts">'+
+          count(t("in_pages"), r.pages)+
+          count(t("in_parsed"), r.entries.length-(r.orphanPages||[]).length)+
+          count(t("in_matched"), matched)+
+          count(t("in_orphan_p"), (r.orphanPages||[]).length, (r.orphanPages||[]).length?"warn":"")+
+          count(t("in_orphan_e"), (r.orphanEntries||[]).length, (r.orphanEntries||[]).length?"warn":"")+
+        '</div>'+
+        named(r.orphanPages||[])+named(r.orphanEntries||[])+
+      '</section>'+
+      '<div class="in-list">'+r.entries.map(card).join("")+'</div>'+
+      (r.notes? '<details class="mw-more"><summary>'+esc(t("in_notes_h"))+'</summary>'+
+        '<pre class="mw-pitch" dir="auto">'+esc(r.notes)+'</pre></details>' : '');
+
+    if(typeof applyIcons==="function") applyIcons(out);
+    el("intakeCancel").addEventListener("click", reset);
+    el("intakeAdd").addEventListener("click", add);
+    out.querySelectorAll("[data-dupe]").forEach(b=>b.addEventListener("click", e=>{
+      e.preventDefault(); e.stopPropagation();
+      const i=+b.getAttribute("data-i");
+      choice[i]=b.getAttribute("data-dupe");
+      const box=out.querySelector('.in-pick[data-i="'+i+'"]');
+      if(box) box.checked=(choice[i]==="replace");
+      b.parentNode.querySelectorAll("[data-dupe]").forEach(x=>x.classList.toggle("on", x===b));
+    }));
+  }
+
+  function reset(){ found=null; choice={}; out.innerHTML=""; input.value=""; }
+
+  function add(){
+    const picked=[];
+    out.querySelectorAll(".in-pick").forEach(c=>{ if(c.checked) picked.push(found.entries[+c.getAttribute("data-i")]); });
+    if(!picked.length){ reset(); return; }
+    const seen={};
+    Object.keys(existing).forEach(k=>seen[k]=1);
+    let n=0;
+    picked.forEach(e=>{
+      const rec=ThriveIntake.toRecord(e, { today:today(), note_text:found.notes, batch:found.batch });
+      let s=rec.slug;
+      if(seen[s] && !existing[s]){ let k=2; while(seen[s+"-"+k]) k++; s=s+"-"+k; }
+      rec.slug=s; seen[s]=1;
+      saveDraft(rec);
+      logActivity("in_import", rec.slug, (rec.business||"")+" · "+(found.batch.title||""));
+      n++;
+    });
+    logActivity("in_batch", "", n+" imported, "+((found.orphanPages||[]).length)+" pages unmatched, "+
+      ((found.orphanEntries||[]).length)+" entries unmatched");
+    toast(boardText(getLang(),"in_added",n));
+    reset();
+    try{ scheduleSyncPush(); }catch(e){}
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+  }
+
+  async function take(files){
+    if(!files || !files.length) return;
+    status(t("in_reading"));
+    try{ existing={}; (await mergedOpps()).forEach(o=>{ existing[o.slug]=true; }); }catch(e){}
+    try{
+      found=await ThriveIntake.readDrop(files);
+      choice={};
+      review();
+    }catch(e){
+      status(/zip|inflate/i.test((e&&e.message)||"") ? t("in_zip_err") : t("in_none"), "warn");
+    }
+  }
+
+  /* The file picker is not an afterthought. iPad Safari has no drag and drop from Files into a
+     web page, so on the device this console is actually used on, the picker is the only path. */
+  input.addEventListener("change", ()=>take(input.files));
+  ["dragenter","dragover"].forEach(k=>zone.addEventListener(k, e=>{ e.preventDefault(); zone.classList.add("on"); }));
+  ["dragleave","drop"].forEach(k=>zone.addEventListener(k, e=>{
+    e.preventDefault();
+    if(k==="dragleave" && zone.contains(e.relatedTarget)) return;
+    zone.classList.remove("on");
+  }));
+  zone.addEventListener("drop", e=>{
+    const dt=e.dataTransfer;
+    if(dt && dt.files && dt.files.length) take(dt.files);
+  });
+  /* A zip dropped an inch wide of the target is a browser navigating away to open it, and a
+     day's work replaced by a directory listing. Missing the box has to cost nothing. */
+  if(!window.__thriveDropGuard){
+    window.__thriveDropGuard=1;
+    ["dragover","drop"].forEach(k=>document.addEventListener(k, e=>{
+      if(e.target.closest && e.target.closest("#intakeZone")) return;
+      e.preventDefault();
+    }));
+  }
+  onThrive("lang","intake", ()=>{ if(found) review(); });
 }
 
 /* ---------- running a lifecycle move ----------
@@ -3800,7 +3968,8 @@ function initModal(){
     if(o.template) rows.push(row(t("mw_o_tpl"), esc(o.template)));
     if(o.sent_on) rows.push(row(t("mw_o_made"), ltr(o.sent_on)));
     rows.push(row(t("mw_o_page"), isLive(o)
-      ? '<a href="'+esc(liveUrl(o.slug))+'" target="_blank" rel="noopener">'+ltr(liveUrl(o.slug))+'</a>'
+      ? '<a class="has-ic" href="'+esc(liveUrl(o.slug))+'" target="_blank" rel="noopener">'+
+        (typeof thriveIcon==="function"? thriveIcon("globe",{size:14}) : "")+ltr(liveUrl(o.slug))+'</a>'
       : '<span class="mw-muted">'+esc(t("mw_o_unpub"))+'</span>'));
     box.innerHTML=prohibitionBand(o)+recordNotes(o)+
       '<dl class="mw-rows">'+rows.join("")+'</dl>'+movesBar(o);
