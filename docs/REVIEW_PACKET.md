@@ -15,13 +15,13 @@ Each branch is cut from the one above it. **Merging out of order will conflict.*
 
 | # | Phase | Branch | Base | Pull request |
 |---|---|---|---|---|
-| 1 | 2 · Vocabulary, symbols, and where a merge goes | `wo012-p2-vocab-icons` | `main` | #PR2 |
-| 2 | 3 · The day's batch, from the real manifest | `wo012-p3-import` | `wo012-p2-vocab-icons` | #PR3 |
-| 3 | 4 · Two language axes that never touch | `wo012-p4-locales` | `wo012-p3-import` | #PR4 |
-| 4 | 5 · A card moves three ways | `wo012-p5-movement` | `wo012-p4-locales` | #PR5 |
-| 5 | 6 · One definition per number | `wo012-p6-numbers` | `wo012-p5-movement` | #PR6 |
-| 6 | 7 · The inventory and the ledger | `wo012-p7-inventory` | `wo012-p6-numbers` | #PR7 |
-| 7 | 8 · Simplification | `wo012-p8-simplify` | `wo012-p7-inventory` | #PR8 |
+| 1 | 2 · Vocabulary, symbols, and where a merge goes | `wo012-p2-vocab-icons` | `main` | #16 |
+| 2 | 3 · The day's batch, from the real manifest | `wo012-p3-import` | `wo012-p2-vocab-icons` | #17 |
+| 3 | 4 · Two language axes that never touch | `wo012-p4-locales` | `wo012-p3-import` | #18 |
+| 4 | 5 · A card moves three ways | `wo012-p5-movement` | `wo012-p4-locales` | #19 |
+| 5 | 6 · One definition per number | `wo012-p6-numbers` | `wo012-p5-movement` | #20 |
+| 6 | 7 · The inventory and the ledger | `wo012-p7-inventory` | `wo012-p6-numbers` | #21 |
+| 7 | 8 · Simplification | `wo012-p8-simplify` | `wo012-p7-inventory` | #22 |
 
 Phase 1 is already on `main` as #15.
 
