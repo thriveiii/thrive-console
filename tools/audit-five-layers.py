@@ -162,8 +162,16 @@ with sync_playwright() as p:
         ck(5,tag+": its margins are equal on both sides",
            pg.evaluate("""(w)=>{const r=document.getElementById('modal').getBoundingClientRect();
              return Math.abs(r.left-(w-r.right))<=2;}""", w))
-        ck(5,tag+": it never exceeds 88vh",
-           pg.evaluate("()=>document.getElementById('modal').getBoundingClientRect().height<=innerHeight*0.881"))
+        # The 88vh cap is a rule about the centred window. Below 720 the same component is a
+        # full height sheet on the bottom edge, on purpose, so the cap does not apply and
+        # asserting it there was the assertion being wrong rather than the window.
+        if w > 720:
+            ck(5,tag+": it never exceeds 88vh",
+               pg.evaluate("()=>document.getElementById('modal').getBoundingClientRect().height<=innerHeight*0.881"))
+        else:
+            ck(5,tag+": it is a full height sheet on the bottom edge",
+               pg.evaluate("""()=>{const r=document.getElementById('modal').getBoundingClientRect();
+                 return (innerHeight-r.bottom)<=1 && r.height>=innerHeight*0.9;}"""))
         ck(1,tag+": all five tabs are there",
            pg.eval_on_selector_all("#modalTabs .modal-tab","e=>e.length")==5)
         ck(5,tag+": the board behind it cannot be scrolled",

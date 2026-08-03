@@ -3653,11 +3653,28 @@ function initModal(){
     else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
     else if(!modal.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
   });
-  onThrive("lang","modal",()=>{ if(open_) switchTo(currentTab()); });
   function currentTab(){
     const on=modal.querySelector(".modal-tab.on");
     return on? on.getAttribute("data-tab") : "overview";
   }
+  /* Switching language re-renders only what this window draws itself.
+     It must NOT re-run switchTo, and the reason is worth keeping: a borrowed tab resets its
+     view to boot markup, resetting calls applyLang so the restored markup is translated,
+     applyLang fires every lang hook, and this is one of them. Calling switchTo from here was
+     therefore a loop through applyLang that ended in "Maximum call stack size exceeded" and a
+     tab strip one click behind itself. A borrowed view has already been retranslated by the
+     applyLang that got us here, so there is nothing left for this hook to do to it. */
+  onThrive("lang","modal",()=>{
+    if(!open_) return;
+    const pill=el("modalState");
+    if(pill && rec){ const st=effStage(rec); pill.textContent=stageName(st); }
+    copyState();
+    const tab=currentTab();
+    if(BORROWED[tab]) return;
+    if(tab==="overview") renderOverview(rec);
+    else if(tab==="text") renderText();
+    else renderHistory(rec);
+  });
 
   window.thriveModal={ open:open, close:close, isOpen:()=>open_ };
   return window.thriveModal;
