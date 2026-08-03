@@ -17,7 +17,7 @@ Five durations. Nothing outside this scale.
 | `--t-instant` | `90ms` | Hover, focus ring, press feedback, colour change on a small object |
 | `--t-quick` | `160ms` | State change on one object: a token gaining a stall ring, a count updating |
 | `--t-base` | `240ms` | View crossfade, tray expand, token moving between lanes |
-| `--t-slow` | `320ms` | Drawer open and close |
+| `--t-slow` | `320ms` | Reserved. The opportunity window uses `--t-base`, see 4.2 |
 | `--t-page` | `420ms` | Reserved. Nothing currently uses it. Do not spend it casually |
 
 Three easings. Nothing outside this set.
@@ -39,7 +39,7 @@ finish leaving is the most common way an interface feels slow.
 Only two properties: `transform` and `opacity`. Plus `border-color`, `background-color`, and
 `box-shadow` on small objects at `--t-instant`.
 
-**Rule 2.1.** Translation is capped at `8px` for reveals and `12px` for the drawer content.
+**Rule 2.1.** Translation is capped at `8px` for reveals and `10px` for the opportunity window.
 Large travel reads as theatre.
 
 **Rule 2.2.** Scale is capped between `0.98` and `1.0`. Anything more and the object appears to
@@ -79,24 +79,43 @@ The rationale for a fade rather than a slide: the board, the library, and settin
 stack with a forward and a back. They are places. Sliding implies a hierarchy that does not
 exist, and it forces a direction decision in RTL that has no correct answer.
 
-### 4.2 Drawer
+### 4.2 The opportunity window
 
 ```
-scrim:   opacity 0 → 1,                    --t-quick, --e-standard
-panel:   translateX(±16px → 0),
-         opacity 0 → 1,                    --t-slow,  --e-enter
-content: translateY(8px → 0), opacity 0 → 1, --t-base, --e-enter, delay 60ms
+backdrop: opacity 0 → 1,                     --t-quick, --e-enter
+window:   opacity 0 → 1,
+          translateY(10px → 0),
+          scale(.985 → 1),                   --t-base,  --e-enter
 ```
 
-The panel enters from the inline-end edge. Use `translateX` with a sign derived from
-`document.dir`, or better, use a CSS custom property set once at the root so the components
-never branch.
+On close, backdrop and window leave together at 70% of their enter duration with `--e-exit`.
+Leaving is one gesture. There is no separate content transition: the window is one object.
 
-On close, panel and scrim leave together at `--t-slow × 0.7` with `--e-exit`. The content does
-not animate out separately. Leaving is one gesture.
+Only `transform` and `opacity` are animated. Never `width`, `height`, `top`, `left`, `margin`,
+`padding`, or `font-size`, per §3. Those are laid out, and animating a laid-out property makes
+the browser recompute the page on every frame while the reader watches.
 
-**Focus.** On open, focus moves to the drawer's first interactive element. On close, focus
-returns to the token that opened it. `Escape` closes. The scrim is clickable and closes.
+There is no slide from an edge, no spring, and no easing that overshoots. The window is not
+arriving from somewhere: it is becoming present where the reader is already looking. Ten pixels
+of lift is enough to say so, and it removes the direction decision that a horizontal slide
+forces in RTL and answers wrongly half the time.
+
+The bottom sheet below `720px` uses this same transition unchanged. Its resting position is the
+bottom edge; it does not slide up from beyond it.
+
+**Focus.** On open, focus moves to the window's first interactive element. On close, focus
+returns to the card that opened it. `Escape` closes. The backdrop is clickable and closes. Body
+scroll is locked while it is open and the scroll position is restored on close, because fixing
+the body is what actually holds on iOS and fixing it costs the position.
+
+**Why this replaced the drawer**, kept because the reason outlives the rule. The drawer was
+specified when the opportunity view was mostly a single action, and for a single action an edge
+panel is right: it is close to the card you came from and it leaves the board visible. The view
+became a workspace with several tabs. A 580px column pinned to the edge of a 1440px screen
+pushes the eye sideways while the board sits idle behind it, and the problem grows with every
+tab added: the column cannot widen without becoming the screen, and the content cannot narrow
+without becoming a phone layout on a desktop. The generalisation: **an edge panel is for one
+action, a centred window is for a workspace.**
 
 ### 4.3 Token moving between lanes (FLIP)
 
@@ -151,9 +170,11 @@ The existing toast already rises 10px and fades over 250ms. Retokenise it to `--
 }
 ```
 
-Then restore opacity-only transitions at `--t-instant` for the view crossfade and the drawer,
-because an instant hard cut between full-screen surfaces is disorienting even for people who
-asked for less motion. Opacity is not what causes vestibular trouble. Travel is.
+Then restore opacity-only transitions: `--t-instant` for the view crossfade, and `--t-quick`
+for the opportunity window, which is the larger surface and needs the longer of the two to read
+as a change rather than a flicker. An instant hard cut between full-screen surfaces is
+disorienting even for people who asked for less motion. Opacity is not what causes vestibular
+trouble. Travel is, so the transform is what goes.
 
 The console already pauses the logo spin when the tab is hidden via `html.tab-hidden`. Keep
 that, and extend the same idea: do not run entrance staggers for a view the user cannot see.

@@ -56,6 +56,24 @@ collapsed tray below the board. Their counts stay visible, their tokens do not.
 messaging performing". That question keeps its own surface. Do not fix the board's weakness by
 crowding it, because the crowding is exactly what this redesign removed.
 
+**Law 3.6.** Opening an opportunity opens one centred window, never an edge panel.
+
+It is `min(920px, 92vw)` wide, capped at `88vh`, with equal margins on all four sides, over a
+dimmed and blurred backdrop. Its header and its tab strip are fixed; only its body scrolls.
+Below `720px` it becomes a full height sheet on the bottom edge with the same header and the
+same tabs. That is one component with two sets of values, not two components.
+
+The tabs are Overview, Text, Page, Outreach, History. They are nouns, because a tab strip is a
+place you are, and a verb reads as a button you press.
+
+**Law 3.7.** The window BORROWS the editor and the composer by moving their nodes into itself.
+It never copies their markup, and it returns them the moment anything else needs them.
+
+Two copies of the composer means two elements carrying the same ids and a send button belonging
+to whichever loaded last. This is not theoretical: re-running a view's init over a DOM that init
+had already wired gave every control in it a second listener, and one click on Copy wrote two
+ledger rows. A view handed to a borrower is reset to its boot markup before its init runs again.
+
 ## 4. The colour law
 
 The Thrive gradient is `#72BECE → #5D7FB7 → #9685CA → #EE8C9D → #A78CA7 → #71BFCC`. In the
@@ -95,8 +113,8 @@ The palette earns its saturation by spending almost none of it on surfaces.
 **Law 5.1.** Three levels of visual weight exist, and only three.
 
 - **Surface.** Background and panels. Hairline borders at 10% white. No shadow.
-- **Object.** Tokens, cards, drawer. One border, one radius, and elevation only while moving
-  or while raised by interaction.
+- **Object.** Tokens, cards, the opportunity window. One border, one radius, and elevation
+  only while moving or while raised by interaction.
 - **Accent.** Exactly one element per screen may carry the full gradient or Syne 800.
 
 **Law 5.2.** A new component picks a level before it picks a style. If it cannot be placed in
@@ -237,6 +255,15 @@ Anything that is charming once and slow forever fails here.
   A separate mobile layout would be two designs to keep honest, and one of them would rot.
 - **Charts.** Not on the board. Charts answer "how is it going", the board answers "what needs
   me". They belong on the Overview surface which is retained for exactly this reason.
+- **A surface that grows a second tab.** Ask what it has become. An edge panel is for one
+  action; a centred window is for a workspace. This is the rule the opportunity drawer produced
+  on 2 August 2026, and the reason is worth keeping: the drawer was correct when opening an
+  opportunity meant one action, because an edge panel sits close to the card you came from and
+  leaves the board visible. Once the view carried several tabs it was a workspace, and a 580px
+  column pinned to the edge of a 1440px screen pushes the eye sideways while the board sits idle
+  behind it. The failure compounds: the column cannot widen without becoming the screen, and the
+  content cannot narrow without becoming a phone layout on a desktop. Do not wait for the third
+  tab to notice.
 - **Dark and light themes.** The console is dark by intent, not by fashion. It is used in the
   evening, and near-black surfaces let the lane colours carry meaning at low saturation. A
   light theme would need the entire §4 table re-derived for contrast, so it is a project, not
