@@ -216,11 +216,17 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
         <button id="mode_upload" data-i18n="mode_upload">Upload HTML</button>
       </div>
 
-      <h4 class="sec-h" data-i18n="ed_sec_setup">Template &amp; mode</h4>
-      <div class="field" id="templateField"><label for="f_template" data-i18n="f_template">Template</label>
+      <!-- Four groups, not twelve loose fields. Identity and Content are open because they are
+           what you are here to fill in; Proof and Publishing wait, because they are real and
+           occasional. WO-012 §7.3: the "too many boxes" complaint is a grouping problem. -->
+      <h4 class="sec-h" data-icon="edit" data-i18n="ed_g_identity">Identity</h4>
+      <div class="field" id="templateField"><label for="f_template" data-i18n="f_template">Page template</label>
         <select id="f_template"><option value="en-opp1">en-opp1 · The Signal Brief (EN)</option><option value="ar-opp1">ar-opp1 · موجز الإشارة (AR)</option></select></div>
-
-      <h4 class="sec-h" data-i18n="ed_sec_basics">Basics</h4>
+      <!-- Never ambiguous which library you are editing, and never inherited from the chrome. -->
+      <div class="field"><label for="f_doclang" data-i18n="loc_doc">Document language</label>
+        <select id="f_doclang"><option value="EN">English</option><option value="AR">العربية</option></select>
+        <div class="hint" data-i18n="loc_doc_sub"></div></div>
+      <span class="loc-badge" id="edLocBadge" hidden></span>
       <div class="field req"><label for="f_biz" data-i18n="f_biz">Business name</label><input id="f_biz" class="input" autocomplete="off"></div>
       <div class="field"><label for="f_slug" data-i18n="f_slug">Link slug</label><input id="f_slug" class="input" autocomplete="off">
         <div class="hint" data-i18n="f_slughint"></div>
@@ -230,6 +236,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
            is the name, the link, the three things you built and the busier-pair. The date, the
            location, the phone and the quote are real and optional, so they wait behind one
            disclosure that counts how many of them you have filled in. -->
+      <h4 class="sec-h" data-icon="check" data-i18n="ed_g_proof">Proof</h4>
       <div class="bar" style="margin:0 0 12px">
         <button class="btn ghost sm" id="edMoreBtn" aria-expanded="false" aria-controls="edMore" data-icon="filter" data-i18n="lib_more">More</button>
       </div>
@@ -243,7 +250,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       </div>
 
       <div id="fillFields">
-        <h4 class="sec-h" data-i18n="ed_sec_content">Content</h4>
+        <h4 class="sec-h" data-icon="text" data-i18n="ed_g_content">Content</h4>
         <div class="field req"><label for="f_proof1" data-i18n="f_proof1">What you built · 1</label><textarea id="f_proof1" rows="2"></textarea></div>
         <div class="field req"><label for="f_proof2" data-i18n="f_proof2">What you built · 2</label><textarea id="f_proof2" rows="2"></textarea></div>
         <div class="field req"><label for="f_proof3" data-i18n="f_proof3">What you built · 3</label><textarea id="f_proof3" rows="2"></textarea></div>
@@ -261,7 +268,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     </div>
 
     <div class="preview">
-      <h4 class="sec-h" data-i18n="ed_sec_publish">Preview &amp; publish</h4>
+      <h4 class="sec-h" data-icon="send" data-i18n="ed_g_publish">Publishing</h4>
       <div class="bar"><span class="urlpill" id="urlpill">https://console.thriveiii.com/opp/</span></div>
       <div class="bar">
         <div class="devtoggle">

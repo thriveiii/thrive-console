@@ -584,8 +584,19 @@ def gate8(b):
     ck("and the message tab shows message templates and hides page templates",
        pg.evaluate("()=>!document.querySelector('[data-tplpane=\\'mail\\']').hidden") and
        pg.evaluate("()=>document.querySelector('[data-tplpane=\\'page\\']').hidden"))
-    n = pg.evaluate("()=>document.querySelectorAll('#emailTplList .item').length")
-    ck("there is more than one message to choose between", n >= 4, n)
+    # Written when the message library was one combined list of six, so it asked for four.
+    # Phase 4 split it into two libraries of three, and a tab showing three is correct rather
+    # than short. Asserted per library instead, and stricter than the old form: BOTH have to
+    # hold a real set, so three English and an empty Arabic tab now fails where 6 >= 4 passed.
+    per = {}
+    for L in ("EN", "AR"):
+        pg.click(f"#emailTplList .loc-tabs [data-loc='{L}']")
+        pg.wait_for_timeout(700)
+        per[L] = pg.evaluate("()=>document.querySelectorAll('#emailTplList .item').length")
+    ck("there is more than one message to choose between, in each library",
+       per["EN"] >= 3 and per["AR"] >= 3, per)
+    pg.click("#emailTplList .loc-tabs [data-loc='EN']")
+    pg.wait_for_timeout(700)
     kinds = pg.evaluate("()=>[...document.querySelectorAll('#emailTplList .id')].map(e=>e.textContent)")
     ck("each one says it is a message, not a page", all("EMAIL" in k or "MESSAGE" in k for k in kinds), kinds[:4])
 

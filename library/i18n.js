@@ -458,6 +458,32 @@ const I18N = {
     set_quota_monthly: "Monthly cap",
     clear_filters: "Clear filters",
 
+    /* ---- two libraries, one per document language -------------------------- */
+    loc_en:        "English",
+    loc_ar:        "العربية",
+    loc_h:         "Which language is this document in?",
+    loc_sub:       "The document language sets the direction, the typeface and the typography rules. It has nothing to do with the language the console is in.",
+    loc_need:      "Choose a language before saving.",
+    loc_badge:     "Document language",
+    loc_empty_en:  "No English templates here yet.",
+    loc_empty_ar:  "No Arabic templates here yet. Write them when you need them: a shelf of translated English is worse than an empty one that says so.",
+    loc_counter:   "in this language",
+    loc_counterpart:"Create the Arabic counterpart",
+    loc_counterpart_en:"Create the English counterpart",
+    loc_counterpart_made:"Created, with the structure and no content. Nothing was translated.",
+    loc_mig_h:     "These need a language",
+    loc_mig_sub:   "The console read each one and guessed. Confirm or change it. Nothing is assigned until you do.",
+    loc_mig_detected:"read as",
+    loc_mig_save:  "Confirm these",
+    loc_mig_done:  "Languages set.",
+    loc_doc:       "Document language",
+    loc_doc_sub:   "Sets the page direction and which message templates are offered for this opportunity.",
+    /* ---- the editor, grouped ----------------------------------------------- */
+    ed_g_identity: "Identity",
+    ed_g_content:  "Content",
+    ed_g_proof:    "Proof",
+    ed_g_publish:  "Publishing",
+
     /* ---- the day's batch --------------------------------------------------- */
     in_h:        "Today's batch",
     in_p:        "Drop a zip, a page, or a page with its manifest. Nothing is written until you have read the report.",
@@ -1134,6 +1160,30 @@ const I18N = {
     set_quota_monthly: "السقف الشهري",
     clear_filters: "مسح الفلاتر",
 
+    loc_en:        "English",
+    loc_ar:        "العربية",
+    loc_h:         "بأي لغة هذا المستند؟",
+    loc_sub:       "لغة المستند تحدّد الاتجاه والخط وقواعد الطباعة. لا علاقة لها بلغة واجهة الكونسول.",
+    loc_need:      "اختر لغة قبل الحفظ.",
+    loc_badge:     "لغة المستند",
+    loc_empty_en:  "لا قوالب إنجليزية هنا بعد.",
+    loc_empty_ar:  "لا قوالب عربية هنا بعد. اكتبها حين تحتاجها: رفّ من إنجليزية مترجَمة أسوأ من رفّ فارغ يقول ذلك.",
+    loc_counter:   "بهذه اللغة",
+    loc_counterpart:"أنشئ النظير العربي",
+    loc_counterpart_en:"أنشئ النظير الإنجليزي",
+    loc_counterpart_made:"أُنشئ بالبنية وبلا محتوى. لم يُترجَم شيء.",
+    loc_mig_h:     "هذه تحتاج لغة",
+    loc_mig_sub:   "قرأ الكونسول كل واحد وخمّن. أكّد أو غيّر. لا يُسنَد شيء حتى تفعل.",
+    loc_mig_detected:"قُرئ على أنه",
+    loc_mig_save:  "أكّد هذه",
+    loc_mig_done:  "ضُبطت اللغات.",
+    loc_doc:       "لغة المستند",
+    loc_doc_sub:   "تحدّد اتجاه الصفحة وأي قوالب رسائل تُعرض لهذه الفرصة.",
+    ed_g_identity: "الهوية",
+    ed_g_content:  "المحتوى",
+    ed_g_proof:    "الإثبات",
+    ed_g_publish:  "النشر",
+
     in_h:        "دفعة اليوم",
     in_p:        "أفلت ملف zip أو صفحة أو صفحة مع ملف تعليماتها. لا يُكتب شيء قبل أن تقرأ التقرير.",
     in_pick:     "اختر الملفات",
@@ -1555,6 +1605,8 @@ var I18N_BOARD = {
     tok_views:      { one:"no email yet, {n} view", other:"no email yet, {n} views" },
     tok_answered:   "answered",
 
+    loc_count: { one:"{n} template", other:"{n} templates" },
+
     in_found:  { one:"{n} opportunity read.", other:"{n} opportunities read." },
     in_added:  { one:"{n} opportunity imported into Draft.", other:"{n} opportunities imported into Draft." },
 
@@ -1768,6 +1820,11 @@ var I18N_BOARD = {
       few:"بلا رسالة، {n} مشاهدات", many:"بلا رسالة، {n} مشاهدة", other:"بلا رسالة، {n} مشاهدة"
     },
     tok_answered: "ردّ",
+
+    loc_count: {
+      one:"قالب واحد", two:"قالبان",
+      few:"{n} قوالب", many:"{n} قالبًا", other:"{n} قالب"
+    },
 
     in_found: {
       one:"قُرئت فرصة واحدة.", two:"قُرئت فرصتان.",

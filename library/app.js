@@ -1303,18 +1303,43 @@ async function initEditor(slugArg){
     const warn=el("slugWarn"); if(!warn) return;
     warn.hidden = !collides();
   }
+  /* The direction, the typeface and the typography rules come from the document's own language,
+     not from the chrome. Thyab can work in Arabic chrome on an English opportunity and nothing
+     about the document changes, which is the whole point of separating the two axes. */
+  function applyDocLang(){
+    const sel=el("f_doclang"); if(!sel) return;
+    const L=(sel.value||"EN").toUpperCase();
+    const badge=el("edLocBadge");
+    if(badge){
+      badge.hidden=false;
+      badge.textContent=t("loc_badge")+": "+t("loc_"+L.toLowerCase());
+      badge.className="loc-badge loc-"+L.toLowerCase();
+    }
+    ["f_biz","f_quote","f_quoteby","f_proof1","f_proof2","f_proof3","f_want"].forEach(id=>{
+      const n=el(id); if(!n) return;
+      n.setAttribute("dir", dirOf(L));
+      n.classList.toggle("doc-ar", L==="AR");
+    });
+    /* Identity fields stay left to right in both, because a slug, a URL, an address and a date
+       are read the same way whatever the document says. */
+    ["f_slug","f_sent","f_phone"].forEach(id=>{ const n=el(id); if(n) n.setAttribute("dir","ltr"); });
+  }
   function refreshMeta(){ el("urlpill").textContent = liveUrl(curSlug()||"<name>"); checkCollision(); }
   async function refreshPreview(){ const html=await currentHTML(); el("frame").srcdoc = html || "<!doctype html><meta charset='utf-8'>"; }
   async function refresh(){ refreshMeta(); await refreshPreview(); }
   const debPreview=debounce(refreshPreview, 220);   // perf: don't regenerate the heavy preview on every keystroke
   function refreshLive(){ refreshMeta(); debPreview(); }
   let editingLive=false;
+  applyDocLang();
+  const dlSel=el("f_doclang");
+  if(dlSel) dlSel.addEventListener("change", ()=>{ applyDocLang(); debPreview&&debPreview(); });
   function record(){
     const slug = curSlug(); const v=values();
     return { slug, business:el("f_biz").value.trim(),
       template: mode==="upload"?"custom":el("f_template").value,
       sent_on:el("f_sent").value, location:el("f_location").value.trim(),
       phone:el("f_phone").value.trim(), status:"sent", mode:mode, published:editingLive,
+      doc_lang:(el("f_doclang")&&el("f_doclang").value)||"EN",
       fields:{ QUOTE:v.QUOTE, QUOTE_BY:v.QUOTE_BY, PROOF1:v.PROOF1, PROOF2:v.PROOF2, PROOF3:v.PROOF3, WANT:v.WANT } };
   }
   // store the page HTML only for uploads (template drafts regenerate on demand, which saves storage)
@@ -1431,6 +1456,9 @@ async function initEditor(slugArg){
       el("f_biz").value=d.business||""; el("f_slug").value=d.slug; el("f_slug").dataset.touched="1";
       el("f_sent").value=d.sent_on||el("f_sent").value; el("f_location").value=d.location||""; el("f_phone").value=d.phone||"";
       if(d.template && d.template!=="custom"){ el("f_template").value=d.template; }
+      /* The document's own language, explicit if it has one and inferred if it does not, but
+         never taken from the chrome. */
+      if(el("f_doclang")){ el("f_doclang").value=docLang(d); applyDocLang(); }
       const hasFields = d.fields && Object.keys(d.fields).some(k=>d.fields[k]);
       // restore an uploaded/custom page so editing keeps its content
       if((d.mode==="upload" || d.template==="custom") && d.html){
@@ -1712,23 +1740,23 @@ function brandWrap(inner, branded){
 const ETPL = "thrive_email_templates_v1";
 /* The monthly template is month-aware ({{MONTH}}: the composer asks which month) and ships
    with NO embedded opportunity link: the writer decides which words carry it (guided flow). */
-const ETPL_MONTHLY = { id:"monthly", name:"Monthly update", subject:"{{MONTH}} at Thrive",
+const ETPL_MONTHLY = { id:"monthly", locale:"EN", name:"Monthly update", subject:"{{MONTH}} at Thrive",
   html:'Hi {{NAME}},<br><br>End of the month, so here is {{MONTH}} at Thrive. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com' };
 /* Arabic edition of the stock template, a real Arabic message, not a translation of labels
    around English text. Greeting is «مرحبًا فلان،», not "Hi …". */
-const ETPL_MONTHLY_AR = { id:"monthly-ar", name:"التحديث الشهري", subject:"{{MONTH}} في ثرايف",
+const ETPL_MONTHLY_AR = { id:"monthly-ar", locale:"AR", name:"التحديث الشهري", subject:"{{MONTH}} في ثرايف",
   html:'مرحبًا {{NAME}}،<br><br>مع نهاية الشهر، هذا هو {{MONTH}} في ثرايف. نحن نختار العمل الذي نفخر به. إن كان ذلك يناسبك، تكفي كلمة.<br><br>إلى الشهر القادم!<br><br>عبدالله ذياب<br>thriveiii.com' };
 /* The two that matter on the day you publish a page: the message that sends it, and the one
    that follows up when nothing came back. Both carry the link inside real words rather than
    as a bare URL, and neither states anything about the recipient: every fact in them is a
    merge field or something you type. They are a starting point, and you edit them. */
-const ETPL_OPP = { id:"opp-intro", name:"Send an opportunity page", subject:"{{BIZ}} x Thrive",
+const ETPL_OPP = { id:"opp-intro", locale:"EN", name:"Send an opportunity page", subject:"{{BIZ}} x Thrive",
   html:'Hi {{NAME}},<br><br>I put together <a href="{{LINK}}">a short page for {{BIZ}}</a>. One screen, no form to fill in. It says what I noticed and what I would do about it.<br><br>If it is worth a conversation, just reply. If not, no reply needed.<br><br>Abdullah Thyab<br>thriveiii.com' };
-const ETPL_OPP_AR = { id:"opp-intro-ar", name:"إرسال صفحة فرصة", subject:"{{BIZ}} مع ثرايف",
+const ETPL_OPP_AR = { id:"opp-intro-ar", locale:"AR", name:"إرسال صفحة فرصة", subject:"{{BIZ}} مع ثرايف",
   html:'مرحبًا {{NAME}}،<br><br>أعددت <a href="{{LINK}}">صفحة قصيرة لـ {{BIZ}}</a>. شاشة واحدة، بلا نموذج تملؤه. فيها ما لاحظته وما أقترح فعله.<br><br>إن كانت تستحق حديثًا، يكفي أن تردّ. وإن لم تكن، فلا حاجة للرد.<br><br>عبدالله ذياب<br>thriveiii.com' };
-const ETPL_NUDGE = { id:"opp-nudge", name:"Follow up once", subject:"Re: {{BIZ}} x Thrive",
+const ETPL_NUDGE = { id:"opp-nudge", locale:"EN", name:"Follow up once", subject:"Re: {{BIZ}} x Thrive",
   html:'Hi {{NAME}},<br><br>Bringing <a href="{{LINK}}">the page for {{BIZ}}</a> back to the top of your inbox, in case it arrived on a busy day.<br><br>If the timing is wrong, tell me and I will leave it there.<br><br>Abdullah Thyab<br>thriveiii.com' };
-const ETPL_NUDGE_AR = { id:"opp-nudge-ar", name:"متابعة واحدة", subject:"إعادة: {{BIZ}} مع ثرايف",
+const ETPL_NUDGE_AR = { id:"opp-nudge-ar", locale:"AR", name:"متابعة واحدة", subject:"إعادة: {{BIZ}} مع ثرايف",
   html:'مرحبًا {{NAME}}،<br><br>أعيد <a href="{{LINK}}">صفحة {{BIZ}}</a> إلى أعلى بريدك، فربما وصلت في يوم مزدحم.<br><br>وإن كان التوقيت غير مناسب، أخبرني وأتركها عند هذا الحد.<br><br>عبدالله ذياب<br>thriveiii.com' };
 
 /* Which stock templates this console has already been offered. Without it, deleting one
@@ -2076,11 +2104,23 @@ async function initCompose(slugArg){
   function clearCompose(){ subjectDirty=false; el("esubject").value=""; body.innerHTML=""; if(monthWrap) monthWrap.hidden=true; refreshLinks(); }
   if(tplSel){
     const plainOpt=document.createElement("option"); plainOpt.value=""; plainOpt.textContent=t("cmp_no_tpl"); plainOpt.setAttribute("data-i18n","cmp_no_tpl"); tplSel.appendChild(plainOpt);
-    tplCache.forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
+    /* The drop-down obeys the same rule as the chips. Two controls offering different sets is
+       how a person learns to distrust both. */
+    const preT=params.get("etpl");
+    /* An explicit ask outranks an inference. "Compose with" names one template, and if the
+       drop-down is filtered to the other library the ask is silently dropped: the composer
+       opens blank with no word about why. So when a template is named, the locale of THAT
+       template is the locale of the list. Inference is only for when nobody said. */
+    const askedTpl = preT ? tplCache.find(tp=>tp.id===preT) : null;
+    const localeOfTpl = tp=>(localeOf(tp) || (isArabicText((tp.subject||"")+(tp.html||"")) ? "AR" : "EN"));
+    const selWant = askedTpl ? localeOfTpl(askedTpl)
+                  : oppObj ? docLang(oppObj)
+                  : (getLang()==="ar" ? "AR" : "EN");
+    tplCache.filter(tp=>localeOfTpl(tp)===selWant)
+      .forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
     // ALWAYS start blank: an empty editor with no template. A template is only pre-selected when
     // the writer explicitly asked for one via ?etpl=<id> (e.g. "Compose with" from Templates).
     tplSel.value="";
-    const preT=params.get("etpl");
     if(preT && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
     tplSel.addEventListener("change",()=>{
       if(tplSel.value===""){ clearCompose(); }        // plain: back to an empty editor
@@ -2097,14 +2137,21 @@ async function initCompose(slugArg){
     if(!quickBox) return;
     const empty = !(body.textContent||"").trim() && !(el("esubject").value||"").trim();
     if(!empty || !tplCache.length){ quickBox.hidden=true; quickBox.innerHTML=""; return; }
-    const ar=getLang()==="ar";
+    /* One locale, never a mixed row. Which locale is a property of the OPPORTUNITY when there
+       is one, and of the chrome only when there is not. This is the leak WO-012 §7 opens with:
+       the English composer offering «التحديث الشهري» beside Monthly update was one variable
+       doing two jobs, not a translation problem. */
+    const want = oppObj ? docLang(oppObj) : (getLang()==="ar" ? "AR" : "EN");
+    const inLocale = tp => (localeOf(tp) || (isArabicText((tp.subject||"")+(tp.html||"")) ? "AR" : "EN")) === want;
+    const pool = tplCache.filter(inLocale);
     const score=tp=>{
-      const isAr=/[؀-ۿ]/.test((tp.subject||"")+(tp.html||""));
-      let n = (isAr===ar) ? 0 : 4;                       // your language first
-      if(/\{\{LINK\}\}/.test(tp.html||"") && slug) n-=2;  // then the ones that carry this page
+      let n=0;
+      if(/\{\{LINK\}\}/.test(tp.html||"") && slug) n-=2;  // the ones that carry this page first
       return n;
     };
-    const list=tplCache.slice().sort((a,b)=>score(a)-score(b)).slice(0,4);
+    const list=pool.slice().sort((a,b)=>score(a)-score(b)).slice(0,4);
+    /* An empty shelf that says nothing is better than a shelf of the wrong language. */
+    if(!list.length){ quickBox.hidden=true; quickBox.innerHTML=""; return; }
     quickBox.hidden=false;
     quickBox.innerHTML='<span class="etpl-quick-h">'+esc(t("cmp_quick_h"))+'</span>'+
       list.map(tp=>'<button type="button" class="lp" data-quick="'+esc(tp.id)+'">'+esc(tp.name||tp.id)+'</button>').join("");
@@ -2656,33 +2703,44 @@ function initTemplates(){
       </div>`).join("");
   }
   function renderCustom(){
-    const list=getCustomTemplates();
-    if(!list.length){ el("customList").innerHTML='<div class="empty">'+t("tpl_none")+'</div>'; return; }
-    el("customList").innerHTML = list.map(ct=>`
-      <div class="item">
-        <div class="thumb"><iframe srcdoc="${esc(ct.html||"").slice(0,200000).replace(/"/g,'&quot;')}" loading="lazy" title="${esc(ct.id)}"></iframe></div>
-        <div class="item-body">
-          <div class="id">${esc(ct.id)} · ${esc(ct.lang||"EN")}</div>
-          <h3>${esc(ct.name||ct.id)}</h3>
-          <span class="badge edit">${t("tpl_badge_custom")}</span>
-          <p class="meta-line">${t("act_upload")}: ${esc((ct.created||"").slice(0,10))||t("none")} · ${Math.round((ct.html||"").length/1024)} KB</p>
-          <div class="actions">
-            <a class="btn sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("use_template")}</a>
+    const all=getCustomTemplates();
+    const list=localeTemplates(all, localeTab());
+    const host=el("customList");
+    host.innerHTML=localeTabBar("tplLocTabs")+
+      (list.length? list.map(ct=>`
+        <div class="tpl">
+          <div class="tpl-b">
+            <div class="name">${esc(ct.name||ct.id)}</div>
+            <div class="id">${esc(ct.id)} · ${esc(localeOf(ct)||"")}</div>
+          </div>
+          <div class="tpl-a">
+            <a class="btn ghost sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("use_template")}</a>
+            <button class="btn ghost sm" data-cp="${esc(ct.id)}">${t(localeTab()==="EN"?"loc_counterpart":"loc_counterpart_en")}</button>
+            <button class="btn ghost sm" data-pubtpl="${esc(ct.id)}">${t("publish")}</button>
             <button class="btn ghost sm" data-dl="${esc(ct.id)}">${t("dl_template")}</button>
-            ${ghReady()?`<button class="btn ghost sm" data-pubtpl="${esc(ct.id)}">${t("tpl_publish")}</button>`:""}
             <button class="btn ghost sm danger" data-del="${esc(ct.id)}">${t("tpl_delete")}</button>
           </div>
-        </div>
-      </div>`).join("");
-    /* Deleting a page template must never change a page that has already gone out. The built
-       pages stay exactly as they are and are flagged instead, so the modal can say where they
-       came from without pretending the template is still there.
-
-       Drafts are the one case that genuinely breaks: a draft has no built html and regenerates
-       from its template every time it is opened, so deleting the template underneath it leaves
-       a record that cannot produce a page. Those block the deletion, and the count is named,
-       because "cannot delete" without a number is a dead end rather than an instruction. */
-    el("customList").querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click", async ()=>{
+        </div>`).join("") : "")+
+      localeEmpty(localeTab(), list.length)+
+      migrationPanel();
+    if(typeof applyIcons==="function") applyIcons(host);
+    window.__renderPageTpls=renderCustom;
+    host.querySelectorAll("[data-loc]").forEach(b=>b.addEventListener("click",()=>setLocaleTab(b.getAttribute("data-loc"))));
+    bindMigration(host, renderCustom);
+    /* A counterpart copies the structure and leaves the content empty. It never machine
+       translates: a translated shelf reads as a shelf until somebody sends from it. */
+    host.querySelectorAll("[data-cp]").forEach(b=>b.addEventListener("click",()=>{
+      const src=getCustomTemplate(b.getAttribute("data-cp")); if(!src) return;
+      const other=localeTab()==="EN"?"AR":"EN";
+      let id=src.id+"-"+other.toLowerCase(); let n=2;
+      while(getCustomTemplate(id)) id=src.id+"-"+other.toLowerCase()+"-"+(n++);
+      saveCustomTemplate({ id:id, name:(src.name||src.id)+" ("+t("loc_"+other.toLowerCase())+")",
+        locale:other, lang:other, html:"", created:new Date().toISOString() });
+      logActivity("tpl_add", id, "counterpart");
+      toast(t("loc_counterpart_made"));
+      setLocaleTab(other);   /* redraws both lists, so the counterpart is on screen already */
+    }));
+    host.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click", async ()=>{
       const id=b.getAttribute("data-del");
       const opps=await mergedOpps();
       const d=ThriveLifecycle.templateDeletion(id, opps);
@@ -2698,17 +2756,18 @@ function initTemplates(){
       try{ scheduleSyncPush(); }catch(e){}
       renderCustom();
     }));
-    el("customList").querySelectorAll("[data-dl]").forEach(b=>b.addEventListener("click",()=>{
+    host.querySelectorAll("[data-dl]").forEach(b=>b.addEventListener("click",()=>{
       const ct=getCustomTemplate(b.getAttribute("data-dl")); if(ct) download(ct.id+".html", ct.html||"");
     }));
-    el("customList").querySelectorAll("[data-pubtpl]").forEach(b=>b.addEventListener("click", async ()=>{
+    host.querySelectorAll("[data-pubtpl]").forEach(b=>b.addEventListener("click", async ()=>{
       const ct=getCustomTemplate(b.getAttribute("data-pubtpl")); if(!ct) return;
       b.disabled=true; const old=b.textContent; b.textContent=t("publishing");
       try{ await publishTemplate(ct); logActivity("tpl_publish", ct.id, ""); toast(t("tpl_published")); }
-      catch(e){ toast(t("gh_err")+": "+e.message); }
+      catch(e){ toast(t("tpl_pub_err")+": "+e.message); }
       finally{ b.disabled=false; b.textContent=old; }
     }));
   }
+
 
   // upload / add custom template
   const dz=el("tplDz"), file=el("tplFile");
@@ -2825,9 +2884,18 @@ function initTemplates(){
   }
   function renderEmailTpls(){
     const wrap=el("emailTplList"); if(!wrap) return;
-    const list=getEmailTemplates(), stats=etStats();
-    if(!list.length){ wrap.innerHTML='<div class="empty">'+t("et_none")+'</div>'; return; }
-    wrap.innerHTML = list.map(et=>{
+    const all=getEmailTemplates(), stats=etStats();
+    /* One locale, same rule as the page templates and same rule as the composer. */
+    const list=localeTemplates(all, localeTab());
+    const chrome=localeTabBar("etLocTabs");
+    const tail=localeEmpty(localeTab(), list.length)+migrationPanel();
+    const bindTabs=()=>{
+      window.__renderMsgTpls=renderEmailTpls;
+      wrap.querySelectorAll("[data-loc]").forEach(b=>b.addEventListener("click",()=>setLocaleTab(b.getAttribute("data-loc"))));
+      bindMigration(wrap, renderEmailTpls);
+    };
+    if(!list.length){ wrap.innerHTML=chrome+tail; bindTabs(); return; }
+    wrap.innerHTML = chrome + list.map(et=>{
       const usesMonth=tplUsesMonth(et);
       return `
       <div class="item no-thumb">
@@ -2849,7 +2917,8 @@ function initTemplates(){
             <button class="btn ghost sm danger" data-etdel="${esc(et.id)}">${t("tpl_delete")}</button>
           </div>
         </div>
-      </div>`;}).join("");
+      </div>`;}).join("") + tail;
+    bindTabs();
     wrap.querySelectorAll("[data-etedit]").forEach(b=>b.addEventListener("click",()=>etOpen(b.getAttribute("data-etedit"))));
     wrap.querySelectorAll("[data-etdup]").forEach(b=>b.addEventListener("click",()=>{
       const src=getEmailTemplates().find(x=>x.id===b.getAttribute("data-etdup")); if(!src) return;
@@ -3474,6 +3543,126 @@ async function initBoard(){
   await render();
 }
 
+/* ---------- two language axes, and they never touch ----------
+   ui_lang drives the console chrome: navigation, labels, buttons, empty states. It is the
+   existing thrive_lang and nothing about it changes.
+
+   doc_lang is a property of the OPPORTUNITY. It drives the page template, the outreach text,
+   the message templates offered, and the direction of the built page. Thyab can work in Arabic
+   chrome on an English opportunity and nothing about the document changes.
+
+   Conflating the two is why the English composer offered «التحديث الشهري» beside Monthly update
+   in one row. That was never a translation problem. It was one variable doing two jobs.
+
+   Nothing is renamed. `locale` is added beside the page template's existing `lang`, which keeps
+   working, and doc_lang is added to the opportunity. Both are additive. */
+const LOCALES=["EN","AR"];
+function isArabicText(s){ return /[\u0600-\u06FF]/.test(String(s||"")); }
+/* Detection, used to PROPOSE a locale and never to assign one silently. A template whose
+   content is Arabic is almost certainly Arabic, but "almost certainly" is not a decision
+   somebody made, so the migration shows what it found and asks. */
+function detectLocale(o){
+  if(!o) return "EN";
+  const hay=[o.name, o.subject, o.html, o.body].filter(Boolean).join(" ");
+  return isArabicText(hay) ? "AR" : "EN";
+}
+function localeOf(tpl){
+  if(!tpl) return "";
+  const v=(tpl.locale || tpl.lang || "").toUpperCase();
+  return LOCALES.indexOf(v)>=0 ? v : "";
+}
+/* The opportunity's own language. Explicit if it has one, otherwise inferred from the page
+   template it was built on, otherwise from its own words. Never from the chrome. */
+function docLang(o){
+  if(!o) return "EN";
+  const v=(o.doc_lang||"").toUpperCase();
+  if(LOCALES.indexOf(v)>=0) return v;
+  const tp=getCustomTemplate&&getCustomTemplate(o.template);
+  const fromTpl=localeOf(tp) || localeOf((typeof APPROVED_TEMPLATES!=="undefined"?APPROVED_TEMPLATES:[]).find(x=>x.id===o.template));
+  if(fromTpl) return fromTpl;
+  return isArabicText([o.business,o.outreach_text,o.html].filter(Boolean).join(" ")) ? "AR" : "EN";
+}
+function dirOf(locale){ return locale==="AR" ? "rtl" : "ltr"; }
+/* Templates of one kind, in one locale. A template with no locale is not shown in either tab:
+   it appears in the migration instead, which is the only place it can be given one. */
+function localeTemplates(list, loc){ return (list||[]).filter(x=>localeOf(x)===loc); }
+function unlocalised(list){ return (list||[]).filter(x=>!localeOf(x)); }
+
+
+/* ---------- the two libraries ----------
+   Two tabs, English and Arabic, and no combined view. A template belongs to exactly one
+   document language, and a shelf that mixes them is a shelf you have to read before you can
+   use it.
+
+   A template with no locale appears in NEITHER tab. It appears in the migration, which is the
+   only place a locale can be given, and the migration proposes rather than assigns: it shows
+   what it read and asks. Assigning silently would put somebody's Arabic template in the
+   English library and there would be no trace of the decision. */
+/* It starts on the library the reader is already in. A hard "EN" meant an Arabic reader opened
+   Templates on the English library, tapped "Compose with", and landed in a composer whose
+   drop-down holds only Arabic templates, so the template they asked for was silently not
+   selected. Two surfaces choosing a locale by two different rules is the leak WO-012 §7 opens
+   with, and this was the same leak one layer up. Read once, lazily, because the language is
+   settled by the time any list draws and not necessarily when this file is evaluated. */
+let __localeTab=null;
+function localeTab(){
+  if(__localeTab===null){ try{ __localeTab = getLang()==="ar" ? "AR" : "EN"; }catch(e){ __localeTab="EN"; } }
+  return __localeTab;
+}
+function setLocaleTab(L){
+  __localeTab=L;
+  /* Both libraries share the tab, so both redraw. One list obeying the tab while the other
+     ignores it is worse than no tab at all: it teaches you that the control is unreliable. */
+  if(typeof window.__renderPageTpls==="function") window.__renderPageTpls();
+  if(typeof window.__renderMsgTpls==="function") window.__renderMsgTpls();
+}
+function localeTabBar(id){
+  return '<div class="seg loc-tabs" role="tablist" id="'+id+'">'+
+    LOCALES.map(L=>'<button role="tab" data-loc="'+L+'" class="'+(L===localeTab()?"on":"")+'" '+
+      'aria-selected="'+(L===localeTab()?"true":"false")+'">'+esc(t("loc_"+L.toLowerCase()))+'</button>').join("")+
+    '</div>';
+}
+function localeEmpty(L, n){
+  const count='<span class="loc-count">'+
+    esc(boardText(getLang(),"loc_count",n)).split(String(n)).join('<span class="n">'+n+'</span>')+
+    ' '+esc(t("loc_counter"))+'</span>';
+  if(n) return count;
+  return '<div class="mw-empty">'+
+    (typeof thriveIcon==="function"? thriveIcon("page",{size:32,cls:"mw-empty-i"}) : "")+
+    '<p>'+esc(t(L==="AR"?"loc_empty_ar":"loc_empty_en"))+'</p></div>'+count;
+}
+/* The migration. Detect, then ask, one row per template, nothing written until confirmed. */
+function migrationPanel(){
+  const pages=unlocalised(getCustomTemplates()), msgs=unlocalised(getEmailTemplates());
+  if(!pages.length && !msgs.length) return "";
+  const row=(x,kind)=>{
+    const d=detectLocale(x);
+    return '<div class="loc-mig-row"><span class="loc-mig-name">'+esc(x.name||x.id)+'</span>'+
+      '<span class="loc-mig-kind">'+esc(t(kind==="page"?"f_template":"cmp_template"))+'</span>'+
+      '<span class="loc-mig-read">'+esc(t("loc_mig_detected"))+' <b>'+esc(t("loc_"+d.toLowerCase()))+'</b></span>'+
+      '<select class="loc-mig-sel" data-kind="'+kind+'" data-id="'+esc(x.id)+'">'+
+      LOCALES.map(L=>'<option value="'+L+'"'+(L===d?" selected":"")+'>'+esc(t("loc_"+L.toLowerCase()))+'</option>').join("")+
+      '</select></div>';
+  };
+  return '<section class="loc-mig"><h4 class="mw-h">'+esc(t("loc_mig_h"))+'</h4>'+
+    '<p class="mw-note">'+esc(t("loc_mig_sub"))+'</p>'+
+    pages.map(x=>row(x,"page")).join("")+msgs.map(x=>row(x,"msg")).join("")+
+    '<button class="btn sm loc-mig-save" type="button">'+esc(t("loc_mig_save"))+'</button></section>';
+}
+function bindMigration(scope, after){
+  const b=scope.querySelector(".loc-mig-save"); if(!b) return;
+  b.addEventListener("click",()=>{
+    scope.querySelectorAll(".loc-mig-sel").forEach(sel=>{
+      const id=sel.getAttribute("data-id"), L=sel.value;
+      if(sel.getAttribute("data-kind")==="page") saveCustomTemplate({ id:id, locale:L, lang:L });
+      else saveEmailTemplate({ id:id, locale:L });
+    });
+    logActivity("loc_migrate","", "");
+    try{ scheduleSyncPush(); }catch(e){}
+    toast(t("loc_mig_done"));
+    if(after) after();
+  });
+}
 /* ---------- the day's batch ----------
    Three shapes, one behaviour: a page alone, a page with its manifest, or a zip of both.
 
