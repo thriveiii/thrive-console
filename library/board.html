@@ -51,6 +51,10 @@
     </div>
   </div>
 
+  <!-- Not synced. Not dismissable: a warning you can dismiss is one you dismiss on the day
+       you are busiest, which is the day it matters. -->
+  <div id="boardBand" hidden></div>
+
   <!-- The day's batch. Nothing is written until the report has been read. -->
   <section class="intake" id="intakeZone">
     <div class="intake-head">
@@ -135,6 +139,7 @@
 <script src="stage-model.js" defer></script>
 <script src="lifecycle.js" defer></script>
 <script src="intake.js" defer></script>
+<script src="numbers.js" defer></script>
 <script src="app.js" defer></script>
 <script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initBoard(); });</script>
 </body>

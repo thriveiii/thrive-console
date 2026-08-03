@@ -458,6 +458,26 @@ const I18N = {
     set_quota_monthly: "Monthly cap",
     clear_filters: "Clear filters",
 
+    /* ---- storage, which is the risk that is not a defect --------------------
+       WebKit deletes ALL script writeable storage for an origin with no user
+       interaction in the last seven days of browser use. The relay is the only
+       durable copy, so the console has to say when it is the only one left. */
+    st_full_act:   "This device cannot store anything more. Open Settings, check what is using the space, and sync so nothing is lost.",
+    st_h:          "Storage on this device",
+    st_sub:        "The console keeps everything in this browser. Safari deletes all of it if you do not open the console for seven days, so the relay is the durable copy, not this.",
+    st_used:       "Used",
+    st_of:         "of about",
+    st_largest:    "Largest",
+    st_check:      "Check the relay has a complete copy",
+    st_checking:   "Comparing…",
+    st_complete:   "The relay holds everything this device holds.",
+    st_missing:    "The relay is missing some of what this device holds. Sync now.",
+    st_cmp_err:    "Could not compare. The relay did not answer.",
+    st_never:      "This device has never synced. Nothing here has a second copy.",
+    st_stale_h:    "Not synced",
+    st_stale_p:    "Your only copy is on this device. Safari erases everything for a site you have not opened in seven days.",
+    st_sync_now:   "Sync now",
+
     /* ---- moving a card ------------------------------------------------------
        WCAG 2.2 SC 2.5.7: any function that uses dragging must also be operable
        with a single pointer without dragging. Dragging is not essential here, so
@@ -1178,6 +1198,22 @@ const I18N = {
     set_quota_monthly: "السقف الشهري",
     clear_filters: "مسح الفلاتر",
 
+    st_full_act:   "لم يعد بإمكان هذا الجهاز تخزين المزيد. افتح الإعدادات، وانظر ما يشغل المساحة، وزامن حتى لا يضيع شيء.",
+    st_h:          "التخزين على هذا الجهاز",
+    st_sub:        "يحفظ الكونسول كل شيء في هذا المتصفح. يمسحه Safari بالكامل إن لم تفتح الكونسول سبعة أيام، فالنسخة الدائمة هي المُرحّل لا هذا الجهاز.",
+    st_used:       "المستخدَم",
+    st_of:         "من نحو",
+    st_largest:    "الأكبر",
+    st_check:      "تحقّق من أن لدى المُرحّل نسخة كاملة",
+    st_checking:   "جارٍ المقارنة…",
+    st_complete:   "لدى المُرحّل كل ما لدى هذا الجهاز.",
+    st_missing:    "ينقص المُرحّل بعض ما لدى هذا الجهاز. زامن الآن.",
+    st_cmp_err:    "تعذّرت المقارنة. لم يجب المُرحّل.",
+    st_never:      "لم يزامن هذا الجهاز قط. لا نسخة ثانية لأي شيء هنا.",
+    st_stale_h:    "لم تتم المزامنة",
+    st_stale_p:    "نسختك الوحيدة على هذا الجهاز. يمسح Safari كل شيء لموقع لم تفتحه منذ سبعة أيام.",
+    st_sync_now:   "زامن الآن",
+
     mv_menu:      "نقل هذه البطاقة",
     mv_up:        "تقديم",
     mv_down:      "تأخير",
@@ -1637,6 +1673,8 @@ var I18N_BOARD = {
     tok_views:      { one:"no email yet, {n} view", other:"no email yet, {n} views" },
     tok_answered:   "answered",
 
+    st_stale_n: { one:"Not synced for {n} day.", other:"Not synced for {n} days." },
+
     mv_over:   { one:"Over {lane}. {n} card. Press Space to drop here.",
                  other:"Over {lane}. {n} cards. Press Space to drop here." },
 
@@ -1855,6 +1893,12 @@ var I18N_BOARD = {
       few:"بلا رسالة، {n} مشاهدات", many:"بلا رسالة، {n} مشاهدة", other:"بلا رسالة، {n} مشاهدة"
     },
     tok_answered: "ردّ",
+
+    st_stale_n: {
+      one:"لم تتم المزامنة منذ يوم.", two:"لم تتم المزامنة منذ يومين.",
+      few:"لم تتم المزامنة منذ {n} أيام.", many:"لم تتم المزامنة منذ {n} يومًا.",
+      other:"لم تتم المزامنة منذ {n} يوم."
+    },
 
     mv_over: {
       zero:"فوق {lane}. لا بطاقات. اضغط مسافة للإفلات هنا.",
