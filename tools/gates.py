@@ -308,8 +308,14 @@ def gate3(b):
            == "overview,text,page,outreach,history")
         pg.click("#modalTabs [data-tab='text']")
         pg.wait_for_timeout(700)
-        ck("the text tab shows its empty state, one icon and one sentence",
-           pg.eval_on_selector("#modalText", "e=>!!e.querySelector('svg') && e.querySelectorAll('button,a').length===0"))
+        # Scoped to the empty state, which is what the rule is about: one icon, one sentence,
+        # no action INSIDE it. The panel around it may carry other sections, and since WO-012
+        # phase 1 it does. Querying the whole panel was measuring the wrong element, so this
+        # is now stricter on the right one rather than looser on the wrong one.
+        ck("the text tab shows its empty state, one icon and one sentence and no action",
+           pg.eval_on_selector("#modalText .mw-empty",
+             "e=>e.querySelectorAll('svg').length===1 && e.querySelectorAll('p').length===1 "
+             "&& e.querySelectorAll('button,a,input,textarea,select').length===0"))
         pg.click("#modalTabs [data-tab='outreach']")
         pg.wait_for_timeout(1500)
         ck("the outreach tab is holding the composer itself, not a copy",
