@@ -1187,7 +1187,7 @@ async function initDashboard(){
     download("manifest.json", JSON.stringify(out,null,2), "application/json");
     logActivity("export", "", rows.length+" opportunities");
     const localCount=state.data.filter(o=>o._local).length;
-    toast(localCount? t("export_local_note").replace("{n}",localCount) : t("exported_toast"));
+    toast(localCount? boardText(getLang(),"export_local_note",localCount) : t("exported_toast"));
   });
 
   onThrive("lang","dashboard",render);
@@ -1216,6 +1216,14 @@ async function initEditor(slugArg){
   getCustomTemplates().forEach(ct=>{
     if([...tsel.options].some(o=>o.value===ct.id)) return;
     const o=document.createElement("option"); o.value=ct.id; o.textContent=ct.id+" · "+(ct.name||ct.id)+" ("+t("tpl_badge_custom")+")"; tsel.appendChild(o);
+  });
+  /* The optional half of the form, folded, with the button carrying how much of it is filled
+     in so nothing you typed can hide behind it. */
+  const ED_OPTIONAL=["f_sent","f_location","f_phone","f_quote","f_quoteby"];
+  const edMore=initMore("edMoreBtn","edMore", ()=>
+    ED_OPTIONAL.filter(id=>{ const e=document.getElementById(id); return e && String(e.value||"").trim(); }).length);
+  if(edMore) ED_OPTIONAL.forEach(id=>{
+    const e=document.getElementById(id); if(e){ e.addEventListener("input", edMore); e.addEventListener("change", edMore); }
   });
   const tParam=viewParams().get("t");
   if(tParam && [...tsel.options].some(o=>o.value===tParam)) tsel.value=tParam;
@@ -1351,7 +1359,9 @@ async function initEditor(slugArg){
       ()=>{ download("entry.json", JSON.stringify(r,null,2), "application/json"); });
   });
 
-  // prefill from ?slug= (edit any existing opp) or default date today
+  // prefill from ?slug= (edit any existing opp) or default date today. The disclosure's count
+  // is taken again afterwards: one taken before the record is loaded says nothing is filled in
+  // while the form is full, which is exactly the thing the count exists to prevent.
   const params=viewParams();
   el("f_sent").value = new Date().toISOString().slice(0,10);
   const editSlug=(slugArg!==undefined&&slugArg!==null&&slugArg!=="")?slugArg:params.get("slug");
@@ -1394,7 +1404,9 @@ async function initEditor(slugArg){
   onThrive("lang","editor",()=>{
     relabelBuiltins();                                   // template names follow the language switch
     if(mode==="upload" && uploadedName) dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>";
+    if(edMore) edMore();                                 // and so does the disclosure's label
   });
+  if(edMore) edMore();                                   // now the form is loaded, count it again
   refresh();
 }
 
@@ -1435,11 +1447,11 @@ function initActivity(){
     const shown=threads.length;
     const pill=(threadQ && shown!==total) ? (shown+" / "+total) : String(total);   // pill matches the visible cards
     const head='<div class="threads-head"><h3 class="block-h">'+t("act_threads")+' <span class="pill">'+pill+'</span></h3>'+
-      '<input id="threadSearch" class="input sm" placeholder="'+esc(t("act_thread_search"))+'" value="'+esc(threadQ)+'"></div>';
+      '<input id="threadSearch" class="input sm" placeholder="'+esc(t("act_thread_search"))+'" value="'+esc(threadQ)+'"></div>'+
+      '<p class="sub">'+esc(t("act_threads_sub"))+'</p>';
     if(!total){ wrap.innerHTML=head+'<div class="empty">'+t("act_no_threads")+'</div>'; bindSearch(); return; }
     const cards=threads.map(th=>{
       const who=esc(th.toName? (th.toName+" · "+th.to) : th.to);
-      const oppB=th.opp?'<span class="tag tag-cat-pages">'+esc(th.opp)+'</span>':'';
       const tplB=th.templates.length? th.templates.map(n=>'<span class="tag tag-templates">'+esc(n)+'</span>').join('')
                                     : '<span class="tag tag-plain">'+t("cmp_no_tpl")+'</span>';
       const counts=th.sent+' '+t("cmp_sent_n")+(th.replied?' · '+th.replied+' '+t("cmp_replied_n"):'');
@@ -1462,10 +1474,10 @@ function initActivity(){
         slugs.map(sg=>'<option value="'+esc(sg.slug)+'"'+(sg.slug===th.opp?" selected":"")+'>'+
           esc(sg.business||sg.slug)+'</option>').join("")+'</select>';
       return '<details class="thread"><summary>'+
-        '<div class="th-main"><span class="th-who">'+who+'</span><span class="th-meta">'+oppB+tplB+'</span></div>'+
+        '<div class="th-main"><span class="th-who">'+who+'</span><span class="th-meta">'+oppSel+tplB+'</span></div>'+
         '<div class="th-side"><span class="th-counts">'+counts+'</span><span class="mono th-last">'+esc(fmt(th.last))+'</span>'+
         '<button class="btn ghost sm th-reply" data-th="'+esc(th.id)+'" data-to="'+esc(th.to)+'" data-opp="'+esc(th.opp)+'">'+t("act_reply_btn")+'</button></div>'+
-        '</summary><div class="thread-body"><div class="th-fix"><label>'+esc(t("act_which_opp"))+'</label>'+oppSel+'</div>'+rows+'</div></details>';
+        '</summary><div class="thread-body">'+rows+'</div></details>';
     }).join("");
     wrap.innerHTML=head+'<div class="threads">'+cards+'</div>';
     bindSearch();
@@ -1527,15 +1539,15 @@ function initActivity(){
       try{ return new Date(k+"T12:00:00Z").toLocaleDateString(getLang()==="ar"?"ar":"en",{weekday:"long", day:"numeric", month:"long"}); }
       catch(e){ return k; }
     };
-    const n=v=>'<b>'+v+'</b>';
     wrap.innerHTML='<h3 class="block-h">'+esc(t("act_story_h"))+'</h3>'+
       '<p class="sub">'+esc(t("act_story_sub"))+'</p>'+
       '<ol class="story-days">'+keys.map(k=>{
         const d=days[k], said=[];
-        if(d.sent) said.push(t("act_s_sent").replace("{n}", n(d.sent)).replace("{p}", n(d.people.size)));
-        if(d.replies) said.push(t("act_s_replies").replace("{n}", n(d.replies)));
-        if(d.published) said.push(t("act_s_published").replace("{n}", n(d.published)));
-        if(d.opens) said.push(t("act_s_opens").replace("{n}", n(d.opens)));
+        const L=getLang();
+        if(d.sent){ said.push(boardText(L,"act_s_sent",d.sent)); said.push(boardText(L,"act_s_to",d.people.size)); }
+        if(d.replies) said.push(boardText(L,"act_s_replies",d.replies));
+        if(d.published) said.push(boardText(L,"act_s_published",d.published));
+        if(d.opens) said.push(boardText(L,"act_s_opens",d.opens));
         return '<li><span class="story-when">'+esc(when(k))+'</span><span class="story-said">'+
           (said.length? said.join(" ") : esc(t("act_s_nothing")))+'</span></li>';
       }).join("")+'</ol>';
@@ -2433,7 +2445,7 @@ function initSettings(){
                  : z.shed==="html+log" ? t("sy_shed_log")
                  : z.shed==="over" ? t("sy_shed_over") : "";
       return '<br><span class="'+(warn?"warn-line":"ok-line")+'">'+
-        esc(t("sy_size").replace("{n}", z.pct))+(note? " "+esc(note) : "")+'</span>';
+        esc(t("sy_size").replace("{pct}", z.pct))+(note? " "+esc(note) : "")+'</span>';
     }
     function syCounts(){
       const c=el("syCounts"); if(!c) return;
@@ -2454,8 +2466,8 @@ function initSettings(){
         ' · <b>'+getCustomTemplates().length+'</b> '+t("sy_c_pagetpl")+
         ' · <b>'+Object.keys(tombs()).length+'</b> '+t("sy_c_removed")+
         (agree?'<br>'+agree:"")+
-        (held.length? '<br><span class="warn-line">⚠ '+esc(t("sy_local_only").replace("{n}", held.length)
-          .replace("{list}", held.map(x=>String(x).replace(/^tpl:/,"")).join("، ")))+'</span>' : "")+
+        (held.length? '<br><span class="warn-line">⚠ '+boardText(getLang(),"sy_held",held.length,
+          {list: esc(held.map(x=>String(x).replace(/^tpl:/,"")).join("، "))})+'</span>' : "")+
         sizeLine();
     }
     function sySummary(){
@@ -2862,11 +2874,13 @@ async function initHome(){
     const story=[];
     if(!sent) story.push(t("story_none"));
     else{
-      story.push(t("story_sent").replace("{n}", sent).replace("{p}", contacted));
-      if(replies) story.push(t("story_replies").replace("{n}", replies).replace("{r}", rate));
-      else if(waiting) story.push(t("story_no_replies").replace("{n}", waiting));
-      if(totalOpens) story.push(t("story_opens").replace("{n}", totalOpens));
-      else if(totalViews) story.push(t("story_views").replace("{n}", totalViews));
+      const L=getLang();
+      story.push(boardText(L,"story_sent",contacted));
+      story.push(boardText(L,"story_sent_n",sent));
+      if(replies) story.push(boardText(L,"story_replies",replies,{r:rate}));
+      else if(waiting) story.push(boardText(L,"story_no_replies",waiting));
+      if(totalOpens) story.push(boardText(L,"story_opens",totalOpens));
+      else if(totalViews) story.push(boardText(L,"story_views",totalViews));
       else if(usingCollected()) story.push(t("story_no_opens"));
     }
     el("homeStory").innerHTML=story.join(" ");
@@ -2883,15 +2897,16 @@ async function initHome(){
     const live=opps.filter(o=>isLive(o)).length;
     const uniq=new Set(); hits.forEach(e=>e.vid&&uniq.add(e.vid));
     const dw=pages.reduce((a,r)=>{ a.ms+=r.dwellMs; a.n+=r.dwellN; return a; }, {ms:0,n:0});
-    const fu=opps.filter(o=>!o.archived&&needsFollowup(o)).length;
+    /* Six, so the group is two even rows. Follow-up left this set on purpose: it is an action,
+       not a page metric, and both the board and the library already carry it as something you
+       can filter by and act on rather than only look at. */
     el("tilesPages").innerHTML=
       tile(live, t("home_live_pages"), "", t("tip_live_pages"))+
       tile(opps.length, t("home_total_opps"), "", t("tip_total_opps"))+
-      tile(totalViews, t("col_views"), "", t("tip_views"))+
-      tile(totalOpens, t("ins_total_opens"), "", t("tip_opens"))+
-      tile(uniq.size, t("ins_unique"), "", t("tip_unique"))+
-      tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("ins_avg_dwell"), "", t("tip_dwell"))+
-      tile(fu, t("followup"), fu?"t-warn":"", t("tip_followup"));
+      tile(totalViews, t("home_views"), "", t("tip_views"))+
+      tile(totalOpens, t("home_opens"), "", t("tip_opens"))+
+      tile(uniq.size, t("home_unique"), "", t("tip_unique"))+
+      tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("home_dwell"), "", t("tip_dwell"));
     // Honest note about where these numbers come from. "No opens yet" is a healthy state and
     // must not be reported as "not collecting": those are different problems.
     const note=el("homeDataNote");
@@ -2904,11 +2919,11 @@ async function initHome(){
         msg=t("home_data_stale")+(hitsError()? ' <span class="mono relay-err">'+esc(hitsError())+'</span>' : ''); }
       else { cls="note warn-note"; msg=t("home_data_local"); }
       note.className=cls;
-      let extra = mine? " "+t("home_data_self").replace("{n}", mine) : "";
+      let extra = mine? " "+boardText(getLang(),"home_data_self",mine) : "";
       // Old local events predate self-tagging, so they cannot be told apart from real opens.
       // While collection is live they are ignored, so say so, and offer to clear them.
       const legacy=legacyLocalHits().length;
-      if(legacy && st==="live") extra+=' '+t("home_data_legacy").replace("{n}", legacy)+
+      if(legacy && st==="live") extra+=' '+boardText(getLang(),"home_data_legacy",legacy)+
         ' <button type="button" class="btn ghost sm" id="clrLegacy">'+t("home_clear_legacy")+'</button>';
       // Always offer the probe: it names the exact URL being called and what it answers.
       extra+=' <button type="button" class="btn ghost sm" id="probeRelayBtn">'+t("home_probe")+'</button>';
@@ -3098,8 +3113,8 @@ async function initHome(){
     if(!unmeasured.length){ btn.hidden=true; if(note) note.hidden=true; return; }
     btn.hidden=false;
     if(note){ note.hidden=false;
-      note.textContent=t("home_unmeasured").replace("{n}", unmeasured.length)
-        .replace("{list}", unmeasured.map(u=>u.business).join("، ")); }
+      note.textContent=boardText(getLang(),"home_unmeasured",unmeasured.length,
+        {list: unmeasured.map(u=>u.business).join("، ")}); }
   }
   if(el("homeRepair")) el("homeRepair").addEventListener("click", async ()=>{
     if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
@@ -3110,7 +3125,7 @@ async function initHome(){
         logActivity("publish", u.slug, "beacon repair"); done++; }catch(e){}
     }
     btn.disabled=false; btn.textContent=old;
-    toast(done? t("home_repaired").replace("{n}", done) : t("gh_err"));
+    toast(done? boardText(getLang(),"home_repaired",done) : t("gh_err"));
     setTimeout(checkBeacons, 1500);
   });
   checkBeacons();

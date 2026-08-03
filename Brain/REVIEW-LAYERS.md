@@ -287,6 +287,33 @@ repair, so it hands over the correction instead: every conversation on the Activ
 the opportunity it belongs to, and moving it rewrites every message in that conversation at
 once. A decision you make, never one the console makes for you.
 
+### The second language, enforced
+
+The screens said, in Arabic, «كتبتَ إلى 15 أشخاص» and «فُتحت صفحاتك 2 مرة». Neither is Arabic.
+The rule was written down in `library/i18n.js` the day the board was built:
+
+> Any future string that carries a number must be added as a form object.
+> A flat "{n}" template holding a count is a defect.
+
+Nothing enforced it, so fourteen sentences outside the board quietly broke the second language:
+the whole Insights story, the whole Activity story, and five notices. They are form objects now,
+with the Arabic dual and the 3 to 10 and 11 to 99 forms written out, and `tools/verify.js`
+refuses any new flat string carrying a count, checks EN/AR parity in the counting dictionary
+too, and requires all five Arabic categories wherever English varies at all. A rule that only
+lives in a comment is a wish.
+
+Found alongside it: **`sy_local_only` was declared twice**, once by an older message and once by
+mine, in the same object. The later wins, so the mirror change had silently replaced "Saved on
+this device only, so the other devices were NOT updated" with a note about page sizes. Verify
+now refuses a duplicate key in either dictionary.
+
+### And the correction nobody could find
+
+I told you to move a run of newsletters off one page, and put the control three levels deep:
+Library, then More, then Activity, then expand a conversation. A correction the console asks you
+for has to be where you are looking. It is on the conversation row now, visible without opening
+anything, with one line above the list saying what it does.
+
 ---
 
 ## The five that were queued, now done
