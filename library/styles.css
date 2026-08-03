@@ -948,6 +948,16 @@ body.is-dragging{ cursor:grabbing; user-select:none }
   .tok-open{ min-height:40px; display:flex; flex-direction:column; justify-content:center }
   .tok-more,.tok-grip{ min-width:44px; min-height:44px }
   .cardmenu button{ min-height:44px }
+
+  /* A lane wide enough to hold what the card now contains. The card gained two
+     controls in WO-012 phase 5, and under a finger they are 44 wide each. The
+     chrome therefore costs 122px: 24 of inline padding, 2 of border, 88 of
+     controls and 8 of gap. In a 132px lane that left the name 10px, measured,
+     so the whole card body collapsed to a sliver and a tap on the middle of a
+     card landed on the overflow control instead of opening the opportunity.
+     236 leaves the name 114, which is the number this lane was sized for
+     before the card had controls at all. */
+  :root{ --lane-min:236px }
 }
 
 /* --- two libraries, one per document language ------------------------------
