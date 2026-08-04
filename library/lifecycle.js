@@ -71,6 +71,12 @@
     send_email:      { from: ["ready"],                          to: "sent" },
     send_offchannel: { from: ["ready"],                          to: "sent" },
     record_reply:    { from: ["sent", "opened"],                 to: "replied" },
+    /* WO-015 Phase D: an opportunity that earned a reply can convert to an offer.
+       Convert does not change the stage, it binds an offer artifact and opens
+       chapter two (I8), so it is an @same move logged the same documented way
+       archive is, through apply then saveDraft then logActivity, not a bespoke
+       path. It is the ONLY way to set "converted to offer" (I9). */
+    convert:         { from: ["replied"],                        to: "@same" },
     mark_won:        { from: ["replied", "opened", "sent"],      to: "won",   final: true },
     mark_lost:       { from: OPEN_STAGES,                        to: "lost",  final: true },
     drop:            { from: OPEN_STAGES,                        to: "dropped" },
@@ -82,7 +88,7 @@
   };
 
   /* Moves a person could regret. The host offers Undo on these and only these. */
-  var UNDOABLE = ["drop", "archive", "mark_lost", "mark_won"];
+  var UNDOABLE = ["drop", "archive", "mark_lost", "mark_won", "convert"];
 
   function has(list, v) { return list.indexOf(v) >= 0; }
 
@@ -128,6 +134,7 @@
     Object.keys(MOVES).forEach(function (k) {
       if (!fromMatches(MOVES[k].from, st, arch)) return;
       if (k === "restore" && !o.prev_stage) return;      // nothing recorded to restore to
+      if (k === "convert" && o.converted_at) return;     // an opportunity converts once
       if (k === "unarchive" && !arch) return;
       if (k === "unpublish" && sendCount(o, ctx) > 0) return;  // a send cannot be unpublished away
       if (k === "retire_page" && o.page_missing) return;
@@ -161,6 +168,7 @@
       if (String(opts.body).indexOf("[LINK]") >= 0) return "lc_err_link";
     }
     if (move === "record_reply" && !/^\d{4}-\d{2}-\d{2}$/.test(String(opts.replied_on || ""))) return "lc_err_date";
+    if (move === "convert" && !String(opts.text || "").trim()) return "lc_err_offer_text";
     if (move === "mark_lost" && !has(LOST_REASONS, opts.reason)) return "lc_err_reason";
     if (move === "drop" && !String(opts.reason || "").trim()) return "lc_err_reason_text";
     if (move === "reopen" && !opts.confirmed) return "lc_err_confirm";
@@ -230,6 +238,16 @@
         patch.reply_note = String(opts.note).slice(0, 600);
         undo.reply_note = o.reply_note || "";
       }
+    }
+    if (move === "convert") {
+      /* Bind the offer artifact and stamp the conversion. The stage is untouched:
+         the offer opens chapter two, and the lane follows that chapter through
+         activeChapterStage, not through a declared stage. The artifact travels
+         additively on the record (I8, I10), and undo lifts it cleanly. */
+      patch.offer = { text: String(opts.text || ""), html: String(opts.html || ""), up: Date.now() };
+      undo.offer = (o.offer === undefined) ? null : o.offer;
+      patch.converted_at = opts.at || String(Date.now());
+      undo.converted_at = o.converted_at || "";
     }
     if (move === "mark_won") { setStage("won"); patch.prev_stage = st; undo.prev_stage = o.prev_stage || ""; }
     if (move === "mark_lost") {
@@ -370,6 +388,19 @@
     var won = { slug: "c", stage: "won", __st: "won" };
     if (apply("reopen", won, {}, ctx).error !== "lc_err_confirm") f.push("reopen needs confirmation");
     if (!apply("reopen", won, { confirmed: true }, ctx).ok) f.push("a confirmed reopen must work");
+
+    /* convert binds an offer, needs its text, and happens once */
+    var replied = { slug: "r", __st: "replied" };
+    if (!can("convert", replied, ctx)) f.push("a replied opportunity can convert");
+    if (apply("convert", replied, {}, ctx).error !== "lc_err_offer_text") f.push("convert needs its offer text");
+    var conv = apply("convert", replied, { text: "Here is the offer", html: "<p>offer</p>", at: "2026-08-04T00:00:00Z" }, ctx);
+    if (!conv.ok) f.push("a convert with text must apply, got " + conv.error);
+    if (!conv.patch.offer || conv.patch.offer.text !== "Here is the offer") f.push("convert binds the offer text");
+    if (conv.patch.converted_at !== "2026-08-04T00:00:00Z") f.push("convert stamps the conversion");
+    if (conv.patch.stage !== undefined) f.push("convert leaves the stage alone");
+    if (!conv.undoable) f.push("convert must be undoable");
+    if (can("convert", { slug: "r2", __st: "replied", converted_at: "2026-08-04T00:00:00Z" }, ctx))
+      f.push("an already converted opportunity does not convert again");
 
     /* a move that is not in the table does not exist */
     if (apply("teleport", made, {}, ctx).error !== "lc_err_illegal") f.push("an unknown move must be refused");

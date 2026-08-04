@@ -840,6 +840,12 @@ async function pullInbound(ep, auth){
 
   const before=getInbound();
   const merged=ThriveInbound.mergeInbound(before, j.records);
+  /* WO-015 Phase D: attribute each reply to the chapter that was live when it
+     arrived. The relay knows the slug from the reply-to tag but not the chapter,
+     so a reply with no chapter reads as the opportunity's active chapter, which is
+     two once the offer has gone out. Additive and idempotent: a record that
+     already carries a chapter keeps it. */
+  merged.forEach(r=>{ if(r && r.opp && r.chapter==null){ try{ r.chapter=activeChapter(r.opp); }catch(e){ r.chapter=1; } } });
   if(merged.length===before.length && JSON.stringify(merged)===JSON.stringify(before)) return 0;
   setInbound(merged);
   try{ if(j.scan) __inboxScan=j.scan; }catch(e){}
@@ -1098,6 +1104,29 @@ async function publishOpp(rec){
     logActivity("publish_half", rec.slug, String(e.message||e));
     const err=new Error(t("pub_half")); err.half=true; err.slug=rec.slug; throw err;
   }
+}
+/* WO-015 Phase D, I10: the offer is a DISTINCT artifact from the first contact
+   page. It publishes to a sub path of the same slug directory, opp/<slug>/offer/,
+   so the first contact page at opp/<slug>/index.html is never overwritten. The two
+   share a slug and a thread; they do not share a file. No manifest write: the
+   offer is a sub artifact of one opportunity, and the manifest still holds one
+   entry per slug, so its shape is unchanged (standing rule 6). The published flag
+   is stored additively on the offer, through saveDraft. */
+function liveOfferUrl(slug){ return liveUrl(slug)+"/offer"; }
+async function publishOffer(rec){
+  const offer=rec.offer||{};
+  await ghPutFile("opp/"+rec.slug+"/offer/index.html", withBeacon(offer.html||""),
+                  "Publish offer opp/"+rec.slug+"/offer");
+  saveDraft({ slug:rec.slug, offer:Object.assign({}, offer, { published:true, up:Date.now() }) });
+  logActivity("publish_offer", rec.slug, "");
+}
+/* The chapter a new send should carry. A converted opportunity's next send is the
+   offer, chapter two; everything else is chapter one. This is what tags the send
+   so a reply attributes to the right chapter, and it reads the convert event
+   rather than a stored chapter on the opportunity (I8). */
+function sendChapter(slug){
+  const rec=getDraft(slug);
+  return (rec && rec.converted_at && rec.offer) ? 2 : 1;
 }
 /* Finish a publish that got halfway. The page is already live, so this writes only the entry
    that lists it. */
@@ -2687,7 +2716,7 @@ async function initCompose(slugArg){
       } else { await navigator.clipboard.writeText(text); }
       const to=el("eto").value.trim(), subject=el("esubject").value.trim(), m=tplMeta();
       logActivity("email_copy", oppOf(), (to?to+" · ":"")+subject);
-      logMail({ opp:oppOf(), to:to, toName:recName(), subject:subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"gmail-copy", status:"copied" });
+      logMail({ opp:oppOf(), to:to, toName:recName(), subject:subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"gmail-copy", status:"copied", chapter:sendChapter(oppOf()) });
       toast(t("cmp_copied"));
     }catch(e){ toast(t("cmp_copy_err")); }
   });
@@ -2895,7 +2924,7 @@ async function initCompose(slugArg){
       const m=tplMeta();
       recordSend(); renderQuota();
       logActivity("email", slug||"", to+" · "+payload.subject);
-      logMail({ opp:oppOf(), to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id });
+      logMail({ opp:oppOf(), to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id, chapter:sendChapter(oppOf()) });
       toast(t("cmp_sent"));
     }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
     finally{ el("eSend").disabled=false; el("eSend").textContent=old; }
@@ -5000,6 +5029,18 @@ async function movePrompt(m, o){
     }
     const n=prompt(t("rp_note_q"), "");
     if(n!==null && String(n).trim()) opts.note=String(n).trim();
+  }
+  if(m==="convert"){
+    /* The offer needs its own outreach text; the offer PAGE is seeded from the
+       opportunity's current page so there is a distinct file to publish to the
+       offer path, which the writer refines later (that refinement is Track Two).
+       The event is stamped here and applied through runMove, the same documented
+       path archive uses. */
+    const txt=prompt(t("lc_convert_q")); if(txt===null) return null;
+    if(!String(txt).trim()){ toast(t("lc_err_offer_text")); return null; }
+    opts.text=String(txt).trim();
+    opts.at=new Date().toISOString();
+    try{ opts.html=await renderOppHtml(o); }catch(e){ opts.html=(o&&o.html)||""; }
   }
   if(m==="reopen"){ if(!confirm(t("lc_reopen_q"))) return null; opts.confirmed=true; }
   if(m==="retire_page"){
