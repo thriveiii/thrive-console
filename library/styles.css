@@ -883,6 +883,188 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 }
 
 
+
+
+
+
+/* --- storage, and the sync that is the only durable copy -------------------- */
+.st-bar{ height:8px; border-radius:var(--r-pill); background:var(--hair-2); overflow:hidden;
+  margin-block-end:var(--s-3) }
+.st-bar span{ display:block; height:100%; background:var(--grad) }
+.st-line{ margin:var(--s-2) 0 0; font-size:var(--fs-xs); color:var(--ink-3) }
+.st-miss{ color:var(--state-stall) }
+.st-keys{ list-style:none; margin:var(--s-2) 0 0; padding:0; display:grid; gap:4px }
+.st-keys li{ display:flex; gap:var(--s-2); font-size:var(--fs-micro); color:var(--ink-4) }
+.st-keys .mono-iso{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis }
+#boardBand:not([hidden]){ margin-block-end:var(--s-4) }
+#boardBand .mw-band{ margin:0; align-items:center }
+#boardBand .btn{ margin-inline-start:auto; flex:0 0 auto }
+
+/* --- moving a card ---------------------------------------------------------
+   The card is a row: the label opens the window, the overflow control lists
+   every legal destination, and the grip picks it up. WCAG 2.2 SC 2.5.7 is why
+   the overflow control exists at all, and it was built before the drag so it
+   could not be cut at the end.                                               */
+
+.tok{ display:flex; align-items:center; gap:var(--s-1); position:relative }
+.tok-open{
+  flex:1 1 auto; min-width:0;
+  background:transparent; border:0; padding:0; margin:0;
+  font:inherit; color:inherit; text-align:start; cursor:pointer; display:block;
+}
+.tok-open:focus-visible,.tok-more:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
+.tok-more,.tok-grip{
+  flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
+  min-width:28px; min-height:28px;
+  background:transparent; border:0; padding:0;
+  color:var(--ink-4); cursor:pointer;
+}
+.tok-grip{ touch-action:none; cursor:grab; opacity:.5 }
+.tok:hover .tok-grip,.tok:hover .tok-more{ opacity:.95; color:var(--ink-3) }
+body.is-dragging .tok-grip{ cursor:grabbing }
+
+.tok.is-drag{
+  position:fixed; z-index:90; margin:0;
+  pointer-events:none;
+  box-shadow:var(--el-raised); border-color:var(--purple);
+  transform-origin:center; opacity:.96;
+}
+.tok-ph{ border:1px dashed var(--purple); border-radius:var(--r-md); background:rgba(150,133,202,.07) }
+.tok.is-held{ border-color:var(--purple); box-shadow:0 0 0 3px rgba(150,133,202,.22) }
+body.is-dragging{ cursor:grabbing; user-select:none }
+
+/* Only the legal destinations, never a list of greyed rules. */
+.cardmenu{
+  position:absolute; z-index:40; inset-block-start:100%; inset-inline-end:0;
+  min-width:180px; padding:var(--s-1);
+  background:var(--panel-2); border:1px solid var(--hair); border-radius:var(--r-sm);
+  box-shadow:var(--el-raised);
+  display:flex; flex-direction:column; gap:2px;
+}
+.cardmenu button{
+  background:transparent; border:0; border-radius:var(--r-sm);
+  color:var(--ink-2); font:inherit; font-size:var(--fs-xs); font-weight:var(--w-strong);
+  padding:8px 10px; text-align:start; cursor:pointer;
+}
+.cardmenu button:hover,.cardmenu button:focus-visible{ background:rgba(150,133,202,.16); color:var(--ink) }
+.cardmenu-sep{ height:1px; background:var(--hair-2); margin:var(--s-1) 0 }
+.cardmenu-none{ padding:8px 10px; font-size:var(--fs-xs); color:var(--ink-4) }
+
+/* Announcements are for assistive technology, so they are read and never seen. */
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
+
+@media (pointer:coarse){
+  /* The whole card is the handle, and it clears 44 by 44. */
+  .tok{ min-height:44px }
+  .tok-open{ min-height:40px; display:flex; flex-direction:column; justify-content:center }
+  .tok-more,.tok-grip{ min-width:44px; min-height:44px }
+  .cardmenu button{ min-height:44px }
+
+  /* A lane wide enough to hold what the card now contains. The card gained two
+     controls in WO-012 phase 5, and under a finger they are 44 wide each. The
+     chrome therefore costs 122px: 24 of inline padding, 2 of border, 88 of
+     controls and 8 of gap. In a 132px lane that left the name 10px, measured,
+     so the whole card body collapsed to a sliver and a tap on the middle of a
+     card landed on the overflow control instead of opening the opportunity.
+     236 leaves the name 114, which is the number this lane was sized for
+     before the card had controls at all. */
+  :root{ --lane-min:236px }
+}
+
+/* --- two libraries, one per document language ------------------------------
+   The badge exists so it is never ambiguous which library you are editing, and
+   the direction of a document field comes from the document, never from the
+   chrome around it.                                                          */
+
+.loc-tabs{ margin-block-end:var(--s-3) }
+.loc-count{ display:block; margin-block-start:var(--s-2); font-size:var(--fs-xs); color:var(--ink-4) }
+.loc-badge{
+  display:inline-flex; align-items:center; gap:.4em;
+  font-size:var(--fs-micro); font-weight:var(--w-head);
+  padding:4px 10px; border-radius:var(--r-pill);
+  border:1px solid var(--hair); color:var(--ink-3);
+  margin-block-end:var(--s-3);
+}
+.loc-badge.loc-ar{ border-color:var(--lane-replied); color:var(--lane-replied) }
+.loc-badge.loc-en{ border-color:var(--lane-draft); color:var(--lane-draft) }
+/* An Arabic document keeps Arabic typography whatever the chrome says: the Arabic
+   face, no letter-spacing, no uppercase. */
+.doc-ar{ font-family:var(--font-ar); letter-spacing:normal; text-transform:none }
+
+.loc-mig{ margin-block-start:var(--s-5); padding:var(--s-4);
+  border:1px solid rgba(246,207,91,.30); border-radius:var(--r-sm);
+  background:var(--state-stall-t) }
+.loc-mig-row{ display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap;
+  padding:var(--s-2) 0; border-block-end:1px solid var(--hair-2) }
+.loc-mig-name{ font-size:var(--fs-sm); color:var(--ink); font-weight:var(--w-head); min-width:0 }
+.loc-mig-kind,.loc-mig-read{ font-size:var(--fs-micro); color:var(--ink-4) }
+.loc-mig-read b{ color:var(--ink-2) }
+.loc-mig-sel{ margin-inline-start:auto }
+.loc-mig .btn{ margin-block-start:var(--s-3) }
+
+/* --- the day's batch ------------------------------------------------------
+   The report comes before anything is written, so it is the tallest thing in
+   this block. An import that quietly drops two of eleven is worse than one that
+   refuses: the two that vanished look exactly like two that were never there. */
+
+.intake{
+  border:1px dashed var(--hair); border-radius:var(--r-md);
+  padding:var(--s-4); margin-block-end:var(--s-5);
+  transition:border-color var(--t-quick) var(--e-standard), background var(--t-quick) var(--e-standard);
+}
+.intake.on{ border-color:var(--purple); background:rgba(150,133,202,.07) }
+.intake-head{ display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap }
+.intake-head .block-h{ margin:0 }
+.intake-head label{ margin-inline-start:auto }
+.intake .sub{ margin:var(--s-2) 0 0; font-size:var(--fs-xs) }
+.intake-out:not(:empty){ margin-block-start:var(--s-4) }
+
+.in-status{ font-size:var(--fs-xs); color:var(--ink-4); margin:0 }
+.in-status.warn{ color:var(--state-stall) }
+.in-head{ display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap; margin-block-end:var(--s-3) }
+.in-head b{ font-size:var(--fs-sm); color:var(--ink) }
+.in-actions{ display:flex; gap:var(--s-2); margin-inline-start:auto }
+
+.in-report{ padding:var(--s-3); border:1px solid var(--hair-2); border-radius:var(--r-sm);
+  margin-block-end:var(--s-3) }
+.in-counts{ display:flex; flex-wrap:wrap; gap:var(--s-4) }
+.in-count{ display:flex; flex-direction:column; gap:2px }
+.in-count b{ font-family:var(--font-lat); font-size:var(--fs-lg); font-weight:900; color:var(--ink);
+  direction:ltr; unicode-bidi:isolate }
+.in-count span{ font-size:var(--fs-micro); color:var(--ink-4) }
+.in-count.warn b{ color:var(--state-stall) }
+.in-named{ list-style:none; margin:var(--s-3) 0 0; padding:0; display:flex; flex-wrap:wrap; gap:var(--s-2) }
+.in-named li{ font-size:var(--fs-micro); color:var(--state-stall); padding:3px 9px;
+  border:1px solid rgba(246,207,91,.30); border-radius:var(--r-pill) }
+
+.in-list{ display:grid; gap:var(--s-2) }
+.in-card{ display:flex; align-items:flex-start; gap:var(--s-3);
+  border:1px solid var(--hair); border-radius:var(--r-sm);
+  padding:var(--s-3); background:var(--panel); cursor:pointer }
+.in-card:hover{ border-color:var(--purple) }
+.in-card.is-dupe{ border-color:rgba(246,207,91,.34) }
+.in-body{ min-width:0; flex:1 }
+.in-name{ display:block; font-size:var(--fs-sm); font-weight:var(--w-head); color:var(--ink);
+  unicode-bidi:plaintext; text-align:start }
+.in-meta{ display:block; margin-block-start:2px; font-size:var(--fs-xs); color:var(--ink-4) }
+.in-tags{ display:flex; flex-wrap:wrap; gap:var(--s-1); margin-block-start:var(--s-2) }
+.in-tag,.in-warn{ display:inline-flex; align-items:center; gap:.4em;
+  font-size:var(--fs-micro); font-weight:var(--w-strong);
+  padding:3px 9px; border-radius:var(--r-pill);
+  border:1px solid var(--hair); color:var(--ink-4);
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+/* What the manifest did not say. Named, never hidden: a thin manifest must
+   produce a thin record you can see, not a confident wrong one. */
+.in-warn{ color:var(--state-stall); border-color:rgba(246,207,91,.30); background:var(--state-stall-t) }
+.in-dupe-row{ display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap;
+  margin-block-start:var(--s-2); font-size:var(--fs-xs); color:var(--state-stall) }
+.in-dupe-row .btn.on{ border-color:var(--purple); color:var(--ink) }
+
+@media (pointer:coarse){ .in-card{ min-height:44px } }
+
 /* --- the symbol set -------------------------------------------------------
    Stroke only, inheriting currentColor, so a symbol is never a second colour
    decision after the text beside it. Decoration in the accessibility sense: the
@@ -1133,3 +1315,45 @@ body.modal-open{
   .btn,.btn.sm{min-height:44px}
   .tray-toggle{min-height:40px}
 }
+
+/* --- replies ---------------------------------------------------------------
+   The words a prospect wrote are the most valuable thing on the History tab, so
+   they sit above the log rather than inside it. A log entry is a fact about the
+   console; this is a fact about the business. */
+.mw-replies{ margin-block-end:var(--s-5) }
+.mw-h{
+  display:flex; align-items:center; gap:var(--s-2);
+  margin:0 0 var(--s-3); font-size:14px; color:var(--ink-2);
+}
+.rp-card{
+  border:1px solid var(--hair); border-radius:var(--r-md);
+  padding:var(--s-3); margin-block-end:var(--s-2);
+  background:var(--panel);
+}
+.rp-top{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s-2) }
+.rp-who{ font-weight:600 }
+.rp-when,.rp-from{ font-size:12px; color:var(--ink-4) }
+.rp-subj{ margin-block-start:var(--s-2); color:var(--ink-2) }
+/* The snippet is 300 characters by design: the full body stays in Gmail, so
+   private correspondence never enters a blob that syncs to every device. */
+.rp-snip{
+  margin:var(--s-2) 0 0; color:var(--ink-3); font-size:14px; line-height:1.6;
+  white-space:pre-wrap; overflow-wrap:anywhere;
+}
+.rp-foot{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:var(--s-2); margin-block-start:var(--s-3); flex-wrap:wrap;
+}
+/* Which rule matched is on screen, not only in the record. A wrong attribution
+   is then diagnosable by the person looking at it rather than mysterious. */
+.rp-rule{ font-size:12px; color:var(--ink-4) }
+[dir="rtl"] .rp-rule,[dir="rtl"] .rp-when,[dir="rtl"] .rp-from{ letter-spacing:normal }
+.mw-autos{ margin-block-end:var(--s-4) }
+.rp-auto{
+  display:flex; align-items:center; gap:var(--s-2);
+  font-size:13px; color:var(--ink-4);
+  padding:var(--s-2) var(--s-3);
+  border:1px dashed var(--hair); border-radius:var(--r-md);
+  margin-block-end:var(--s-2);
+}
+.rp-auto .ic{ color:var(--state-stall) }

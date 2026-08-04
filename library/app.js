@@ -52,7 +52,32 @@ function download(name, text, type){
 /* Everything here is mirrored across devices. Writing any of them schedules a push, so a
    change made anywhere reaches everywhere without being asked. */
 const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thrive_activity_v1:1,
+  /* Derived, but a device whose log has truncated cannot rebuild it, so it travels. */
+  thrive_rollup_v1:1,
+  /* Inbound mail. The relay writes it, every device reads it, and it is evidence
+     about a prospect rather than posture about a device, so it travels. */
+  thrive_inbound_v1:1,
   thrive_email_templates_v1:1, thrive_templates_v1:1, thrive_removed_v1:1, thrive_etpl_seed_v1:1 };
+/* WebKit deletes ALL script writeable storage for an origin with no user interaction in the
+   last seven days of browser use. Not part of it: all of it, at once. And localStorage throws
+   past roughly 5 MiB. So a write that fails is not a detail, it is the moment the console stops
+   being able to remember anything, and it has to say so rather than return false into a caller
+   that ignores it. */
+let __quotaHit=0;
+function storageBytes(){
+  let total=0; const by={};
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      const v=localStorage.getItem(k)||"";
+      const n=(k.length+v.length)*2;      // UTF-16 code units, which is what the quota counts
+      by[k]=n; total+=n;
+    }
+  }catch(e){}
+  return { total:total, by:by,
+           top:Object.keys(by).sort((a,b)=>by[b]-by[a]).slice(0,6).map(k=>({key:k,bytes:by[k]})) };
+}
+const STORAGE_CEILING=5*1024*1024;
 function lsSet(key, str){
   try{ localStorage.setItem(key, str); if(SYNCED_KEYS[key]) try{ scheduleSyncPush(); }catch(_){} return true; }
   catch(e){
@@ -60,7 +85,16 @@ function lsSet(key, str){
       const h=JSON.parse(localStorage.getItem("thrive_hits_v1")||"[]"); if(h.length>150) localStorage.setItem("thrive_hits_v1", JSON.stringify(h.slice(-150)));
       const a=JSON.parse(localStorage.getItem("thrive_activity_v1")||"[]"); if(a.length>200) localStorage.setItem("thrive_activity_v1", JSON.stringify(a.slice(-200)));
       localStorage.setItem(key, str); if(SYNCED_KEYS[key]) try{ scheduleSyncPush(); }catch(_){} return true;
-    }catch(e2){ try{ toast(t("storage_full")); }catch(_){} return false; }
+    }catch(e2){
+      /* Both writes failed, so this device can no longer remember anything new. It is told
+         once, loudly, with what to do, rather than a toast that scrolls away: the next thing
+         the reader types would otherwise be lost without a word. */
+      __quotaHit=Date.now();
+      try{ toast(t("st_full_act"), { label:t("nav_settings"), ms:14000,
+        fn:()=>{ try{ goTo("settings"); }catch(_){ location.hash="#settings"; } } }); }catch(_){}
+      try{ logActivity("storage_full", key, String((storageBytes().total/1048576).toFixed(2))+" MiB"); }catch(_){}
+      return false;
+    }
   }
 }
 
@@ -87,6 +121,17 @@ window.logActivity = logActivity;
    screen or left the shell.
 
    So: every internal destination is built here, and every parameter is read here. */
+/* A run of digits, an address or a URL reads left to right inside an Arabic
+   sentence. Also one definition rather than one per surface, for the same reason
+   as ic() below: the second surface that wanted it threw instead. */
+function ltr(s){ return '<span class="mono-iso">'+esc(s)+'</span>'; }
+
+/* One symbol helper for the whole file. It was a local inside the board render,
+   so every other surface that wanted a symbol either duplicated it or, as the
+   replies panel did, threw. One definition, module scope, guarded for the pages
+   that load app.js before icons.js has run. */
+function ic(n, sz){ return (typeof thriveIcon==="function") ? thriveIcon(n,{size:sz||14}) : ""; }
+
 function inShell(){ return !!document.getElementById("view-board"); }
 function viewHref(view, query){
   const q = query ? ("?" + query) : "";
@@ -358,6 +403,17 @@ function outreachOpens(o){
 /* The local day, as the date inputs and the manual contact records want it. Local rather than
    UTC on purpose: a send made at nine in the evening in Alexandria belongs to that evening, not
    to the next morning in London. */
+/* Does the published page still answer? true gone, false there, null could not tell.
+   The third answer matters: a proxy, an offline iPad or a blocked host is not a missing page,
+   and recording one as the other would put a false note on a record nobody would question. */
+async function pageIsGone(slug){
+  try{
+    const r=await fetch(liveUrl(slug), { method:"GET", cache:"no-store", redirect:"follow" });
+    if(r.status===404 || r.status===410) return true;
+    if(r.ok) return false;
+    return null;
+  }catch(e){ return null; }
+}
 function today(){
   const d=new Date();
   const p=n=>String(n).padStart(2,"0");
@@ -711,6 +767,60 @@ function classifySyncError(msg){
   if(/state too large/i.test(msg)) return t("sy_err_toobig");
   return msg;
 }
+/* ---------- inbound mail ----------
+   The relay scans the inbox and writes records; the console reads them and moves
+   what they prove. It never writes a stage directly: a matched reply goes through
+   the same lifecycle move a person would use, with the same guards and the same
+   activity entry, because a card that arrived in `replied` by a different route
+   is a card whose history has a hole in it. */
+const INBOUND="thrive_inbound_v1";
+function getInbound(){ try{ return JSON.parse(localStorage.getItem(INBOUND)||"[]"); }catch(e){ return []; } }
+function setInbound(a){ lsSet(INBOUND, JSON.stringify((a||[]).slice(-800))); }
+function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
+/* Named on screen rather than counted: a reply nobody could attribute is the one
+   most likely to be worth money, because it is the one nobody is expecting. */
+function inboundUnmatched(){ return getInbound().filter(r=> r && r.kind!=="auto" && !r.opp); }
+
+/* Pull, merge, then move. Idempotent at every step: the merge is keyed on the
+   Gmail message id, and the move is refused by the lifecycle if the card is
+   already there, so a second sync in the same minute changes nothing. */
+async function pullInbound(ep, auth){
+  let j=null;
+  try{
+    const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({ op:"inbound_get", auth:auth }) });
+    j=await r.json();
+  }catch(e){ return 0; }
+  /* A relay still on v4 does not know this op. That is not an error worth
+     showing: it is a relay that has not been redeployed yet, and docs/RELAY.md
+     is where that is fixed. */
+  if(!j || !j.ok || !Array.isArray(j.records)) return 0;
+
+  const before=getInbound();
+  const merged=ThriveInbound.mergeInbound(before, j.records);
+  if(merged.length===before.length && JSON.stringify(merged)===JSON.stringify(before)) return 0;
+  setInbound(merged);
+  try{ if(j.scan) __inboxScan=j.scan; }catch(e){}
+  await applyInboundMoves(merged);
+  return merged.length-before.length;
+}
+let __inboxScan=null;
+function inboxScanInfo(){ return __inboxScan; }
+
+async function applyInboundMoves(records){
+  const want=ThriveInbound.repliedSlugs(records);
+  if(!want.length) return;
+  const all=await mergedOpps();
+  for(const w of want){
+    const o=all.find(x=>x.slug===w.slug);
+    if(!o) continue;
+    if(ThriveLifecycle.stageOf(o)==="replied") continue;
+    if(!ThriveLifecycle.can("record_reply", o)) continue;   // won, lost, archived: leave it alone
+    const day=ThriveInbound.dayOf(w.ts)||today();
+    await runMove("record_reply", w.slug, { replied_on:day, silent:true });
+  }
+}
+
 async function doSyncRound(ep, auth){
   const g=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
     body:JSON.stringify({ op:"state_get", auth:auth }) });
@@ -725,6 +835,9 @@ async function doSyncRound(ep, auth){
   // this, a page that syncs right after unlocking never re-checks collection and sits on a
   // stale "not collecting" message no matter how the relay is actually deployed.
   try{ await fetchRemoteHits(); }catch(e){}
+  // Replies ride the same round. A reply that arrives fifteen minutes after a
+  // send should be on the board before the next time anybody looks at it.
+  try{ await pullInbound(ep, auth); }catch(e){}
   if(typeof window.onThriveSync==="function"){ try{ window.onThriveSync(); }catch(e){} }
 }
 async function syncNow(){
@@ -983,6 +1096,27 @@ function saveDraft(rec){
   if(i>=0) a[i]={...a[i], ...rec}; else a.push(rec); setDrafts(a);
 }
 function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDrafts().filter(x=>x.slug!==slug)); }
+/* Carried forward from phase 1. A delete is the move a person most regrets, and it was the one
+   without an undo. The whole record is kept in the closure until the toast expires, so undoing
+   restores what was there rather than a reconstruction of it, and the tombstone is lifted so
+   the record does not get removed again by the next sync. */
+function removeDraftUndoable(slug, label){
+  const rec=getDraft(slug);
+  if(!rec) return false;
+  const copy=JSON.parse(JSON.stringify(rec));
+  removeDraft(slug);
+  logActivity("remove", slug, label||"");
+  try{ scheduleSyncPush(); }catch(e){}
+  toast(t("mv_undo_del"), { label:t("lc_undo"), fn:()=>{
+    const tb=tombs(); delete tb["opp:"+slug]; setTombs(tb);
+    saveDraft(copy);
+    logActivity("lc_undo", slug, "remove");
+    try{ scheduleSyncPush(); }catch(e){}
+    toast(t("lc_undone"));
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+  }});
+  return true;
+}
 
 async function mergedOpps(){
   const {list}=await loadManifest();
@@ -1202,8 +1336,11 @@ async function initDashboard(){
     grid.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
       const slug=b.getAttribute("data-del");
       if(!confirm(t("confirm_remove"))) return;
-      removeDraft(slug); logActivity("remove", slug, "");
+      const gone=state.data.find(o=>o.slug===slug);
+      removeDraftUndoable(slug, (gone&&gone.business)||"");
       state.data=state.data.filter(o=>!(o._local&&o.slug===slug)); render();
+      /* The undo puts the record back, so the list has to be able to see it again. */
+      window.thriveBoardRefresh=window.thriveBoardRefresh||null;
     }));
     grid.querySelectorAll("[data-arch]").forEach(b=>b.addEventListener("click",()=>{
       const slug=b.getAttribute("data-arch"); const val=b.getAttribute("data-val")==="1";
@@ -1303,18 +1440,43 @@ async function initEditor(slugArg){
     const warn=el("slugWarn"); if(!warn) return;
     warn.hidden = !collides();
   }
+  /* The direction, the typeface and the typography rules come from the document's own language,
+     not from the chrome. Thyab can work in Arabic chrome on an English opportunity and nothing
+     about the document changes, which is the whole point of separating the two axes. */
+  function applyDocLang(){
+    const sel=el("f_doclang"); if(!sel) return;
+    const L=(sel.value||"EN").toUpperCase();
+    const badge=el("edLocBadge");
+    if(badge){
+      badge.hidden=false;
+      badge.textContent=t("loc_badge")+": "+t("loc_"+L.toLowerCase());
+      badge.className="loc-badge loc-"+L.toLowerCase();
+    }
+    ["f_biz","f_quote","f_quoteby","f_proof1","f_proof2","f_proof3","f_want"].forEach(id=>{
+      const n=el(id); if(!n) return;
+      n.setAttribute("dir", dirOf(L));
+      n.classList.toggle("doc-ar", L==="AR");
+    });
+    /* Identity fields stay left to right in both, because a slug, a URL, an address and a date
+       are read the same way whatever the document says. */
+    ["f_slug","f_sent","f_phone"].forEach(id=>{ const n=el(id); if(n) n.setAttribute("dir","ltr"); });
+  }
   function refreshMeta(){ el("urlpill").textContent = liveUrl(curSlug()||"<name>"); checkCollision(); }
   async function refreshPreview(){ const html=await currentHTML(); el("frame").srcdoc = html || "<!doctype html><meta charset='utf-8'>"; }
   async function refresh(){ refreshMeta(); await refreshPreview(); }
   const debPreview=debounce(refreshPreview, 220);   // perf: don't regenerate the heavy preview on every keystroke
   function refreshLive(){ refreshMeta(); debPreview(); }
   let editingLive=false;
+  applyDocLang();
+  const dlSel=el("f_doclang");
+  if(dlSel) dlSel.addEventListener("change", ()=>{ applyDocLang(); debPreview&&debPreview(); });
   function record(){
     const slug = curSlug(); const v=values();
     return { slug, business:el("f_biz").value.trim(),
       template: mode==="upload"?"custom":el("f_template").value,
       sent_on:el("f_sent").value, location:el("f_location").value.trim(),
       phone:el("f_phone").value.trim(), status:"sent", mode:mode, published:editingLive,
+      doc_lang:(el("f_doclang")&&el("f_doclang").value)||"EN",
       fields:{ QUOTE:v.QUOTE, QUOTE_BY:v.QUOTE_BY, PROOF1:v.PROOF1, PROOF2:v.PROOF2, PROOF3:v.PROOF3, WANT:v.WANT } };
   }
   // store the page HTML only for uploads (template drafts regenerate on demand, which saves storage)
@@ -1431,6 +1593,9 @@ async function initEditor(slugArg){
       el("f_biz").value=d.business||""; el("f_slug").value=d.slug; el("f_slug").dataset.touched="1";
       el("f_sent").value=d.sent_on||el("f_sent").value; el("f_location").value=d.location||""; el("f_phone").value=d.phone||"";
       if(d.template && d.template!=="custom"){ el("f_template").value=d.template; }
+      /* The document's own language, explicit if it has one and inferred if it does not, but
+         never taken from the chrome. */
+      if(el("f_doclang")){ el("f_doclang").value=docLang(d); applyDocLang(); }
       const hasFields = d.fields && Object.keys(d.fields).some(k=>d.fields[k]);
       // restore an uploaded/custom page so editing keeps its content
       if((d.mode==="upload" || d.template==="custom") && d.html){
@@ -1712,23 +1877,23 @@ function brandWrap(inner, branded){
 const ETPL = "thrive_email_templates_v1";
 /* The monthly template is month-aware ({{MONTH}}: the composer asks which month) and ships
    with NO embedded opportunity link: the writer decides which words carry it (guided flow). */
-const ETPL_MONTHLY = { id:"monthly", name:"Monthly update", subject:"{{MONTH}} at Thrive",
+const ETPL_MONTHLY = { id:"monthly", locale:"EN", name:"Monthly update", subject:"{{MONTH}} at Thrive",
   html:'Hi {{NAME}},<br><br>End of the month, so here is {{MONTH}} at Thrive. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com' };
 /* Arabic edition of the stock template, a real Arabic message, not a translation of labels
    around English text. Greeting is «مرحبًا فلان،», not "Hi …". */
-const ETPL_MONTHLY_AR = { id:"monthly-ar", name:"التحديث الشهري", subject:"{{MONTH}} في ثرايف",
+const ETPL_MONTHLY_AR = { id:"monthly-ar", locale:"AR", name:"التحديث الشهري", subject:"{{MONTH}} في ثرايف",
   html:'مرحبًا {{NAME}}،<br><br>مع نهاية الشهر، هذا هو {{MONTH}} في ثرايف. نحن نختار العمل الذي نفخر به. إن كان ذلك يناسبك، تكفي كلمة.<br><br>إلى الشهر القادم!<br><br>عبدالله ذياب<br>thriveiii.com' };
 /* The two that matter on the day you publish a page: the message that sends it, and the one
    that follows up when nothing came back. Both carry the link inside real words rather than
    as a bare URL, and neither states anything about the recipient: every fact in them is a
    merge field or something you type. They are a starting point, and you edit them. */
-const ETPL_OPP = { id:"opp-intro", name:"Send an opportunity page", subject:"{{BIZ}} x Thrive",
+const ETPL_OPP = { id:"opp-intro", locale:"EN", name:"Send an opportunity page", subject:"{{BIZ}} x Thrive",
   html:'Hi {{NAME}},<br><br>I put together <a href="{{LINK}}">a short page for {{BIZ}}</a>. One screen, no form to fill in. It says what I noticed and what I would do about it.<br><br>If it is worth a conversation, just reply. If not, no reply needed.<br><br>Abdullah Thyab<br>thriveiii.com' };
-const ETPL_OPP_AR = { id:"opp-intro-ar", name:"إرسال صفحة فرصة", subject:"{{BIZ}} مع ثرايف",
+const ETPL_OPP_AR = { id:"opp-intro-ar", locale:"AR", name:"إرسال صفحة فرصة", subject:"{{BIZ}} مع ثرايف",
   html:'مرحبًا {{NAME}}،<br><br>أعددت <a href="{{LINK}}">صفحة قصيرة لـ {{BIZ}}</a>. شاشة واحدة، بلا نموذج تملؤه. فيها ما لاحظته وما أقترح فعله.<br><br>إن كانت تستحق حديثًا، يكفي أن تردّ. وإن لم تكن، فلا حاجة للرد.<br><br>عبدالله ذياب<br>thriveiii.com' };
-const ETPL_NUDGE = { id:"opp-nudge", name:"Follow up once", subject:"Re: {{BIZ}} x Thrive",
+const ETPL_NUDGE = { id:"opp-nudge", locale:"EN", name:"Follow up once", subject:"Re: {{BIZ}} x Thrive",
   html:'Hi {{NAME}},<br><br>Bringing <a href="{{LINK}}">the page for {{BIZ}}</a> back to the top of your inbox, in case it arrived on a busy day.<br><br>If the timing is wrong, tell me and I will leave it there.<br><br>Abdullah Thyab<br>thriveiii.com' };
-const ETPL_NUDGE_AR = { id:"opp-nudge-ar", name:"متابعة واحدة", subject:"إعادة: {{BIZ}} مع ثرايف",
+const ETPL_NUDGE_AR = { id:"opp-nudge-ar", locale:"AR", name:"متابعة واحدة", subject:"إعادة: {{BIZ}} مع ثرايف",
   html:'مرحبًا {{NAME}}،<br><br>أعيد <a href="{{LINK}}">صفحة {{BIZ}}</a> إلى أعلى بريدك، فربما وصلت في يوم مزدحم.<br><br>وإن كان التوقيت غير مناسب، أخبرني وأتركها عند هذا الحد.<br><br>عبدالله ذياب<br>thriveiii.com' };
 
 /* Which stock templates this console has already been offered. Without it, deleting one
@@ -2076,11 +2241,23 @@ async function initCompose(slugArg){
   function clearCompose(){ subjectDirty=false; el("esubject").value=""; body.innerHTML=""; if(monthWrap) monthWrap.hidden=true; refreshLinks(); }
   if(tplSel){
     const plainOpt=document.createElement("option"); plainOpt.value=""; plainOpt.textContent=t("cmp_no_tpl"); plainOpt.setAttribute("data-i18n","cmp_no_tpl"); tplSel.appendChild(plainOpt);
-    tplCache.forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
+    /* The drop-down obeys the same rule as the chips. Two controls offering different sets is
+       how a person learns to distrust both. */
+    const preT=params.get("etpl");
+    /* An explicit ask outranks an inference. "Compose with" names one template, and if the
+       drop-down is filtered to the other library the ask is silently dropped: the composer
+       opens blank with no word about why. So when a template is named, the locale of THAT
+       template is the locale of the list. Inference is only for when nobody said. */
+    const askedTpl = preT ? tplCache.find(tp=>tp.id===preT) : null;
+    const localeOfTpl = tp=>(localeOf(tp) || (isArabicText((tp.subject||"")+(tp.html||"")) ? "AR" : "EN"));
+    const selWant = askedTpl ? localeOfTpl(askedTpl)
+                  : oppObj ? docLang(oppObj)
+                  : (getLang()==="ar" ? "AR" : "EN");
+    tplCache.filter(tp=>localeOfTpl(tp)===selWant)
+      .forEach(tp=>{ const o=document.createElement("option"); o.value=tp.id; o.textContent=tp.name; tplSel.appendChild(o); });
     // ALWAYS start blank: an empty editor with no template. A template is only pre-selected when
     // the writer explicitly asked for one via ?etpl=<id> (e.g. "Compose with" from Templates).
     tplSel.value="";
-    const preT=params.get("etpl");
     if(preT && [...tplSel.options].some(o=>o.value===preT)) tplSel.value=preT;
     tplSel.addEventListener("change",()=>{
       if(tplSel.value===""){ clearCompose(); }        // plain: back to an empty editor
@@ -2097,14 +2274,21 @@ async function initCompose(slugArg){
     if(!quickBox) return;
     const empty = !(body.textContent||"").trim() && !(el("esubject").value||"").trim();
     if(!empty || !tplCache.length){ quickBox.hidden=true; quickBox.innerHTML=""; return; }
-    const ar=getLang()==="ar";
+    /* One locale, never a mixed row. Which locale is a property of the OPPORTUNITY when there
+       is one, and of the chrome only when there is not. This is the leak WO-012 §7 opens with:
+       the English composer offering «التحديث الشهري» beside Monthly update was one variable
+       doing two jobs, not a translation problem. */
+    const want = oppObj ? docLang(oppObj) : (getLang()==="ar" ? "AR" : "EN");
+    const inLocale = tp => (localeOf(tp) || (isArabicText((tp.subject||"")+(tp.html||"")) ? "AR" : "EN")) === want;
+    const pool = tplCache.filter(inLocale);
     const score=tp=>{
-      const isAr=/[؀-ۿ]/.test((tp.subject||"")+(tp.html||""));
-      let n = (isAr===ar) ? 0 : 4;                       // your language first
-      if(/\{\{LINK\}\}/.test(tp.html||"") && slug) n-=2;  // then the ones that carry this page
+      let n=0;
+      if(/\{\{LINK\}\}/.test(tp.html||"") && slug) n-=2;  // the ones that carry this page first
       return n;
     };
-    const list=tplCache.slice().sort((a,b)=>score(a)-score(b)).slice(0,4);
+    const list=pool.slice().sort((a,b)=>score(a)-score(b)).slice(0,4);
+    /* An empty shelf that says nothing is better than a shelf of the wrong language. */
+    if(!list.length){ quickBox.hidden=true; quickBox.innerHTML=""; return; }
     quickBox.hidden=false;
     quickBox.innerHTML='<span class="etpl-quick-h">'+esc(t("cmp_quick_h"))+'</span>'+
       list.map(tp=>'<button type="button" class="lp" data-quick="'+esc(tp.id)+'">'+esc(tp.name||tp.id)+'</button>').join("");
@@ -2349,6 +2533,8 @@ async function connCheck(candidate, onStep){
 }
 
 function initSettings(){
+  renderStorageMeter();
+  renderRepliesPanel();
   const el=id=>document.getElementById(id);
   const c=ghConfig();
   el("gh_owner").value=c.owner||"thriveiii";
@@ -2656,33 +2842,44 @@ function initTemplates(){
       </div>`).join("");
   }
   function renderCustom(){
-    const list=getCustomTemplates();
-    if(!list.length){ el("customList").innerHTML='<div class="empty">'+t("tpl_none")+'</div>'; return; }
-    el("customList").innerHTML = list.map(ct=>`
-      <div class="item">
-        <div class="thumb"><iframe srcdoc="${esc(ct.html||"").slice(0,200000).replace(/"/g,'&quot;')}" loading="lazy" title="${esc(ct.id)}"></iframe></div>
-        <div class="item-body">
-          <div class="id">${esc(ct.id)} · ${esc(ct.lang||"EN")}</div>
-          <h3>${esc(ct.name||ct.id)}</h3>
-          <span class="badge edit">${t("tpl_badge_custom")}</span>
-          <p class="meta-line">${t("act_upload")}: ${esc((ct.created||"").slice(0,10))||t("none")} · ${Math.round((ct.html||"").length/1024)} KB</p>
-          <div class="actions">
-            <a class="btn sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("use_template")}</a>
+    const all=getCustomTemplates();
+    const list=localeTemplates(all, localeTab());
+    const host=el("customList");
+    host.innerHTML=localeTabBar("tplLocTabs")+
+      (list.length? list.map(ct=>`
+        <div class="tpl">
+          <div class="tpl-b">
+            <div class="name">${esc(ct.name||ct.id)}</div>
+            <div class="id">${esc(ct.id)} · ${esc(localeOf(ct)||"")}</div>
+          </div>
+          <div class="tpl-a">
+            <a class="btn ghost sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("use_template")}</a>
+            <button class="btn ghost sm" data-cp="${esc(ct.id)}">${t(localeTab()==="EN"?"loc_counterpart":"loc_counterpart_en")}</button>
+            <button class="btn ghost sm" data-pubtpl="${esc(ct.id)}">${t("publish")}</button>
             <button class="btn ghost sm" data-dl="${esc(ct.id)}">${t("dl_template")}</button>
-            ${ghReady()?`<button class="btn ghost sm" data-pubtpl="${esc(ct.id)}">${t("tpl_publish")}</button>`:""}
             <button class="btn ghost sm danger" data-del="${esc(ct.id)}">${t("tpl_delete")}</button>
           </div>
-        </div>
-      </div>`).join("");
-    /* Deleting a page template must never change a page that has already gone out. The built
-       pages stay exactly as they are and are flagged instead, so the modal can say where they
-       came from without pretending the template is still there.
-
-       Drafts are the one case that genuinely breaks: a draft has no built html and regenerates
-       from its template every time it is opened, so deleting the template underneath it leaves
-       a record that cannot produce a page. Those block the deletion, and the count is named,
-       because "cannot delete" without a number is a dead end rather than an instruction. */
-    el("customList").querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click", async ()=>{
+        </div>`).join("") : "")+
+      localeEmpty(localeTab(), list.length)+
+      migrationPanel();
+    if(typeof applyIcons==="function") applyIcons(host);
+    window.__renderPageTpls=renderCustom;
+    host.querySelectorAll("[data-loc]").forEach(b=>b.addEventListener("click",()=>setLocaleTab(b.getAttribute("data-loc"))));
+    bindMigration(host, renderCustom);
+    /* A counterpart copies the structure and leaves the content empty. It never machine
+       translates: a translated shelf reads as a shelf until somebody sends from it. */
+    host.querySelectorAll("[data-cp]").forEach(b=>b.addEventListener("click",()=>{
+      const src=getCustomTemplate(b.getAttribute("data-cp")); if(!src) return;
+      const other=localeTab()==="EN"?"AR":"EN";
+      let id=src.id+"-"+other.toLowerCase(); let n=2;
+      while(getCustomTemplate(id)) id=src.id+"-"+other.toLowerCase()+"-"+(n++);
+      saveCustomTemplate({ id:id, name:(src.name||src.id)+" ("+t("loc_"+other.toLowerCase())+")",
+        locale:other, lang:other, html:"", created:new Date().toISOString() });
+      logActivity("tpl_add", id, "counterpart");
+      toast(t("loc_counterpart_made"));
+      setLocaleTab(other);   /* redraws both lists, so the counterpart is on screen already */
+    }));
+    host.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click", async ()=>{
       const id=b.getAttribute("data-del");
       const opps=await mergedOpps();
       const d=ThriveLifecycle.templateDeletion(id, opps);
@@ -2698,17 +2895,18 @@ function initTemplates(){
       try{ scheduleSyncPush(); }catch(e){}
       renderCustom();
     }));
-    el("customList").querySelectorAll("[data-dl]").forEach(b=>b.addEventListener("click",()=>{
+    host.querySelectorAll("[data-dl]").forEach(b=>b.addEventListener("click",()=>{
       const ct=getCustomTemplate(b.getAttribute("data-dl")); if(ct) download(ct.id+".html", ct.html||"");
     }));
-    el("customList").querySelectorAll("[data-pubtpl]").forEach(b=>b.addEventListener("click", async ()=>{
+    host.querySelectorAll("[data-pubtpl]").forEach(b=>b.addEventListener("click", async ()=>{
       const ct=getCustomTemplate(b.getAttribute("data-pubtpl")); if(!ct) return;
       b.disabled=true; const old=b.textContent; b.textContent=t("publishing");
       try{ await publishTemplate(ct); logActivity("tpl_publish", ct.id, ""); toast(t("tpl_published")); }
-      catch(e){ toast(t("gh_err")+": "+e.message); }
+      catch(e){ toast(t("tpl_pub_err")+": "+e.message); }
       finally{ b.disabled=false; b.textContent=old; }
     }));
   }
+
 
   // upload / add custom template
   const dz=el("tplDz"), file=el("tplFile");
@@ -2825,9 +3023,18 @@ function initTemplates(){
   }
   function renderEmailTpls(){
     const wrap=el("emailTplList"); if(!wrap) return;
-    const list=getEmailTemplates(), stats=etStats();
-    if(!list.length){ wrap.innerHTML='<div class="empty">'+t("et_none")+'</div>'; return; }
-    wrap.innerHTML = list.map(et=>{
+    const all=getEmailTemplates(), stats=etStats();
+    /* One locale, same rule as the page templates and same rule as the composer. */
+    const list=localeTemplates(all, localeTab());
+    const chrome=localeTabBar("etLocTabs");
+    const tail=localeEmpty(localeTab(), list.length)+migrationPanel();
+    const bindTabs=()=>{
+      window.__renderMsgTpls=renderEmailTpls;
+      wrap.querySelectorAll("[data-loc]").forEach(b=>b.addEventListener("click",()=>setLocaleTab(b.getAttribute("data-loc"))));
+      bindMigration(wrap, renderEmailTpls);
+    };
+    if(!list.length){ wrap.innerHTML=chrome+tail; bindTabs(); return; }
+    wrap.innerHTML = chrome + list.map(et=>{
       const usesMonth=tplUsesMonth(et);
       return `
       <div class="item no-thumb">
@@ -2849,7 +3056,8 @@ function initTemplates(){
             <button class="btn ghost sm danger" data-etdel="${esc(et.id)}">${t("tpl_delete")}</button>
           </div>
         </div>
-      </div>`;}).join("");
+      </div>`;}).join("") + tail;
+    bindTabs();
     wrap.querySelectorAll("[data-etedit]").forEach(b=>b.addEventListener("click",()=>etOpen(b.getAttribute("data-etedit"))));
     wrap.querySelectorAll("[data-etdup]").forEach(b=>b.addEventListener("click",()=>{
       const src=getEmailTemplates().find(x=>x.id===b.getAttribute("data-etdup")); if(!src) return;
@@ -3341,9 +3549,16 @@ async function initBoard(){
     else if(tk.lane==="replied") meta=txt("tok_answered");
     else if(tk.opens>0) meta=txt("tok_opens", tk.opens).replace(String(tk.opens), num(tk.opens));
     else meta=txt("tok_idle", tk.age).replace(String(tk.age), num(tk.age));
-    return '<button class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" type="button">'+
-      '<span class="tok-name">'+esc(tk.biz)+'</span>'+
-      '<span class="tok-meta">'+meta+'</span></button>';
+    /* The card is a row now, not a single button: the label opens the window, the grip picks it
+       up, and the overflow control is the path that needs no dragging at all. */
+    return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
+      '<button class="tok-open" type="button">'+
+        '<span class="tok-name">'+esc(tk.biz)+'</span>'+
+        '<span class="tok-meta">'+meta+'</span>'+
+      '</button>'+
+      '<button class="tok-more" type="button" aria-haspopup="menu" aria-label="'+esc(t("mv_menu"))+'">'+ic("chevron")+'</button>'+
+      '<span class="tok-grip" aria-hidden="true">'+ic("drag")+'</span>'+
+      '</div>';
   }
 
   /* FLIP: a token never teleports between lanes.
@@ -3388,6 +3603,16 @@ async function initBoard(){
       const count=document.querySelector('[data-count="'+k+'"]');
       if(count) count.textContent=b.lanes[k].length;
       if(!body) return;
+      /* The order somebody arranged on this device, applied on top of the lane's own sort.
+         Anything not in the stored order keeps its place after the ones that are. */
+      const ord=(cardOrder()[k]||[]);
+      if(ord.length) b.lanes[k].sort((x,y)=>{
+        const i=ord.indexOf(x.slug), j=ord.indexOf(y.slug);
+        if(i<0 && j<0) return 0;
+        if(i<0) return 1;
+        if(j<0) return -1;
+        return i-j;
+      });
       body.innerHTML = b.lanes[k].length
         ? b.lanes[k].map((tk,i)=> tokenHtml(tk).replace('class="tok ', 'class="tok '+(i<3?"enter enter-"+(i+1)+" ":"")) ).join("")
         : '<div class="lane-empty">'+esc(t("lane_"+k+"_empty"))+'</div>';
@@ -3432,7 +3657,8 @@ async function initBoard(){
     // what has happened to it.
     playFlip(first);
 
-    document.querySelectorAll(".tok").forEach(tk=>tk.addEventListener("click",()=>{
+    document.querySelectorAll(".tok-open").forEach(btn=>btn.addEventListener("click",()=>{
+      const tk=btn.closest(".tok");
       const slug=tk.getAttribute("data-slug");
       const name=(tk.querySelector(".tok-name")||{}).textContent||slug;
       // In the shell the work opens in one centred window. On a single page there is no
@@ -3470,7 +3696,891 @@ async function initBoard(){
      without this the board kept showing what was true before the click: the record was right,
      the model was right, and the screen was wrong, which is the worst of the three. */
   window.thriveBoardRefresh=render;
+  initIntake();
+  renderSyncBand();
+  refreshRollup();
+  initCardMenu();
+  initCardDrag();
   await render();
+}
+
+/* ---------- two language axes, and they never touch ----------
+   ui_lang drives the console chrome: navigation, labels, buttons, empty states. It is the
+   existing thrive_lang and nothing about it changes.
+
+   doc_lang is a property of the OPPORTUNITY. It drives the page template, the outreach text,
+   the message templates offered, and the direction of the built page. Thyab can work in Arabic
+   chrome on an English opportunity and nothing about the document changes.
+
+   Conflating the two is why the English composer offered «التحديث الشهري» beside Monthly update
+   in one row. That was never a translation problem. It was one variable doing two jobs.
+
+   Nothing is renamed. `locale` is added beside the page template's existing `lang`, which keeps
+   working, and doc_lang is added to the opportunity. Both are additive. */
+const LOCALES=["EN","AR"];
+function isArabicText(s){ return /[\u0600-\u06FF]/.test(String(s||"")); }
+/* Detection, used to PROPOSE a locale and never to assign one silently. A template whose
+   content is Arabic is almost certainly Arabic, but "almost certainly" is not a decision
+   somebody made, so the migration shows what it found and asks. */
+function detectLocale(o){
+  if(!o) return "EN";
+  const hay=[o.name, o.subject, o.html, o.body].filter(Boolean).join(" ");
+  return isArabicText(hay) ? "AR" : "EN";
+}
+function localeOf(tpl){
+  if(!tpl) return "";
+  const v=(tpl.locale || tpl.lang || "").toUpperCase();
+  return LOCALES.indexOf(v)>=0 ? v : "";
+}
+/* The opportunity's own language. Explicit if it has one, otherwise inferred from the page
+   template it was built on, otherwise from its own words. Never from the chrome. */
+function docLang(o){
+  if(!o) return "EN";
+  const v=(o.doc_lang||"").toUpperCase();
+  if(LOCALES.indexOf(v)>=0) return v;
+  const tp=getCustomTemplate&&getCustomTemplate(o.template);
+  const fromTpl=localeOf(tp) || localeOf((typeof APPROVED_TEMPLATES!=="undefined"?APPROVED_TEMPLATES:[]).find(x=>x.id===o.template));
+  if(fromTpl) return fromTpl;
+  return isArabicText([o.business,o.outreach_text,o.html].filter(Boolean).join(" ")) ? "AR" : "EN";
+}
+function dirOf(locale){ return locale==="AR" ? "rtl" : "ltr"; }
+/* Templates of one kind, in one locale. A template with no locale is not shown in either tab:
+   it appears in the migration instead, which is the only place it can be given one. */
+function localeTemplates(list, loc){ return (list||[]).filter(x=>localeOf(x)===loc); }
+function unlocalised(list){ return (list||[]).filter(x=>!localeOf(x)); }
+
+
+/* ---------- the two libraries ----------
+   Two tabs, English and Arabic, and no combined view. A template belongs to exactly one
+   document language, and a shelf that mixes them is a shelf you have to read before you can
+   use it.
+
+   A template with no locale appears in NEITHER tab. It appears in the migration, which is the
+   only place a locale can be given, and the migration proposes rather than assigns: it shows
+   what it read and asks. Assigning silently would put somebody's Arabic template in the
+   English library and there would be no trace of the decision. */
+/* It starts on the library the reader is already in. A hard "EN" meant an Arabic reader opened
+   Templates on the English library, tapped "Compose with", and landed in a composer whose
+   drop-down holds only Arabic templates, so the template they asked for was silently not
+   selected. Two surfaces choosing a locale by two different rules is the leak WO-012 §7 opens
+   with, and this was the same leak one layer up. Read once, lazily, because the language is
+   settled by the time any list draws and not necessarily when this file is evaluated. */
+let __localeTab=null;
+function localeTab(){
+  if(__localeTab===null){ try{ __localeTab = getLang()==="ar" ? "AR" : "EN"; }catch(e){ __localeTab="EN"; } }
+  return __localeTab;
+}
+function setLocaleTab(L){
+  __localeTab=L;
+  /* Both libraries share the tab, so both redraw. One list obeying the tab while the other
+     ignores it is worse than no tab at all: it teaches you that the control is unreliable. */
+  if(typeof window.__renderPageTpls==="function") window.__renderPageTpls();
+  if(typeof window.__renderMsgTpls==="function") window.__renderMsgTpls();
+}
+function localeTabBar(id){
+  return '<div class="seg loc-tabs" role="tablist" id="'+id+'">'+
+    LOCALES.map(L=>'<button role="tab" data-loc="'+L+'" class="'+(L===localeTab()?"on":"")+'" '+
+      'aria-selected="'+(L===localeTab()?"true":"false")+'">'+esc(t("loc_"+L.toLowerCase()))+'</button>').join("")+
+    '</div>';
+}
+function localeEmpty(L, n){
+  const count='<span class="loc-count">'+
+    esc(boardText(getLang(),"loc_count",n)).split(String(n)).join('<span class="n">'+n+'</span>')+
+    ' '+esc(t("loc_counter"))+'</span>';
+  if(n) return count;
+  return '<div class="mw-empty">'+
+    (typeof thriveIcon==="function"? thriveIcon("page",{size:32,cls:"mw-empty-i"}) : "")+
+    '<p>'+esc(t(L==="AR"?"loc_empty_ar":"loc_empty_en"))+'</p></div>'+count;
+}
+/* The migration. Detect, then ask, one row per template, nothing written until confirmed. */
+function migrationPanel(){
+  const pages=unlocalised(getCustomTemplates()), msgs=unlocalised(getEmailTemplates());
+  if(!pages.length && !msgs.length) return "";
+  const row=(x,kind)=>{
+    const d=detectLocale(x);
+    return '<div class="loc-mig-row"><span class="loc-mig-name">'+esc(x.name||x.id)+'</span>'+
+      '<span class="loc-mig-kind">'+esc(t(kind==="page"?"f_template":"cmp_template"))+'</span>'+
+      '<span class="loc-mig-read">'+esc(t("loc_mig_detected"))+' <b>'+esc(t("loc_"+d.toLowerCase()))+'</b></span>'+
+      '<select class="loc-mig-sel" data-kind="'+kind+'" data-id="'+esc(x.id)+'">'+
+      LOCALES.map(L=>'<option value="'+L+'"'+(L===d?" selected":"")+'>'+esc(t("loc_"+L.toLowerCase()))+'</option>').join("")+
+      '</select></div>';
+  };
+  return '<section class="loc-mig"><h4 class="mw-h">'+esc(t("loc_mig_h"))+'</h4>'+
+    '<p class="mw-note">'+esc(t("loc_mig_sub"))+'</p>'+
+    pages.map(x=>row(x,"page")).join("")+msgs.map(x=>row(x,"msg")).join("")+
+    '<button class="btn sm loc-mig-save" type="button">'+esc(t("loc_mig_save"))+'</button></section>';
+}
+function bindMigration(scope, after){
+  const b=scope.querySelector(".loc-mig-save"); if(!b) return;
+  b.addEventListener("click",()=>{
+    scope.querySelectorAll(".loc-mig-sel").forEach(sel=>{
+      const id=sel.getAttribute("data-id"), L=sel.value;
+      if(sel.getAttribute("data-kind")==="page") saveCustomTemplate({ id:id, locale:L, lang:L });
+      else saveEmailTemplate({ id:id, locale:L });
+    });
+    logActivity("loc_migrate","", "");
+    try{ scheduleSyncPush(); }catch(e){}
+    toast(t("loc_mig_done"));
+    if(after) after();
+  });
+}
+/* ---------- storage survival ----------
+   WebKit deletes ALL script writeable storage for an origin with no user interaction in the
+   last seven days of browser use. Not part of it. All of it, at once.
+
+   The console's entire data layer is localStorage on an iPad. So one quiet week away can erase
+   every opportunity, every draft and the whole mail ledger on that device, and nothing about it
+   is a bug anybody could have found by testing. The relay is the only durable copy, and until
+   now nothing checked that it actually held one.
+
+   Three things, in order of how much they matter:
+     the band, which fires at three days rather than seven so it lands before the window closes;
+     the completeness check, because a backup nobody has verified is a belief;
+     the meter, so "what is using the space" has an answer before the space runs out. */
+
+const SYNC_STALE_DAYS=3;
+function daysSinceSync(){
+  const last=syncLast();
+  if(!last) return Infinity;
+  const ms=Date.parse(last);
+  if(isNaN(ms)) return Infinity;
+  return Math.floor((Date.now()-ms)/86400000);
+}
+/* The band sits on the board, above the lanes, and it is not dismissable. A warning you can
+   dismiss is a warning you dismiss on the day you are busiest, which is the day it matters. */
+function renderSyncBand(){
+  const host=document.getElementById("boardBand");
+  if(!host) return;
+  if(!getSyncEndpoint()){ host.hidden=true; host.innerHTML=""; return; }
+  const n=daysSinceSync();
+  if(n < SYNC_STALE_DAYS){ host.hidden=true; host.innerHTML=""; return; }
+  const line = (n===Infinity)
+    ? esc(t("st_never"))
+    : esc(boardText(getLang(),"st_stale_n",n)).split(String(n)).join('<span class="n">'+n+'</span>');
+  host.hidden=false;
+  host.innerHTML='<div class="mw-band"><span class="mw-band-i" aria-hidden="true">!</span>'+
+    '<div><b>'+esc(t("st_stale_h"))+'</b><span>'+line+' '+esc(t("st_stale_p"))+'</span></div>'+
+    '<button class="btn sm" id="bandSync" type="button">'+esc(t("st_sync_now"))+'</button></div>';
+  const b=document.getElementById("bandSync");
+  if(b) b.addEventListener("click", async ()=>{
+    b.disabled=true;
+    try{ await syncNow(); }catch(e){}
+    b.disabled=false;
+    renderSyncBand();
+  });
+}
+
+/* Does the relay actually hold what this device holds? Counts per key, compared, and any
+   difference reported rather than summarised into a reassuring sentence. */
+async function relayCompleteness(){
+  const ep=getSyncEndpoint();
+  if(!ep) return { ok:false, reason:"no_endpoint" };
+  let remote=null;
+  try{
+    const r=await fetch(ep, { method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({ op:"state_get", auth:syncAuth() }) });
+    const j=await r.json();
+    if(!j || j.ok===false) return { ok:false, reason:"relay_error" };
+    /* The relay is handed an object and hands one back, but a relay of a different vintage,
+       or a device that stored the blob as text, returns a string. Both are read, because a
+       check that only works against one shape is a check that reports a problem that is not
+       there. This one could only ever fail before: JSON.parse of an object throws. */
+    remote = (typeof j.data === "string") ? JSON.parse(j.data) : (j.data || null);
+  }catch(e){ return { ok:false, reason:"unreachable", detail:String(e&&e.message||e) }; }
+  if(!remote) return { ok:false, reason:"empty" };
+
+  const count=(v)=>{ try{ const p=typeof v==="string"? JSON.parse(v):v; return Array.isArray(p)? p.length : (p&&typeof p==="object"? Object.keys(p).length : 0); }catch(e){ return 0; } };
+  const rows=[];
+  Object.keys(SYNCED_KEYS).forEach(k=>{
+    const mine=count(localStorage.getItem(k));
+    const theirs=count(remote[k]);
+    if(mine || theirs) rows.push({ key:k, mine:mine, theirs:theirs, short:Math.max(0, mine-theirs) });
+  });
+  const missing=rows.filter(r=>r.short>0);
+  return { ok:true, rows:rows, missing:missing, complete:missing.length===0 };
+}
+
+function renderStorageMeter(){
+  const host=document.getElementById("stMeter");
+  if(!host) return;
+  const s=storageBytes();
+  const mb=(n)=>(n/1048576).toFixed(2);
+  const pct=Math.min(100, Math.round((s.total/STORAGE_CEILING)*100));
+  host.innerHTML=
+    '<div class="st-bar"><span style="width:'+pct+'%"></span></div>'+
+    '<p class="st-line"><b>'+esc(t("st_used"))+'</b> <span class="n">'+mb(s.total)+'</span> MiB '+
+      esc(t("st_of"))+' <span class="n">5</span> MiB (<span class="n">'+pct+'</span>%)</p>'+
+    '<p class="st-line"><b>'+esc(t("st_largest"))+'</b></p>'+
+    '<ul class="st-keys">'+s.top.map(x=>'<li><span class="mono-iso">'+esc(x.key)+'</span>'+
+      '<span class="n">'+mb(x.bytes)+'</span> MiB</li>').join("")+'</ul>'+
+    '<button class="btn ghost sm" id="stCheck" type="button">'+esc(t("st_check"))+'</button>'+
+    '<div id="stCheckOut" class="st-line"></div>';
+  const b=document.getElementById("stCheck");
+  if(b) b.addEventListener("click", async ()=>{
+    const out=document.getElementById("stCheckOut");
+    out.textContent=t("st_checking");
+    const r=await relayCompleteness();
+    if(!r.ok){ out.textContent=t(r.reason==="no_endpoint"? "sy_need_ep" : "st_cmp_err"); return; }
+    if(r.complete){ out.textContent=t("st_complete"); return; }
+    out.innerHTML='<b class="st-miss">'+esc(t("st_missing"))+'</b><ul class="st-keys">'+
+      r.missing.map(x=>'<li><span class="mono-iso">'+esc(x.key)+'</span>'+
+        '<span class="n">'+x.theirs+'</span> / <span class="n">'+x.mine+'</span></li>').join("")+'</ul>';
+  });
+}
+
+/* ---------- the replies panel ----------
+   Three questions on one screen, because they fail together: is the relay
+   watching, what could it not attribute, and is there room in the store for what
+   it finds. A full store is the reason a reply would silently fail to arrive, so
+   measuring it belongs beside the thing it would break. */
+async function relayOp(op, body){
+  const ep=getSyncEndpoint(), auth=syncAuth();
+  if(!ep) return { ok:false, error:"no_endpoint" };
+  if(!auth) return { ok:false, error:"no_auth" };
+  try{
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify(Object.assign({ op:op, auth:auth }, body||{})) }, 30000);
+    const txt=await r.text();
+    try{ return JSON.parse(txt); }catch(e){ return { ok:false, error:txt.slice(0,120) }; }
+  }catch(e){ return { ok:false, error:String((e&&e.message)||e) }; }
+}
+
+function renderRepliesPanel(){
+  const host=document.getElementById("rpPanel");
+  if(!host) return;
+  const all=getInbound();
+  const real=all.filter(r=>r && r.kind!=="auto");
+  const unmatched=inboundUnmatched();
+  const scan=inboxScanInfo();
+  const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
+    {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
+
+  let h='<p class="st-line"><b>'+esc(t("rp_have"))+'</b> <span class="n">'+real.length+'</span> '+
+        esc(t("rp_of_which"))+' <span class="n">'+unmatched.length+'</span> '+esc(t("rp_unmatched_n"))+'</p>';
+  h+= scan
+    ? '<p class="st-line">'+esc(t("rp_last_scan"))+' '+ltr(when(scan.ts))+
+      ' · <span class="n">'+(scan.ms||0)+'</span> ms</p>'
+    : '<p class="st-line st-miss">'+esc(t("rp_never_scanned"))+'</p>';
+
+  /* Named, never counted. A reply nobody could attribute is the one most likely
+     to matter, because it is the one nobody is expecting. */
+  if(unmatched.length){
+    h+='<p class="st-line"><b class="st-miss">'+esc(t("rp_unmatched_h"))+'</b></p><ul class="st-keys">'+
+      unmatched.slice(0,10).map(r=>'<li><span class="mono-iso">'+ltr(esc(r.from))+'</span>'+
+        '<span>'+esc((r.subject||"").slice(0,60))+'</span></li>').join("")+'</ul>';
+  }
+
+  h+='<div class="bar">'+
+     '<button class="btn ghost sm" id="rpStore" type="button">'+esc(t("rp_store_btn"))+'</button>'+
+     '<button class="btn ghost sm" id="rpScan" type="button">'+esc(t("rp_scan_btn"))+'</button>'+
+     '<button class="btn ghost sm" id="rpRepair" type="button">'+esc(t("rp_repair_btn"))+'</button>'+
+     '</div><div id="rpOut" class="st-line"></div>';
+  host.innerHTML=h;
+
+  const out=()=>document.getElementById("rpOut");
+  const busy=k=>{ const o=out(); if(o) o.textContent=t(k); };
+
+  /* §10.1: report the real number before changing anything. The health panel had
+     been saying "the relay is out of Script properties space" with no number
+     behind it, and a warning nobody can measure is a warning nobody acts on. */
+  const sb=document.getElementById("rpStore");
+  if(sb) sb.addEventListener("click", async ()=>{
+    busy("rp_working");
+    const r=await relayOp("store_stats");
+    const o=out(); if(!o) return;
+    if(!r.ok){ o.textContent=t("rp_store_old")+" "+(r.error||""); return; }
+    const p=r.properties||{}, d=r.drive||{};
+    o.innerHTML='<p class="st-line"><b>'+esc(t("rp_props"))+'</b> <span class="n">'+
+      Math.round((p.bytes||0)/1024)+'</span> KB '+esc(t("st_of"))+' <span class="n">500</span> KB'+
+      ' (<span class="n">'+(p.pct||0)+'</span>%) · <span class="n">'+(p.keys||0)+'</span> '+esc(t("rp_keys"))+'</p>'+
+      '<p class="st-line"><b>'+esc(t("rp_drive"))+'</b> <span class="n">'+
+      Math.round((d.bytes||0)/1024)+'</span> KB · '+esc(r.migrated? t("rp_migrated") : t("rp_not_migrated"))+'</p>'+
+      '<ul class="st-keys">'+(p.largest||[]).map(x=>'<li><span class="mono-iso">'+esc(x.key)+
+      '</span><span class="n">'+Math.round(x.bytes/1024)+'</span> KB</li>').join("")+'</ul>';
+  });
+
+  const nb=document.getElementById("rpScan");
+  if(nb) nb.addEventListener("click", async ()=>{
+    busy("rp_working");
+    const r=await relayOp("inbox_scan");
+    const o=out(); if(!o) return;
+    if(!r.ok){ o.textContent=t("rp_store_old")+" "+(r.error||""); return; }
+    await syncNow();
+    o.textContent=boardText(getLang(),"rp_scanned", r.added||0);
+    renderRepliesPanel();
+  });
+
+  /* The repair pass reports before it writes. An action that walks 90 days of a
+     person's inbox and changes the board is an action they get to see the size
+     of first. */
+  const rb=document.getElementById("rpRepair");
+  if(rb) rb.addEventListener("click", async ()=>{
+    busy("rp_working");
+    const dry=await relayOp("inbox_repair", { days:90, dryRun:true });
+    const o=out(); if(!o) return;
+    if(!dry.ok){ o.textContent=t("rp_store_old")+" "+(dry.error||""); return; }
+    const by=dry.byRule||{};
+    /* The breakdown is one phrase carrying five numbers, so it is assembled here
+       and passed in as an extra. Inflecting on five counts at once is not a thing
+       any language does; the sentence inflects on the one count it is about. */
+    const breakdown=t("rp_repair_by")
+      .replace("{tag}", String(by.tag||0))
+      .replace("{thread}", String(by.thread||0))
+      .replace("{sender}", String(by.sender||0))
+      .replace("{none}", String(by.none||0))
+      .replace("{auto}", String(dry.auto||0));
+    const msg=boardText(getLang(),"rp_repair_found", dry.count||0, { breakdown:breakdown });
+    o.textContent=msg;
+    if(!dry.count){ return; }
+    if(!confirm(msg+"\n\n"+t("rp_repair_confirm"))) return;
+    busy("rp_working");
+    const real=await relayOp("inbox_repair", { days:90, dryRun:false });
+    if(!real.ok){ const o2=out(); if(o2) o2.textContent=t("rp_store_old")+" "+(real.error||""); return; }
+    await syncNow();
+    const o3=out(); if(o3) o3.textContent=boardText(getLang(),"rp_repaired", real.count||0);
+    renderRepliesPanel();
+  });
+}
+
+/* ---------- the monthly rollup ----------
+   Written when a month closes and never again, because the log it would be recounted from may
+   since have lost its head and the smaller answer would silently replace the true one. */
+const ROLLUP="thrive_rollup_v1";
+function getRollup(){ try{ return JSON.parse(localStorage.getItem(ROLLUP)||"{}"); }catch(e){ return {}; } }
+function setRollup(o){ return lsSet(ROLLUP, JSON.stringify(o)); }
+async function refreshRollup(){
+  if(typeof ThriveNumbers==="undefined") return;
+  const opps=await mergedOpps();
+  const next=ThriveNumbers.buildRollup({ mail:getMailLog(), opps:opps, month:ThriveNumbers.localMonth() }, getRollup());
+  if(JSON.stringify(next)!==JSON.stringify(getRollup())) setRollup(next);
+}
+
+/* The one context every number is computed from, assembled in one place so no surface has to
+   remember which ledgers a quantity needs. */
+async function numberCtx(){
+  const opps=await mergedOpps();
+  return { mail:getMailLog(), hits:allHits({self:true}), opps:opps,
+           activity:getActivity(), rollup:getRollup(), inbound:getInbound(),
+           today:ThriveNumbers.localDay(), month:ThriveNumbers.localMonth() };
+}
+
+/* ---------- moving a card ----------
+   WCAG 2.2 Success Criterion 2.5.7: any function that uses dragging must also be operable with
+   a single pointer without dragging, unless dragging is essential. It is not essential here.
+
+   So the menu is built first and the drag is built on top of it, in that order, because a
+   non-drag path added at the end is a non-drag path that gets cut when the phase runs long.
+   Everything below goes through one function, applyDrop, so the menu, the drag and the
+   keyboard cannot disagree about what a move means.
+
+   A drop does not set a lane. It performs the MOVE from the lifecycle table that corresponds to
+   the destination, with its guards. Dropping on Sent opens the off channel dialogue rather than
+   silently marking a send, because a send is an event that happened in the world and the
+   console must not invent one. */
+
+/* Manual order is a posture, not a decision, so it stays on this device and never syncs.
+   WO-012 §5.2 is explicit about that, and it is right: an order that follows you between
+   devices is an order you did not ask for on the second one. */
+const CARD_ORDER="thrive_card_order_v1";
+function cardOrder(){ try{ return JSON.parse(localStorage.getItem(CARD_ORDER)||"{}"); }catch(e){ return {}; } }
+function setCardOrder(o){ try{ localStorage.setItem(CARD_ORDER, JSON.stringify(o)); }catch(e){} }
+function orderLane(lane, slugs){ const o=cardOrder(); o[lane]=slugs.slice(); setCardOrder(o); }
+
+/* Which lifecycle move a destination lane corresponds to. A lane is not a state you set; it is
+   a state you reach, and this is the mapping between the two. */
+function moveForLane(from, to){
+  if(to==="sent")    return "send_offchannel";
+  if(to==="replied") return "record_reply";
+  if(to==="draft")   return "unpublish";
+  if(to==="live")    return "publish";
+  return "";
+}
+
+function laneLabel(k){ return t("lane_"+k); }
+
+/* One announcer for the whole board. Assistive technology needs to be told what happened,
+   and it needs to be told once. */
+function announce(msg){
+  let el=document.getElementById("boardLive");
+  if(!el){
+    el=document.createElement("div");
+    el.id="boardLive"; el.className="sr-only";
+    el.setAttribute("aria-live","polite"); el.setAttribute("aria-atomic","true");
+    document.body.appendChild(el);
+  }
+  el.textContent=msg;
+}
+
+/* The one place a card changes lane, whatever gesture asked for it. */
+async function applyDrop(slug, from, to, opts){
+  opts=opts||{};
+  if(from===to){
+    orderLane(to, opts.order||[]);
+    toast(t("mv_ordered"));
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    return { ok:true, reordered:true };
+  }
+  const all=await mergedOpps();
+  const o=all.find(x=>x.slug===slug);
+  if(!o) return { ok:false };
+
+  if(to==="opened"){
+    /* An open is recorded by the page itself. It is the one lane a person cannot put a card in,
+       and saying so is more useful than a disabled control nobody can explain. */
+    toast(t("dg_no_open"));
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    return { ok:false, error:"lc_err_illegal" };
+  }
+  const move=moveForLane(from, to);
+  if(!move || !ThriveLifecycle.can(move, o)){
+    toast(t("lc_err_illegal"));
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    return { ok:false, error:"lc_err_illegal" };
+  }
+  /* Sent needs evidence. The window opens on the control that can produce it. */
+  if(move==="send_offchannel"){
+    if(window.thriveModal) window.thriveModal.open(slug, "outreach", o.business||slug);
+    else toast(t("dg_sent_ask"));
+    return { ok:false, asked:true };
+  }
+  if(move==="record_reply"){
+    const d=prompt(t("lc_reply_q"), today());
+    if(d===null) return { ok:false };
+    return await runMove("record_reply", slug, { replied_on:String(d).trim() });
+  }
+  if(move==="publish"){
+    if(window.thriveModal) window.thriveModal.open(slug, "page", o.business||slug);
+    return { ok:false, asked:true };
+  }
+  return await runMove(move, slug, opts);
+}
+
+/* ---- the non-drag path, built first -------------------------------------
+   Every card carries a control that lists every legal destination for that card, plus move up
+   and move down. Illegal destinations are ABSENT, not disabled: a person should not have to
+   read greyed options to work out the rules, and a rule learned that way is learned wrong. */
+function cardMenuFor(o, lane){
+  const out=[];
+  ThriveBoard.LANES.forEach(k=>{
+    if(k===lane || k==="opened") return;
+    const mv=moveForLane(lane, k);
+    if(mv && ThriveLifecycle.can(mv, o)) out.push({ kind:"lane", to:k, label:laneLabel(k) });
+  });
+  ThriveLifecycle.movesFor(o).forEach(m=>{
+    if(["publish","unpublish","send_email","send_offchannel","record_reply"].indexOf(m)>=0) return;
+    out.push({ kind:"move", move:m, label:t("lc_"+m) });
+  });
+  return out;
+}
+
+function initCardMenu(){
+  const board=document.getElementById("boardLanes");
+  if(!board || window.__thriveMenuBound) return;
+  window.__thriveMenuBound=1;
+  let open=null;
+
+  function close(){ if(open){ open.remove(); open=null; } }
+  document.addEventListener("click", e=>{
+    if(open && !e.target.closest(".cardmenu") && !e.target.closest(".tok-more")) close();
+  });
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape") close(); });
+
+  board.addEventListener("click", async e=>{
+    const btn=e.target.closest && e.target.closest(".tok-more");
+    if(!btn) return;
+    e.preventDefault(); e.stopPropagation();
+    close();
+    const tok=btn.closest(".tok");
+    const slug=tok.getAttribute("data-slug"), lane=tok.getAttribute("data-lane");
+    const o=(await mergedOpps()).find(x=>x.slug===slug);
+    if(!o) return;
+    const items=cardMenuFor(o, lane);
+    const menu=document.createElement("div");
+    menu.className="cardmenu"; menu.setAttribute("role","menu");
+    menu.innerHTML = (items.length
+        ? items.map((it,i)=>'<button role="menuitem" type="button" data-mi="'+i+'">'+esc(it.label)+'</button>').join("")
+        : '<span class="cardmenu-none">'+esc(t("mv_none"))+'</span>')+
+      '<div class="cardmenu-sep"></div>'+
+      '<button role="menuitem" type="button" data-ord="up">'+esc(t("mv_up"))+'</button>'+
+      '<button role="menuitem" type="button" data-ord="down">'+esc(t("mv_down"))+'</button>';
+    tok.appendChild(menu);
+    open=menu;
+    const first=menu.querySelector("button"); if(first) first.focus();
+
+    menu.querySelectorAll("[data-mi]").forEach(b=>b.addEventListener("click", async ()=>{
+      const it=items[+b.getAttribute("data-mi")];
+      close();
+      if(it.kind==="lane") await applyDrop(slug, lane, it.to, {});
+      else { const op=await movePrompt(it.move, o); if(op!==null) await runMove(it.move, slug, op); }
+    }));
+    menu.querySelectorAll("[data-ord]").forEach(b=>b.addEventListener("click", ()=>{
+      const dir=b.getAttribute("data-ord")==="up" ? -1 : 1;
+      close();
+      const body=tok.closest(".lane-body");
+      const slugs=Array.prototype.map.call(body.querySelectorAll(".tok[data-slug]"), n=>n.getAttribute("data-slug"));
+      const i=slugs.indexOf(slug), j=i+dir;
+      if(i<0 || j<0 || j>=slugs.length) return;
+      slugs.splice(j,0,slugs.splice(i,1)[0]);
+      orderLane(lane, slugs);
+      toast(t("mv_ordered"));
+      if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    }));
+  });
+}
+
+/* The prompts each guarded move needs, in one place so the menu, the window and the keyboard
+   ask the same questions. */
+/* The one place a guarded move asks for what it needs. Returns null when the person backed out,
+   which every caller treats as "do nothing" without needing to know which question was asked. */
+async function movePrompt(m, o){
+  const opts={};
+  if(m==="drop"){
+    const r=prompt(t("lc_drop_q")); if(r===null) return null;
+    if(!String(r).trim()){ toast(t("lc_err_reason_text")); return null; }
+    opts.reason=r;
+  }
+  if(m==="mark_lost"){
+    const list=ThriveLifecycle.LOST_REASONS;
+    const r=prompt(t("lc_lost_q")+"\n"+list.map((x,i)=>(i+1)+". "+t("lc_reason_"+x)).join("\n"));
+    if(r===null) return null;
+    opts.reason=list[parseInt(String(r).trim(),10)-1]||"";
+    if(!opts.reason){ toast(t("lc_err_reason")); return null; }
+  }
+  if(m==="record_reply"){
+    const r=prompt(t("lc_reply_q"), today()); if(r===null) return null;
+    opts.replied_on=String(r).trim();
+    /* A reply on Instagram is a reply, so the channel is asked and stored. Both
+       of these are optional: pressing past them records the reply exactly as the
+       inbox scan would, which is the point. The console must never make a hand
+       recorded reply worth less than a scanned one. */
+    const chs=ThriveLifecycle.CHANNELS;
+    const c=prompt(t("rp_chan_q")+"\n"+chs.map((x,i)=>(i+1)+". "+lcChannelLabel(x)).join("\n"), "");
+    if(c!==null && String(c).trim()){
+      const pick=chs[parseInt(String(c).trim(),10)-1];
+      if(pick) opts.channel=pick;
+    }
+    const n=prompt(t("rp_note_q"), "");
+    if(n!==null && String(n).trim()) opts.note=String(n).trim();
+  }
+  if(m==="reopen"){ if(!confirm(t("lc_reopen_q"))) return null; opts.confirmed=true; }
+  if(m==="retire_page"){
+    /* It asks the page once. A network answer is evidence; a network failure is not, so an
+       unreachable page changes nothing rather than being recorded as gone. */
+    if(!confirm(t("mv_404_q"))) return null;
+    const gone=await pageIsGone((o&&o.slug)||"");
+    if(gone===null){ toast(t("mv_404_err")); return null; }
+    if(gone===false){ toast(t("mv_404_there")); return null; }
+    toast(t("mv_404_gone"));
+  }
+  return opts;
+}
+
+/* ---- drag, and the keyboard, on top of the menu -------------------------
+   Pointer Events rather than mouse events, so touch and trackpad take the same path. The
+   handlers bind to the document once: the board re-initialises whenever the shell re-enters
+   it, and a document listener registered per init is a listener that never leaves. */
+function initCardDrag(){
+  if(window.__thriveDragBound) return;
+  window.__thriveDragBound=1;
+  let st=null, hold=null, suppress=false, kb=null;
+
+  function laneAt(x,y){
+    const e=document.elementFromPoint(x,y);
+    return e && e.closest ? e.closest(".lane-body[data-body]") : null;
+  }
+  function place(lane, y){
+    const sibs=Array.prototype.filter.call(lane.querySelectorAll(".tok"), n=>n!==st.tok);
+    let before=null;
+    for(let i=0;i<sibs.length;i++){
+      const r=sibs[i].getBoundingClientRect();
+      if(y < r.top + r.height/2){ before=sibs[i]; break; }
+    }
+    lane.insertBefore(st.ph, before);
+  }
+  function begin(){
+    const r=st.tok.getBoundingClientRect();
+    st.dragging=true;
+    st.ph=document.createElement("div");
+    st.ph.className="tok-ph"; st.ph.style.height=r.height+"px";
+    st.tok.parentNode.insertBefore(st.ph, st.tok);
+    st.tok.style.width=r.width+"px"; st.tok.style.height=r.height+"px";
+    st.tok.style.left=r.left+"px"; st.tok.style.top=r.top+"px";
+    st.tok.classList.add("is-drag");
+    document.body.classList.add("is-dragging");
+    announce(t("mv_grab").replace("{name}", st.name).replace("{lane}", laneLabel(st.from)));
+  }
+  function move(e){
+    if(!st) return;
+    if(!st.dragging){
+      const far=Math.abs(e.clientX-st.x0)>6 || Math.abs(e.clientY-st.y0)>6;
+      if(!far) return;
+      /* A finger that moves before the hold expires was scrolling, not picking anything up.
+         A plain tap, which never gets here, still opens the window. */
+      if(!st.grip && st.pointer!=="mouse"){ cancelHold(); st=null; return; }
+      begin();
+    }
+    st.tok.style.transform="translate("+(e.clientX-st.x0)+"px,"+(e.clientY-st.y0)+"px)";
+    const lane=laneAt(e.clientX, e.clientY);
+    if(lane){ st.lane=lane.getAttribute("data-body"); place(lane, e.clientY); }
+    /* Auto scroll within 60px of an edge of the board, so a lane off screen is reachable. */
+    const board=document.getElementById("boardLanes");
+    if(board){
+      const r=board.getBoundingClientRect();
+      if(e.clientX > r.right-60) board.scrollLeft += 12;
+      else if(e.clientX < r.left+60) board.scrollLeft -= 12;
+    }
+  }
+  function land(cur){
+    cur.tok.classList.remove("is-drag");
+    cur.tok.style.cssText="";
+    if(cur.ph && cur.ph.parentNode){ cur.ph.parentNode.insertBefore(cur.tok, cur.ph); cur.ph.remove(); }
+  }
+  function finish(){
+    if(!st) return;
+    const cur=st; st=null; cancelHold();
+    document.body.classList.remove("is-dragging");
+    if(!cur.dragging) return;
+    suppress=true; setTimeout(()=>{ suppress=false; }, 0);
+    land(cur);
+    const to=cur.lane||cur.from;
+    const body=document.querySelector('[data-body="'+to+'"]');
+    const order=body? Array.prototype.map.call(body.querySelectorAll(".tok[data-slug]"), n=>n.getAttribute("data-slug")) : [];
+    announce(t("mv_dropped").replace("{name}", cur.name).replace("{lane}", laneLabel(to)));
+    applyDrop(cur.slug, cur.from, to, { order:order });
+  }
+  function cancelHold(){ if(hold){ clearTimeout(hold); hold=null; } }
+
+  document.addEventListener("pointerdown", e=>{
+    if(e.button!==undefined && e.button!==0) return;
+    if(!e.target.closest) return;
+    if(e.target.closest(".tok-more") || e.target.closest(".cardmenu")) return;
+    const tok=e.target.closest(".tok[data-slug]");
+    if(!tok || !tok.closest("#boardLanes")) return;
+    const grip=!!e.target.closest(".tok-grip");
+    st={ tok:tok, slug:tok.getAttribute("data-slug"), from:tok.getAttribute("data-lane"),
+         lane:tok.getAttribute("data-lane"), x0:e.clientX, y0:e.clientY,
+         name:(tok.querySelector(".tok-name")||{}).textContent||"",
+         pointer:e.pointerType, grip:grip, dragging:false, ph:null };
+    if(grip){ e.preventDefault(); begin(); return; }
+    /* 120ms of hold, or 6px of travel with a mouse. A plain tap opens the window. */
+    if(e.pointerType!=="mouse"){ cancelHold(); hold=setTimeout(()=>{ if(st && !st.dragging) begin(); }, 120); }
+  });
+  document.addEventListener("pointermove", move, {passive:true});
+  document.addEventListener("pointerup", finish);
+  document.addEventListener("pointercancel", finish);
+  /* touch-action cannot be turned off once a gesture has begun, so the scroll a long press
+     would otherwise start is refused here, and only while a card is actually held. */
+  document.addEventListener("touchmove", e=>{ if(st && st.dragging) e.preventDefault(); }, {passive:false});
+  document.addEventListener("click", e=>{ if(suppress){ e.preventDefault(); e.stopPropagation(); } }, true);
+
+  /* ---- the keyboard path -----------------------------------------------
+     Space picks up, Tab moves between destination lanes, Space drops, Escape cancels. It is
+     the same applyDrop underneath, so a keyboard user and a finger reach the same guards. */
+  document.addEventListener("keydown", e=>{
+    const tok=document.activeElement && document.activeElement.closest &&
+              document.activeElement.closest(".tok[data-slug]");
+    if(e.key==="Escape" && kb){
+      const held=kb; kb=null;
+      held.tok.classList.remove("is-held");
+      announce(t("mv_cancel"));
+      return;
+    }
+    if(e.key===" " || e.key==="Spacebar"){
+      if(!kb){
+        if(!tok || !tok.closest("#boardLanes")) return;
+        e.preventDefault();
+        kb={ tok:tok, slug:tok.getAttribute("data-slug"), from:tok.getAttribute("data-lane"),
+             lane:tok.getAttribute("data-lane"),
+             name:(tok.querySelector(".tok-name")||{}).textContent||"" };
+        tok.classList.add("is-held");
+        announce(t("mv_grab").replace("{name}", kb.name).replace("{lane}", laneLabel(kb.from)));
+        return;
+      }
+      e.preventDefault();
+      const held=kb; kb=null;
+      held.tok.classList.remove("is-held");
+      announce(t("mv_dropped").replace("{name}", held.name).replace("{lane}", laneLabel(held.lane)));
+      applyDrop(held.slug, held.from, held.lane, {});
+      return;
+    }
+    if(e.key==="Tab" && kb){
+      e.preventDefault();
+      const lanes=ThriveBoard.LANES;
+      let i=lanes.indexOf(kb.lane);
+      i=(i + (e.shiftKey? -1 : 1) + lanes.length) % lanes.length;
+      kb.lane=lanes[i];
+      const body=document.querySelector('[data-body="'+kb.lane+'"]');
+      const n=body? body.querySelectorAll(".tok[data-slug]").length : 0;
+      announce(boardText(getLang(),"mv_over",n,{lane:laneLabel(kb.lane)}));
+    }
+  });
+}
+
+/* ---------- the day's batch ----------
+   Three shapes, one behaviour: a page alone, a page with its manifest, or a zip of both.
+
+   Nothing is written until the report has been shown. An import that quietly drops two of
+   eleven is worse than an import that refuses, because the two that vanished are indistinguishable
+   from two that were never in the file. So every page with no manifest entry and every manifest
+   entry with no page is named, and a name already in the library asks per item rather than
+   guessing which of the two you meant to keep.
+
+   Everything lands in Draft. Not Ready, not Sent: it is published nowhere and sent to nobody,
+   and the first lane is the only true one. */
+function initIntake(){
+  const el=id=>document.getElementById(id);
+  const zone=el("intakeZone"), input=el("intakeFile"), out=el("intakeOut");
+  if(!zone || !input || !out) return;
+  if(typeof ThriveIntake==="undefined"){ zone.hidden=true; return; }
+
+  let found=null, existing={}, choice={};
+
+  const WARN=["no_business","no_body","no_channel","no_page","no_page_named","no_manifest_entry"];
+  function status(msg, kind){ out.innerHTML='<p class="in-status '+(kind||"")+'">'+esc(msg)+'</p>'; }
+  function slugFor(e){
+    return e.slug_hint || ThriveIntake.slugify(e.business) ||
+           ThriveIntake.slugify(e.page_file) || "opportunity";
+  }
+  function count(label, n, cls){
+    return '<div class="in-count '+(cls||"")+'"><b>'+n+'</b><span>'+esc(label)+'</span></div>';
+  }
+
+  function card(e,i){
+    const slug=slugFor(e);
+    const dup=!!existing[slug];
+    const warns=(e.warnings||[]).filter(w=>WARN.indexOf(w)>=0)
+      .map(w=>'<span class="in-warn">'+esc(t("in_w_"+w))+'</span>').join("");
+    const bits=[];
+    if(e.city) bits.push(esc(e.city));
+    if(e.descriptor) bits.push(esc(e.descriptor));
+    const alt=(e.alternates||[]).map(a=>esc(lcChannelLabel(a.channel))).join(", ");
+    return '<label class="in-card'+(dup?" is-dupe":"")+'">'+
+      '<input type="checkbox" class="in-pick" data-i="'+i+'"'+(dup?"":" checked")+'>'+
+      '<span class="in-body">'+
+        '<span class="in-name">'+esc(e.business||"–")+'</span>'+
+        (bits.length? '<span class="in-meta">'+bits.join(" · ")+'</span>':'')+
+        '<span class="in-tags">'+
+          (e.channel? '<span class="in-tag">'+esc(lcChannelLabel(e.channel))+
+             (e.url? ' <span class="mono-iso">'+esc(e.url.replace(/^https?:\/\//,"").replace(/^mailto:/,""))+'</span>':'')+'</span>':'')+
+          (alt? '<span class="in-tag">'+esc(t("in_alt"))+' '+alt+'</span>':'')+
+          (e.tier? '<span class="in-tag">'+esc(t("in_tier"))+' '+esc(e.tier)+'</span>':'')+
+          (e.file? '<span class="in-tag">'+esc(e.page_file||e.file.name)+'</span>':'')+
+          (e.body? '<span class="in-tag">'+esc(t("ot_h"))+'</span>':'')+
+          (e.prohibition? '<span class="in-warn">'+esc(t("md_prohibition"))+'</span>':'')+
+          warns+
+        '</span>'+
+        (dup? '<span class="in-dupe-row"><b>'+esc(t("in_dupes_h"))+'</b>'+
+          '<span class="mono-iso">'+esc(slug)+'</span>'+
+          '<button type="button" class="btn ghost sm" data-dupe="skip" data-i="'+i+'">'+esc(t("in_dupe_skip"))+'</button>'+
+          '<button type="button" class="btn ghost sm danger" data-dupe="replace" data-i="'+i+'">'+esc(t("in_dupe_repl"))+'</button>'+
+          '</span>' : '')+
+      '</span></label>';
+  }
+
+  function review(){
+    const r=found;
+    if(!r || !r.entries.length){ status(t("in_none"),"warn"); return; }
+    const matched=r.entries.filter(e=>e.file).length;
+    const n=r.entries.length;
+    const named=(list)=> list.length
+      ? '<ul class="in-named">'+list.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>' : "";
+
+    out.innerHTML=
+      '<div class="in-head"><b>'+esc(boardText(getLang(),"in_found",n))
+        .split(String(n)).join('<span class="n">'+n+'</span>')+'</b>'+
+        '<span class="in-actions">'+
+          '<button class="btn sm" id="intakeAdd" type="button" data-icon="import">'+esc(t("in_add"))+'</button>'+
+          '<button class="btn ghost sm" id="intakeCancel" type="button">'+esc(t("in_cancel"))+'</button>'+
+        '</span></div>'+
+      '<section class="in-report"><h4 class="mw-h">'+esc(t("in_report_h"))+'</h4>'+
+        '<div class="in-counts">'+
+          count(t("in_pages"), r.pages)+
+          count(t("in_parsed"), r.entries.length-(r.orphanPages||[]).length)+
+          count(t("in_matched"), matched)+
+          count(t("in_orphan_p"), (r.orphanPages||[]).length, (r.orphanPages||[]).length?"warn":"")+
+          count(t("in_orphan_e"), (r.orphanEntries||[]).length, (r.orphanEntries||[]).length?"warn":"")+
+        '</div>'+
+        named(r.orphanPages||[])+named(r.orphanEntries||[])+
+      '</section>'+
+      '<div class="in-list">'+r.entries.map(card).join("")+'</div>'+
+      (r.notes? '<details class="mw-more"><summary>'+esc(t("in_notes_h"))+'</summary>'+
+        '<pre class="mw-pitch" dir="auto">'+esc(r.notes)+'</pre></details>' : '');
+
+    if(typeof applyIcons==="function") applyIcons(out);
+    el("intakeCancel").addEventListener("click", reset);
+    el("intakeAdd").addEventListener("click", add);
+    out.querySelectorAll("[data-dupe]").forEach(b=>b.addEventListener("click", e=>{
+      e.preventDefault(); e.stopPropagation();
+      const i=+b.getAttribute("data-i");
+      choice[i]=b.getAttribute("data-dupe");
+      const box=out.querySelector('.in-pick[data-i="'+i+'"]');
+      if(box) box.checked=(choice[i]==="replace");
+      b.parentNode.querySelectorAll("[data-dupe]").forEach(x=>x.classList.toggle("on", x===b));
+    }));
+  }
+
+  function reset(){ found=null; choice={}; out.innerHTML=""; input.value=""; }
+
+  function add(){
+    const picked=[];
+    out.querySelectorAll(".in-pick").forEach(c=>{ if(c.checked) picked.push(found.entries[+c.getAttribute("data-i")]); });
+    if(!picked.length){ reset(); return; }
+    const seen={};
+    Object.keys(existing).forEach(k=>seen[k]=1);
+    let n=0;
+    picked.forEach(e=>{
+      const rec=ThriveIntake.toRecord(e, { today:today(), note_text:found.notes, batch:found.batch });
+      let s=rec.slug;
+      if(seen[s] && !existing[s]){ let k=2; while(seen[s+"-"+k]) k++; s=s+"-"+k; }
+      rec.slug=s; seen[s]=1;
+      saveDraft(rec);
+      logActivity("in_import", rec.slug, (rec.business||"")+" · "+(found.batch.title||""));
+      n++;
+    });
+    logActivity("in_batch", "", n+" imported, "+((found.orphanPages||[]).length)+" pages unmatched, "+
+      ((found.orphanEntries||[]).length)+" entries unmatched");
+    toast(boardText(getLang(),"in_added",n));
+    reset();
+    try{ scheduleSyncPush(); }catch(e){}
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+  }
+
+  async function take(files){
+    if(!files || !files.length) return;
+    status(t("in_reading"));
+    try{ existing={}; (await mergedOpps()).forEach(o=>{ existing[o.slug]=true; }); }catch(e){}
+    try{
+      found=await ThriveIntake.readDrop(files);
+      choice={};
+      review();
+    }catch(e){
+      status(/zip|inflate/i.test((e&&e.message)||"") ? t("in_zip_err") : t("in_none"), "warn");
+    }
+  }
+
+  /* The file picker is not an afterthought. iPad Safari has no drag and drop from Files into a
+     web page, so on the device this console is actually used on, the picker is the only path. */
+  input.addEventListener("change", ()=>take(input.files));
+  ["dragenter","dragover"].forEach(k=>zone.addEventListener(k, e=>{ e.preventDefault(); zone.classList.add("on"); }));
+  ["dragleave","drop"].forEach(k=>zone.addEventListener(k, e=>{
+    e.preventDefault();
+    if(k==="dragleave" && zone.contains(e.relatedTarget)) return;
+    zone.classList.remove("on");
+  }));
+  zone.addEventListener("drop", e=>{
+    const dt=e.dataTransfer;
+    if(dt && dt.files && dt.files.length) take(dt.files);
+  });
+  /* A zip dropped an inch wide of the target is a browser navigating away to open it, and a
+     day's work replaced by a directory listing. Missing the box has to cost nothing. */
+  if(!window.__thriveDropGuard){
+    window.__thriveDropGuard=1;
+    ["dragover","drop"].forEach(k=>document.addEventListener(k, e=>{
+      if(e.target.closest && e.target.closest("#intakeZone")) return;
+      e.preventDefault();
+    }));
+  }
+  onThrive("lang","intake", ()=>{ if(found) review(); });
 }
 
 /* ---------- running a lifecycle move ----------
@@ -3493,7 +4603,11 @@ async function runMove(move, slug, opts){
   const o=all.find(x=>x.slug===slug);
   if(!o) return { ok:false, error:"lc_err_illegal" };
   const r=ThriveLifecycle.apply(move, o, opts);
-  if(!r.ok){ toast(t(r.error)); return r; }
+  /* A move the console made on its own, from a sync round, reports through the
+     board rather than through a toast. Five replies landing at once must not be
+     five toasts stacked over the card the reader is trying to look at, and a
+     guard that refuses one of them is a line in the log, not an interruption. */
+  if(!r.ok){ if(!opts.silent) toast(t(r.error)); return r; }
 
   saveDraft(Object.assign({ slug:slug }, r.patch));
   logActivity(r.action, slug, r.detail||"");
@@ -3514,7 +4628,7 @@ async function runMove(move, slug, opts){
       done();
       toast(t("lc_undone"));
     }});
-  } else toast(t("lc_"+move)+" · "+t("lc_done"));
+  } else if(!opts.silent) toast(t("lc_"+move)+" · "+t("lc_done"));
   return r;
 }
 
@@ -3570,7 +4684,6 @@ function initModal(){
      A slug, a URL, an address and a timestamp are read left to right whatever the interface
      language is, so they are isolated rather than left to the bidi algorithm, which would
      otherwise reorder them inside an Arabic line and make them read as a different value. */
-  function ltr(s){ return '<span class="mono-iso">'+esc(s)+'</span>'; }
   function row(label, value){
     return '<div class="mw-row"><dt>'+esc(label)+'</dt><dd>'+value+'</dd></div>';
   }
@@ -3622,33 +4735,17 @@ function initModal(){
      are deliberately plain: a confirm and a prompt are the two the document already has, and
      WO-012 §10 asks for one of each rather than a third dialogue of my own. */
   function bindMoves(box, o){
+    /* One question per move, asked from one place. The window and the card menu both call
+       movePrompt, so the two can never ask differently or forget the same guard. */
     box.querySelectorAll("[data-move]").forEach(b=>b.addEventListener("click", async ()=>{
       const m=b.getAttribute("data-move");
-      const opts={};
-      if(m==="drop"){
-        const r=prompt(t("lc_drop_q")); if(r===null) return;
-        if(!String(r).trim()){ toast(t("lc_err_reason_text")); return; }
-        opts.reason=r;
-      }
-      if(m==="mark_lost"){
-        const list=ThriveLifecycle.LOST_REASONS;
-        const r=prompt(t("lc_lost_q")+"\n"+list.map((x,i)=>(i+1)+". "+t("lc_reason_"+x)).join("\n"));
-        if(r===null) return;
-        const n=parseInt(String(r).trim(),10);
-        opts.reason=list[n-1]||"";
-        if(!opts.reason){ toast(t("lc_err_reason")); return; }
-      }
-      if(m==="record_reply"){
-        const r=prompt(t("lc_reply_q"), today()); if(r===null) return;
-        opts.replied_on=String(r).trim();
-      }
-      if(m==="reopen"){ if(!confirm(t("lc_reopen_q"))) return; opts.confirmed=true; }
-      if(m==="retire_page"){ if(!confirm(t("lc_retire_q"))) return; }
       if(m==="publish"){
         // Publishing is a network operation with its own screen. The lifecycle says it is
         // legal; the editor is what performs it.
         switchTo("page"); return;
       }
+      const opts=await movePrompt(m, o);
+      if(opts===null) return;
       await runMove(m, o.slug, opts);
     }));
   }
@@ -3800,7 +4897,8 @@ function initModal(){
     if(o.template) rows.push(row(t("mw_o_tpl"), esc(o.template)));
     if(o.sent_on) rows.push(row(t("mw_o_made"), ltr(o.sent_on)));
     rows.push(row(t("mw_o_page"), isLive(o)
-      ? '<a href="'+esc(liveUrl(o.slug))+'" target="_blank" rel="noopener">'+ltr(liveUrl(o.slug))+'</a>'
+      ? '<a class="has-ic" href="'+esc(liveUrl(o.slug))+'" target="_blank" rel="noopener">'+
+        (typeof thriveIcon==="function"? thriveIcon("globe",{size:14}) : "")+ltr(liveUrl(o.slug))+'</a>'
       : '<span class="mw-muted">'+esc(t("mw_o_unpub"))+'</span>'));
     box.innerHTML=prohibitionBand(o)+recordNotes(o)+
       '<dl class="mw-rows">'+rows.join("")+'</dl>'+movesBar(o);
@@ -3814,15 +4912,52 @@ function initModal(){
     const box=el("modalHistory"); if(!box) return;
     const slug=(o&&o.slug)||current;
     const rows=getActivity().filter(a=>a && a.slug===slug).reverse();
-    if(!rows.length){ box.innerHTML='<div class="mw-empty"><p>'+esc(t("mw_hist_empty"))+'</p></div>'; return; }
     const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
       {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
+
+    /* The reply comes first, above the log, because it is the only thing on this
+       tab that somebody is waiting for. A log entry saying the stage changed is
+       a fact about the console; the words the prospect wrote are a fact about
+       the business. */
+    const replies=inboundFor(slug).filter(r=>r.kind!=="auto")
+      .sort((a,b)=> String(b.ts).localeCompare(String(a.ts)));
+    const autos=inboundFor(slug).filter(r=>r.kind==="auto");
+    let head="";
+    if(replies.length){
+      head='<div class="mw-replies"><h4 class="mw-h">'+ic("mail")+esc(t("rp_head"))+'</h4>'+
+        replies.map(r=>{
+          const link=ThriveInbound.gmailLink(r);
+          return '<div class="rp-card">'+
+            '<div class="rp-top"><span class="rp-who">'+esc(r.name||r.from)+'</span>'+
+            '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
+            '<div class="rp-from mono">'+ltr(esc(r.from))+'</div>'+
+            (r.subject? '<div class="rp-subj">'+esc(r.subject)+'</div>':'')+
+            (r.snippet? '<p class="rp-snip">'+esc(r.snippet)+'</p>':'')+
+            '<div class="rp-foot">'+
+              '<span class="rp-rule">'+esc(t("rp_rule_"+(r.rule||"none")))+'</span>'+
+              (link? '<a class="btn ghost sm" href="'+esc(link)+'" target="_blank" rel="noopener">'+
+                     ic("link")+esc(t("rp_open_gmail"))+'</a>' : '')+
+            '</div></div>';
+        }).join("")+'</div>';
+    }
+    /* Machinery is shown and labelled rather than hidden. A bounce is evidence
+       about an address, and hiding it is how a dead address gets written to for
+       a year. It is simply never counted as a reply. */
+    if(autos.length){
+      head+='<div class="mw-autos">'+autos.map(r=>
+        '<div class="rp-auto">'+ic("alert")+'<span>'+esc(t(r.bounce==="hard"?"rp_bounce_hard":
+          r.bounce==="soft"?"rp_bounce_soft":"rp_auto"))+'</span>'+
+        '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>').join("")+'</div>';
+    }
+
+    if(!rows.length && !head){ box.innerHTML='<div class="mw-empty">'+ic("clock")+
+      '<p>'+esc(t("mw_hist_empty"))+'</p></div>'; return; }
     const label=a=>{ const k="act_"+a; const v=t(k); return v===k? a : v; };
-    box.innerHTML='<ol class="mw-hist">'+rows.map(a=>
+    box.innerHTML=head+(rows.length? '<ol class="mw-hist">'+rows.map(a=>
       '<li><span class="mw-hist-when">'+ltr(when(a.ts))+'</span>'+
       '<span class="mw-hist-what">'+esc(label(a.action))+'</span>'+
       (a.detail? '<span class="mw-hist-detail">'+esc(a.detail)+'</span>' : '')+
-      '</li>').join("")+'</ol>';
+      '</li>').join("")+'</ol>' : "");
   }
 
   /* ---- tabs -------------------------------------------------------------- */

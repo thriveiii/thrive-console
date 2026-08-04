@@ -22,7 +22,7 @@
     <a href="console.html#home" data-i18n="nav_insights">Insights</a>
     <a href="console.html#library" data-i18n="nav_library">Library</a>
     <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
-    <button id="langbtn" class="langbtn" data-icon="globe">العربية</button>
+    <button id="langbtn" class="langbtn">العربية</button>
     <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-icon="lock" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
@@ -50,6 +50,21 @@
       <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
     </div>
   </div>
+
+  <!-- Not synced. Not dismissable: a warning you can dismiss is one you dismiss on the day
+       you are busiest, which is the day it matters. -->
+  <div id="boardBand" hidden></div>
+
+  <!-- The day's batch. Nothing is written until the report has been read. -->
+  <section class="intake" id="intakeZone">
+    <div class="intake-head">
+      <h3 class="block-h" data-icon="import" data-i18n="in_h">Today's batch</h3>
+      <label class="btn ghost sm" for="intakeFile" data-i18n="in_pick">Choose files</label>
+      <input id="intakeFile" type="file" multiple accept=".html,.htm,.md,.txt,.zip" hidden>
+    </div>
+    <p class="sub" data-i18n="in_p"></p>
+    <div class="intake-out" id="intakeOut"></div>
+  </section>
 
   <!-- Lanes. Order is the order of the gradient, and the order is the journey. -->
   <div class="board" id="boardLanes">
@@ -123,6 +138,9 @@
 <script src="i18n.js" defer></script>
 <script src="stage-model.js" defer></script>
 <script src="lifecycle.js" defer></script>
+<script src="intake.js" defer></script>
+<script src="numbers.js" defer></script>
+<script src="inbound.js" defer></script>
 <script src="app.js" defer></script>
 <script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initBoard(); });</script>
 </body>
