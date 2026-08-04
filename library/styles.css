@@ -765,6 +765,15 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   text-align:start;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
+/* WO-015 §6: the chapter marker. One quiet word, never a badge. The offer chapter
+   carries the spark accent so a live offer reads at a glance; the first contact is
+   muted, because it is the baseline. No letter-spacing: Arabic joins must not break. */
+.tok-chapter{
+  display:inline-block; margin-top:var(--s-1);
+  font-size:var(--fs-micro); font-weight:var(--w-head); color:var(--ink-4);
+  letter-spacing:0;
+}
+.tok-chapter.is-offer{ color:var(--spark, var(--teal)) }
 
 /* stalled: amber ring, and always an age in text beside it. IDENTITY §4.4 */
 .tok.is-stalled{

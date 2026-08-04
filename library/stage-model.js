@@ -70,6 +70,12 @@
   function hostEffStage(o, ctx){
     var op = hostOpens(o.slug, ctx);
     var send = (ctx && ctx.mail) ? sendInfo(o.slug, ctx, o) : undefined;
+    /* WO-015 §6: the lane follows the active chapter. activeChapterStage is
+       effStage for chapter one, so this changes no existing card; it only lets a
+       chapter two card read from its own evidence. The single authority (I3) is
+       preserved, because for the chapter that exists today the answer is still
+       effStage's. */
+    if (typeof global.activeChapterStage === "function") return global.activeChapterStage(o);
     if (typeof global.effStage === "function") return global.effStage(o, op, send);
     var declared = o.stage || "";
     if (declared && declared !== "sent") return declared;
