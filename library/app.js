@@ -1892,6 +1892,34 @@ function bindLinkCards(root){
   }));
 }
 
+/* ---------- a question with three answers ----------
+   confirm() offers two, and the answer a person actually wants when they tap
+   outside a half written message is the third one: keep editing. So this is a
+   real dialogue rather than a window.confirm, and it returns the index. */
+function threeWay(title, body, labels){
+  return new Promise(resolve=>{
+    const old=document.getElementById("threeWay");
+    if(old) old.remove();
+    const box=document.createElement("div");
+    box.id="threeWay"; box.className="tw-scrim";
+    box.innerHTML='<div class="tw-box" role="alertdialog" aria-modal="true" aria-labelledby="twT">'+
+      '<h3 class="tw-t" id="twT">'+esc(title)+'</h3>'+
+      '<p class="tw-p">'+esc(body)+'</p>'+
+      '<div class="tw-acts">'+labels.map((l,i)=>
+        '<button class="btn'+(i===0?"":" ghost")+(i===2?" danger":"")+'" type="button" data-tw="'+i+'">'+
+        esc(l)+'</button>').join("")+'</div></div>';
+    document.body.appendChild(box);
+    const done=i=>{ box.remove(); resolve(i); };
+    box.querySelectorAll("[data-tw]").forEach(b=>
+      b.addEventListener("click",()=>done(parseInt(b.getAttribute("data-tw"),10))));
+    /* Escape on the question means keep editing. Anything else would make the
+       gesture that saves you the gesture that loses your work. */
+    box.addEventListener("keydown", e=>{ if(e.key==="Escape"){ e.stopPropagation(); done(0); } });
+    box.addEventListener("click", e=>{ if(e.target===box) done(0); });
+    const first=box.querySelector("[data-tw]"); if(first) first.focus();
+  });
+}
+
 /* ---------- the closing block ----------
    It was a fixed string built inside brandWrap and invisible until send. It is
    now a stored object with one block PER LOCALE, chosen by the opportunity's
@@ -5463,8 +5491,11 @@ function initModal(){
       b.setAttribute("aria-selected", on?"true":"false");
     });
   }
-  async function switchTo(tab){
+  async function switchTo(tab, opts){
     if(!PANELS[tab] && !BORROWED[tab]) tab="overview";
+    /* Each tab is a step, so back moves one tab rather than closing the window
+       from four screens deep. §6.1. */
+    if(opts && opts.push) pushStep(current, tab);
     if(tab==="outreach" && !borrows(tab)){
       /* The question, or the channel screen, on its own. */
       giveBack();
@@ -5493,6 +5524,7 @@ function initModal(){
     if(tab==="overview") renderOverview(rec);
     else if(tab==="text") renderText(rec);
     else renderHistory(rec);
+    if(__restored) applyDraftFields(__restored);
   }
 
   /* ---- the copy link control --------------------------------------------
@@ -5578,6 +5610,11 @@ function initModal(){
     // let the browser paint the closed state before the transition starts
     requestAnimationFrame(()=>{ modal.classList.add("on"); scrim.classList.add("on"); });
     lockScroll();
+    /* Expired drafts are cleaned on load so the store does not grow. */
+    try{ ThriveDrafts.clean(); }catch(e){}
+    __histDepth=0; pushStep(current, tab);
+    markBaseline();
+    showDraftBand();
     const list=focusables();
     if(list.length) try{ list[0].focus(); }catch(e){}
   }
@@ -5585,9 +5622,17 @@ function initModal(){
   /* now=true when something else needs a borrowed view in this same tick, which is what a
      navigation is. Waiting out the closing transition first would hand the view back after the
      shell had already decided what to display, and the reader would land on nothing. */
-  function close(now){
+  function close(now, opts){
     if(!open_) return;
     open_=false;
+    const band=el("draftBand"); if(band){ band.hidden=true; band.innerHTML=""; }
+    __restored=null;
+    /* The history entries this window pushed are unwound, so a back gesture
+       after it has closed does not walk through tabs of a window nobody can see. */
+    if(!(opts&&opts.fromHistory) && __histDepth>0){
+      const n=__histDepth; __histDepth=0;
+      try{ __histBusy=true; history.go(-n); setTimeout(()=>{ __histBusy=false; }, 0); }catch(e){ __histBusy=false; }
+    } else __histDepth=0;
     modal.classList.remove("on"); scrim.classList.remove("on");
     unlockScroll();
     const settle=()=>{ modal.hidden=true; scrim.hidden=true; giveBack(); };
@@ -5596,14 +5641,122 @@ function initModal(){
     opener=null;
   }
 
-  el("modalClose").addEventListener("click", ()=>close());
+  /* ---- back, and work that survives a dismissal ---------------------------
+     Losing a draft by tapping outside the window was the most common frustration
+     in the review, and there was no back anywhere. Both are here. §6. */
+
+  /* Every tab and every step pushes a history entry, so the browser back gesture
+     moves one step and behaves the way an iPad user expects. The entry carries
+     the slug and the tab, so back out of the last tab closes the window rather
+     than leaving the reader inside it with nothing to press. */
+  let __histDepth=0, __histBusy=false;
+  function pushStep(slug, tab){
+    if(__histBusy) return;
+    __histDepth++;
+    try{ history.pushState({ thriveModal:{ slug:slug, tab:tab, d:__histDepth } }, ""); }catch(e){}
+  }
+  window.addEventListener("popstate", e=>{
+    const st=e.state && e.state.thriveModal;
+    if(!open_) return;
+    __histBusy=true;
+    try{
+      if(st && st.slug===current){ __histDepth=st.d||0; switchTo(st.tab||"overview"); }
+      else { __histDepth=0; close(true, {fromHistory:true}); }
+    } finally { setTimeout(()=>{ __histBusy=false; }, 0); }
+  });
+  function goBack(){
+    /* One step, whichever way the reader asked for it, so the button and the
+       gesture cannot disagree about where back is. */
+    if(__histDepth>0){ try{ history.back(); return; }catch(e){} }
+    close();
+  }
+
+  /* Nothing a person typed disappears because a finger landed outside a box. */
+  const FLOW="opportunity";
+  function draftFields(){
+    /* Every input inside the window, borrowed views included, keyed by id. A
+       field with no id cannot be restored into, so it is not collected. */
+    const out={};
+    modal.querySelectorAll("input,textarea,select,[contenteditable='true']").forEach(e=>{
+      if(!e.id) return;
+      if(e.type==="file"||e.type==="hidden") return;
+      out[e.id] = (e.getAttribute("contenteditable")==="true") ? e.innerHTML
+                : (e.type==="checkbox") ? (e.checked?"1":"") : e.value;
+    });
+    return out;
+  }
+  function applyDraftFields(data){
+    Object.keys(data||{}).forEach(k=>{
+      const e=document.getElementById(k);
+      if(!e || !modal.contains(e)) return;
+      if(e.getAttribute("contenteditable")==="true") e.innerHTML=data[k];
+      else if(e.type==="checkbox") e.checked=!!data[k];
+      else e.value=data[k];
+      try{ e.dispatchEvent(new Event("input",{bubbles:true})); }catch(_){}
+    });
+  }
+  let __baseline="", __restored=null;
+  function markBaseline(){ try{ __baseline=JSON.stringify(draftFields()); }catch(e){ __baseline=""; } }
+  function isDirty(){
+    try{ return JSON.stringify(draftFields())!==__baseline; }catch(e){ return false; }
+  }
+  const autosave=ThriveDrafts.debounce(()=>{
+    if(!open_) return;
+    const data=draftFields();
+    if(!ThriveDrafts.isSubstantive(data)) return;
+    if(!isDirty()) return;
+    ThriveDrafts.save(FLOW, current, data);
+  }, ThriveDrafts.DEBOUNCE_MS);
+  modal.addEventListener("input", autosave);
+  modal.addEventListener("change", autosave);
+
+  function showDraftBand(){
+    const band=el("draftBand"); if(!band) return;
+    const d=ThriveDrafts.load(FLOW, current);
+    if(!d || !ThriveDrafts.isSubstantive(d.data)){ band.hidden=true; band.innerHTML=""; return; }
+    const mins=ThriveDrafts.ageMinutes(d);
+    band.hidden=false;
+    band.innerHTML='<span>'+esc(boardText(getLang(),"df_kept", mins))+'</span>'+
+      '<button class="btn ghost sm" type="button" id="dfRestore">'+esc(t("df_restore"))+'</button>'+
+      '<button class="btn ghost sm" type="button" id="dfDiscard">'+esc(t("df_discard"))+'</button>';
+    const r=el("dfRestore");
+    if(r) r.addEventListener("click", ()=>{
+      /* Held, not just applied. Panels rebuild their fields when a tab is
+         entered, so restoring once puts the work back on the tab you are on and
+         loses it on the next one. It is re-applied after every tab render until
+         the window closes. */
+      __restored=d.data;
+      applyDraftFields(d.data); band.hidden=true; band.innerHTML=""; toast(t("df_restored"));
+    });
+    const x=el("dfDiscard");
+    if(x) x.addEventListener("click", ()=>{
+      ThriveDrafts.drop(FLOW, current); band.hidden=true; band.innerHTML=""; toast(t("df_discarded"));
+    });
+  }
+
+  /* Backdrop and Escape ask when there are unsaved changes, and the ask offers
+     three answers rather than the usual two, because "keep editing" is the one
+     a person actually wants and it was the one missing. */
+  async function askBeforeClose(){
+    if(!isDirty()) return true;
+    const data=draftFields();
+    if(!ThriveDrafts.isSubstantive(data)) return true;
+    const ans=await threeWay(t("df_ask_h"), t("df_ask_p"),
+      [t("df_keep"), t("df_saveclose"), t("df_throw")]);
+    if(ans===0) return false;                    // keep editing
+    if(ans===1){ ThriveDrafts.save(FLOW, current, data); return true; }
+    ThriveDrafts.drop(FLOW, current); return true;
+  }
+
+  el("modalBack").addEventListener("click", async ()=>{ if(await askBeforeClose()) goBack(); });
+  el("modalClose").addEventListener("click", async ()=>{ if(await askBeforeClose()) close(); });
   el("modalCopy").addEventListener("click", copyLink);
-  scrim.addEventListener("click", ()=>close());
+  scrim.addEventListener("click", async ()=>{ if(await askBeforeClose()) close(); });
   modal.querySelectorAll(".modal-tab").forEach(b=>
-    b.addEventListener("click", ()=>switchTo(b.getAttribute("data-tab"))));
-  document.addEventListener("keydown", e=>{
+    b.addEventListener("click", ()=>switchTo(b.getAttribute("data-tab"), {push:true})));
+  document.addEventListener("keydown", async e=>{
     if(modal.hidden) return;
-    if(e.key==="Escape"){ close(); return; }
+    if(e.key==="Escape"){ if(await askBeforeClose()) close(); return; }
     // aria-modal is a promise to assistive technology, and a promise the keyboard has to keep
     // too: without a trap, Tab walks out of the dialog into a board the reader cannot see.
     if(e.key!=="Tab") return;

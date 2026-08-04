@@ -622,11 +622,16 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <span class="pill" id="modalState"></span>
     </div>
     <div class="modal-acts">
+      <!-- Back exists everywhere, in a consistent position, and it mirrors by
+           logical property rather than by a second rule. WO-013 §6.1. -->
+      <button class="btn ghost sm modal-back" id="modalBack" type="button" data-icon="undo" data-i18n="mw_back">Back</button>
       <button class="btn ghost sm" id="modalCopy" type="button" data-icon="link" data-i18n="mw_copy_link">Copy link</button>
       <button class="modal-close" id="modalClose" type="button" data-icon="close" data-i18n="dw_close">Close</button>
     </div>
     <p class="modal-why" id="modalWhy" hidden></p>
   </header>
+  <!-- We kept what you wrote. The band, and Discard beside it. §6.2. -->
+  <div class="draft-band" id="draftBand" hidden></div>
   <nav class="modal-tabs" id="modalTabs" role="tablist">
     <button class="modal-tab on" role="tab" aria-selected="true"  data-tab="overview" data-icon="spark" data-i18n="mw_overview">Overview</button>
     <button class="modal-tab"    role="tab" aria-selected="false" data-tab="text"     data-icon="text" data-i18n="mw_text">Text</button>
@@ -652,6 +657,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="numbers.js"></script>
 <script src="inbound.js"></script>
 <script src="kinds.js"></script>
+<script src="drafts.js"></script>
 <script src="app.js"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
