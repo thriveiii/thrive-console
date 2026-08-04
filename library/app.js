@@ -2847,10 +2847,15 @@ function initTemplates(){
     const host=el("customList");
     host.innerHTML=localeTabBar("tplLocTabs")+
       (list.length? list.map(ct=>`
-        <div class="tpl">
+        <div class="tpl kind-page">
           <div class="tpl-b">
-            <div class="name">${esc(ct.name||ct.id)}</div>
-            <div class="id">${esc(ct.id)} · ${esc(localeOf(ct)||"")}</div>
+            <div class="name">${ic("page",16)}${esc(ct.name||ct.id)}</div>
+            <!-- A page template ALWAYS shows its field count and its locale. That is
+                 what distinguishes it on sight from a finished offer, which has no
+                 fields and belongs to one prospect. WO-013 §3.4. -->
+            <div class="id">${esc(ct.id)} · <span class="kind-tag">${esc(t("kd_kind_page"))}</span>
+              · ${esc(t("loc_"+String(localeOf(ct)||"en").toLowerCase()))}
+              · ${esc(boardText(getLang(),"kd_fields", (ct.fields||ThriveKinds.fillableFields(ct.html||"")).length))}</div>
           </div>
           <div class="tpl-a">
             <a class="btn ghost sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("use_template")}</a>
@@ -2908,15 +2913,111 @@ function initTemplates(){
   }
 
 
-  // upload / add custom template
+  /* ---- upload, and the question it can no longer skip ---------------------
+     An uploaded .html used to be ambiguous: nothing told the console whether it
+     was a skeleton to build from or a finished page for one prospect, so the
+     same gesture did two different things and nobody could predict which. Now
+     the file declares itself, and when it does not, the console ASKS. It never
+     guesses: guessing from field count files a finished page with a stray token
+     as a template, and both failures are silent. */
   const dz=el("tplDz"), file=el("tplFile");
+  let pendingRead=null;                              // the classification, once read
+
+  function reportBox(){
+    let b=el("tplReport");
+    if(!b){ b=document.createElement("div"); b.id="tplReport"; b.className="kd-report";
+            dz.parentNode.insertBefore(b, dz.nextSibling); }
+    return b;
+  }
+  /* Every upload ends with ONE SENTENCE saying what the console decided and
+     where the thing went. A file that vanishes into the right place without
+     saying so is the same experience as one that vanished into the wrong one. */
+  function said(msg, cls){
+    const b=reportBox();
+    b.innerHTML='<p class="kd-said '+(cls||"")+'">'+ic(cls==="bad"?"alert":"check")+esc(msg)+'</p>';
+  }
+
+  function showRead(c, fname){
+    const b=reportBox();
+    /* Cleared on every read. Without this, reading a good template and then an
+       ambiguous file left the previous classification standing, and pressing Add
+       would have saved the ambiguous file under the earlier file's answer. */
+    pendingRead=null;
+    if(!c.ok){
+      const why = c.error==="kd_err_kind" ? t("kd_err_kind").replace("{k}", c.errorDetail||"")
+                : t(c.error);
+      said(why, "bad");
+      pendingRead=null;
+      return;
+    }
+    if(c.ask){
+      /* One question, with the name and a preview, and two clear choices. */
+      b.innerHTML='<div class="kd-ask">'+
+        '<p class="kd-q">'+esc(t("kd_ask").replace("{f}", fname))+'</p>'+
+        '<div class="kd-prev"><iframe title="'+esc(fname)+'" sandbox=""></iframe></div>'+
+        '<div class="bar">'+
+          '<button class="btn" type="button" data-kd="page-template">'+ic("page")+esc(t("kd_is_template"))+'</button>'+
+          '<button class="btn ghost" type="button" data-kd="offer">'+ic("spark")+esc(t("kd_is_offer"))+'</button>'+
+        '</div></div>';
+      const fr=b.querySelector("iframe");
+      if(fr) fr.srcdoc=pendingHTML||"";
+      b.querySelectorAll("[data-kd]").forEach(btn=>btn.addEventListener("click",()=>{
+        const d=ThriveKinds.decide(pendingHTML, fname, btn.getAttribute("data-kd"));
+        pendingHTML=d.html||pendingHTML;
+        showRead(d, fname);
+      }));
+      return;
+    }
+    pendingRead=c;
+    if(c.kind==="offer"){
+      b.innerHTML='<p class="kd-said">'+ic("spark")+esc(t("kd_read_offer"))+'</p>'+
+        '<div class="bar"><button class="btn" type="button" id="kdMakeOpp">'+esc(t("kd_make_opp"))+'</button></div>';
+      const mk=el("kdMakeOpp");
+      if(mk) mk.addEventListener("click", async ()=>{ await makeOfferOpportunity(c, fname); });
+      return;
+    }
+    /* A page template: show the fields BEFORE it is saved, and name every
+       unknown one. An unknown field still substitutes as empty, which is a
+       usable template with a hole in it, and the person is told which hole. */
+    const warn=c.warnings.map(w=>'<p class="kd-warn">'+ic("alert")+
+      esc(t("kd_warn_unknown"))+' <span class="mono-iso">'+esc(w.fields.join(", "))+'</span></p>').join("");
+    b.innerHTML='<div class="kd-ok">'+
+      '<p class="kd-said">'+ic("page")+esc(t("kd_read_template"))+'</p>'+
+      '<p class="kd-line"><b>'+esc(t("kd_locale"))+'</b> '+esc(t("loc_"+c.locale.toLowerCase()))+'</p>'+
+      '<p class="kd-line"><b>'+esc(boardText(getLang(),"kd_fields", c.fields.length))+'</b></p>'+
+      '<ul class="kd-fields">'+c.fields.map(x=>'<li><span class="mono-iso">'+esc(x)+'</span>'+
+        (ThriveKinds.KNOWN_FIELDS.indexOf(x)<0? ' <span class="kd-unk">'+esc(t("kd_unknown"))+'</span>':'')+
+        '</li>').join("")+'</ul>'+
+      (c.quoteBlock? '<p class="kd-line">'+esc(t("kd_quote_block"))+'</p>':'')+
+      warn+'</div>';
+    el("tpl_lang").value=c.locale;
+    if(!el("tpl_id").value) el("tpl_id").value=slugify(c.name||fname.replace(/\.html?$/i,""));
+    if(!el("tpl_name").value) el("tpl_name").value=c.name||fname.replace(/\.html?$/i,"");
+  }
+
+  /* A finished offer belongs to one prospect, so it lands on the board and never
+     in the Library. That is the Library rule made operational rather than
+     printed and ignored. */
+  async function makeOfferOpportunity(c, fname){
+    const biz=c.name||fname.replace(/\.html?$/i,"");
+    let slug=slugify(biz), n=2;
+    const have=getDrafts();
+    while(have.some(d=>d.slug===slug)) slug=slugify(biz)+"-"+(n++);
+    saveDraft({ slug:slug, business:biz, mode:"upload", html:pendingHTML,
+                doc_lang:c.locale||"", published:false, up:Date.now() });
+    logActivity("opp_add", slug, "offer upload");
+    said(t("kd_went_board").replace("{biz}", biz), "");
+    pendingHTML=null; pendingRead=null;
+    dz.innerHTML=t("upload_dz");
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+  }
+
   function readTpl(f){
     if(!/\.html?$/i.test(f.name)){ toast(t("need_html")); return; }
     const fr=new FileReader();
     fr.onload=()=>{ pendingHTML=fr.result;
       dz.innerHTML=t("uploaded")+"<b>"+esc(f.name)+"</b>";
-      if(!el("tpl_id").value) el("tpl_id").value=slugify(f.name.replace(/\.html?$/i,""));
-      if(!el("tpl_name").value) el("tpl_name").value=f.name.replace(/\.html?$/i,"");
+      showRead(ThriveKinds.classify(pendingHTML, f.name), f.name);
     };
     fr.onerror=()=>toast(t("read_err"));
     fr.readAsText(f);
@@ -2929,19 +3030,43 @@ function initTemplates(){
 
   el("tplAdd").addEventListener("click",()=>{
     if(!pendingHTML){ toast(t("tpl_need_file")); return; }
+    /* The file has to have been read and accepted as a page template. Saving a
+       file the validator refused, or one nobody answered the question about, is
+       how a finished page ended up in the Library in the first place. */
+    if(!pendingRead || pendingRead.kind!=="page-template"){ toast(t("kd_not_template")); return; }
     const id=slugify(el("tpl_id").value)|| slugify(el("tpl_name").value);
     if(!id){ toast(t("tpl_need_id")); return; }
     const reserved=APPROVED_TEMPLATES.some(t2=>t2.id===id);
     if(reserved){ toast(t("tpl_id_taken")); return; }
     // An existing custom id would be silently overwritten, so ask first.
     if(getCustomTemplate(id) && !confirm(t("tpl_confirm_overwrite"))) return;
-    const ok=saveCustomTemplate({ id, name:el("tpl_name").value.trim()||id, lang:el("tpl_lang").value||"EN",
+    const loc=pendingRead.locale||el("tpl_lang").value||"EN";
+    const ok=saveCustomTemplate({ id, name:el("tpl_name").value.trim()||id, lang:loc, locale:loc,
+      fields:pendingRead.fields.slice(),
       html:pendingHTML, created:new Date().toISOString() });
     if(!ok) return;
     logActivity("tpl_add", id, el("tpl_name").value.trim());
-    pendingHTML=null; dz.innerHTML=t("upload_dz"); el("tpl_id").value=""; el("tpl_name").value="";
+    const wentTo=t("loc_"+loc.toLowerCase());
+    pendingHTML=null; pendingRead=null; dz.innerHTML=t("upload_dz");
+    el("tpl_id").value=""; el("tpl_name").value="";
+    said(t("kd_went_library").replace("{loc}", wentTo), "");
     toast(t("tpl_added")); renderCustom();
   });
+
+  /* ---- a starting point, so the first upload is not blind -----------------
+     The shipped skeleton with its declarations and its fields in place and its
+     content emptied. Somebody building a new template starts from something
+     that already works instead of guessing the contract from documentation. */
+  const blankBar=el("tplBlank");
+  if(blankBar) blankBar.querySelectorAll("[data-blank]").forEach(b=>b.addEventListener("click", async ()=>{
+    const loc=b.getAttribute("data-blank");
+    const src=loc==="AR" ? "ar-opp1" : "en-opp1";
+    const html=await fetchTemplateHtml(src);
+    if(!html){ toast(t("kd_blank_err")); return; }
+    const name=t("kd_blank_name")+" "+t("loc_"+loc.toLowerCase());
+    download("thrive-blank-"+loc.toLowerCase()+".html", ThriveKinds.blankFrom(html, loc, name));
+    said(t("kd_blank_done"), "");
+  }));
 
   /* ---- email templates: full, explicit CRUD (new · edit · duplicate · delete) ---- */
   const etBox=el("etEditor");
@@ -3553,7 +3678,7 @@ async function initBoard(){
        up, and the overflow control is the path that needs no dragging at all. */
     return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
       '<button class="tok-open" type="button">'+
-        '<span class="tok-name">'+esc(tk.biz)+'</span>'+
+        '<span class="tok-name">'+(tk.offer? ic("spark",13) : "")+esc(tk.biz)+'</span>'+
         '<span class="tok-meta">'+meta+'</span>'+
       '</button>'+
       '<button class="tok-more" type="button" aria-haspopup="menu" aria-label="'+esc(t("mv_menu"))+'">'+ic("chevron")+'</button>'+
@@ -4854,7 +4979,10 @@ function initModal(){
         '<div class="mw-acts"><button type="button" class="btn ghost sm" id="otCopy"'+
         (hasLink?" disabled":"")+'>'+esc(t("oc_copy"))+'</button></div>';
     }
-    box.innerHTML='<section class="mw-sec"><h4 class="mw-h">'+esc(t("ot_h"))+'</h4>'+inner+'</section>'+
+    /* Outreach text: the text symbol, no colour, and always a block of content
+       with a copy control rather than a form field. WO-013 §3.4. */
+    box.innerHTML='<section class="mw-sec kind-text"><h4 class="mw-h">'+ic("text")+esc(t("ot_h"))+
+      ' <span class="kind-tag">'+esc(t("kd_kind_text"))+'</span></h4>'+inner+'</section>'+
       '<details class="mw-more"><summary>'+esc(t("ot_paste"))+'</summary>'+
       '<div class="field"><textarea id="otBox" class="input oc-body" rows="8">'+esc(text)+'</textarea></div>'+
       '<button class="btn ghost sm" id="otSave" type="button">'+esc(t("ot_save"))+'</button></details>';

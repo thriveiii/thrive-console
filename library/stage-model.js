@@ -199,6 +199,10 @@
       /* The package documents this field as biz. The shipped console writes business, and
          the live file wins: read both, fall back to the slug. */
       biz: o.business || o.biz || o.slug,
+      /* A finished offer is a complete page written for this one prospect rather
+         than a template filled in. It carries its own mark on the card, because
+         it is the one kind that can never be edited by field. WO-013 §3.4. */
+      offer: o.mode === "upload",
       lane: lane,
       stage: hostEffStage(o, ctx),
       opens: hostOpens(o.slug, ctx),
