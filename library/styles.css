@@ -1462,3 +1462,26 @@ body.modal-open{
 .lc-url:hover{ color:var(--purple) }
 .lc-copy{ flex:0 0 auto }
 [dir="rtl"] .lc-desc,[dir="rtl"] .lc-title{ letter-spacing:normal }
+
+/* --- what the editor gained ------------------------------------------------
+   Each of these removes a failure the team has actually hit. WO-013 §5.2. */
+.subj-meter.is-long{ color:var(--state-stall) }
+[dir="rtl"] .subj-meter{ letter-spacing:normal }
+.sig-loc{ font-size:12px; color:var(--ink-4) }
+[dir="rtl"] .sig-loc{ letter-spacing:normal }
+.cmp-preview{
+  border:1px solid var(--hair); border-radius:var(--r-md);
+  overflow:hidden; block-size:360px; background:#fff;
+}
+.cmp-preview iframe{ inline-size:100%; block-size:100%; border:0 }
+/* Three lines, shown once, before it leaves. */
+.pre-send{ margin-block:var(--s-3) }
+.ps-list{ list-style:none; margin:0; padding:0 }
+.ps-list li{
+  display:flex; align-items:center; gap:var(--s-2);
+  font-size:13px; line-height:2; color:var(--ink-3);
+}
+.ps-list li.ok .ic{ color:var(--lane-replied) }
+.ps-list li.no{ color:var(--state-stall) }
+.ps-list li.no .ic{ color:var(--state-stall) }
+[dir="rtl"] .ps-list li{ letter-spacing:normal }
