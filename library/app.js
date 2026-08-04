@@ -2151,6 +2151,10 @@ function logMail(rec){
   if(!r.actor) r.actor=ACTOR;
   if(!r.thread) r.thread=threadKey(r.to, r.opp, r.subject);
   if(!r.direction) r.direction=(r.status==="replied"||r.status==="received")?"in":"out";
+  /* WO-015 I8: a mail record carries its chapter. One is the first contact, two is
+     the offer. It defaults to one, so every record written before this reads as
+     the first contact with nothing to migrate. */
+  if(r.chapter==null) r.chapter=1;
   if(r.templateId===undefined) r.templateId="";
   if(r.templateName===undefined) r.templateName="";
   a.push(r); setMailLog(a);   // invalidates the send index: a send changes a lane immediately
@@ -2248,6 +2252,24 @@ function activeChapter(slug){
   let ch=1;
   getMailLog().forEach(m=>{ if(m && m.opp===slug && (m.chapter||1)>ch) ch=m.chapter||1; });
   return ch;
+}
+/* WO-015 §6: the lane reflects the furthest state of the ACTIVE chapter. For the
+   only chapter that exists today, chapter one, this is exactly effStage, so the
+   board does not move a single card: effStage stays the single authority (I3) for
+   the state that is actually there. When Phase D opens chapter two, a card that
+   was answered in chapter one and then sent an offer reads from the offer's own
+   evidence rather than staying on the earlier reply, because the earlier reply is
+   a fact about a chapter that has closed. The chapter's evidence is its sends, the
+   opens after its first send, and any reply attributed to it. */
+function activeChapterStage(o){
+  if(!o || typeof o!=="object") return effStage(o);
+  const slug=o.slug, ch=activeChapter(slug);
+  if(ch<=1) return effStage(o);
+  const sends=getMailLog().filter(m=> m && m.opp===slug && m.direction!=="in" && (m.chapter||1)===ch);
+  if(!sends.length) return effStage(o);                 // this chapter has not sent yet
+  if(getInbound().some(r=> r && r.opp===slug && r.kind!=="auto" && (r.chapter||1)===ch)) return "replied";
+  const firstTs=sends.map(m=>m.ts).sort()[0];
+  return opensSince(slug, firstTs)>0 ? "opened" : "sent";
 }
 
 async function initCompose(slugArg){
@@ -4191,10 +4213,20 @@ async function initBoard(){
     else meta=txt("tok_idle", tk.age).replace(String(tk.age), num(tk.age));
     /* The card is a row now, not a single button: the label opens the window, the grip picks it
        up, and the overflow control is the path that needs no dragging at all. */
+    /* WO-015 §6: one quiet chapter marker per card, on the cards where a chapter is
+       actually in play (a contacted card), so a chapter two offer sitting in Sent
+       is told apart from a first contact sitting in Sent. Not a second lane, not a
+       badge cluster: one short phrase. A draft or a live card has no contact yet,
+       so it carries no marker. */
+    const contacted = (tk.lane==="sent"||tk.lane==="opened"||tk.lane==="replied");
+    const aCh = contacted ? activeChapter(tk.slug) : 0;
+    const chMark = aCh>=1
+      ? '<span class="tok-chapter'+(aCh>=2?" is-offer":"")+'">'+esc(t(aCh>=2?"th_ch_offer":"th_ch_first"))+'</span>'
+      : '';
     return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
       '<button class="tok-open" type="button">'+
         '<span class="tok-name">'+(tk.offer? ic("spark",13) : "")+esc(tk.biz)+'</span>'+
-        '<span class="tok-meta">'+meta+'</span>'+
+        '<span class="tok-meta">'+meta+chMark+'</span>'+
       '</button>'+
       '<button class="tok-more" type="button" aria-haspopup="menu" aria-label="'+esc(t("mv_menu"))+'">'+ic("chevron")+'</button>'+
       '<span class="tok-grip" aria-hidden="true">'+ic("drag")+'</span>'+
