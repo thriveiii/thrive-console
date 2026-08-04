@@ -256,6 +256,7 @@ function scanInbox() {
     if (!threads.length) {
       store.inboxScan = { ts: new Date().toISOString(), ms: new Date().getTime() - started,
                           found: 0, added: 0, idle: true };
+      store.scanLog = (store.scanLog || []).concat([{ ms: new Date().getTime() - started, idle: true }]).slice(-96);
       return { ok: true, added: 0, idle: true };
     }
 
@@ -285,6 +286,7 @@ function scanInbox() {
                                             'UTC', 'yyyy/MM/dd');
     store.inboxScan = { ts: new Date().toISOString(), ms: new Date().getTime() - started,
                         found: scanned, added: added, idle: false };
+    store.scanLog = (store.scanLog || []).concat([{ ms: new Date().getTime() - started, idle: false }]).slice(-96);
     return { ok: true, added: added, scanned: scanned };
   });
   return out;
@@ -456,6 +458,41 @@ function installScanTrigger() {
   return 'scanInbox now runs every 15 minutes';
 }
 
+/* ===================== the two ceilings, reported rather than assumed =========
+ * §10.2 A consumer Google account gets 90 minutes of trigger runtime per day.
+ *       Workspace gets six hours. A scan every fifteen minutes is 96 runs a day.
+ *       At 30 seconds per run that is 48 minutes, which fits. At 60 it does not.
+ * §10.3 The sending cap is an ACCOUNT limit, not a product decision, and the
+ *       person reading "100" deserves to know which. It is read from here so
+ *       moving to Workspace is a configuration change and not a code change.
+ */
+function sendStats_() {
+  var s = storeRead_();
+  var scans = s.scanLog || [];
+  var perDay = 24 * 60 / 15;                    // the configured interval
+  var avg = 0;
+  if (scans.length) {
+    var sum = 0;
+    for (var i = 0; i < scans.length; i++) sum += (scans[i].ms || 0);
+    avg = Math.round(sum / scans.length);
+  }
+  var dailyMs = Math.round(avg * perDay);
+  var quota = MailApp.getRemainingDailyQuota();
+  /* A consumer account is 100 recipients a day, Workspace is 1500. The remaining
+     quota is what the account will actually allow, so the tier is read from it
+     rather than guessed. */
+  var tier = quota > 500 ? 'workspace' : 'consumer';
+  return {
+    ok: true,
+    scan: { runs: scans.length, avgMs: avg, perDay: perDay,
+            dailyMinutes: Math.round(dailyMs / 60000),
+            budgetMinutes: tier === 'workspace' ? 360 : 90,
+            overBudget: (dailyMs / 60000) > 60 },
+    send: { remainingToday: quota, cap: tier === 'workspace' ? 1500 : 100, tier: tier,
+            counts: 'recipients' }
+  };
+}
+
 /* ===================== sending ===================== */
 
 /**
@@ -529,6 +566,7 @@ function doPost(e) {
     if (op === 'send')          return json_(sendMail_(d));
 
     if (op === 'store_stats')   return json_(storeStats_());
+    if (op === 'send_stats')    return json_(sendStats_());
     if (op === 'store_migrate') return json_(storeMigrate_(!!d.dryRun));
 
     if (op === 'inbound_get')   return json_({ ok: true, records: (storeRead_().inbound || []),

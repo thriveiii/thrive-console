@@ -28,17 +28,29 @@
   var TTL_MS = 30 * 60 * 1000;
   var DEBOUNCE_MS = 400;
 
-  /* The store is injected so this can be exercised in node. In the browser it is
-     localStorage, and it is NOT in SYNCED_KEYS. */
-  var store = (typeof localStorage !== "undefined") ? localStorage : null;
+  /* Every read and write goes through the one storage adapter, so no feature
+     code reaches around it. WO-013 §10.4. The adapter is injectable, which is
+     what makes the expiry arithmetic testable in node, and in the browser it is
+     ThriveStore. This key is NOT in SYNCED_KEYS and never will be. */
+  var store = null;
+  function backing() {
+    if (store) return store;
+    if (typeof ThriveStore !== "undefined" && ThriveStore) {
+      return { getItem: function (k) { return ThriveStore.get(k, null); },
+               setItem: function (k, v) { ThriveStore.set(k, v); } };
+    }
+    return (typeof localStorage !== "undefined") ? localStorage : null;
+  }
   function setStore(s) { store = s; }
 
   function read() {
-    try { return JSON.parse((store && store.getItem(KEY)) || "{}"); }
+    var b = backing();
+    try { return JSON.parse((b && b.getItem(KEY)) || "{}"); }
     catch (e) { return {}; }
   }
   function write(o) {
-    try { if (store) store.setItem(KEY, JSON.stringify(o)); return true; }
+    var b = backing();
+    try { if (b) b.setItem(KEY, JSON.stringify(o)); return true; }
     catch (e) { return false; }
   }
 
@@ -120,7 +132,7 @@
        every draft written after a self test went into the test's memory and
        vanished on reload, which is the exact failure this module exists to
        prevent, caused by the test for it. */
-    var prev = store;
+    var prev = store;   // null means "use the adapter", which is restored below
     setStore({
       getItem: function (k) { return mem[k] === undefined ? null : mem[k]; },
       setItem: function (k, v) { mem[k] = v; }

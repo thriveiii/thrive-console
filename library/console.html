@@ -603,6 +603,15 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <div id="rpPanel"></div>
   </section>
 
+  <!-- The one place a slow leak is caught while it is still slow. Outreach goes
+       out from the address clients reply to and invoices come from, so a
+       reputation hit does not only cost the next campaign. §10.5. -->
+  <section class="panel settings-panel">
+    <h3 class="block-h" data-icon="alert" data-i18n="rep_h">Sending reputation</h3>
+    <p class="sub" data-i18n="rep_sub"></p>
+    <div id="repPanel"></div>
+  </section>
+
   <section class="panel">
     <h3 class="block-h" data-icon="archive" data-i18n="set_backup_h">Backup &amp; restore</h3>
     <p class="sub" data-i18n="set_backup_sub"></p>
@@ -657,6 +666,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="numbers.js"></script>
 <script src="inbound.js"></script>
 <script src="kinds.js"></script>
+<script src="store.js"></script>
 <script src="drafts.js"></script>
 <script src="flows.js"></script>
 <script src="app.js"></script>

@@ -104,9 +104,14 @@ function lsSet(key, str){
 /* ---------- activity log ---------- */
 function getActivity(){ try{ return JSON.parse(localStorage.getItem(LOG)||"[]"); }catch(e){ return []; } }
 function setActivity(a){ lsSet(LOG, JSON.stringify(a.slice(-500))); }
+/* One field, added now because it is free now and expensive later. Adding it
+   after a year of history means a migration over records that cannot be
+   attributed. WO-013 §10.7. */
+const ACTOR="thyab";
 function logActivity(action, slug, detail){
   const a=getActivity();
-  a.push({ ts:new Date().toISOString(), action:action||"", slug:slug||"", detail:detail||"" });
+  a.push({ ts:new Date().toISOString(), action:action||"", slug:slug||"", detail:detail||"",
+           actor:ACTOR });
   setActivity(a);
 }
 window.logActivity = logActivity;
@@ -2082,8 +2087,9 @@ function newMid(){ try{ return Date.now().toString(36)+Math.random().toString(36
 // Central ledger writer: stamps a unique message id, resolves the thread, and fixes direction.
 function logMail(rec){
   const a=getMailLog();
-  const r=Object.assign({ ts:new Date().toISOString() }, rec);
+  const r=Object.assign({ ts:new Date().toISOString(), actor:ACTOR }, rec);
   if(!r.mid) r.mid=newMid();
+  if(!r.actor) r.actor=ACTOR;
   if(!r.thread) r.thread=threadKey(r.to, r.opp, r.subject);
   if(!r.direction) r.direction=(r.status==="replied"||r.status==="received")?"in":"out";
   if(r.templateId===undefined) r.templateId="";
@@ -2691,14 +2697,30 @@ async function initCompose(slugArg){
     const q=quotaUsage();
     if(q.dayFull){ toast(t("cmp_quota_day_hit")+(q.freeInMs>0?" "+t("cmp_quota_resets")+" "+fmtDur(q.freeInMs):"")); return; }
     if(q.monthFull){ toast(t("cmp_quota_month_hit")); return; }
+    /* A suppressed address is never written to again, and the console says why.
+       This is the single highest value guard in the deliverability section: at
+       three sends a day the risk is not volume, it is one complaint against a
+       domain that also carries client mail and invoices. */
+    if(ThriveStore.isSuppressed(to)){
+      toast(t("sup_blocked")+" "+t("sup_r_"+(ThriveStore.reasonFor(to)||"unknown")));
+      return;
+    }
     /* An unresolved token blocks the send. "Hi {name}" reaching a prospect is
        the failure this whole section exists to prevent, and detecting it after
        the fact is detecting it too late. */
     const left=unresolvedTokens(resolveTokens(htmlOut()+" "+el("esubject").value));
     if(left.length){ toast(t("ps_tokens_block")+" "+left.join(", ")); renderPreSend(); return; }
+    const loc=docLoc();
     const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to,
       subject:resolveTokens(el("esubject").value.trim()),
-      html:composedHtml(), text:composedText(), slug:slug||"" };
+      /* The physical address and the one line opt out are required by US law for
+         commercial email, and both are already true of Thrive. List-Unsubscribe
+         is not required at this volume and costs nothing, and it converts a spam
+         complaint into an unsubscribe. */
+      html:composedHtml()+ThriveStore.footerHtml(loc==="AR"?"ar":"en"),
+      text:composedText()+ThriveStore.footerText(loc==="AR"?"ar":"en"),
+      headers:ThriveStore.outboundHeaders(slug||""),
+      slug:slug||"" };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
       const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
@@ -2815,6 +2837,7 @@ async function connCheck(candidate, onStep){
 function initSettings(){
   renderStorageMeter();
   renderRepliesPanel();
+  renderReputation();
   const el=id=>document.getElementById(id);
   const c=ghConfig();
   el("gh_owner").value=c.owner||"thriveiii";
@@ -4444,6 +4467,62 @@ function renderRepliesPanel(){
     await syncNow();
     const o3=out(); if(o3) o3.textContent=boardText(getLang(),"rp_repaired", real.count||0);
     renderRepliesPanel();
+  });
+}
+
+/* ---------- the reputation panel ----------
+   The published playbook for outbound in 2026 is three to eight sending domains,
+   warmed over weeks, a sequencer, and volume scaled while placement is defended.
+   That playbook solves a problem Thrive does not have and would destroy the
+   thing Thrive is good at: three sends a day, each with a page built for one
+   named business.
+
+   So the console's job is the opposite of the playbook's. Not raising volume
+   safely, but making low volume compound: never send to a suppressed address,
+   never send with an unresolved placeholder, and make the numbers visible so a
+   slow leak is caught while it is still slow. WO-013 §10.6. */
+async function renderReputation(){
+  const host=document.getElementById("repPanel");
+  if(!host) return;
+  const r=ThriveStore.reputation({ mail:getMailLog(), month:ThriveNumbers.localMonth() });
+  const u=ThriveStore.usage();
+  const pct=n=>'<span class="n">'+n+'</span>%';
+  host.innerHTML=
+    '<p class="rep-verdict rep-'+esc(r.verdict.replace("rep_",""))+'">'+
+      ic(r.verdict==="rep_healthy"?"check":"alert")+esc(t(r.verdict))+'</p>'+
+    '<ul class="st-keys">'+
+      '<li><span>'+esc(t("rep_sent"))+'</span><span class="n">'+r.sent+'</span></li>'+
+      '<li><span>'+esc(t("rep_hard"))+'</span><span>'+pct(r.hardRate)+' ('+r.hardBounces+')</span></li>'+
+      '<li><span>'+esc(t("rep_complaints"))+'</span><span>'+pct(r.complaintRate)+' ('+r.complaints+')</span></li>'+
+      '<li><span>'+esc(t("rep_suppressed"))+'</span><span class="n">'+r.suppressed+'</span></li>'+
+    '</ul>'+
+    '<p class="st-line">'+esc(t("rep_guidance"))+'</p>'+
+    /* §10.4: the usage is measured and the threshold is recorded, and the
+       migration is deliberately not built. */
+    '<p class="st-line"><b>'+esc(t("rep_storage"))+'</b> <span class="n">'+
+      (u.bytes/1048576).toFixed(2)+'</span> MiB · '+
+      esc(u.shouldMigrate? t("rep_migrate_now") : t("rep_migrate_not"))+'</p>'+
+    '<div class="bar"><button class="btn ghost sm" type="button" id="repRelay">'+
+      esc(t("rep_relay_btn"))+'</button></div><div id="repOut" class="st-line"></div>';
+
+  const b=document.getElementById("repRelay");
+  if(b) b.addEventListener("click", async ()=>{
+    const out=document.getElementById("repOut");
+    if(out) out.textContent=t("rp_working");
+    const j=await relayOp("send_stats");
+    if(!out) return;
+    if(!j.ok){ out.textContent=t("rp_store_old")+" "+(j.error||""); return; }
+    /* The cap is read from the relay, never hardcoded, so moving to Workspace is
+       a configuration change and not a code change. And the tier is shown,
+       because the person reading 100 should know whether that is a product
+       decision or an account limit. */
+    const sc=j.scan||{}, sd=j.send||{};
+    out.innerHTML='<p class="st-line">'+esc(t("rep_tier"))+' <b>'+esc(sd.tier||"")+'</b> · '+
+      esc(t("rep_cap"))+' <span class="n">'+(sd.cap||0)+'</span> '+esc(t("rep_recipients"))+
+      ' · '+esc(t("rep_left"))+' <span class="n">'+(sd.remainingToday||0)+'</span></p>'+
+      '<p class="st-line'+(sc.overBudget?" st-miss":"")+'">'+esc(t("rep_trigger"))+' <span class="n">'+
+      (sc.dailyMinutes||0)+'</span> / <span class="n">'+(sc.budgetMinutes||0)+'</span> '+
+      esc(t("rep_minutes"))+(sc.overBudget? " · "+esc(t("rep_over")) : "")+'</p>';
   });
 }
 

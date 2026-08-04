@@ -328,7 +328,13 @@ head("Arabic");
 
     /* 1. A passive verb form. The interface reports what happened; it does not
           narrate who did it, and Arabic drops the doer rather than naming it. */
-    const PASSIVE = /أُرسل|فُتح|رُدّ\s|أُنشئ|يُرجى|أُضيف|نُسخ|كُتب|أُغلق|حُذف|رُفع|أُخذ|اُستُ/;
+    /* The passive perfect in Arabic is marked by a damma on the first radical, and
+       for form I with a prefixed hamza that is written as أُ. Naming individual
+       verbs meant the list was always one verb behind: أُبلغ slipped past a list
+       that already held أُرسل and أُنشئ. The general marker catches the pattern
+       rather than the vocabulary, plus the four inner-damma shapes the console
+       actually uses and the يُرجى politeness formula rule 1 replaces. */
+    const PASSIVE = /أُ[\u0621-\u064A]|يُرجى|فُتح|رُدّ\s|نُسخ|كُتب|حُذف|رُفع|سُجّ|جُمّ|تُرجم|بُني\s/;
     const passive = strings.filter(([, v]) => PASSIVE.test(v)).map(([k]) => k);
     passive.length ? bad("no passive verb form in user facing Arabic", passive)
                    : ok("no passive verb form in user facing Arabic (" + strings.length + " strings)");
