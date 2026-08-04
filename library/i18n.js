@@ -508,6 +508,27 @@ const I18N = {
     kd_err_kind:     "This file says it is a {k}, and the console only knows page-template and offer.",
     kd_err_locale:   "A page template has to say which library it belongs to. Add a thrive-locale meta tag with ar or en.",
     kd_err_nofields: "This has no fields to fill, so it is not a page template. A file with nothing to fill is a finished offer.",
+
+    /* ---- channel first, WO-013 phase 3 ------------------------------------
+       The tab used to open on a row of send-from options, one of which rendered
+       as a bare dot. That is the second question asked before the first. */
+    och_h:           "How are you reaching them?",
+    och_p:           "Everything after this follows from the answer. You can change it later without losing what you wrote.",
+    och_email:       "By email",
+    och_own:         "Through their own channel",
+    och_no_email:    "No address on this record",
+    och_no_tier:     "An address is on the record, but it is not a Tier A owner address",
+    och_no_channels: "The manifest supplied no channel for this one",
+    och_change:      "Change how you reach them",
+    och_email_h:     "By email",
+    och_email_p:     "The composer below is filled in from this opportunity. It goes to",
+    och_sent_h:      "I sent it",
+    lc_card_desc:    "A page built for this business",
+    lc_copy_link:    "Copy the link",
+    cmp_tb_list:     "List",
+    cmp_tb_bold:     "Bold",
+    cmp_tb_italic:   "Italic",
+    cmp_tb_under:    "Underline",
     st_h:          "Storage on this device",
     st_sub:        "The console keeps everything in this browser. Safari deletes all of it if you do not open the console for seven days, so the relay is the durable copy, not this.",
     st_used:       "Used",
@@ -1277,6 +1298,25 @@ const I18N = {
     kd_err_kind:     "يقول هذا الملف إنه {k}، والكونسول لا يعرف غير page-template و offer.",
     kd_err_locale:   "على قالب الصفحة أن يذكر مكتبته. أضف وسم thrive-locale بقيمة ar أو en.",
     kd_err_nofields: "لا حقول فيه لتُملأ، فليس قالب صفحة. والملف الذي لا شيء فيه ليُملأ هو عرض جاهز.",
+
+    /* ---- القناة أولًا ---- */
+    och_h:           "كيف ستصل إليهم؟",
+    och_p:           "كل ما بعد هذا يتبع الإجابة. ويمكنك تغييرها لاحقًا دون أن تفقد ما كتبته.",
+    och_email:       "بالبريد",
+    och_own:         "عبر قناتهم",
+    och_no_email:    "لا عنوان في هذا السجل",
+    och_no_tier:     "في السجل عنوان، لكنه ليس عنوان مالك من الفئة A",
+    och_no_channels: "لم يذكر البيان أي قناة لهذه الفرصة",
+    och_change:      "غيّر طريقة الوصول إليهم",
+    och_email_h:     "بالبريد",
+    och_email_p:     "المُنشئ بالأسفل مُعبّأ من هذه الفرصة. وسيذهب إلى",
+    och_sent_h:      "أرسلتها",
+    lc_card_desc:    "صفحة مبنية لهذا العمل",
+    lc_copy_link:    "انسخ الرابط",
+    cmp_tb_list:     "قائمة",
+    cmp_tb_bold:     "عريض",
+    cmp_tb_italic:   "مائل",
+    cmp_tb_under:    "تحته خط",
     st_h:          "التخزين على هذا الجهاز",
     st_sub:        "يحفظ الكونسول كل شيء في هذا المتصفح. يمسحه Safari بالكامل إن لم تفتح الكونسول سبعة أيام، فالنسخة الدائمة هي المُرحّل لا هذا الجهاز.",
     st_used:       "المستخدَم",
@@ -1549,6 +1589,12 @@ function applyLang(){
   document.documentElement.dir = dict._dir;
   document.querySelectorAll("[data-i18n]").forEach(el=>{ el.innerHTML = t(el.getAttribute("data-i18n")); });
   document.querySelectorAll("[data-i18n-ph]").forEach(el=>{ el.setAttribute("placeholder", t(el.getAttribute("data-i18n-ph")).replace(/&lt;/g,"<").replace(/&gt;/g,">")); });
+  /* An accessible name has to be translated like any other label. A control whose
+     only name is an English title attribute is unnamed in Arabic. WO-013 §4.1. */
+  document.querySelectorAll("[data-i18n-aria]").forEach(el=>{
+    const v=t(el.getAttribute("data-i18n-aria"));
+    el.setAttribute("aria-label", v); el.setAttribute("title", v);
+  });
   const lb = document.getElementById("langbtn");
   if(lb) lb.textContent = (l==="en") ? "العربية" : "English";
   /* Every data-i18n element was just rewritten from the dictionary, which wipes any symbol

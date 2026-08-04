@@ -169,6 +169,41 @@ let I18N = null, BOARD = null;
     miss.length ? bad("every data-i18n key exists in both languages", miss)
                 : ok("every data-i18n key exists in both languages (" + used.size + " used)");
   }
+
+  /* ---- no control may render with nothing in it -------------------------
+     WO-013 §4.1. The Outreach tab shipped a chip that rendered as [.] because
+     its label was a literal "." standing in for an empty option. Fixing that one
+     chip is worth less than a check that makes the whole class impossible, so
+     this is the check and the fix was the easy half.
+
+     It reads the literal markup of every chip, button, tab and option in
+     library/*.html and in every template string in library/app.js, and fails on
+     a label that is empty, whitespace only, or one of the punctuation stand-ins
+     people reach for when they have nothing to say. */
+  {
+    const HOLLOW = /^[\s.\u00b7\u2013\u2014_\-\u2022]*$/;
+    const offenders = [];
+
+    /* markup: <button ...>LABEL</button> and the same for option and the tabs */
+    for (const p of ALL.filter(x => /library[\\/][^\\/]+\.(html|js)$/.test(rel(x)))) {
+      const s = read(p);
+      const re = /<(button|option)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+      let m;
+      while ((m = re.exec(s))) {
+        const attrs = m[2] || "";
+        /* A control that names an i18n key or is filled at runtime is judged by
+           its key, which the parity checks above already cover. */
+        if (/data-i18n|aria-label|\+esc\(|\+t\(|\$\{/.test(attrs + m[3])) continue;
+        /* Strip nested markup before judging: an icon-only control is legitimate
+           when it carries an aria-label, which the line above already let past. */
+        const label = m[3].replace(/<[^>]*>/g, "");
+        if (HOLLOW.test(label)) offenders.push(rel(p) + ": <" + m[1] + "> " + JSON.stringify(m[3].slice(0, 40)));
+      }
+    }
+    offenders.length
+      ? bad("no chip, button, tab or option can render an empty label", offenders)
+      : ok("no chip, button, tab or option can render an empty label");
+  }
 }
 
 /* ================= 4. copy gates (Brain/01 §7, Brain/03 §2, Brain/04 §3) ================= */
