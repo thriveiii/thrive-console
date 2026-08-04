@@ -291,6 +291,100 @@ head("Flows");
   }
 }
 
+/* ================= 3c. the Arabic law (WO-013 §8) ================= */
+head("Arabic");
+{
+  /* The review's judgement was blunt and correct: the Arabic read like a
+     machine. These five checks are what keeps it fixed, and each one fails the
+     build. Proven by introducing one of each: tools/arabic.py does exactly that.
+
+     The test for every string is still to read it aloud. A check cannot do that.
+     What a check CAN do is catch the five things that made it sound like a
+     machine in the first place. */
+  const src = read(path.join(ROOT, "library", "i18n.js"));
+  let I18N = null, BOARD = null;
+  try {
+    const g = {};
+    new Function("globalThis", src.replace("const I18N", "globalThis.I18N")
+                                  .replace("var I18N_BOARD", "globalThis.I18N_BOARD"))(g);
+    I18N = g.I18N; BOARD = g.I18N_BOARD;
+  } catch (e) { bad("the Arabic dictionary loads", [String(e.message)]); }
+
+  if (I18N && I18N.ar) {
+    const ar = I18N.ar;
+    const strings = [];
+    for (const k of Object.keys(ar)) {
+      if (typeof ar[k] === "string") strings.push([k, ar[k]]);
+    }
+    if (BOARD && BOARD.ar) {
+      for (const k of Object.keys(BOARD.ar)) {
+        const v = BOARD.ar[k];
+        if (typeof v === "string") strings.push(["board." + k, v]);
+        else if (v && typeof v === "object") {
+          for (const f of Object.keys(v)) if (typeof v[f] === "string") strings.push(["board." + k + "." + f, v[f]]);
+        }
+      }
+    }
+
+    /* 1. A passive verb form. The interface reports what happened; it does not
+          narrate who did it, and Arabic drops the doer rather than naming it. */
+    const PASSIVE = /أُرسل|فُتح|رُدّ\s|أُنشئ|يُرجى|أُضيف|نُسخ|كُتب|أُغلق|حُذف|رُفع|أُخذ|اُستُ/;
+    const passive = strings.filter(([, v]) => PASSIVE.test(v)).map(([k]) => k);
+    passive.length ? bad("no passive verb form in user facing Arabic", passive)
+                   : ok("no passive verb form in user facing Arabic (" + strings.length + " strings)");
+
+    /* 2. A bare dual used AS A COUNT LABEL. «فتحتان» is grammatically correct and
+          reads as a machine. The dual stays perfectly allowed in an ordinary
+          noun phrase, which is why this only fires when the string is nothing
+          BUT the dual: that is what makes it a label on a number rather than a
+          sentence about two things. */
+    const DUALS = ["فتحتان", "بطاقتان", "قالبان", "حقلان", "سجلان", "رسالتان",
+                   "صفحتان", "ردّان", "حرفان", "دقيقتان", "مرتان", "فتحتين"];
+    const bare = v => String(v).replace(/<[^>]*>/g, "").replace(/[\s.,،؛:!؟«»()]/g, "");
+    const duals = strings.filter(([, v]) => DUALS.indexOf(bare(v)) >= 0).map(([k]) => k);
+    duals.length ? bad("no bare dual used as a count label", duals)
+                 : ok("no bare dual used as a count label");
+
+    /* 3. A straight quote inside an Arabic string. Arabic uses guillemets. The
+          class attribute of an inline span is markup, not copy. */
+    const stripped = v => String(v).replace(/<[^>]*>/g, "");
+    const quotes = strings.filter(([, v]) => /["']/.test(stripped(v)) && /[\u0600-\u06FF]/.test(v))
+                          .map(([k]) => k);
+    quotes.length ? bad("Arabic copy quotes with guillemets, never straight quotes", quotes)
+                  : ok("Arabic copy quotes with guillemets, never straight quotes");
+
+    /* 4. An Eastern Arabic numeral. Western numerals are standard in Gulf
+          digital contexts and the console mixes Latin identifiers freely. */
+    const east = strings.filter(([, v]) => /[\u0660-\u0669\u06F0-\u06F9]/.test(v)).map(([k]) => k);
+    east.length ? bad("Western numerals only in Arabic", east)
+                : ok("Western numerals only in Arabic");
+  }
+
+  /* 5. letter-spacing reaching an Arabic selector. Tracking breaks the cursive
+        joins and produces something that reads as broken rather than styled. */
+  {
+    const css = read(path.join(ROOT, "library", "styles.css"));
+    const offenders = [];
+    /* Every rule that sets a non-zero letter-spacing or any text-transform, and
+       is either itself an RTL rule or is not reset by one. */
+    const re = /([^{}]+)\{([^}]*)\}/g;
+    let m;
+    const tracked = [];
+    while ((m = re.exec(css))) {
+      const sel = m[1].trim(), body = m[2];
+      const ls = /letter-spacing\s*:\s*([^;]+)/.exec(body);
+      const tt = /text-transform\s*:\s*([^;]+)/.exec(body);
+      const realLs = ls && !/^\s*(normal|0px|0)\s*$/.test(ls[1]);
+      const realTt = tt && !/^\s*none\s*$/.test(tt[1]);
+      if (!realLs && !realTt) continue;
+      if (/\[dir="rtl"\]|html\[dir="rtl"\]/.test(sel)) offenders.push("RTL rule sets it: " + sel.slice(0, 60));
+      else tracked.push(sel);
+    }
+    offenders.length ? bad("no letter-spacing or text-transform on an Arabic selector", offenders)
+                     : ok("no letter-spacing or text-transform on an Arabic selector (" + tracked.length + " Latin rules)");
+  }
+}
+
 /* ================= 4. copy gates (Brain/01 §7, Brain/03 §2, Brain/04 §3) ================= */
 head("Copy");
 {
