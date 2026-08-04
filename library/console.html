@@ -323,7 +323,10 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     </div>
     <div class="field" id="emonthWrap" hidden><label for="emonth" data-i18n="cmp_month">Month (this template asks for it)</label>
       <input id="emonth" class="input month-input" autocomplete="off" placeholder="July"></div>
-    <div class="field"><label for="esubject" data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off"></div>
+    <div class="field"><label for="esubject" data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off">
+      <!-- Past roughly 60 characters most clients truncate, so the writer is told
+           while there is still time to shorten it. WO-013 §5.2. -->
+      <div class="hint subj-meter" id="subjMeter"></div></div>
 
     <div class="field"><label id="ebodyL" data-i18n="cmp_message">Message</label>
       <div class="etoolbar">
@@ -369,8 +372,43 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <div id="elinks" class="elinks" hidden></div>
     </div>
 
+    <!-- The bottom of the email is a real object, not a fixed string nobody sees
+         until send. It previews, it is editable for this message only, and there
+         is one saved block per locale chosen by the DOCUMENT language. §5.1. -->
+    <details class="mw-more" id="sigWrap">
+      <summary data-i18n="sig_h">Closing block</summary>
+      <p class="hint" data-i18n="sig_sub"></p>
+      <div class="field"><label for="sigBox" data-i18n="sig_this">This message only</label>
+        <textarea id="sigBox" class="input oc-body" rows="4"></textarea></div>
+      <div class="bar">
+        <button class="btn ghost sm" type="button" id="sigSave" data-i18n="sig_save">Save as my block for this language</button>
+        <button class="btn ghost sm" type="button" id="sigReset" data-i18n="sig_reset">Back to the saved block</button>
+      </div>
+      <span class="sig-loc" id="sigLoc"></span>
+    </details>
+
+    <!-- Some contact forms and some mail clients strip HTML, and a message that
+         arrives as tag soup is worse than no message. Generated, and editable. -->
+    <details class="mw-more" id="plainWrap">
+      <summary data-i18n="pt_h">Plain text alternative</summary>
+      <p class="hint" data-i18n="pt_sub"></p>
+      <div class="field"><textarea id="plainBox" class="input oc-body" rows="6"></textarea></div>
+      <button class="btn ghost sm" type="button" id="plainRegen" data-i18n="pt_regen">Generate it again from the message</button>
+    </details>
+
+    <!-- A live preview of the whole message as the recipient will see it,
+         including the link card and the closing block. -->
+    <details class="mw-more" id="prevWrap">
+      <summary data-i18n="cmp_preview_h">Preview as the recipient sees it</summary>
+      <div class="cmp-preview"><iframe id="cmpPreview" title="preview" sandbox=""></iframe></div>
+    </details>
+
+    <!-- Three lines, shown once, before the message leaves. -->
+    <div id="preSend" class="pre-send" hidden></div>
+
     <div class="bar bar-actions">
       <button class="btn" id="eSend" data-icon="send" data-i18n="cmp_send">Send</button>
+      <button class="btn ghost" id="eSelf" data-icon="mail" data-i18n="cmp_self">Send to myself</button>
       <button class="btn ghost" id="eCopy" data-icon="copy" data-i18n="cmp_copy">Copy for Gmail</button>
       <button class="btn ghost" id="eMail" data-icon="mail" data-i18n="cmp_mailto">Open in mail app</button>
       <div id="quotaMeter" class="quota-meter" title=""></div>

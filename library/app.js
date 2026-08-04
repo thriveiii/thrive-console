@@ -57,6 +57,9 @@ const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thriv
   /* Inbound mail. The relay writes it, every device reads it, and it is evidence
      about a prospect rather than posture about a device, so it travels. */
   thrive_inbound_v1:1,
+  /* The closing block is reused, so it travels: the Library rule applies to a
+     signature exactly as it applies to a template. */
+  thrive_signature_v1:1,
   thrive_email_templates_v1:1, thrive_templates_v1:1, thrive_removed_v1:1, thrive_etpl_seed_v1:1 };
 /* WebKit deletes ALL script writeable storage for an origin with no user interaction in the
    last seven days of browser use. Not part of it: all of it, at once. And localStorage throws
@@ -1856,20 +1859,104 @@ function fmtDur(ms){ const h=Math.floor(ms/3600000), m=Math.round((ms%3600000)/6
 //    plain text signature. Reads like a real person wrote it, so it lands in the inbox
 //    instead of Gmail's Promotions tab.
 //  branded=true (opt-in): adds the Thrive logo header for known contacts / announcements.
-function brandWrap(inner, branded){
+/* ---- the link card, one component, used by both paths -------------------
+   Both paths deliver the same two things: the campaign text and the page
+   link. A prospect reading either should see the same object, so the card is
+   built once. It is what makes a message pasted into a contact form look
+   considered rather than pasted. */
+function linkCard(o, opts){
+  opts=opts||{};
+  const url=liveUrl(o.slug);
+  const title=o.business||o.slug;
+  const desc=o.descriptor||o.outreach_subject||t("lc_card_desc");
+  return '<div class="link-card">'+
+    '<div class="lc-body">'+
+      '<div class="lc-title">'+esc(title)+'</div>'+
+      '<div class="lc-desc">'+esc(desc)+'</div>'+
+      '<a class="lc-url" href="'+esc(url)+'" target="_blank" rel="noopener">'+ltr(esc(url))+'</a>'+
+    '</div>'+
+    (opts.copy===false? '' :
+      '<button class="btn ghost sm lc-copy" type="button" data-lcurl="'+esc(url)+'">'+
+      ic("copy")+esc(t("lc_copy_link"))+'</button>')+
+    '</div>';
+}
+function bindLinkCards(root){
+  (root||document).querySelectorAll("[data-lcurl]").forEach(b=>b.addEventListener("click",()=>{
+    const u=b.getAttribute("data-lcurl");
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(u).then(()=>toast(t("oc_copied")),
+        ()=>toast(legacyCopy(u)? t("oc_copied") : t("cmp_copy_err")));
+      return;
+    }
+    toast(legacyCopy(u)? t("oc_copied") : t("cmp_copy_err"));
+  }));
+}
+
+/* ---------- the closing block ----------
+   It was a fixed string built inside brandWrap and invisible until send. It is
+   now a stored object with one block PER LOCALE, chosen by the opportunity's
+   document language rather than by the chrome, so writing in Arabic chrome to an
+   English prospect still signs off in English. WO-013 §5.1. */
+const SIGN="thrive_signature_v1";
+function getSignatures(){
+  try{ return JSON.parse(localStorage.getItem(SIGN)||"{}"); }catch(e){ return {}; }
+}
+function defaultSignature(loc){
+  const name=getFromName();
+  return loc==="AR"
+    ? name+"\nthriveiii.com"
+    : name+"\nthriveiii.com";
+}
+function signatureFor(loc){
+  const L=(loc==="AR")?"AR":"EN";
+  const all=getSignatures();
+  const v=all[L];
+  return (typeof v==="string" && v.trim()) ? v : defaultSignature(L);
+}
+function setSignature(loc, text){
+  const L=(loc==="AR")?"AR":"EN";
+  const all=getSignatures(); all[L]=String(text||"");
+  return lsSet(SIGN, JSON.stringify(all));
+}
+/* Plain text, generated from the rich body rather than typed twice. Two copies a
+   person maintains by hand are two copies that disagree. */
+function toPlainText(html, sig){
+  let s=String(html||"");
+  s=s.replace(/<br\s*\/?>/gi,"\n")
+     .replace(/<\/(p|div|li|h[1-6])>/gi,"\n")
+     .replace(/<li[^>]*>/gi,"- ")
+     .replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, function(_,h,txt){
+        const t=String(txt).replace(/<[^>]*>/g,"").trim();
+        /* A link whose text already IS the URL must not be printed twice. */
+        return (t && t!==h) ? (t+" ("+h+")") : h;
+     })
+     .replace(/<[^>]*>/g,"");
+  s=s.replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">")
+     .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+  s=s.replace(/\n{3,}/g,"\n\n").replace(/[ \t]+\n/g,"\n").trim();
+  return sig ? (s+"\n\n"+sig) : s;
+}
+
+function brandWrap(inner, branded, sigText){
   const name=esc(getFromName());
+  const sig=(sigText===undefined||sigText===null) ? "" : String(sigText);
+  const sigHtml=sig.trim()
+    ? esc(sig).split("\n").join("<br>")
+    : "";
   const font='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
+  const closing = sigHtml
+    ? '<div style="margin-top:18px;color:#444">'+sigHtml+'</div>'
+    : '<div style="margin-top:18px;color:#444">'+name+'<br><a href="https://thriveiii.com" style="color:#444;text-decoration:none">thriveiii.com</a></div>';
   if(!branded){
     return '<div style="font-family:'+font+';font-size:15px;line-height:1.6;color:#222">'
-      +inner
-      +'<div style="margin-top:18px;color:#444">– '+name+'<br><a href="https://thriveiii.com" style="color:#444;text-decoration:none">thriveiii.com</a></div>'
-      +'</div>';
+      +inner+closing+'</div>';
   }
   const logo="https://"+SITE+"/assets/thrive-logo.png";
   return '<div style="font-family:'+font+';max-width:600px;margin:0 auto;padding:10px 4px">'
     +'<img src="'+logo+'" width="42" height="42" alt="'+name+'" style="display:block;border-radius:10px;margin-bottom:16px">'
     +'<div style="font-size:15px;line-height:1.7;color:#111827">'+inner+'</div>'
-    +'<div style="margin-top:24px;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#9aa0aa">'+name+' · thriveiii.com</div>'
+    +'<div style="margin-top:24px;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#9aa0aa">'
+      +(sigHtml||(name+' · thriveiii.com'))+'</div>'
     +'</div>';
 }
 
@@ -2434,6 +2521,139 @@ async function initCompose(slugArg){
   }
   renderQuota();
   onThrive("sync","compose",renderQuota);
+  /* ---- what the editor gained, and why each one earns its place ----------
+     Every item here removes a failure the team has actually hit. Nothing here
+     schedules, sequences, tests variants, or adds a tracking pixel: those change
+     what Thrive is, and WO-013 §5.3 says not to. */
+
+  /* The closing block: previewed, editable for THIS message only, and saved per
+     locale by the DOCUMENT language rather than the chrome. */
+  const sigBox=el("sigBox"), sigLoc=el("sigLoc");
+  const docLoc=()=> (oppObj ? docLang(oppObj) : (getLang()==="ar"?"AR":"EN"));
+  function loadSignature(){
+    if(!sigBox) return;
+    sigBox.value=signatureFor(docLoc());
+    if(sigLoc) sigLoc.textContent=t("sig_using")+" "+t("loc_"+docLoc().toLowerCase());
+  }
+  loadSignature();
+  const sigSave=el("sigSave");
+  if(sigSave) sigSave.addEventListener("click", ()=>{
+    setSignature(docLoc(), sigBox.value);
+    toast(t("sig_saved")); refreshPreview();
+  });
+  const sigReset=el("sigReset");
+  if(sigReset) sigReset.addEventListener("click", ()=>{ loadSignature(); refreshPreview(); });
+  if(sigBox) sigBox.addEventListener("input", debounce(()=>refreshPreview(), 300));
+
+  /* Personalisation tokens, resolved live. Nobody sends "Hi {name}". */
+  const TOKENS={ NAME:()=>recipientName()||"", BIZ:()=>(oppObj&&oppObj.business)||"",
+                 LINK:()=>oppUrl||"", MONTH:()=>(monthEl?monthEl.value:"")||"" };
+  function resolveTokens(str){
+    let out=String(str||"");
+    Object.keys(TOKENS).forEach(k=>{ out=out.split("{{"+k+"}}").join(TOKENS[k]()); });
+    return out;
+  }
+  /* A token left in the text AFTER RESOLUTION is one whose value is empty or
+     whose name is not a token at all. Either way it must not leave.
+
+     Reading the raw body instead would report every token the writer used, so
+     every message carrying {{NAME}} would be blocked, which is most of them. */
+  function unresolvedTokens(str){
+    const out=[], re=/\{\{([A-Z][A-Z0-9_]*)\}\}/g; let m;
+    const s2=String(str||"");
+    while((m=re.exec(s2))) if(out.indexOf(m[1])<0) out.push(m[1]);
+    /* The literal [LINK] from the manifest is the same failure wearing different
+       brackets, so it is reported beside them. */
+    if(s2.indexOf("[LINK]")>=0 && out.indexOf("LINK")<0) out.push("LINK");
+    return out;
+  }
+
+  function composedHtml(){
+    return brandWrap(resolveTokens(htmlOut()), isBranded(), sigBox?sigBox.value:"");
+  }
+  function composedText(){
+    const box=el("plainBox");
+    if(box && box.dataset.dirty==="1") return box.value;
+    return toPlainText(resolveTokens(htmlOut()), sigBox?sigBox.value:"");
+  }
+
+  const plainBox=el("plainBox");
+  if(plainBox) plainBox.addEventListener("input", ()=>{ plainBox.dataset.dirty="1"; });
+  const plainRegen=el("plainRegen");
+  if(plainRegen) plainRegen.addEventListener("click", ()=>{
+    if(!plainBox) return;
+    plainBox.dataset.dirty=""; plainBox.value=composedText(); toast(t("pt_regenerated"));
+  });
+
+  /* The subject meter. Past 60 most clients truncate. */
+  function refreshSubjMeter(){
+    const m=el("subjMeter"), su=el("esubject");
+    if(!m||!su) return;
+    const n=su.value.length;
+    m.textContent=boardText(getLang(),"subj_count", n)+(n>60? " · "+t("subj_long") : "");
+    m.classList.toggle("is-long", n>60);
+  }
+
+  const prevFrame=el("cmpPreview");
+  function refreshPreview(){
+    refreshSubjMeter();
+    if(plainBox && plainBox.dataset.dirty!=="1") plainBox.value=composedText();
+    renderPreSend();
+    if(!prevFrame) return;
+    const card = oppObj ? linkCard(oppObj, {copy:false}) : "";
+    prevFrame.srcdoc='<!DOCTYPE html><html dir="'+(docLoc()==="AR"?"rtl":"ltr")+'"><body '+
+      'style="margin:0;padding:16px;background:#fff">'+composedHtml()+card+'</body></html>';
+  }
+
+  /* Three lines, shown once, before it leaves. */
+  function preSendChecks(){
+    const bodyHtml=htmlOut();
+    const left=unresolvedTokens(resolveTokens(bodyHtml+" "+(el("esubject").value||"")));
+    return [
+      { k:"ps_link", ok: !oppUrl || composedHtml().indexOf(oppUrl)>=0 },
+      { k:"ps_tokens", ok: left.length===0, detail:left.join(", ") },
+      { k:"ps_sig", ok: !!(sigBox && sigBox.value.trim()) }
+    ];
+  }
+  function renderPreSend(){
+    const host=el("preSend"); if(!host) return;
+    const rows=preSendChecks();
+    host.hidden=false;
+    host.innerHTML='<ul class="ps-list">'+rows.map(r=>
+      '<li class="'+(r.ok?"ok":"no")+'">'+ic(r.ok?"check":"alert")+esc(t(r.k))+
+      (r.detail? ' <span class="mono-iso">'+esc(r.detail)+'</span>':'')+'</li>').join("")+'</ul>';
+  }
+
+  ["esubject","eto","ename"].forEach(id=>{
+    const e=el(id); if(e) e.addEventListener("input", debounce(refreshPreview, 300));
+  });
+  body.addEventListener("input", debounce(refreshPreview, 400));
+  const prevWrap=el("prevWrap");
+  if(prevWrap) prevWrap.addEventListener("toggle", ()=>{ if(prevWrap.open) refreshPreview(); });
+  refreshPreview();
+
+  /* Send to myself. The only honest way to see what a client sees. */
+  const selfBtn=el("eSelf");
+  if(selfBtn) selfBtn.addEventListener("click", async ()=>{
+    const ep=getEmailEndpoint();
+    if(!ep){ toast(t("cmp_no_ep")); return; }
+    selfBtn.disabled=true;
+    try{
+      const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+        body:JSON.stringify({ from:FROM_EMAIL, fromName:getFromName(), to:FROM_EMAIL,
+          subject:"["+t("cmp_self_tag")+"] "+resolveTokens(el("esubject").value.trim()),
+          html:composedHtml(), text:composedText() }) }, 30000);
+      const txt=await r.text();
+      let j=null; try{ j=JSON.parse(txt); }catch(_){}
+      if(j && j.ok===false) throw new Error(j.error||"send failed");
+      /* It is a proof copy, not outreach, so it does not spend the quota and it
+         does not enter the ledger. Counting it would inflate every number the
+         board reports. */
+      toast(t("cmp_self_sent"));
+    }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
+    finally{ selfBtn.disabled=false; }
+  });
+
   el("eSend").addEventListener("click", async ()=>{
     const to=el("eto").value.trim();
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
@@ -2443,7 +2663,14 @@ async function initCompose(slugArg){
     const q=quotaUsage();
     if(q.dayFull){ toast(t("cmp_quota_day_hit")+(q.freeInMs>0?" "+t("cmp_quota_resets")+" "+fmtDur(q.freeInMs):"")); return; }
     if(q.monthFull){ toast(t("cmp_quota_month_hit")); return; }
-    const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to, subject:el("esubject").value.trim(), html:brandWrap(htmlOut(), isBranded()), text:plainText() };
+    /* An unresolved token blocks the send. "Hi {name}" reaching a prospect is
+       the failure this whole section exists to prevent, and detecting it after
+       the fact is detecting it too late. */
+    const left=unresolvedTokens(resolveTokens(htmlOut()+" "+el("esubject").value));
+    if(left.length){ toast(t("ps_tokens_block")+" "+left.join(", ")); renderPreSend(); return; }
+    const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to,
+      subject:resolveTokens(el("esubject").value.trim()),
+      html:composedHtml(), text:composedText(), slug:slug||"" };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
       const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
@@ -4906,39 +5133,6 @@ function initModal(){
      else's contact form, so it records your word for it and labels it as your word. What it
      will not do is invent one, and what it will not allow is sending a message that still
      says [LINK] where the page address should be. */
-  /* ---- the link card, one component, used by both paths -------------------
-     Both paths deliver the same two things: the campaign text and the page
-     link. A prospect reading either should see the same object, so the card is
-     built once. It is what makes a message pasted into a contact form look
-     considered rather than pasted. */
-  function linkCard(o, opts){
-    opts=opts||{};
-    const url=liveUrl(o.slug);
-    const title=o.business||o.slug;
-    const desc=o.descriptor||o.outreach_subject||t("lc_card_desc");
-    return '<div class="link-card">'+
-      '<div class="lc-body">'+
-        '<div class="lc-title">'+esc(title)+'</div>'+
-        '<div class="lc-desc">'+esc(desc)+'</div>'+
-        '<a class="lc-url" href="'+esc(url)+'" target="_blank" rel="noopener">'+ltr(esc(url))+'</a>'+
-      '</div>'+
-      (opts.copy===false? '' :
-        '<button class="btn ghost sm lc-copy" type="button" data-lcurl="'+esc(url)+'">'+
-        ic("copy")+esc(t("lc_copy_link"))+'</button>')+
-      '</div>';
-  }
-  function bindLinkCards(root){
-    (root||document).querySelectorAll("[data-lcurl]").forEach(b=>b.addEventListener("click",()=>{
-      const u=b.getAttribute("data-lcurl");
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(u).then(()=>toast(t("oc_copied")),
-          ()=>toast(legacyCopy(u)? t("oc_copied") : t("cmp_copy_err")));
-        return;
-      }
-      toast(legacyCopy(u)? t("oc_copied") : t("cmp_copy_err"));
-    }));
-  }
-
   /* ---- the Outreach tab ---------------------------------------------------
      It used to open on a row of send-from options, one of which rendered as a
      bare dot because its label was a literal ".". That is the wrong question in
