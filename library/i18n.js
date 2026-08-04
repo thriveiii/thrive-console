@@ -551,6 +551,18 @@ const I18N = {
     ps_tokens:       "No placeholder is left in the message",
     ps_sig:          "The closing block matches the opportunity's language",
     ps_tokens_block: "This still carries a placeholder, so it cannot be sent:",
+
+    /* ---- back, and work that survives, WO-013 phase 5 -------------------- */
+    mw_back:         "Back",
+    df_restore:      "Bring it back",
+    df_discard:      "Discard",
+    df_restored:     "Restored.",
+    df_discarded:    "Discarded.",
+    df_ask_h:        "You have unsaved changes",
+    df_ask_p:        "Nothing you typed has to be lost. Choose what happens to it.",
+    df_keep:         "Keep editing",
+    df_saveclose:    "Save and close",
+    df_throw:        "Throw it away",
     st_h:          "Storage on this device",
     st_sub:        "The console keeps everything in this browser. Safari deletes all of it if you do not open the console for seven days, so the relay is the durable copy, not this.",
     st_used:       "Used",
@@ -1361,6 +1373,18 @@ const I18N = {
     ps_tokens:       "لا عنصر نائب باقٍ في الرسالة",
     ps_sig:          "الخاتمة تطابق لغة الفرصة",
     ps_tokens_block: "ما زالت تحمل عنصرًا نائبًا، فلا يمكن إرسالها:",
+
+    /* ---- الرجوع، وما يبقى ---- */
+    mw_back:         "رجوع",
+    df_restore:      "أعده",
+    df_discard:      "تجاهل",
+    df_restored:     "تمت الاستعادة.",
+    df_discarded:    "تم التجاهل.",
+    df_ask_h:        "لديك تغييرات لم تُحفظ",
+    df_ask_p:        "لا شيء مما كتبته مضطر أن يضيع. اختر ما يحدث له.",
+    df_keep:         "أكمل التحرير",
+    df_saveclose:    "احفظ وأغلق",
+    df_throw:        "تخلّص منه",
     st_h:          "التخزين على هذا الجهاز",
     st_sub:        "يحفظ الكونسول كل شيء في هذا المتصفح. يمسحه Safari بالكامل إن لم تفتح الكونسول سبعة أيام، فالنسخة الدائمة هي المُرحّل لا هذا الجهاز.",
     st_used:       "المستخدَم",
@@ -1845,6 +1869,8 @@ var I18N_BOARD = {
        holding a count is a defect in this codebase, and verify enforces it. */
     kd_fields:       { one:"{n} field to fill", other:"{n} fields to fill" },
     subj_count:      { one:"{n} character", other:"{n} characters" },
+    df_kept:         { one:"We kept what you wrote {n} minute ago.",
+                       other:"We kept what you wrote {n} minutes ago." },
     rp_scanned:      { one:"The scan added {n} record.", other:"The scan added {n} records." },
     rp_repaired:     { one:"Wrote {n} record. It will appear as the board syncs.",
                        other:"Wrote {n} records. They will appear as the board syncs." },
@@ -2080,6 +2106,14 @@ var I18N_BOARD = {
       other:"فوق {lane}. {n} بطاقة. اضغط مسافة للإفلات هنا."
     },
 
+    df_kept: {
+      zero:"حفظنا ما كتبته قبل قليل.",
+      one:"حفظنا ما كتبته قبل دقيقة واحدة.",
+      two:"حفظنا ما كتبته قبل دقيقتين.",
+      few:"حفظنا ما كتبته قبل {n} دقائق.",
+      many:"حفظنا ما كتبته قبل {n} دقيقة.",
+      other:"حفظنا ما كتبته قبل {n} دقيقة."
+    },
     subj_count: {
       zero:"لا أحرف",
       one:"حرف واحد",

@@ -1485,3 +1485,35 @@ body.modal-open{
 .ps-list li.no{ color:var(--state-stall) }
 .ps-list li.no .ic{ color:var(--state-stall) }
 [dir="rtl"] .ps-list li{ letter-spacing:normal }
+
+/* --- back, and work that survives a dismissal -------------------------------
+   Losing a draft by tapping outside the window was the most common frustration
+   in the review, and there was no back anywhere. WO-013 §6. */
+.modal-back{ order:-1 }
+.draft-band{
+  display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap;
+  padding:var(--s-2) var(--s-4);
+  background:var(--lane-draft-t);
+  border-block-end:1px solid var(--hair);
+  font-size:13px; color:var(--ink-2);
+}
+[dir="rtl"] .draft-band{ letter-spacing:normal }
+/* A question with three answers, because the one a person wants when they tap
+   outside a half written message is the third: keep editing. */
+.tw-scrim{
+  position:fixed; inset:0; z-index:120;
+  display:flex; align-items:center; justify-content:center;
+  padding:var(--s-4);
+  background:rgba(0,0,0,.62);
+  -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+}
+.tw-box{
+  inline-size:min(460px,92vw);
+  background:var(--panel); border:1px solid var(--hair);
+  border-radius:var(--r-xl); padding:var(--s-5);
+  box-shadow:var(--el-raised);
+}
+.tw-t{ margin:0 0 var(--s-2); font-size:17px }
+.tw-p{ margin:0 0 var(--s-4); color:var(--ink-3); font-size:14px; line-height:1.7 }
+.tw-acts{ display:flex; gap:var(--s-2); flex-wrap:wrap }
+[dir="rtl"] .tw-t,[dir="rtl"] .tw-p{ letter-spacing:normal }
