@@ -10,15 +10,15 @@ Each branch is cut from the one above it. **Merging out of order will conflict.*
 
 | # | Phase | Branch | Base | Pull request |
 |---|---|---|---|---|
-| 1 | §2 replies arrive, including §10.1 first | `wo013-p1-replies` | `wo012-p8-simplify` | #PR1 |
-| 2 | §3 three kinds, one logic | `wo013-p2-kinds` | `wo013-p1-replies` | #PR2 |
-| 3 | §4 channel first | `wo013-p3-channel` | `wo013-p2-kinds` | #PR3 |
-| 4 | §5 the editor | `wo013-p4-editor` | `wo013-p3-channel` | #PR4 |
-| 5 | §6 back and drafts | `wo013-p5-back-drafts` | `wo013-p4-editor` | #PR5 |
-| 6 | §7 one registry | `wo013-p6-registry` | `wo013-p5-back-drafts` | #PR6 |
-| 7 | §8 the Arabic law | `wo013-p7-arabic` | `wo013-p6-registry` | #PR7 |
-| 8 | §10 the walls and the seams | `wo013-p8-walls` | `wo013-p7-arabic` | #PR8 |
-| 9 | §9 the two memories | `wo013-p9-memories` | `wo013-p8-walls` | #PR9 |
+| 1 | §2 replies arrive, including §10.1 first | `wo013-p1-replies` | `wo012-p8-simplify` | #23 |
+| 2 | §3 three kinds, one logic | `wo013-p2-kinds` | `wo013-p1-replies` | #24 |
+| 3 | §4 channel first | `wo013-p3-channel` | `wo013-p2-kinds` | #25 |
+| 4 | §5 the editor | `wo013-p4-editor` | `wo013-p3-channel` | #26 |
+| 5 | §6 back and drafts | `wo013-p5-back-drafts` | `wo013-p4-editor` | #27 |
+| 6 | §7 one registry | `wo013-p6-registry` | `wo013-p5-back-drafts` | #28 |
+| 7 | §8 the Arabic law | `wo013-p7-arabic` | `wo013-p6-registry` | #29 |
+| 8 | §10 the walls and the seams | `wo013-p8-walls` | `wo013-p7-arabic` | #30 |
+| 9 | §9 the two memories | `wo013-p9-memories` | `wo013-p8-walls` | #31 |
 
 ### The one decision I had to make about the base, and it is a blocker
 
