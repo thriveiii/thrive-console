@@ -442,6 +442,42 @@ const I18N = {
        interaction in the last seven days of browser use. The relay is the only
        durable copy, so the console has to say when it is the only one left. */
     st_full_act:   "This device cannot store anything more. Open Settings, check what is using the space, and sync so nothing is lost.",
+
+    /* ---- replies, WO-013 phase 1 ------------------------------------------
+       A campaign was sent, the prospect replied, the reply landed in Gmail, and
+       the console's replies column read zero and always had. Nothing watched the
+       inbox. These are the strings for the thing that now does. */
+    rp_h:            "Replies",
+    rp_sub:          "The relay reads the inbox every fifteen minutes and files what it finds. A reply it cannot match is named here rather than dropped.",
+    rp_head:         "The reply",
+    rp_open_gmail:   "Open in Gmail",
+    rp_rule_tag:     "matched by the reply-to tag",
+    rp_rule_thread:  "matched by the message thread",
+    rp_rule_sender:  "matched by the sender address",
+    rp_rule_none:    "not matched to an opportunity",
+    rp_auto:         "An automatic reply. Stored, and not counted as a reply.",
+    rp_bounce_hard:  "The address rejected this permanently. Stored, and not counted as a reply.",
+    rp_bounce_soft:  "The address was temporarily unavailable. Stored, and not counted as a reply.",
+    rp_have:         "Replies held",
+    rp_of_which:     "of which",
+    rp_unmatched_n:  "could not be matched",
+    rp_unmatched_h:  "A reply arrived that we could not match",
+    rp_last_scan:    "Last inbox scan",
+    rp_never_scanned:"The relay has not scanned the inbox yet. Redeploy it as v5 and run Scan now.",
+    rp_store_btn:    "Measure the relay store",
+    rp_scan_btn:     "Scan now",
+    rp_repair_btn:   "Find replies from the last 90 days",
+    rp_working:      "Asking the relay...",
+    rp_store_old:    "The relay did not understand that. It is probably still v4:",
+    rp_props:        "Script properties",
+    rp_keys:         "keys",
+    rp_drive:        "Shared store on Drive",
+    rp_migrated:     "moved off Script properties",
+    rp_not_migrated: "still on Script properties, run the migration in docs/RELAY.md",
+    rp_repair_by:    "By tag {tag}, by thread {thread}, by sender {sender}, unmatched {none}, automatic {auto}.",
+    rp_repair_confirm:"Write these to the console?",
+    rp_chan_q:       "Which channel did they reply on? Leave blank for email.",
+    rp_note_q:       "A note, if you want one. Leave blank to skip.",
     st_h:          "Storage on this device",
     st_sub:        "The console keeps everything in this browser. Safari deletes all of it if you do not open the console for seven days, so the relay is the durable copy, not this.",
     st_used:       "Used",
@@ -1150,6 +1186,39 @@ const I18N = {
     clear_filters: "مسح الفلاتر",
 
     st_full_act:   "لم يعد بإمكان هذا الجهاز تخزين المزيد. افتح الإعدادات، وانظر ما يشغل المساحة، وزامن حتى لا يضيع شيء.",
+
+    /* ---- الردود ---- */
+    rp_h:            "الردود",
+    rp_sub:          "يقرأ الوسيط البريد الوارد كل خمس عشرة دقيقة ويحفظ ما يجده. والرد الذي لا يجد له صاحبًا يظهر هنا باسمه بدل أن يضيع.",
+    rp_head:         "الرد",
+    rp_open_gmail:   "افتحه في Gmail",
+    rp_rule_tag:     "تم الربط بعنوان الرد",
+    rp_rule_thread:  "تم الربط بسلسلة الرسالة",
+    rp_rule_sender:  "تم الربط بعنوان المرسل",
+    rp_rule_none:    "بلا ربط بفرصة",
+    rp_auto:         "رد تلقائي. محفوظ، ولا يُحسب ضمن الردود.",
+    rp_bounce_hard:  "رفض العنوان الرسالة نهائيًا. محفوظ، ولا يُحسب ضمن الردود.",
+    rp_bounce_soft:  "تعذّر الوصول إلى العنوان مؤقتًا. محفوظ، ولا يُحسب ضمن الردود.",
+    rp_have:         "الردود المحفوظة",
+    rp_of_which:     "منها",
+    rp_unmatched_n:  "بلا ربط",
+    rp_unmatched_h:  "وصل رد ولم نجد له صاحبًا",
+    rp_last_scan:    "آخر قراءة للبريد",
+    rp_never_scanned:"لم يقرأ الوسيط البريد بعد. حدّثه إلى الإصدار الخامس ثم اضغط «اقرأ الآن».",
+    rp_store_btn:    "قِس مساحة الوسيط",
+    rp_scan_btn:     "اقرأ الآن",
+    rp_repair_btn:   "ابحث عن ردود آخر 90 يومًا",
+    rp_working:      "جارٍ سؤال الوسيط...",
+    rp_store_old:    "لم يفهم الوسيط هذا الطلب. أغلب الظن أنه ما زال على الإصدار الرابع:",
+    rp_props:        "خصائص السكربت",
+    rp_keys:         "مفاتيح",
+    rp_drive:        "المخزن المشترك على Drive",
+    rp_migrated:     "تم النقل خارج خصائص السكربت",
+    rp_not_migrated: "ما زال على خصائص السكربت، نفّذ النقل حسب docs/RELAY.md",
+    rp_repair_by:    "بالعنوان {tag}، وبالسلسلة {thread}، وبالمرسل {sender}، وبلا ربط {none}، وتلقائية {auto}.",
+    rp_repair_confirm:"هل نكتبها في الكونسول؟",
+    rp_chan_q:       "على أي قناة جاء الرد؟ اتركه فارغًا للبريد.",
+    rp_note_q:       "ملاحظة، إن أردت. اتركها فارغة للتخطي.",
     st_h:          "التخزين على هذا الجهاز",
     st_sub:        "يحفظ الكونسول كل شيء في هذا المتصفح. يمسحه Safari بالكامل إن لم تفتح الكونسول سبعة أيام، فالنسخة الدائمة هي المُرحّل لا هذا الجهاز.",
     st_used:       "المستخدَم",
@@ -1624,6 +1693,14 @@ var I18N_BOARD = {
 
     loc_count: { one:"{n} template", other:"{n} templates" },
 
+    /* Counting strings for the inbox scan. WO-013 phase 1. A flat {n} template
+       holding a count is a defect in this codebase, and verify enforces it. */
+    rp_scanned:      { one:"The scan added {n} record.", other:"The scan added {n} records." },
+    rp_repaired:     { one:"Wrote {n} record. It will appear as the board syncs.",
+                       other:"Wrote {n} records. They will appear as the board syncs." },
+    rp_repair_found: { one:"Found {n} message. {breakdown} Nothing has been written yet.",
+                       other:"Found {n} messages. {breakdown} Nothing has been written yet." },
+
     in_found:  { one:"{n} opportunity read.", other:"{n} opportunities read." },
     in_added:  { one:"{n} opportunity imported into Draft.", other:"{n} opportunities imported into Draft." },
 
@@ -1851,6 +1928,31 @@ var I18N_BOARD = {
       few:"فوق {lane}. {n} بطاقات. اضغط مسافة للإفلات هنا.",
       many:"فوق {lane}. {n} بطاقة. اضغط مسافة للإفلات هنا.",
       other:"فوق {lane}. {n} بطاقة. اضغط مسافة للإفلات هنا."
+    },
+
+    rp_scanned: {
+      zero:"لم تضف القراءة أي سجل.",
+      one:"أضافت القراءة سجلًا واحدًا.",
+      two:"أضافت القراءة سجلين.",
+      few:"أضافت القراءة {n} سجلات.",
+      many:"أضافت القراءة {n} سجلًا.",
+      other:"أضافت القراءة {n} سجل."
+    },
+    rp_repaired: {
+      zero:"لم يُكتب أي سجل.",
+      one:"كُتب سجل واحد. سيظهر مع أول مزامنة.",
+      two:"كُتب سجلان. سيظهران مع أول مزامنة.",
+      few:"كُتبت {n} سجلات. ستظهر مع أول مزامنة.",
+      many:"كُتب {n} سجلًا. ستظهر مع أول مزامنة.",
+      other:"كُتب {n} سجل. ستظهر مع أول مزامنة."
+    },
+    rp_repair_found: {
+      zero:"لم نجد رسائل. {breakdown} لم يُكتب شيء بعد.",
+      one:"وجدنا رسالة واحدة. {breakdown} لم يُكتب شيء بعد.",
+      two:"وجدنا رسالتين. {breakdown} لم يُكتب شيء بعد.",
+      few:"وجدنا {n} رسائل. {breakdown} لم يُكتب شيء بعد.",
+      many:"وجدنا {n} رسالة. {breakdown} لم يُكتب شيء بعد.",
+      other:"وجدنا {n} رسالة. {breakdown} لم يُكتب شيء بعد."
     },
 
     loc_count: {

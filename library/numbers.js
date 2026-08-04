@@ -131,6 +131,29 @@
 
   function replies(ctx) {
     var n = 0, seen = {};
+    /* The inbox is the source now. Until WO-013 the only replies this could ever
+       count were ones somebody typed in by hand, which is why the column read
+       zero while real replies sat in Gmail. An inbound record keyed on the Gmail
+       message id is deduplicated against the mail ledger by the same key, so a
+       reply that is both scanned and logged by hand counts once.
+
+       Machinery never counts. A bounce and an out of office are stored, because
+       a bounce is evidence about an address, and neither is a person answering. */
+    /* An UNATTRIBUTED reply does not count here, and this is the one judgement
+       call in this file. `reply_rate` is replies over people contacted, so a
+       message from somebody nobody wrote to would inflate a rate about outreach
+       with something that was not a reply to any of it.
+
+       It is not discarded and it is not hidden: Settings, Replies names every
+       one of them and prints how many there are. The rule is that a number
+       about outreach counts outreach, and everything else is on screen by name
+       where a person can act on it. */
+    arr(ctx.inbound).forEach(function (r) {
+      if (!r || r.kind === "auto" || !r.opp) return;
+      var id = r.gid || (r.from + "|" + r.ts);
+      if (seen[id]) return;
+      seen[id] = 1; n++;
+    });
     arr(ctx.mail).forEach(function (m) {
       if (!m) return;
       if (m.direction !== "in" && m.status !== "replied") return;
@@ -147,6 +170,13 @@
     });
     arr(ctx.mail).forEach(function (m) {
       if (m && (m.direction === "in" || m.status === "replied") && m.opp) delete byOpp[m.opp];
+    });
+    /* A scanned reply moves its card through record_reply, which writes exactly
+       the activity entry this fallback looks for. Without this line every
+       automatically attributed reply would be counted twice: once as the inbound
+       record and once as the move it caused. */
+    arr(ctx.inbound).forEach(function (r) {
+      if (r && r.kind !== "auto" && r.opp) delete byOpp[r.opp];
     });
     return n + Object.keys(byOpp).length;
   }
@@ -228,6 +258,25 @@
     if (sentToday(ctx) !== 2) f.push("today counts the email and the hand contact, got " + sentToday(ctx));
     if (peopleContacted(ctx) !== 3) f.push("people contacted spans both ledgers, got " + peopleContacted(ctx));
     if (replies(ctx) !== 1) f.push("replies, got " + replies(ctx));
+
+    /* The inbox is a source of replies now, and the three ways one can arrive
+       must not add up to three. A scanned reply, the move it causes, and a hand
+       entry for the same opportunity are one reply. */
+    var withInbox = Object.assign({}, ctx, {
+      inbound: [ { gid: "g1", opp: "b", kind: "reply", rule: "tag", from: "two@x.example", ts: "2026-08-03T13:00:00Z" },
+                 { gid: "g2", opp: "b", kind: "auto", bounce: "hard", from: "mailer-daemon@x", ts: "2026-08-03T13:05:00Z" },
+                 { gid: "g3", opp: "", kind: "reply", rule: "none", from: "stranger@x.example", ts: "2026-08-03T14:00:00Z" } ],
+      activity: [ { action: "lc_record_reply", slug: "b" } ]
+    });
+    /* one from the ledger and one scanned. The bounce is not one, the move the
+       scan caused is not a second one, and the unattributed message is not a
+       reply to any outreach, so it is named in Settings rather than counted. */
+    if (replies(withInbox) !== 2) f.push("inbound replies, got " + replies(withInbox));
+    var noAuto = Object.assign({}, ctx, { inbound: [ { gid: "b1", opp: "a", kind: "auto", bounce: "hard" } ] });
+    if (replies(noAuto) !== 1) f.push("a bounce must never count as a reply, got " + replies(noAuto));
+    var twice = Object.assign({}, withInbox, { inbound: withInbox.inbound.concat(withInbox.inbound) });
+    if (replies(twice) !== replies(withInbox)) f.push("a second scan moved replies");
+
     var rr = replyRate(ctx);
     if (rr.den !== 3 || rr.num !== 1) f.push("reply rate must carry its denominator, got " + JSON.stringify(rr));
     if (rr.pct > 100) f.push("a rate cannot exceed the whole");
