@@ -32,6 +32,19 @@
 
 /* ===================== configuration ===================== */
 
+/**
+ * WO-014 §3: the version contract, so a mismatch is named rather than mysterious.
+ *
+ * The night this was written, the editor held v5 and the live deployment served
+ * v4, and every send failed with `missing "to"`: a v5 request shape hitting a v4
+ * handler. The only person who could see the mismatch was the one reading two
+ * screens at once. This number closes that gap. It rides on EVERY response,
+ * including errors, so the console can compare on every request and refuse to
+ * send into a relay it does not match. Bump it whenever the request or response
+ * shape changes, and only then, in the same commit as the change.
+ */
+var RELAY_VERSION = 5;
+
 var TAG_LOCAL   = 'hi';
 var TAG_DOMAIN  = 'thriveiii.com';
 var STORE_NAME  = 'thrive-console-store.json';
@@ -256,6 +269,7 @@ function scanInbox() {
     if (!threads.length) {
       store.inboxScan = { ts: new Date().toISOString(), ms: new Date().getTime() - started,
                           found: 0, added: 0, idle: true };
+      store.scanLog = (store.scanLog || []).concat([{ ms: new Date().getTime() - started, idle: true }]).slice(-96);
       return { ok: true, added: 0, idle: true };
     }
 
@@ -285,6 +299,7 @@ function scanInbox() {
                                             'UTC', 'yyyy/MM/dd');
     store.inboxScan = { ts: new Date().toISOString(), ms: new Date().getTime() - started,
                         found: scanned, added: added, idle: false };
+    store.scanLog = (store.scanLog || []).concat([{ ms: new Date().getTime() - started, idle: false }]).slice(-96);
     return { ok: true, added: added, scanned: scanned };
   });
   return out;
@@ -456,6 +471,41 @@ function installScanTrigger() {
   return 'scanInbox now runs every 15 minutes';
 }
 
+/* ===================== the two ceilings, reported rather than assumed =========
+ * §10.2 A consumer Google account gets 90 minutes of trigger runtime per day.
+ *       Workspace gets six hours. A scan every fifteen minutes is 96 runs a day.
+ *       At 30 seconds per run that is 48 minutes, which fits. At 60 it does not.
+ * §10.3 The sending cap is an ACCOUNT limit, not a product decision, and the
+ *       person reading "100" deserves to know which. It is read from here so
+ *       moving to Workspace is a configuration change and not a code change.
+ */
+function sendStats_() {
+  var s = storeRead_();
+  var scans = s.scanLog || [];
+  var perDay = 24 * 60 / 15;                    // the configured interval
+  var avg = 0;
+  if (scans.length) {
+    var sum = 0;
+    for (var i = 0; i < scans.length; i++) sum += (scans[i].ms || 0);
+    avg = Math.round(sum / scans.length);
+  }
+  var dailyMs = Math.round(avg * perDay);
+  var quota = MailApp.getRemainingDailyQuota();
+  /* A consumer account is 100 recipients a day, Workspace is 1500. The remaining
+     quota is what the account will actually allow, so the tier is read from it
+     rather than guessed. */
+  var tier = quota > 500 ? 'workspace' : 'consumer';
+  return {
+    ok: true,
+    scan: { runs: scans.length, avgMs: avg, perDay: perDay,
+            dailyMinutes: Math.round(dailyMs / 60000),
+            budgetMinutes: tier === 'workspace' ? 360 : 90,
+            overBudget: (dailyMs / 60000) > 60 },
+    send: { remainingToday: quota, cap: tier === 'workspace' ? 1500 : 100, tier: tier,
+            counts: 'recipients' }
+  };
+}
+
 /* ===================== sending ===================== */
 
 /**
@@ -496,6 +546,12 @@ function sendMail_(d) {
 /* ===================== HTTP ===================== */
 
 function json_(o) {
+  /* Stamp the version onto every response, including errors. The console
+     compares this against the version it was built for and refuses to send into
+     a relay it does not match. A response that omits it reads, correctly, as a
+     relay too old to know the contract. */
+  o = o || {};
+  o.relay_version = RELAY_VERSION;
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -509,7 +565,8 @@ function doGet(e) {
       return json_({ ok: true });
     } catch (err) { return json_({ ok: false, error: String(err.message || err) }); }
   }
-  return ContentService.createTextOutput('Thrive relay v5 (email + sync + analytics + inbox) is running.');
+  return ContentService.createTextOutput(
+    'Thrive relay v' + RELAY_VERSION + ' (email + sync + analytics + inbox) is running.');
 }
 
 function doPost(e) {
@@ -518,6 +575,17 @@ function doPost(e) {
   var op = d.op || '';
 
   try {
+    /* §3.2 the request contract, versioned. `missing "to"` happened because a v5
+       request shape hit a v4 handler that answered it as an email. From now on a
+       request may declare the version it was written for, and a relay older than
+       that request refuses BY NAME rather than misreading the shape. A request
+       that declares nothing is a legacy caller and is allowed through, so an old
+       page never breaks against a new relay. */
+    if (d.v != null && Number(d.v) > RELAY_VERSION) {
+      return json_({ ok: false,
+        error: 'request v' + Number(d.v) + ', relay v' + RELAY_VERSION });
+    }
+
     if (!op) return json_(sendMail_(d));          // v4 shape: a bare body is a send
 
     authOk_(d.auth);
@@ -529,6 +597,7 @@ function doPost(e) {
     if (op === 'send')          return json_(sendMail_(d));
 
     if (op === 'store_stats')   return json_(storeStats_());
+    if (op === 'send_stats')    return json_(sendStats_());
     if (op === 'store_migrate') return json_(storeMigrate_(!!d.dryRun));
 
     if (op === 'inbound_get')   return json_({ ok: true, records: (storeRead_().inbound || []),

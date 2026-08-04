@@ -40,6 +40,10 @@
   </div>
 
   <section id="tplPanePage" data-tplpane="page">
+    <!-- The one rule that ends the overlap between the three kinds. It is at the
+         top of the Library because that is where the question gets asked, and a
+         rule kept in a document is a rule nobody reads at the moment of doubt. -->
+    <p class="lib-rule" data-i18n="kd_library_rule"></p>
     <p class="sub" data-i18n="tpl_page_sub"></p>
 
     <section class="panel upload-panel">
@@ -54,6 +58,13 @@
           <select id="tpl_lang"><option value="EN">EN</option><option value="AR">AR</option></select></div>
       </div>
       <button class="btn" id="tplAdd" data-icon="page" data-i18n="tpl_add">Add template</button>
+      <!-- Start from something that already works rather than guessing the
+           contract from documentation. -->
+      <div class="bar" id="tplBlank">
+        <span class="kd-blank-l" data-i18n="kd_blank_h"></span>
+        <button class="btn ghost sm" type="button" data-blank="EN" data-icon="page" data-i18n="kd_blank_en">Blank, English</button>
+        <button class="btn ghost sm" type="button" data-blank="AR" data-icon="page" data-i18n="kd_blank_ar">Blank, Arabic</button>
+      </div>
     </section>
 
     <h3 class="block-h" data-icon="page" data-i18n="tpl_builtin_h">Approved page templates</h3>

@@ -323,14 +323,20 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     </div>
     <div class="field" id="emonthWrap" hidden><label for="emonth" data-i18n="cmp_month">Month (this template asks for it)</label>
       <input id="emonth" class="input month-input" autocomplete="off" placeholder="July"></div>
-    <div class="field"><label for="esubject" data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off"></div>
+    <div class="field"><label for="esubject" data-i18n="cmp_subject">Subject</label><input id="esubject" class="input" autocomplete="off">
+      <!-- Past roughly 60 characters most clients truncate, so the writer is told
+           while there is still time to shorten it. WO-013 §5.2. -->
+      <div class="hint subj-meter" id="subjMeter"></div></div>
 
     <div class="field"><label id="ebodyL" data-i18n="cmp_message">Message</label>
       <div class="etoolbar">
-        <button type="button" id="tbBold" title="Bold"><b>B</b></button>
-        <button type="button" id="tbItalic" title="Italic"><i>I</i></button>
-        <button type="button" id="tbUnder" title="Underline"><u>U</u></button>
-        <button type="button" id="tbList" title="List">•</button>
+        <!-- title alone is not an accessible name, and a bare bullet is not a label
+             at all: it was the second instance of the [.] defect and verify found it.
+             WO-013 §4.1. -->
+        <button type="button" id="tbBold" data-i18n-aria="cmp_tb_bold" aria-label="Bold" title="Bold"><b>B</b></button>
+        <button type="button" id="tbItalic" data-i18n-aria="cmp_tb_italic" aria-label="Italic" title="Italic"><i>I</i></button>
+        <button type="button" id="tbUnder" data-i18n-aria="cmp_tb_under" aria-label="Underline" title="Underline"><u>U</u></button>
+        <button type="button" id="tbList" data-i18n="cmp_tb_list">List</button>
         <button type="button" id="tbLink" data-i18n="cmp_tb_link">Link</button>
         <button type="button" id="tbUnlink" data-i18n="cmp_tb_unlink">Unlink</button>
         <button type="button" id="tbOpp" class="tb-accent" hidden data-i18n="cmp_insert_opp">Link to opportunity</button>
@@ -366,8 +372,43 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <div id="elinks" class="elinks" hidden></div>
     </div>
 
+    <!-- The bottom of the email is a real object, not a fixed string nobody sees
+         until send. It previews, it is editable for this message only, and there
+         is one saved block per locale chosen by the DOCUMENT language. §5.1. -->
+    <details class="mw-more" id="sigWrap">
+      <summary data-i18n="sig_h">Closing block</summary>
+      <p class="hint" data-i18n="sig_sub"></p>
+      <div class="field"><label for="sigBox" data-i18n="sig_this">This message only</label>
+        <textarea id="sigBox" class="input oc-body" rows="4"></textarea></div>
+      <div class="bar">
+        <button class="btn ghost sm" type="button" id="sigSave" data-i18n="sig_save">Save as my block for this language</button>
+        <button class="btn ghost sm" type="button" id="sigReset" data-i18n="sig_reset">Back to the saved block</button>
+      </div>
+      <span class="sig-loc" id="sigLoc"></span>
+    </details>
+
+    <!-- Some contact forms and some mail clients strip HTML, and a message that
+         arrives as tag soup is worse than no message. Generated, and editable. -->
+    <details class="mw-more" id="plainWrap">
+      <summary data-i18n="pt_h">Plain text alternative</summary>
+      <p class="hint" data-i18n="pt_sub"></p>
+      <div class="field"><textarea id="plainBox" class="input oc-body" rows="6"></textarea></div>
+      <button class="btn ghost sm" type="button" id="plainRegen" data-i18n="pt_regen">Generate it again from the message</button>
+    </details>
+
+    <!-- A live preview of the whole message as the recipient will see it,
+         including the link card and the closing block. -->
+    <details class="mw-more" id="prevWrap">
+      <summary data-i18n="cmp_preview_h">Preview as the recipient sees it</summary>
+      <div class="cmp-preview"><iframe id="cmpPreview" title="preview" sandbox=""></iframe></div>
+    </details>
+
+    <!-- Three lines, shown once, before the message leaves. -->
+    <div id="preSend" class="pre-send" hidden></div>
+
     <div class="bar bar-actions">
       <button class="btn" id="eSend" data-icon="send" data-i18n="cmp_send">Send</button>
+      <button class="btn ghost" id="eSelf" data-icon="mail" data-i18n="cmp_self">Send to myself</button>
       <button class="btn ghost" id="eCopy" data-icon="copy" data-i18n="cmp_copy">Copy for Gmail</button>
       <button class="btn ghost" id="eMail" data-icon="mail" data-i18n="cmp_mailto">Open in mail app</button>
       <div id="quotaMeter" class="quota-meter" title=""></div>
@@ -387,6 +428,10 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   </div>
 
   <section id="tplPanePage" data-tplpane="page">
+    <!-- The one rule that ends the overlap between the three kinds. It is at the
+         top of the Library because that is where the question gets asked, and a
+         rule kept in a document is a rule nobody reads at the moment of doubt. -->
+    <p class="lib-rule" data-i18n="kd_library_rule"></p>
     <p class="sub" data-i18n="tpl_page_sub"></p>
 
     <section class="panel upload-panel">
@@ -401,6 +446,13 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
           <select id="tpl_lang"><option value="EN">EN</option><option value="AR">AR</option></select></div>
       </div>
       <button class="btn" id="tplAdd" data-icon="page" data-i18n="tpl_add">Add template</button>
+      <!-- Start from something that already works rather than guessing the
+           contract from documentation. -->
+      <div class="bar" id="tplBlank">
+        <span class="kd-blank-l" data-i18n="kd_blank_h"></span>
+        <button class="btn ghost sm" type="button" data-blank="EN" data-icon="page" data-i18n="kd_blank_en">Blank, English</button>
+        <button class="btn ghost sm" type="button" data-blank="AR" data-icon="page" data-i18n="kd_blank_ar">Blank, Arabic</button>
+      </div>
     </section>
 
     <h3 class="block-h" data-icon="page" data-i18n="tpl_builtin_h">Approved page templates</h3>
@@ -551,6 +603,15 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <div id="rpPanel"></div>
   </section>
 
+  <!-- The one place a slow leak is caught while it is still slow. Outreach goes
+       out from the address clients reply to and invoices come from, so a
+       reputation hit does not only cost the next campaign. §10.5. -->
+  <section class="panel settings-panel">
+    <h3 class="block-h" data-icon="alert" data-i18n="rep_h">Sending reputation</h3>
+    <p class="sub" data-i18n="rep_sub"></p>
+    <div id="repPanel"></div>
+  </section>
+
   <section class="panel">
     <h3 class="block-h" data-icon="archive" data-i18n="set_backup_h">Backup &amp; restore</h3>
     <p class="sub" data-i18n="set_backup_sub"></p>
@@ -570,11 +631,16 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <span class="pill" id="modalState"></span>
     </div>
     <div class="modal-acts">
+      <!-- Back exists everywhere, in a consistent position, and it mirrors by
+           logical property rather than by a second rule. WO-013 §6.1. -->
+      <button class="btn ghost sm modal-back" id="modalBack" type="button" data-icon="undo" data-i18n="mw_back">Back</button>
       <button class="btn ghost sm" id="modalCopy" type="button" data-icon="link" data-i18n="mw_copy_link">Copy link</button>
       <button class="modal-close" id="modalClose" type="button" data-icon="close" data-i18n="dw_close">Close</button>
     </div>
     <p class="modal-why" id="modalWhy" hidden></p>
   </header>
+  <!-- We kept what you wrote. The band, and Discard beside it. §6.2. -->
+  <div class="draft-band" id="draftBand" hidden></div>
   <nav class="modal-tabs" id="modalTabs" role="tablist">
     <button class="modal-tab on" role="tab" aria-selected="true"  data-tab="overview" data-icon="spark" data-i18n="mw_overview">Overview</button>
     <button class="modal-tab"    role="tab" aria-selected="false" data-tab="text"     data-icon="text" data-i18n="mw_text">Text</button>
@@ -599,6 +665,10 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="intake.js"></script>
 <script src="numbers.js"></script>
 <script src="inbound.js"></script>
+<script src="kinds.js"></script>
+<script src="store.js"></script>
+<script src="drafts.js"></script>
+<script src="flows.js"></script>
 <script src="app.js"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly

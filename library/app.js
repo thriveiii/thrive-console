@@ -57,6 +57,9 @@ const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thriv
   /* Inbound mail. The relay writes it, every device reads it, and it is evidence
      about a prospect rather than posture about a device, so it travels. */
   thrive_inbound_v1:1,
+  /* The closing block is reused, so it travels: the Library rule applies to a
+     signature exactly as it applies to a template. */
+  thrive_signature_v1:1,
   thrive_email_templates_v1:1, thrive_templates_v1:1, thrive_removed_v1:1, thrive_etpl_seed_v1:1 };
 /* WebKit deletes ALL script writeable storage for an origin with no user interaction in the
    last seven days of browser use. Not part of it: all of it, at once. And localStorage throws
@@ -101,9 +104,14 @@ function lsSet(key, str){
 /* ---------- activity log ---------- */
 function getActivity(){ try{ return JSON.parse(localStorage.getItem(LOG)||"[]"); }catch(e){ return []; } }
 function setActivity(a){ lsSet(LOG, JSON.stringify(a.slice(-500))); }
+/* One field, added now because it is free now and expensive later. Adding it
+   after a year of history means a migration over records that cannot be
+   attributed. WO-013 §10.7. */
+const ACTOR="thyab";
 function logActivity(action, slug, detail){
   const a=getActivity();
-  a.push({ ts:new Date().toISOString(), action:action||"", slug:slug||"", detail:detail||"" });
+  a.push({ ts:new Date().toISOString(), action:action||"", slug:slug||"", detail:detail||"",
+           actor:ACTOR });
   setActivity(a);
 }
 window.logActivity = logActivity;
@@ -249,17 +257,20 @@ async function relayProbe(){
     const v=classifyRelayBody(await r.text());
     out.version = v.kind==="signin"? t("sy_v_signin") : (v.version||"(empty answer)");
     out.signin  = v.kind==="signin";
+    out.ver     = v.ver!=null? v.ver : null;
   }catch(e){ out.version="(unreachable: "+e.message+")"; }
-  out.v4=/v4/.test(out.version);
+  /* The green light is "matches the version this build needs", read from
+     REQUIRED_RELAY, not the literal v4 this once tested for. */
+  out.v4=(out.ver===REQUIRED_RELAY);
   const auth=syncAuth();
   if(!auth){ out.state=out.hits="(not unlocked, no sync credential)"; return out; }
   try{
-    const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({op:"state_get",auth:auth})});
     const j=await r.json(); out.state = j.ok? "ok" : ("✕ "+(j.error||"failed"));
   }catch(e){ out.state="✕ "+e.message; }
   try{
-    const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({op:"hits_get",auth:auth})});
     const j=await r.json();
     out.hits = j.ok? ("ok: "+((j.events||[]).length)+" events") : ("✕ "+(j.error||"failed"));
@@ -272,7 +283,7 @@ async function fetchRemoteHits(){
   await syncBootstrap();
   const ep=getSyncEndpoint(); if(!ep){ __hitsState="off"; return false; }
   try{
-    const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"hits_get", auth:auth }) });
     const j=await r.json();
     if(!j.ok || !Array.isArray(j.events)){
@@ -408,7 +419,7 @@ function outreachOpens(o){
    and recording one as the other would put a false note on a record nobody would question. */
 async function pageIsGone(slug){
   try{
-    const r=await fetch(liveUrl(slug), { method:"GET", cache:"no-store", redirect:"follow" });
+    const r=await fetchT(liveUrl(slug), { method:"GET", cache:"no-store", redirect:"follow" });
     if(r.status===404 || r.status===410) return true;
     if(r.ok) return false;
     return null;
@@ -787,7 +798,7 @@ function inboundUnmatched(){ return getInbound().filter(r=> r && r.kind!=="auto"
 async function pullInbound(ep, auth){
   let j=null;
   try{
-    const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"inbound_get", auth:auth }) });
     j=await r.json();
   }catch(e){ return 0; }
@@ -822,14 +833,17 @@ async function applyInboundMoves(records){
 }
 
 async function doSyncRound(ep, auth){
-  const g=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
-    body:JSON.stringify({ op:"state_get", auth:auth }) });
-  const gj=await g.json();
+  const g=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    body:relayBody({ op:"state_get", auth:auth }) });
+  const gj=noteRelayVersion(await g.json());
+  /* §3: a version mismatch is reported as the version banner, not as a sync-auth
+     failure, because the fix is a redeploy and not a credential. */
+  if(!relayReady()) throw new Error(relayBannerText());
   if(!gj.ok) throw new Error(gj.error||"sync auth");
   if(gj.data) syncMergeApply(gj.data);
-  const p=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
-    body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
-  const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
+  const p=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    body:relayBody({ op:"state_put", auth:auth, data:syncSnapshot() }) });
+  const pj=noteRelayVersion(await p.json()); if(!pj.ok) throw new Error(pj.error||"sync put");
   try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
   // Analytics share this endpoint and credential, so refresh them in the same round. Without
   // this, a page that syncs right after unlocking never re-checks collection and sits on a
@@ -876,7 +890,7 @@ async function syncPush(){
   await syncBootstrap();
   const ep=getSyncEndpoint(); if(!ep){ __syncErr=t("sy_need_ep"); return false; }
   try{
-    const p=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const p=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
     const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
     try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
@@ -971,7 +985,7 @@ function b64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function unb64(str){ try{ return decodeURIComponent(escape(atob((str||"").replace(/\n/g,"")))); }catch(e){ return ""; } }
 async function ghApi(path, opts){
   const c=ghConfig();
-  return fetch("https://api.github.com/repos/"+c.owner+"/"+c.repo+path, Object.assign({}, opts, {
+  return fetchT("https://api.github.com/repos/"+c.owner+"/"+c.repo+path, Object.assign({}, opts, {
     headers: Object.assign({ "Authorization":"Bearer "+c.token, "Accept":"application/vnd.github+json",
       "X-GitHub-Api-Version":"2022-11-28" }, (opts&&opts.headers)||{}) }));
 }
@@ -996,7 +1010,7 @@ async function ghDeleteFile(path, message){
 }
 async function ghVerify(){
   const c=ghConfig();
-  const r=await fetch("https://api.github.com/repos/"+c.owner+"/"+c.repo,
+  const r=await fetchT("https://api.github.com/repos/"+c.owner+"/"+c.repo,
     {headers:{ "Authorization":"Bearer "+c.token, "Accept":"application/vnd.github+json" }});
   if(!r.ok) throw new Error("GitHub "+r.status);
   return r.json();
@@ -1606,7 +1620,7 @@ async function initEditor(slugArg){
       } else if(editingLive && !hasFields && !d._local){
         // Live opp published elsewhere (manifest-only, no local fields): pull the real page so a
         // save/publish can't overwrite it with a blank template regeneration.
-        try{ const r=await fetch(relOpp(d.slug)+"index.html",{cache:"no-store"});
+        try{ const r=await fetchT(relOpp(d.slug)+"index.html",{cache:"no-store"});
           if(r.ok){ const html=await r.text();
             mode="upload"; uploadedHTML=html; uploadedName=(d.slug||"page")+".html";
             el("mode_upload").classList.add("on"); el("mode_fill").classList.remove("on");
@@ -1856,20 +1870,132 @@ function fmtDur(ms){ const h=Math.floor(ms/3600000), m=Math.round((ms%3600000)/6
 //    plain text signature. Reads like a real person wrote it, so it lands in the inbox
 //    instead of Gmail's Promotions tab.
 //  branded=true (opt-in): adds the Thrive logo header for known contacts / announcements.
-function brandWrap(inner, branded){
+/* ---- the link card, one component, used by both paths -------------------
+   Both paths deliver the same two things: the campaign text and the page
+   link. A prospect reading either should see the same object, so the card is
+   built once. It is what makes a message pasted into a contact form look
+   considered rather than pasted. */
+function linkCard(o, opts){
+  opts=opts||{};
+  const url=liveUrl(o.slug);
+  const title=o.business||o.slug;
+  const desc=o.descriptor||o.outreach_subject||t("lc_card_desc");
+  return '<div class="link-card">'+
+    '<div class="lc-body">'+
+      '<div class="lc-title">'+esc(title)+'</div>'+
+      '<div class="lc-desc">'+esc(desc)+'</div>'+
+      '<a class="lc-url" href="'+esc(url)+'" target="_blank" rel="noopener">'+ltr(esc(url))+'</a>'+
+    '</div>'+
+    (opts.copy===false? '' :
+      '<button class="btn ghost sm lc-copy" type="button" data-lcurl="'+esc(url)+'">'+
+      ic("copy")+esc(t("lc_copy_link"))+'</button>')+
+    '</div>';
+}
+function bindLinkCards(root){
+  (root||document).querySelectorAll("[data-lcurl]").forEach(b=>b.addEventListener("click",()=>{
+    const u=b.getAttribute("data-lcurl");
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(u).then(()=>toast(t("oc_copied")),
+        ()=>toast(legacyCopy(u)? t("oc_copied") : t("cmp_copy_err")));
+      return;
+    }
+    toast(legacyCopy(u)? t("oc_copied") : t("cmp_copy_err"));
+  }));
+}
+
+/* ---------- a question with three answers ----------
+   confirm() offers two, and the answer a person actually wants when they tap
+   outside a half written message is the third one: keep editing. So this is a
+   real dialogue rather than a window.confirm, and it returns the index. */
+function threeWay(title, body, labels){
+  return new Promise(resolve=>{
+    const old=document.getElementById("threeWay");
+    if(old) old.remove();
+    const box=document.createElement("div");
+    box.id="threeWay"; box.className="tw-scrim";
+    box.innerHTML='<div class="tw-box" role="alertdialog" aria-modal="true" aria-labelledby="twT">'+
+      '<h3 class="tw-t" id="twT">'+esc(title)+'</h3>'+
+      '<p class="tw-p">'+esc(body)+'</p>'+
+      '<div class="tw-acts">'+labels.map((l,i)=>
+        '<button class="btn'+(i===0?"":" ghost")+(i===2?" danger":"")+'" type="button" data-tw="'+i+'">'+
+        esc(l)+'</button>').join("")+'</div></div>';
+    document.body.appendChild(box);
+    const done=i=>{ box.remove(); resolve(i); };
+    box.querySelectorAll("[data-tw]").forEach(b=>
+      b.addEventListener("click",()=>done(parseInt(b.getAttribute("data-tw"),10))));
+    /* Escape on the question means keep editing. Anything else would make the
+       gesture that saves you the gesture that loses your work. */
+    box.addEventListener("keydown", e=>{ if(e.key==="Escape"){ e.stopPropagation(); done(0); } });
+    box.addEventListener("click", e=>{ if(e.target===box) done(0); });
+    const first=box.querySelector("[data-tw]"); if(first) first.focus();
+  });
+}
+
+/* ---------- the closing block ----------
+   It was a fixed string built inside brandWrap and invisible until send. It is
+   now a stored object with one block PER LOCALE, chosen by the opportunity's
+   document language rather than by the chrome, so writing in Arabic chrome to an
+   English prospect still signs off in English. WO-013 §5.1. */
+const SIGN="thrive_signature_v1";
+function getSignatures(){
+  try{ return JSON.parse(localStorage.getItem(SIGN)||"{}"); }catch(e){ return {}; }
+}
+function defaultSignature(loc){
+  const name=getFromName();
+  return loc==="AR"
+    ? name+"\nthriveiii.com"
+    : name+"\nthriveiii.com";
+}
+function signatureFor(loc){
+  const L=(loc==="AR")?"AR":"EN";
+  const all=getSignatures();
+  const v=all[L];
+  return (typeof v==="string" && v.trim()) ? v : defaultSignature(L);
+}
+function setSignature(loc, text){
+  const L=(loc==="AR")?"AR":"EN";
+  const all=getSignatures(); all[L]=String(text||"");
+  return lsSet(SIGN, JSON.stringify(all));
+}
+/* Plain text, generated from the rich body rather than typed twice. Two copies a
+   person maintains by hand are two copies that disagree. */
+function toPlainText(html, sig){
+  let s=String(html||"");
+  s=s.replace(/<br\s*\/?>/gi,"\n")
+     .replace(/<\/(p|div|li|h[1-6])>/gi,"\n")
+     .replace(/<li[^>]*>/gi,"- ")
+     .replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, function(_,h,txt){
+        const t=String(txt).replace(/<[^>]*>/g,"").trim();
+        /* A link whose text already IS the URL must not be printed twice. */
+        return (t && t!==h) ? (t+" ("+h+")") : h;
+     })
+     .replace(/<[^>]*>/g,"");
+  s=s.replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">")
+     .replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+  s=s.replace(/\n{3,}/g,"\n\n").replace(/[ \t]+\n/g,"\n").trim();
+  return sig ? (s+"\n\n"+sig) : s;
+}
+
+function brandWrap(inner, branded, sigText){
   const name=esc(getFromName());
+  const sig=(sigText===undefined||sigText===null) ? "" : String(sigText);
+  const sigHtml=sig.trim()
+    ? esc(sig).split("\n").join("<br>")
+    : "";
   const font='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
+  const closing = sigHtml
+    ? '<div style="margin-top:18px;color:#444">'+sigHtml+'</div>'
+    : '<div style="margin-top:18px;color:#444">'+name+'<br><a href="https://thriveiii.com" style="color:#444;text-decoration:none">thriveiii.com</a></div>';
   if(!branded){
     return '<div style="font-family:'+font+';font-size:15px;line-height:1.6;color:#222">'
-      +inner
-      +'<div style="margin-top:18px;color:#444">– '+name+'<br><a href="https://thriveiii.com" style="color:#444;text-decoration:none">thriveiii.com</a></div>'
-      +'</div>';
+      +inner+closing+'</div>';
   }
   const logo="https://"+SITE+"/assets/thrive-logo.png";
   return '<div style="font-family:'+font+';max-width:600px;margin:0 auto;padding:10px 4px">'
     +'<img src="'+logo+'" width="42" height="42" alt="'+name+'" style="display:block;border-radius:10px;margin-bottom:16px">'
     +'<div style="font-size:15px;line-height:1.7;color:#111827">'+inner+'</div>'
-    +'<div style="margin-top:24px;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#9aa0aa">'+name+' · thriveiii.com</div>'
+    +'<div style="margin-top:24px;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#9aa0aa">'
+      +(sigHtml||(name+' · thriveiii.com'))+'</div>'
     +'</div>';
 }
 
@@ -1967,8 +2093,9 @@ function newMid(){ try{ return Date.now().toString(36)+Math.random().toString(36
 // Central ledger writer: stamps a unique message id, resolves the thread, and fixes direction.
 function logMail(rec){
   const a=getMailLog();
-  const r=Object.assign({ ts:new Date().toISOString() }, rec);
+  const r=Object.assign({ ts:new Date().toISOString(), actor:ACTOR }, rec);
   if(!r.mid) r.mid=newMid();
+  if(!r.actor) r.actor=ACTOR;
   if(!r.thread) r.thread=threadKey(r.to, r.opp, r.subject);
   if(!r.direction) r.direction=(r.status==="replied"||r.status==="received")?"in":"out";
   if(r.templateId===undefined) r.templateId="";
@@ -2189,6 +2316,31 @@ async function initCompose(slugArg){
   el("efrom").value=getFromName()+" <"+FROM_EMAIL+">";
   let oppObj=null;
   if(slug){ const all=await mergedOpps(); oppObj=all.find(x=>x.slug===slug)||null; }
+  /* Prefilled from the opportunity: recipient, name, subject from the manifest,
+     the outreach text as the body, and the page link ALREADY SUBSTITUTED for
+     [LINK]. WO-013 §4.2.
+
+     It never overwrites something a person typed. Only an empty field is filled,
+     so arriving here a second time to finish a half written message finds it
+     exactly as it was left. */
+  if(oppObj){
+    const addr=(oppObj.channel && /@/.test(String(oppObj.channel.to||"")) ? oppObj.channel.to : "")
+             || oppObj.email || "";
+    const toEl=el("eto");
+    if(toEl && !toEl.value.trim() && addr) toEl.value=addr;
+    const nm=el("ename");
+    if(nm && !nm.value.trim()) nm.value=oppObj.owner||oppObj.business||"";
+    const su=el("esubject");
+    if(su && !su.value.trim() && oppObj.outreach_subject) su.value=oppObj.outreach_subject;
+    const bd=el("ebody");
+    if(bd && !(bd.textContent||"").trim() && oppObj.outreach_text){
+      /* The placeholder is substituted here rather than left for the writer,
+         because a message that reaches a prospect still saying [LINK] is the one
+         failure the whole guard exists to prevent. */
+      const filled=String(oppObj.outreach_text).split("[LINK]").join(liveUrl(oppObj.slug));
+      bd.innerHTML=esc(filled).split("\n").join("<br>");
+    }
+  }
   const nameEl=el("ename"), tplSel=el("etpl"), firstEl=el("efirst"),
         monthEl=el("emonth"), monthWrap=el("emonthWrap");
   let tplCache=getEmailTemplates();                       // parse localStorage once, not on every keystroke
@@ -2409,22 +2561,186 @@ async function initCompose(slugArg){
   }
   renderQuota();
   onThrive("sync","compose",renderQuota);
+  /* ---- what the editor gained, and why each one earns its place ----------
+     Every item here removes a failure the team has actually hit. Nothing here
+     schedules, sequences, tests variants, or adds a tracking pixel: those change
+     what Thrive is, and WO-013 §5.3 says not to. */
+
+  /* The closing block: previewed, editable for THIS message only, and saved per
+     locale by the DOCUMENT language rather than the chrome. */
+  const sigBox=el("sigBox"), sigLoc=el("sigLoc");
+  const docLoc=()=> (oppObj ? docLang(oppObj) : (getLang()==="ar"?"AR":"EN"));
+  function loadSignature(){
+    if(!sigBox) return;
+    sigBox.value=signatureFor(docLoc());
+    if(sigLoc) sigLoc.textContent=t("sig_using")+" "+t("loc_"+docLoc().toLowerCase());
+  }
+  loadSignature();
+  const sigSave=el("sigSave");
+  if(sigSave) sigSave.addEventListener("click", ()=>{
+    setSignature(docLoc(), sigBox.value);
+    toast(t("sig_saved")); refreshPreview();
+  });
+  const sigReset=el("sigReset");
+  if(sigReset) sigReset.addEventListener("click", ()=>{ loadSignature(); refreshPreview(); });
+  if(sigBox) sigBox.addEventListener("input", debounce(()=>refreshPreview(), 300));
+
+  /* Personalisation tokens, resolved live. Nobody sends "Hi {name}". */
+  const TOKENS={ NAME:()=>recipientName()||"", BIZ:()=>(oppObj&&oppObj.business)||"",
+                 LINK:()=>oppUrl||"", MONTH:()=>(monthEl?monthEl.value:"")||"" };
+  function resolveTokens(str){
+    let out=String(str||"");
+    Object.keys(TOKENS).forEach(k=>{ out=out.split("{{"+k+"}}").join(TOKENS[k]()); });
+    return out;
+  }
+  /* A token left in the text AFTER RESOLUTION is one whose value is empty or
+     whose name is not a token at all. Either way it must not leave.
+
+     Reading the raw body instead would report every token the writer used, so
+     every message carrying {{NAME}} would be blocked, which is most of them. */
+  function unresolvedTokens(str){
+    const out=[], re=/\{\{([A-Z][A-Z0-9_]*)\}\}/g; let m;
+    const s2=String(str||"");
+    while((m=re.exec(s2))) if(out.indexOf(m[1])<0) out.push(m[1]);
+    /* The literal [LINK] from the manifest is the same failure wearing different
+       brackets, so it is reported beside them. */
+    if(s2.indexOf("[LINK]")>=0 && out.indexOf("LINK")<0) out.push("LINK");
+    return out;
+  }
+
+  function composedHtml(){
+    return brandWrap(resolveTokens(htmlOut()), isBranded(), sigBox?sigBox.value:"");
+  }
+  function composedText(){
+    const box=el("plainBox");
+    if(box && box.dataset.dirty==="1") return box.value;
+    return toPlainText(resolveTokens(htmlOut()), sigBox?sigBox.value:"");
+  }
+
+  const plainBox=el("plainBox");
+  if(plainBox) plainBox.addEventListener("input", ()=>{ plainBox.dataset.dirty="1"; });
+  const plainRegen=el("plainRegen");
+  if(plainRegen) plainRegen.addEventListener("click", ()=>{
+    if(!plainBox) return;
+    plainBox.dataset.dirty=""; plainBox.value=composedText(); toast(t("pt_regenerated"));
+  });
+
+  /* The subject meter. Past 60 most clients truncate. */
+  function refreshSubjMeter(){
+    const m=el("subjMeter"), su=el("esubject");
+    if(!m||!su) return;
+    const n=su.value.length;
+    m.textContent=boardText(getLang(),"subj_count", n)+(n>60? " · "+t("subj_long") : "");
+    m.classList.toggle("is-long", n>60);
+  }
+
+  const prevFrame=el("cmpPreview");
+  function refreshPreview(){
+    refreshSubjMeter();
+    if(plainBox && plainBox.dataset.dirty!=="1") plainBox.value=composedText();
+    renderPreSend();
+    if(!prevFrame) return;
+    const card = oppObj ? linkCard(oppObj, {copy:false}) : "";
+    prevFrame.srcdoc='<!DOCTYPE html><html dir="'+(docLoc()==="AR"?"rtl":"ltr")+'"><body '+
+      'style="margin:0;padding:16px;background:#fff">'+composedHtml()+card+'</body></html>';
+  }
+
+  /* Three lines, shown once, before it leaves. */
+  function preSendChecks(){
+    const bodyHtml=htmlOut();
+    const left=unresolvedTokens(resolveTokens(bodyHtml+" "+(el("esubject").value||"")));
+    return [
+      { k:"ps_link", ok: !oppUrl || composedHtml().indexOf(oppUrl)>=0 },
+      { k:"ps_tokens", ok: left.length===0, detail:left.join(", ") },
+      { k:"ps_sig", ok: !!(sigBox && sigBox.value.trim()) }
+    ];
+  }
+  function renderPreSend(){
+    const host=el("preSend"); if(!host) return;
+    const rows=preSendChecks();
+    host.hidden=false;
+    host.innerHTML='<ul class="ps-list">'+rows.map(r=>
+      '<li class="'+(r.ok?"ok":"no")+'">'+ic(r.ok?"check":"alert")+esc(t(r.k))+
+      (r.detail? ' <span class="mono-iso">'+esc(r.detail)+'</span>':'')+'</li>').join("")+'</ul>';
+  }
+
+  ["esubject","eto","ename"].forEach(id=>{
+    const e=el(id); if(e) e.addEventListener("input", debounce(refreshPreview, 300));
+  });
+  body.addEventListener("input", debounce(refreshPreview, 400));
+  const prevWrap=el("prevWrap");
+  if(prevWrap) prevWrap.addEventListener("toggle", ()=>{ if(prevWrap.open) refreshPreview(); });
+  refreshPreview();
+
+  /* Send to myself. The only honest way to see what a client sees. */
+  const selfBtn=el("eSelf");
+  if(selfBtn) selfBtn.addEventListener("click", async ()=>{
+    const ep=getEmailEndpoint();
+    if(!ep){ toast(t("cmp_no_ep")); return; }
+    selfBtn.disabled=true;
+    try{
+      const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+        body:JSON.stringify({ from:FROM_EMAIL, fromName:getFromName(), to:FROM_EMAIL,
+          subject:"["+t("cmp_self_tag")+"] "+resolveTokens(el("esubject").value.trim()),
+          html:composedHtml(), text:composedText() }) }, 30000);
+      const txt=await r.text();
+      let j=null; try{ j=JSON.parse(txt); }catch(_){}
+      if(j && j.ok===false) throw new Error(j.error||"send failed");
+      /* It is a proof copy, not outreach, so it does not spend the quota and it
+         does not enter the ledger. Counting it would inflate every number the
+         board reports. */
+      toast(t("cmp_self_sent"));
+    }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
+    finally{ selfBtn.disabled=false; }
+  });
+
   el("eSend").addEventListener("click", async ()=>{
     const to=el("eto").value.trim();
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
     const ep=getEmailEndpoint();
     if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>goTo("settings"),1100); return; }
+    /* §3: a known version mismatch makes the send impossible to attempt. This is
+       the exact send that failed with `missing "to"`, and refusing it here is the
+       difference between a named problem and a mysterious one. */
+    if(!relayReady()){ toast(relayBannerText()); setTimeout(()=>goTo("settings"),1200); return; }
     // Resend free-tier guard: block before we would exceed the daily/monthly cap.
     const q=quotaUsage();
     if(q.dayFull){ toast(t("cmp_quota_day_hit")+(q.freeInMs>0?" "+t("cmp_quota_resets")+" "+fmtDur(q.freeInMs):"")); return; }
     if(q.monthFull){ toast(t("cmp_quota_month_hit")); return; }
-    const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to, subject:el("esubject").value.trim(), html:brandWrap(htmlOut(), isBranded()), text:plainText() };
+    /* A suppressed address is never written to again, and the console says why.
+       This is the single highest value guard in the deliverability section: at
+       three sends a day the risk is not volume, it is one complaint against a
+       domain that also carries client mail and invoices. */
+    if(ThriveStore.isSuppressed(to)){
+      toast(t("sup_blocked")+" "+t("sup_r_"+(ThriveStore.reasonFor(to)||"unknown")));
+      return;
+    }
+    /* An unresolved token blocks the send. "Hi {name}" reaching a prospect is
+       the failure this whole section exists to prevent, and detecting it after
+       the fact is detecting it too late. */
+    const left=unresolvedTokens(resolveTokens(htmlOut()+" "+el("esubject").value));
+    if(left.length){ toast(t("ps_tokens_block")+" "+left.join(", ")); renderPreSend(); return; }
+    const loc=docLoc();
+    const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:to,
+      subject:resolveTokens(el("esubject").value.trim()),
+      /* The physical address and the one line opt out are required by US law for
+         commercial email, and both are already true of Thrive. List-Unsubscribe
+         is not required at this volume and costs nothing, and it converts a spam
+         complaint into an unsubscribe. */
+      html:composedHtml()+ThriveStore.footerHtml(loc==="AR"?"ar":"en"),
+      text:composedText()+ThriveStore.footerText(loc==="AR"?"ar":"en"),
+      headers:ThriveStore.outboundHeaders(slug||""),
+      slug:slug||"" };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
-      const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
+      const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
       const txt=await r.text();
       if(!r.ok) throw new Error(r.status+" "+txt.slice(0,140));
       let id="", parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
+      noteRelayVersion(parsed);
+      /* If the send only now revealed the relay is behind, say so with the banner
+         rather than a generic send error, and refresh so the gate takes hold. */
+      if(parsed && !relayReady()){ throw new Error(relayBannerText()); }
       if(parsed && parsed.ok===false) throw new Error(parsed.error||"send failed");
       if(parsed) id=parsed.id||"";
       const m=tplMeta();
@@ -2457,6 +2773,52 @@ async function fetchT(url, opts, ms){
   }
   finally{ clearTimeout(to); }
 }
+
+/* ---------- WO-014 §3: the version contract ----------
+   The night this was written, the relay editor held v5 and the deployment served
+   v4, and every send failed with `missing "to"`. The console asked v5 questions
+   and the deployment gave v4 answers, and nobody could see the mismatch without
+   reading two screens at once. This closes the gap: the relay stamps its version
+   onto every response (relay/thrive-relay.gs, RELAY_VERSION), the console carries
+   the version it was built for, and on a disagreement it does not degrade quietly.
+   It shows one banner, everywhere a send or a sync would appear, with the exact
+   five taps that fix it, and it makes every relay-dependent action impossible to
+   attempt. A send that would fail with `missing "to"` is refused before it leaves. */
+const REQUIRED_RELAY = 5;
+let __relaySeen = null;                 // the version the last relay response declared, or null
+let __relayChecked = false;             // whether we have parsed any relay response this session
+/* A relay response that omits relay_version is, by definition, older than the
+   contract: a v4 deployment predates the field entirely. So an absent version
+   reads as a mismatch, not as "unknown, assume fine". That absence was the whole
+   failure. */
+function noteRelayVersion(j){
+  const v = (j && typeof j === "object" && j.relay_version != null) ? Number(j.relay_version) : null;
+  __relaySeen = v; __relayChecked = true;
+  return j;
+}
+/* null when no relay response has been seen yet (nothing to disagree with), or
+   when the versions match. An object {seen, need} the moment a parsed response
+   disagrees, which is what the banner and every gate read. */
+function relayMismatch(){
+  if(!__relayChecked) return null;
+  if(__relaySeen === REQUIRED_RELAY) return null;
+  return { seen: __relaySeen, need: REQUIRED_RELAY };
+}
+function relayReady(){ return relayMismatch() === null; }
+/* Stamp the request with the version it was written for, so a relay older than
+   the request can refuse it by name (`request v6, relay v5`) instead of misreading
+   the shape the way a v4 handler misread a v5 send. */
+function relayBody(o){ return JSON.stringify(Object.assign({ v: REQUIRED_RELAY }, o || {})); }
+/* The one banner, verbatim per §3.1, with the remedy inside it because the
+   knowledge that was missing that night was exactly those five taps. The version
+   numbers are not counts, so they do not take a plural form; they are stamped as
+   Western numerals. */
+function relayBannerText(){
+  const m = relayMismatch(); if(!m) return "";
+  const seen = m.seen == null ? t("relay_ver_unknown") : String(m.seen);
+  return t("relay_ver_banner").replace("{relay}", seen).replace("{need}", String(m.need));
+}
+
 /* What a relay URL actually answered. An Apps Script deployment whose access is not "Anyone"
    returns a Google sign-in page to every unauthenticated caller, which is HTML, not JSON. That
    is a completely different fault from a stale deployment and it needs its own name: prospects
@@ -2464,7 +2826,15 @@ async function fetchT(url, opts, ms){
 function classifyRelayBody(body){
   const s=String(body||"").trim();
   if(!s) return { kind:"net" };
-  if(/Thrive relay/i.test(s)) return { kind:/v4/.test(s)? "v4":"old", version:s.slice(0,90) };
+  /* §3: "current" is the version this build requires, read from REQUIRED_RELAY,
+     never a literal. The day the relay became v5 a hardcoded "v4" here turned a
+     correct deployment into a reported fault, which is the exact class of drift
+     this round exists to end. Any Thrive relay whose stamped version is not the
+     required one is "old", whichever number it carries. */
+  if(/Thrive relay/i.test(s)){
+    const m=/v(\d+)/i.exec(s); const ver=m? Number(m[1]) : null;
+    return { kind: ver===REQUIRED_RELAY? "current":"old", ver:ver, version:s.slice(0,90) };
+  }
   // Only a Google page counts as "not open to Anyone". Any other HTML is simply the wrong URL.
   if(/accounts\.google\.com|ServiceLogin|Web word processing|Google Drive|Google Accounts|google\.com\/accounts/i.test(s))
     return { kind:"signin" };
@@ -2486,7 +2856,7 @@ async function connCheck(candidate, onStep){
   let body="";
   try{ const r=await fetchT(ep,{cache:"no-store"},9000); body=await r.text(); }catch(e){ body=""; }
   const v=classifyRelayBody(body);
-  if(!add("conn_v4", v.kind==="v4",
+  if(!add("conn_v4", v.kind==="current",
           v.kind==="signin"? t("sy_v_signin") : (v.version||t("sy_err_net")),
           v.kind==="signin"? t("conn_v4_fix_access") : "")) return steps;
 
@@ -2535,6 +2905,7 @@ async function connCheck(candidate, onStep){
 function initSettings(){
   renderStorageMeter();
   renderRepliesPanel();
+  renderReputation();
   const el=id=>document.getElementById(id);
   const c=ghConfig();
   el("gh_owner").value=c.owner||"thriveiii";
@@ -2567,6 +2938,17 @@ function initSettings(){
     }).join("");
     const note=el("connNote"); if(!note) return;
     if(running){ note.hidden=false; note.textContent=t("testing"); note.className="gh-result"; return; }
+    /* §3: a version mismatch outranks every other verdict here, because until the
+       relay is redeployed no other check can pass and attempting a send is
+       pointless. The banner carries the five taps that fix it and a link to the
+       ritual in docs/RELAY.md, so the knowledge lives where the failure shows. */
+    const mm=relayMismatch();
+    if(mm){
+      note.hidden=false; note.className="gh-result warn";
+      note.innerHTML='<strong>'+esc(relayBannerText())+'</strong>'
+        +' <a class="conn-d" href="../docs/RELAY.md" target="_blank" rel="noopener">'+esc(t("relay_ver_ritual"))+'</a>';
+      return;
+    }
     const all=CONN_STEPS.every(k=>byKey[k]&&byKey[k].ok);
     note.hidden=false;
     note.textContent = all? t("conn_all_ok") : t("conn_broken");
@@ -2600,10 +2982,12 @@ function initSettings(){
     const ep=((el("sy_ep")&&el("sy_ep").value)||getSyncEndpoint()||"").trim();
     if(!ep){ note.hidden=false; note.className="gh-result warn"; note.textContent=t("sy_need_ep"); return; }
     connRender([], true);
-    // 1. never adopt a URL that is not a v4 relay
+    // 1. never adopt a URL that is not the relay this build was written for. The
+    //    version this line names is REQUIRED_RELAY, never a literal, so it cannot
+    //    drift the way a hardcoded "v4" did the day the relay became v5.
     let version="";
-    try{ const r=await fetch(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }catch(e){}
-    if(!(/Thrive relay/i.test(version) && /v4/.test(version))){
+    try{ const r=await fetchT(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }catch(e){}
+    if(!(/Thrive relay/i.test(version) && new RegExp("v"+REQUIRED_RELAY+"\\b").test(version))){
       connRender(await connCheck(ep), false);
       note.hidden=false; note.className="gh-result warn";
       note.textContent="✕ "+(version||t("sy_err_net"))+": "+t("sy_v_howto");
@@ -2751,7 +3135,7 @@ function initSettings(){
     el("syEnable").addEventListener("click", async ()=>{
       const ep=el("sy_ep").value.trim();
       if(!ep){ toast(t("sy_need_ep")); return; }
-      // Refuse to publish a URL that isn't a v4 relay: publishing a stale one breaks every device.
+      // Refuse to publish a URL that is not the required relay version: publishing a stale one breaks every device.
       const v=await verifyUrl(ep);
       if(!v.ok){ syShow("✕ "+(v.version||"–")+": "+v.msg+" "+t("sy_v_howto"), "warn"); return; }
       const now=Date.now();
@@ -2847,10 +3231,15 @@ function initTemplates(){
     const host=el("customList");
     host.innerHTML=localeTabBar("tplLocTabs")+
       (list.length? list.map(ct=>`
-        <div class="tpl">
+        <div class="tpl kind-page">
           <div class="tpl-b">
-            <div class="name">${esc(ct.name||ct.id)}</div>
-            <div class="id">${esc(ct.id)} · ${esc(localeOf(ct)||"")}</div>
+            <div class="name">${ic("page",16)}${esc(ct.name||ct.id)}</div>
+            <!-- A page template ALWAYS shows its field count and its locale. That is
+                 what distinguishes it on sight from a finished offer, which has no
+                 fields and belongs to one prospect. WO-013 §3.4. -->
+            <div class="id">${esc(ct.id)} · <span class="kind-tag">${esc(t("kd_kind_page"))}</span>
+              · ${esc(t("loc_"+String(localeOf(ct)||"en").toLowerCase()))}
+              · ${esc(boardText(getLang(),"kd_fields", (ct.fields||ThriveKinds.fillableFields(ct.html||"")).length))}</div>
           </div>
           <div class="tpl-a">
             <a class="btn ghost sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("use_template")}</a>
@@ -2908,15 +3297,111 @@ function initTemplates(){
   }
 
 
-  // upload / add custom template
+  /* ---- upload, and the question it can no longer skip ---------------------
+     An uploaded .html used to be ambiguous: nothing told the console whether it
+     was a skeleton to build from or a finished page for one prospect, so the
+     same gesture did two different things and nobody could predict which. Now
+     the file declares itself, and when it does not, the console ASKS. It never
+     guesses: guessing from field count files a finished page with a stray token
+     as a template, and both failures are silent. */
   const dz=el("tplDz"), file=el("tplFile");
+  let pendingRead=null;                              // the classification, once read
+
+  function reportBox(){
+    let b=el("tplReport");
+    if(!b){ b=document.createElement("div"); b.id="tplReport"; b.className="kd-report";
+            dz.parentNode.insertBefore(b, dz.nextSibling); }
+    return b;
+  }
+  /* Every upload ends with ONE SENTENCE saying what the console decided and
+     where the thing went. A file that vanishes into the right place without
+     saying so is the same experience as one that vanished into the wrong one. */
+  function said(msg, cls){
+    const b=reportBox();
+    b.innerHTML='<p class="kd-said '+(cls||"")+'">'+ic(cls==="bad"?"alert":"check")+esc(msg)+'</p>';
+  }
+
+  function showRead(c, fname){
+    const b=reportBox();
+    /* Cleared on every read. Without this, reading a good template and then an
+       ambiguous file left the previous classification standing, and pressing Add
+       would have saved the ambiguous file under the earlier file's answer. */
+    pendingRead=null;
+    if(!c.ok){
+      const why = c.error==="kd_err_kind" ? t("kd_err_kind").replace("{k}", c.errorDetail||"")
+                : t(c.error);
+      said(why, "bad");
+      pendingRead=null;
+      return;
+    }
+    if(c.ask){
+      /* One question, with the name and a preview, and two clear choices. */
+      b.innerHTML='<div class="kd-ask">'+
+        '<p class="kd-q">'+esc(t("kd_ask").replace("{f}", fname))+'</p>'+
+        '<div class="kd-prev"><iframe title="'+esc(fname)+'" sandbox=""></iframe></div>'+
+        '<div class="bar">'+
+          '<button class="btn" type="button" data-kd="page-template">'+ic("page")+esc(t("kd_is_template"))+'</button>'+
+          '<button class="btn ghost" type="button" data-kd="offer">'+ic("spark")+esc(t("kd_is_offer"))+'</button>'+
+        '</div></div>';
+      const fr=b.querySelector("iframe");
+      if(fr) fr.srcdoc=pendingHTML||"";
+      b.querySelectorAll("[data-kd]").forEach(btn=>btn.addEventListener("click",()=>{
+        const d=ThriveKinds.decide(pendingHTML, fname, btn.getAttribute("data-kd"));
+        pendingHTML=d.html||pendingHTML;
+        showRead(d, fname);
+      }));
+      return;
+    }
+    pendingRead=c;
+    if(c.kind==="offer"){
+      b.innerHTML='<p class="kd-said">'+ic("spark")+esc(t("kd_read_offer"))+'</p>'+
+        '<div class="bar"><button class="btn" type="button" id="kdMakeOpp">'+esc(t("kd_make_opp"))+'</button></div>';
+      const mk=el("kdMakeOpp");
+      if(mk) mk.addEventListener("click", async ()=>{ await makeOfferOpportunity(c, fname); });
+      return;
+    }
+    /* A page template: show the fields BEFORE it is saved, and name every
+       unknown one. An unknown field still substitutes as empty, which is a
+       usable template with a hole in it, and the person is told which hole. */
+    const warn=c.warnings.map(w=>'<p class="kd-warn">'+ic("alert")+
+      esc(t("kd_warn_unknown"))+' <span class="mono-iso">'+esc(w.fields.join(", "))+'</span></p>').join("");
+    b.innerHTML='<div class="kd-ok">'+
+      '<p class="kd-said">'+ic("page")+esc(t("kd_read_template"))+'</p>'+
+      '<p class="kd-line"><b>'+esc(t("kd_locale"))+'</b> '+esc(t("loc_"+c.locale.toLowerCase()))+'</p>'+
+      '<p class="kd-line"><b>'+esc(boardText(getLang(),"kd_fields", c.fields.length))+'</b></p>'+
+      '<ul class="kd-fields">'+c.fields.map(x=>'<li><span class="mono-iso">'+esc(x)+'</span>'+
+        (ThriveKinds.KNOWN_FIELDS.indexOf(x)<0? ' <span class="kd-unk">'+esc(t("kd_unknown"))+'</span>':'')+
+        '</li>').join("")+'</ul>'+
+      (c.quoteBlock? '<p class="kd-line">'+esc(t("kd_quote_block"))+'</p>':'')+
+      warn+'</div>';
+    el("tpl_lang").value=c.locale;
+    if(!el("tpl_id").value) el("tpl_id").value=slugify(c.name||fname.replace(/\.html?$/i,""));
+    if(!el("tpl_name").value) el("tpl_name").value=c.name||fname.replace(/\.html?$/i,"");
+  }
+
+  /* A finished offer belongs to one prospect, so it lands on the board and never
+     in the Library. That is the Library rule made operational rather than
+     printed and ignored. */
+  async function makeOfferOpportunity(c, fname){
+    const biz=c.name||fname.replace(/\.html?$/i,"");
+    let slug=slugify(biz), n=2;
+    const have=getDrafts();
+    while(have.some(d=>d.slug===slug)) slug=slugify(biz)+"-"+(n++);
+    saveDraft({ slug:slug, business:biz, mode:"upload", html:pendingHTML,
+                doc_lang:c.locale||"", published:false, up:Date.now() });
+    logActivity("opp_add", slug, "offer upload");
+    said(t("kd_went_board").replace("{biz}", biz), "");
+    pendingHTML=null; pendingRead=null;
+    dz.innerHTML=t("upload_dz");
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+  }
+
   function readTpl(f){
     if(!/\.html?$/i.test(f.name)){ toast(t("need_html")); return; }
     const fr=new FileReader();
     fr.onload=()=>{ pendingHTML=fr.result;
       dz.innerHTML=t("uploaded")+"<b>"+esc(f.name)+"</b>";
-      if(!el("tpl_id").value) el("tpl_id").value=slugify(f.name.replace(/\.html?$/i,""));
-      if(!el("tpl_name").value) el("tpl_name").value=f.name.replace(/\.html?$/i,"");
+      showRead(ThriveKinds.classify(pendingHTML, f.name), f.name);
     };
     fr.onerror=()=>toast(t("read_err"));
     fr.readAsText(f);
@@ -2929,19 +3414,43 @@ function initTemplates(){
 
   el("tplAdd").addEventListener("click",()=>{
     if(!pendingHTML){ toast(t("tpl_need_file")); return; }
+    /* The file has to have been read and accepted as a page template. Saving a
+       file the validator refused, or one nobody answered the question about, is
+       how a finished page ended up in the Library in the first place. */
+    if(!pendingRead || pendingRead.kind!=="page-template"){ toast(t("kd_not_template")); return; }
     const id=slugify(el("tpl_id").value)|| slugify(el("tpl_name").value);
     if(!id){ toast(t("tpl_need_id")); return; }
     const reserved=APPROVED_TEMPLATES.some(t2=>t2.id===id);
     if(reserved){ toast(t("tpl_id_taken")); return; }
     // An existing custom id would be silently overwritten, so ask first.
     if(getCustomTemplate(id) && !confirm(t("tpl_confirm_overwrite"))) return;
-    const ok=saveCustomTemplate({ id, name:el("tpl_name").value.trim()||id, lang:el("tpl_lang").value||"EN",
+    const loc=pendingRead.locale||el("tpl_lang").value||"EN";
+    const ok=saveCustomTemplate({ id, name:el("tpl_name").value.trim()||id, lang:loc, locale:loc,
+      fields:pendingRead.fields.slice(),
       html:pendingHTML, created:new Date().toISOString() });
     if(!ok) return;
     logActivity("tpl_add", id, el("tpl_name").value.trim());
-    pendingHTML=null; dz.innerHTML=t("upload_dz"); el("tpl_id").value=""; el("tpl_name").value="";
+    const wentTo=t("loc_"+loc.toLowerCase());
+    pendingHTML=null; pendingRead=null; dz.innerHTML=t("upload_dz");
+    el("tpl_id").value=""; el("tpl_name").value="";
+    said(t("kd_went_library").replace("{loc}", wentTo), "");
     toast(t("tpl_added")); renderCustom();
   });
+
+  /* ---- a starting point, so the first upload is not blind -----------------
+     The shipped skeleton with its declarations and its fields in place and its
+     content emptied. Somebody building a new template starts from something
+     that already works instead of guessing the contract from documentation. */
+  const blankBar=el("tplBlank");
+  if(blankBar) blankBar.querySelectorAll("[data-blank]").forEach(b=>b.addEventListener("click", async ()=>{
+    const loc=b.getAttribute("data-blank");
+    const src=loc==="AR" ? "ar-opp1" : "en-opp1";
+    const html=await fetchTemplateHtml(src);
+    if(!html){ toast(t("kd_blank_err")); return; }
+    const name=t("kd_blank_name")+" "+t("loc_"+loc.toLowerCase());
+    download("thrive-blank-"+loc.toLowerCase()+".html", ThriveKinds.blankFrom(html, loc, name));
+    said(t("kd_blank_done"), "");
+  }));
 
   /* ---- email templates: full, explicit CRUD (new · edit · duplicate · delete) ---- */
   const etBox=el("etEditor");
@@ -3389,7 +3898,7 @@ async function initHome(){
     unmeasured=[];
     for(const o of opps){
       try{
-        const r=await fetch(relOpp(o.slug)+"index.html",{cache:"no-store"});
+        const r=await fetchT(relOpp(o.slug)+"index.html",{cache:"no-store"});
         if(!r.ok) continue;
         const html=await r.text();
         if(!hasBeacon(html)) unmeasured.push({slug:o.slug, business:o.business||o.slug, html});
@@ -3435,7 +3944,7 @@ async function initInsights(){
     const ep=getEndpoint();
     if(ep){
       try{
-        const r=await fetch(ep,{cache:"no-store"});
+        const r=await fetchT(ep,{cache:"no-store"});
         const j=await r.json();
         return { source:"remote", events: Array.isArray(j)?j : (j.events||[]) };
       }catch(e){ toast(t("ins_fetch_err")); return { source:"remote-error", events:getHits() }; }
@@ -3553,7 +4062,7 @@ async function initBoard(){
        up, and the overflow control is the path that needs no dragging at all. */
     return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
       '<button class="tok-open" type="button">'+
-        '<span class="tok-name">'+esc(tk.biz)+'</span>'+
+        '<span class="tok-name">'+(tk.offer? ic("spark",13) : "")+esc(tk.biz)+'</span>'+
         '<span class="tok-meta">'+meta+'</span>'+
       '</button>'+
       '<button class="tok-more" type="button" aria-haspopup="menu" aria-label="'+esc(t("mv_menu"))+'">'+ic("chevron")+'</button>'+
@@ -3615,7 +4124,9 @@ async function initBoard(){
       });
       body.innerHTML = b.lanes[k].length
         ? b.lanes[k].map((tk,i)=> tokenHtml(tk).replace('class="tok ', 'class="tok '+(i<3?"enter enter-"+(i+1)+" ":"")) ).join("")
-        : '<div class="lane-empty">'+esc(t("lane_"+k+"_empty"))+'</div>';
+        /* Law 4: an icon, a sentence, and at most one action. A bare sentence in
+           the middle of a field is the shrug this law exists to stop. */
+        : '<div class="lane-empty">'+ic("spark",18)+'<p>'+esc(t("lane_"+k+"_empty"))+'</p></div>';
     });
 
     // One sentence, chosen by priority. The console says one thing at a time.
@@ -3645,7 +4156,7 @@ async function initBoard(){
     el("trayList").innerHTML = closed.length
       ? b.closed.won.map(o=>'<span class="tray-item won">'+esc(o.business||o.slug)+'</span>').join("")+
         b.closed.lost.map(o=>'<span class="tray-item lost">'+esc(o.business||o.slug)+'</span>').join("")
-      : '<div class="lane-empty">'+esc(t("tray_empty"))+'</div>';
+      : '<div class="lane-empty">'+ic("archive",18)+'<p>'+esc(t("tray_empty"))+'</p></div>';
 
     const empty=b.summary.total===0 && closed.length===0;
     el("boardEmpty").hidden=!empty;
@@ -3877,7 +4388,7 @@ async function relayCompleteness(){
   if(!ep) return { ok:false, reason:"no_endpoint" };
   let remote=null;
   try{
-    const r=await fetch(ep, { method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep, { method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"state_get", auth:syncAuth() }) });
     const j=await r.json();
     if(!j || j.ok===false) return { ok:false, reason:"relay_error" };
@@ -4039,6 +4550,62 @@ function renderRepliesPanel(){
     await syncNow();
     const o3=out(); if(o3) o3.textContent=boardText(getLang(),"rp_repaired", real.count||0);
     renderRepliesPanel();
+  });
+}
+
+/* ---------- the reputation panel ----------
+   The published playbook for outbound in 2026 is three to eight sending domains,
+   warmed over weeks, a sequencer, and volume scaled while placement is defended.
+   That playbook solves a problem Thrive does not have and would destroy the
+   thing Thrive is good at: three sends a day, each with a page built for one
+   named business.
+
+   So the console's job is the opposite of the playbook's. Not raising volume
+   safely, but making low volume compound: never send to a suppressed address,
+   never send with an unresolved placeholder, and make the numbers visible so a
+   slow leak is caught while it is still slow. WO-013 §10.6. */
+async function renderReputation(){
+  const host=document.getElementById("repPanel");
+  if(!host) return;
+  const r=ThriveStore.reputation({ mail:getMailLog(), month:ThriveNumbers.localMonth() });
+  const u=ThriveStore.usage();
+  const pct=n=>'<span class="n">'+n+'</span>%';
+  host.innerHTML=
+    '<p class="rep-verdict rep-'+esc(r.verdict.replace("rep_",""))+'">'+
+      ic(r.verdict==="rep_healthy"?"check":"alert")+esc(t(r.verdict))+'</p>'+
+    '<ul class="st-keys">'+
+      '<li><span>'+esc(t("rep_sent"))+'</span><span class="n">'+r.sent+'</span></li>'+
+      '<li><span>'+esc(t("rep_hard"))+'</span><span>'+pct(r.hardRate)+' ('+r.hardBounces+')</span></li>'+
+      '<li><span>'+esc(t("rep_complaints"))+'</span><span>'+pct(r.complaintRate)+' ('+r.complaints+')</span></li>'+
+      '<li><span>'+esc(t("rep_suppressed"))+'</span><span class="n">'+r.suppressed+'</span></li>'+
+    '</ul>'+
+    '<p class="st-line">'+esc(t("rep_guidance"))+'</p>'+
+    /* §10.4: the usage is measured and the threshold is recorded, and the
+       migration is deliberately not built. */
+    '<p class="st-line"><b>'+esc(t("rep_storage"))+'</b> <span class="n">'+
+      (u.bytes/1048576).toFixed(2)+'</span> MiB · '+
+      esc(u.shouldMigrate? t("rep_migrate_now") : t("rep_migrate_not"))+'</p>'+
+    '<div class="bar"><button class="btn ghost sm" type="button" id="repRelay">'+
+      esc(t("rep_relay_btn"))+'</button></div><div id="repOut" class="st-line"></div>';
+
+  const b=document.getElementById("repRelay");
+  if(b) b.addEventListener("click", async ()=>{
+    const out=document.getElementById("repOut");
+    if(out) out.textContent=t("rp_working");
+    const j=await relayOp("send_stats");
+    if(!out) return;
+    if(!j.ok){ out.textContent=t("rp_store_old")+" "+(j.error||""); return; }
+    /* The cap is read from the relay, never hardcoded, so moving to Workspace is
+       a configuration change and not a code change. And the tier is shown,
+       because the person reading 100 should know whether that is a product
+       decision or an account limit. */
+    const sc=j.scan||{}, sd=j.send||{};
+    out.innerHTML='<p class="st-line">'+esc(t("rep_tier"))+' <b>'+esc(sd.tier||"")+'</b> · '+
+      esc(t("rep_cap"))+' <span class="n">'+(sd.cap||0)+'</span> '+esc(t("rep_recipients"))+
+      ' · '+esc(t("rep_left"))+' <span class="n">'+(sd.remainingToday||0)+'</span></p>'+
+      '<p class="st-line'+(sc.overBudget?" st-miss":"")+'">'+esc(t("rep_trigger"))+' <span class="n">'+
+      (sc.dailyMinutes||0)+'</span> / <span class="n">'+(sc.budgetMinutes||0)+'</span> '+
+      esc(t("rep_minutes"))+(sc.overBudget? " · "+esc(t("rep_over")) : "")+'</p>';
   });
 }
 
@@ -4756,73 +5323,179 @@ function initModal(){
      else's contact form, so it records your word for it and labels it as your word. What it
      will not do is invent one, and what it will not allow is sending a message that still
      says [LINK] where the page address should be. */
+  /* ---- the Outreach tab ---------------------------------------------------
+     It used to open on a row of send-from options, one of which rendered as a
+     bare dot because its label was a literal ".". That is the wrong question in
+     the wrong place: at that moment the only thing that matters is whether this
+     is going by email or through one of their own channels, and everything after
+     it follows from the answer.
+
+     The choice is stored on the opportunity, so returning to the tab RESUMES
+     rather than asking again, and changing it keeps what was already written. */
+  function emailAddress(o){
+    const c=o.channel||{};
+    if(c.kind==="email" && c.to) return c.to;
+    if(o.email) return o.email;
+    /* Tier A is the manifest saying an owner address was found. An address with
+       no tier is still an address; a tier with no address is not one. */
+    if(/@/.test(String(c.to||""))) return c.to;
+    return "";
+  }
+  function channelChoices(o){
+    const out=[];
+    const c=o.channel||{};
+    if(c.kind && c.kind!=="email") out.push({ kind:c.kind, url:c.to||"", first:true });
+    (o.channel_alternates||[]).forEach(a=>{
+      if(!a || !a.channel || a.channel==="email") return;
+      if(out.some(x=>x.kind===a.channel)) return;
+      out.push({ kind:a.channel, url:a.url||"" });
+    });
+    return out;
+  }
+  function outreachPath(o){ return (o && o.outreach_path) || ""; }
+
   function renderOutreach(o){
     const box=el("modalOutreach"); if(!box) return;
     if(!o){ box.innerHTML=""; return; }
+    const path=outreachPath(o);
+    if(!path){ renderChannelQuestion(o); return; }
+    if(path==="email") renderEmailPath(o); else renderChannelPath(o, path);
+  }
+
+  /* Two choices, sized as real decisions rather than chips. */
+  function renderChannelQuestion(o){
+    const box=el("modalOutreach");
+    const addr=emailAddress(o);
+    const chs=channelChoices(o);
+    const tierA=(o.contact_tier||"").toUpperCase()==="A";
+    /* Email is offered only when a Tier A address exists on the record, and it
+       says the address. Offering a send you cannot make is worse than not
+       offering it. */
+    const emailOn = !!addr && tierA;
+    let h=prohibitionBand(o)+
+      '<section class="mw-sec"><h4 class="mw-h">'+ic("channel")+esc(t("och_h"))+'</h4>'+
+      '<p class="mw-note">'+esc(t("och_p"))+'</p></section>'+
+      '<div class="och-grid">';
+    h+= emailOn
+      ? '<button class="och-card" type="button" data-path="email">'+
+          ic("mail",20)+'<span class="och-t">'+esc(t("och_email"))+'</span>'+
+          '<span class="och-s">'+ltr(esc(addr))+'</span></button>'
+      : '<div class="och-card is-off">'+ic("mail",20)+
+          '<span class="och-t">'+esc(t("och_email"))+'</span>'+
+          '<span class="och-s">'+esc(addr? t("och_no_tier") : t("och_no_email"))+'</span></div>';
+    h+= chs.length
+      ? chs.map(c=>'<button class="och-card" type="button" data-path="'+esc(c.kind)+'">'+
+          ic(LC_CHANNEL_ICON[c.kind]||"channel",20)+
+          '<span class="och-t">'+esc(lcChannelLabel(c.kind))+'</span>'+
+          '<span class="och-s">'+(c.url? ltr(esc(c.url)) : esc(t("oc_no_url")))+'</span></button>').join("")
+      : '<div class="och-card is-off">'+ic("channel",20)+
+          '<span class="och-t">'+esc(t("och_own"))+'</span>'+
+          '<span class="och-s">'+esc(t("och_no_channels"))+'</span></div>';
+    h+='</div>';
+    box.innerHTML=h;
+    box.querySelectorAll("[data-path]").forEach(b=>b.addEventListener("click", async ()=>{
+      saveDraft({ slug:o.slug, outreach_path:b.getAttribute("data-path") });
+      logActivity("och_path", o.slug, b.getAttribute("data-path"));
+      /* Re-entering the tab rather than re-rendering the panel, because the
+         answer decides whether the composer is adopted at all. */
+      await reread();
+      await switchTo("outreach");
+    }));
+  }
+
+  function changeBar(o){
+    return '<div class="och-change"><button class="btn ghost sm" type="button" id="ochChange">'+
+      ic("undo")+esc(t("och_change"))+'</button></div>';
+  }
+  function bindChange(o){
+    const b=el("ochChange");
+    if(b) b.addEventListener("click", async ()=>{
+      /* Changing the channel must never lose what was written, so only the path
+         is cleared. The body, the note and the date are properties of the
+         message, not of the road it takes. */
+      saveDraft({ slug:o.slug, outreach_path:"" });
+      await reread();
+      await switchTo("outreach");
+    });
+  }
+
+  /* The email path continues into the composer, prefilled from the opportunity. */
+  function renderEmailPath(o){
+    const box=el("modalOutreach");
+    const addr=emailAddress(o);
+    box.innerHTML=prohibitionBand(o)+changeBar(o)+
+      '<section class="mw-sec"><h4 class="mw-h">'+ic("mail")+esc(t("och_email_h"))+'</h4>'+
+      '<p class="mw-note">'+esc(t("och_email_p"))+' <span class="mono-iso">'+esc(addr)+'</span></p>'+
+      linkCard(o)+'</section>';
+    /* The composer itself is adopted directly below this, so there is nothing to
+       press to reach it. A button whose only job is to scroll is not a decision. */
+    bindLinkCards(box); bindChange(o);
+  }
+
+  /* One calm screen, not a form. */
+  function renderChannelPath(o, kind){
+    const box=el("modalOutreach");
     const text=(o.outreach_text||"");
     const hasLink=text.indexOf("[LINK]")>=0;
-    const ch=(o.channel&&o.channel.kind)||"";
-    const url=(o.channel&&o.channel.to)||"";
+    const all=channelChoices(o);
+    const pick=all.find(c=>c.kind===kind)||{kind:kind,url:""};
+    const target=pick.url? (/^https?:/i.test(pick.url)? pick.url : "https://"+pick.url) : "";
     const done=ThriveLifecycle.manualContacts(o);
 
-    const step=(n,title,inner)=>'<section class="mw-sec oc-step"><h4 class="mw-h">'+
-      '<span class="oc-n">'+n+'</span>'+esc(title)+'</h4>'+inner+'</section>';
-
-    let one;
-    if(!text) one='<p class="mw-empty">'+esc(t("ot_none"))+'</p>';
-    else one='<pre class="mw-pitch" dir="auto">'+esc(text)+'</pre>'+
-      (hasLink? '<p class="mw-warn-line">'+esc(t("oc_copy_blocked"))+'</p>' : '')+
-      '<div class="mw-acts"><button type="button" class="btn ghost sm" id="ocCopy"'+
-      (hasLink?" disabled":"")+'>'+esc(t("oc_copy"))+'</button></div>';
-
-    const target=url? (/^https?:/i.test(url)? url : "https://"+url) : "";
-    const two=target
-      ? '<a class="btn ghost sm" href="'+esc(target)+'" target="_blank" rel="noopener">'+
-        esc(t("oc_go"))+'</a><p class="mw-note">'+esc(lcChannelLabel(ch)||"")+' · '+
-        '<span class="mono-iso">'+esc(url)+'</span></p>'
-      : '<p class="mw-empty">'+esc(t("oc_no_url"))+'</p>';
-
-    const sel=ThriveLifecycle.CHANNELS.map(k=>
-      '<option value="'+k+'"'+(k===ch?" selected":"")+'>'+esc(lcChannelLabel(k))+'</option>').join("");
-    const three=
-      '<div class="mw-off-grid">'+
-        '<div class="field"><label for="ocCh">'+esc(t("oc_channel"))+'</label>'+
-          '<select id="ocCh" class="input">'+(ch?"":'<option value="">.</option>')+sel+'</select></div>'+
-        '<div class="field"><label for="ocWhen">'+esc(t("oc_when"))+'</label>'+
-          '<input id="ocWhen" class="input" type="date" max="'+today()+'" value="'+today()+'"></div>'+
-      '</div>'+
+    box.innerHTML=prohibitionBand(o)+changeBar(o)+
+      '<section class="mw-sec"><h4 class="mw-h">'+ic(LC_CHANNEL_ICON[kind]||"channel")+
+        esc(lcChannelLabel(kind))+'</h4>'+
+      /* Editable, because what was actually sent is what must be recorded and
+         people edit before they send. */
       '<div class="field"><label for="ocBody">'+esc(t("oc_body"))+'</label>'+
-        '<textarea id="ocBody" class="input oc-body" rows="5">'+esc(text)+'</textarea></div>'+
-      '<div class="field"><label for="ocNote">'+esc(t("oc_note"))+'</label>'+
-        '<input id="ocNote" class="input" autocomplete="off"></div>'+
-      '<button class="btn" id="ocDo" type="button">'+esc(t("oc_confirm"))+'</button>';
+        '<textarea id="ocBody" class="input oc-body" rows="8">'+esc(text)+'</textarea></div>'+
+      (hasLink? '<p class="mw-warn-line">'+ic("alert")+esc(t("oc_copy_blocked"))+'</p>' : '')+
+      '<div class="mw-acts"><button type="button" class="btn ghost sm" id="ocCopy"'+
+        (hasLink?" disabled":"")+'>'+ic("copy")+esc(t("oc_copy"))+'</button></div>'+
+      linkCard(o)+
+      (target? '<div class="mw-acts"><a class="btn ghost" href="'+esc(target)+'" target="_blank" '+
+        'rel="noopener">'+ic("link")+esc(t("oc_go"))+'</a></div>'
+             : '<p class="mw-empty">'+esc(t("oc_no_url"))+'</p>')+
+      '</section>'+
+      '<section class="mw-sec"><h4 class="mw-h">'+ic("check")+esc(t("och_sent_h"))+'</h4>'+
+        '<div class="mw-off-grid">'+
+          '<div class="field"><label for="ocWhen">'+esc(t("oc_when"))+'</label>'+
+            '<input id="ocWhen" class="input" type="date" max="'+today()+'" value="'+today()+'"></div>'+
+          '<div class="field"><label for="ocNote">'+esc(t("oc_note"))+'</label>'+
+            '<input id="ocNote" class="input" autocomplete="off"></div>'+
+        '</div>'+
+        '<button class="btn" id="ocDo" type="button">'+ic("check")+esc(t("oc_confirm"))+'</button>'+
+      '</section>'+
+      '<section class="mw-sec"><h4 class="mw-h">'+esc(t("md_sends_h"))+'</h4>'+
+        (done.length
+          ? '<ul class="oc-list">'+done.map(c=>'<li><b>'+esc(lcChannelLabel(c.channel))+'</b>'+
+              '<span class="mono-iso">'+esc(c.sent_on)+'</span>'+
+              (c.note? '<span class="mw-note">'+esc(c.note)+'</span>':'')+'</li>').join("")+'</ul>'
+          : '<p class="mw-empty">'+esc(t("oc_none"))+'</p>')+
+      '</section>';
 
-    const list=done.length
-      ? '<ul class="oc-list">'+done.map(c=>'<li><b>'+esc(lcChannelLabel(c.channel))+'</b>'+
-          '<span class="mono-iso">'+esc(c.sent_on)+'</span>'+
-          (c.note? '<span class="mw-note">'+esc(c.note)+'</span>':'')+'</li>').join("")+'</ul>'
-      : '<p class="mw-empty">'+esc(t("oc_none"))+'</p>';
-
-    box.innerHTML=prohibitionBand(o)+
-      '<section class="mw-sec"><h4 class="mw-h">'+esc(t("oc_h"))+'</h4>'+
-      '<p class="mw-note">'+esc(t("oc_p"))+'</p></section>'+
-      step(1,t("oc_step1"),one)+step(2,t("oc_step2"),two)+step(3,t("oc_step3"),three)+
-      '<section class="mw-sec"><h4 class="mw-h">'+esc(t("md_sends_h"))+'</h4>'+list+'</section>';
-
+    bindLinkCards(box); bindChange(o);
     const copy=el("ocCopy");
     if(copy) copy.addEventListener("click", ()=>{
+      /* The [LINK] guard stays. An unsubstituted placeholder means the prospect
+         received a broken message, and the console makes that impossible rather
+         than detectable, because detectable is after it was sent. */
       if(hasLink){ toast(t("oc_copy_blocked")); return; }
+      const body=el("ocBody").value;
       if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(text).then(()=>toast(t("oc_copied")),
-          ()=>toast(legacyCopy(text)? t("oc_copied") : t("cmp_copy_err")));
+        navigator.clipboard.writeText(body).then(()=>toast(t("oc_copied")),
+          ()=>toast(legacyCopy(body)? t("oc_copied") : t("cmp_copy_err")));
         return;
       }
-      toast(legacyCopy(text)? t("oc_copied") : t("cmp_copy_err"));
+      toast(legacyCopy(body)? t("oc_copied") : t("cmp_copy_err"));
     });
     const go=el("ocDo");
     if(go) go.addEventListener("click", async ()=>{
+      /* The body stored is the body AS EDITED, byte for byte. Recording what was
+         drafted rather than what was sent puts a message on the record that
+         nobody ever received. */
       await runMove("send_offchannel", o.slug, {
-        channel: el("ocCh").value,
+        channel: kind,
         url: target,
         sent_on: el("ocWhen").value,
         body: el("ocBody").value,
@@ -4854,7 +5527,10 @@ function initModal(){
         '<div class="mw-acts"><button type="button" class="btn ghost sm" id="otCopy"'+
         (hasLink?" disabled":"")+'>'+esc(t("oc_copy"))+'</button></div>';
     }
-    box.innerHTML='<section class="mw-sec"><h4 class="mw-h">'+esc(t("ot_h"))+'</h4>'+inner+'</section>'+
+    /* Outreach text: the text symbol, no colour, and always a block of content
+       with a copy control rather than a form field. WO-013 §3.4. */
+    box.innerHTML='<section class="mw-sec kind-text"><h4 class="mw-h">'+ic("text")+esc(t("ot_h"))+
+      ' <span class="kind-tag">'+esc(t("kd_kind_text"))+'</span></h4>'+inner+'</section>'+
       '<details class="mw-more"><summary>'+esc(t("ot_paste"))+'</summary>'+
       '<div class="field"><textarea id="otBox" class="input oc-body" rows="8">'+esc(text)+'</textarea></div>'+
       '<button class="btn ghost sm" id="otSave" type="button">'+esc(t("ot_save"))+'</button></details>';
@@ -4961,17 +5637,34 @@ function initModal(){
   }
 
   /* ---- tabs -------------------------------------------------------------- */
+  /* The composer is only adopted when the reader has chosen the email path. The
+     tab used to open on the composer AND the send options at once, which asked
+     the second question before the first. WO-013 §4.1. */
+  function borrows(tab){
+    if(tab!=="outreach") return !!BORROWED[tab];
+    return outreachPath(rec)==="email";
+  }
   function show(tab){
     Object.keys(PANELS).forEach(k=>{ const p=el(PANELS[k]); if(p) p.hidden=(k!==tab); });
-    host.hidden=!BORROWED[tab];
+    host.hidden=!borrows(tab);
     modal.querySelectorAll(".modal-tab").forEach(b=>{
       const on=b.getAttribute("data-tab")===tab;
       b.classList.toggle("on", on);
       b.setAttribute("aria-selected", on?"true":"false");
     });
   }
-  async function switchTo(tab){
+  async function switchTo(tab, opts){
     if(!PANELS[tab] && !BORROWED[tab]) tab="overview";
+    /* Each tab is a step, so back moves one tab rather than closing the window
+       from four screens deep. §6.1. */
+    if(opts && opts.push) pushStep(current, tab);
+    if(tab==="outreach" && !borrows(tab)){
+      /* The question, or the channel screen, on its own. */
+      giveBack();
+      show(tab);
+      renderOutreach(rec);
+      return;
+    }
     if(BORROWED[tab]){
       const view=document.getElementById(BORROWED[tab]);
       if(!view) return;
@@ -4993,6 +5686,7 @@ function initModal(){
     if(tab==="overview") renderOverview(rec);
     else if(tab==="text") renderText(rec);
     else renderHistory(rec);
+    if(__restored) applyDraftFields(__restored);
   }
 
   /* ---- the copy link control --------------------------------------------
@@ -5065,6 +5759,11 @@ function initModal(){
   }
 
   async function open(slug, tab, title){
+    /* A flow not in the registry does not open. WO-013 §7. The registry is the
+       only place a multi-step interaction is declared, and declaring one without
+       a back, a close and a completion fails the build. */
+    const gate=ThriveFlows.canOpen("opportunity");
+    if(!gate.ok){ toast(t("fl_blocked")+" "+gate.why); return; }
     tab=tab||"overview";
     opener=document.activeElement;
     current=slug||"";
@@ -5078,6 +5777,11 @@ function initModal(){
     // let the browser paint the closed state before the transition starts
     requestAnimationFrame(()=>{ modal.classList.add("on"); scrim.classList.add("on"); });
     lockScroll();
+    /* Expired drafts are cleaned on load so the store does not grow. */
+    try{ ThriveDrafts.clean(); }catch(e){}
+    __histDepth=0; pushStep(current, tab);
+    markBaseline();
+    showDraftBand();
     const list=focusables();
     if(list.length) try{ list[0].focus(); }catch(e){}
   }
@@ -5085,9 +5789,17 @@ function initModal(){
   /* now=true when something else needs a borrowed view in this same tick, which is what a
      navigation is. Waiting out the closing transition first would hand the view back after the
      shell had already decided what to display, and the reader would land on nothing. */
-  function close(now){
+  function close(now, opts){
     if(!open_) return;
     open_=false;
+    const band=el("draftBand"); if(band){ band.hidden=true; band.innerHTML=""; }
+    __restored=null;
+    /* The history entries this window pushed are unwound, so a back gesture
+       after it has closed does not walk through tabs of a window nobody can see. */
+    if(!(opts&&opts.fromHistory) && __histDepth>0){
+      const n=__histDepth; __histDepth=0;
+      try{ __histBusy=true; history.go(-n); setTimeout(()=>{ __histBusy=false; }, 0); }catch(e){ __histBusy=false; }
+    } else __histDepth=0;
     modal.classList.remove("on"); scrim.classList.remove("on");
     unlockScroll();
     const settle=()=>{ modal.hidden=true; scrim.hidden=true; giveBack(); };
@@ -5096,14 +5808,122 @@ function initModal(){
     opener=null;
   }
 
-  el("modalClose").addEventListener("click", ()=>close());
+  /* ---- back, and work that survives a dismissal ---------------------------
+     Losing a draft by tapping outside the window was the most common frustration
+     in the review, and there was no back anywhere. Both are here. §6. */
+
+  /* Every tab and every step pushes a history entry, so the browser back gesture
+     moves one step and behaves the way an iPad user expects. The entry carries
+     the slug and the tab, so back out of the last tab closes the window rather
+     than leaving the reader inside it with nothing to press. */
+  let __histDepth=0, __histBusy=false;
+  function pushStep(slug, tab){
+    if(__histBusy) return;
+    __histDepth++;
+    try{ history.pushState({ thriveModal:{ slug:slug, tab:tab, d:__histDepth } }, ""); }catch(e){}
+  }
+  window.addEventListener("popstate", e=>{
+    const st=e.state && e.state.thriveModal;
+    if(!open_) return;
+    __histBusy=true;
+    try{
+      if(st && st.slug===current){ __histDepth=st.d||0; switchTo(st.tab||"overview"); }
+      else { __histDepth=0; close(true, {fromHistory:true}); }
+    } finally { setTimeout(()=>{ __histBusy=false; }, 0); }
+  });
+  function goBack(){
+    /* One step, whichever way the reader asked for it, so the button and the
+       gesture cannot disagree about where back is. */
+    if(__histDepth>0){ try{ history.back(); return; }catch(e){} }
+    close();
+  }
+
+  /* Nothing a person typed disappears because a finger landed outside a box. */
+  const FLOW="opportunity";
+  function draftFields(){
+    /* Every input inside the window, borrowed views included, keyed by id. A
+       field with no id cannot be restored into, so it is not collected. */
+    const out={};
+    modal.querySelectorAll("input,textarea,select,[contenteditable='true']").forEach(e=>{
+      if(!e.id) return;
+      if(e.type==="file"||e.type==="hidden") return;
+      out[e.id] = (e.getAttribute("contenteditable")==="true") ? e.innerHTML
+                : (e.type==="checkbox") ? (e.checked?"1":"") : e.value;
+    });
+    return out;
+  }
+  function applyDraftFields(data){
+    Object.keys(data||{}).forEach(k=>{
+      const e=document.getElementById(k);
+      if(!e || !modal.contains(e)) return;
+      if(e.getAttribute("contenteditable")==="true") e.innerHTML=data[k];
+      else if(e.type==="checkbox") e.checked=!!data[k];
+      else e.value=data[k];
+      try{ e.dispatchEvent(new Event("input",{bubbles:true})); }catch(_){}
+    });
+  }
+  let __baseline="", __restored=null;
+  function markBaseline(){ try{ __baseline=JSON.stringify(draftFields()); }catch(e){ __baseline=""; } }
+  function isDirty(){
+    try{ return JSON.stringify(draftFields())!==__baseline; }catch(e){ return false; }
+  }
+  const autosave=ThriveDrafts.debounce(()=>{
+    if(!open_) return;
+    const data=draftFields();
+    if(!ThriveDrafts.isSubstantive(data)) return;
+    if(!isDirty()) return;
+    ThriveDrafts.save(FLOW, current, data);
+  }, ThriveDrafts.DEBOUNCE_MS);
+  modal.addEventListener("input", autosave);
+  modal.addEventListener("change", autosave);
+
+  function showDraftBand(){
+    const band=el("draftBand"); if(!band) return;
+    const d=ThriveDrafts.load(FLOW, current);
+    if(!d || !ThriveDrafts.isSubstantive(d.data)){ band.hidden=true; band.innerHTML=""; return; }
+    const mins=ThriveDrafts.ageMinutes(d);
+    band.hidden=false;
+    band.innerHTML='<span>'+esc(boardText(getLang(),"df_kept", mins))+'</span>'+
+      '<button class="btn ghost sm" type="button" id="dfRestore">'+esc(t("df_restore"))+'</button>'+
+      '<button class="btn ghost sm" type="button" id="dfDiscard">'+esc(t("df_discard"))+'</button>';
+    const r=el("dfRestore");
+    if(r) r.addEventListener("click", ()=>{
+      /* Held, not just applied. Panels rebuild their fields when a tab is
+         entered, so restoring once puts the work back on the tab you are on and
+         loses it on the next one. It is re-applied after every tab render until
+         the window closes. */
+      __restored=d.data;
+      applyDraftFields(d.data); band.hidden=true; band.innerHTML=""; toast(t("df_restored"));
+    });
+    const x=el("dfDiscard");
+    if(x) x.addEventListener("click", ()=>{
+      ThriveDrafts.drop(FLOW, current); band.hidden=true; band.innerHTML=""; toast(t("df_discarded"));
+    });
+  }
+
+  /* Backdrop and Escape ask when there are unsaved changes, and the ask offers
+     three answers rather than the usual two, because "keep editing" is the one
+     a person actually wants and it was the one missing. */
+  async function askBeforeClose(){
+    if(!isDirty()) return true;
+    const data=draftFields();
+    if(!ThriveDrafts.isSubstantive(data)) return true;
+    const ans=await threeWay(t("df_ask_h"), t("df_ask_p"),
+      [t("df_keep"), t("df_saveclose"), t("df_throw")]);
+    if(ans===0) return false;                    // keep editing
+    if(ans===1){ ThriveDrafts.save(FLOW, current, data); return true; }
+    ThriveDrafts.drop(FLOW, current); return true;
+  }
+
+  el("modalBack").addEventListener("click", async ()=>{ if(await askBeforeClose()) goBack(); });
+  el("modalClose").addEventListener("click", async ()=>{ if(await askBeforeClose()) close(); });
   el("modalCopy").addEventListener("click", copyLink);
-  scrim.addEventListener("click", ()=>close());
+  scrim.addEventListener("click", async ()=>{ if(await askBeforeClose()) close(); });
   modal.querySelectorAll(".modal-tab").forEach(b=>
-    b.addEventListener("click", ()=>switchTo(b.getAttribute("data-tab"))));
-  document.addEventListener("keydown", e=>{
+    b.addEventListener("click", ()=>switchTo(b.getAttribute("data-tab"), {push:true})));
+  document.addEventListener("keydown", async e=>{
     if(modal.hidden) return;
-    if(e.key==="Escape"){ close(); return; }
+    if(e.key==="Escape"){ if(await askBeforeClose()) close(); return; }
     // aria-modal is a promise to assistive technology, and a promise the keyboard has to keep
     // too: without a trap, Tab walks out of the dialog into a board the reader cannot see.
     if(e.key!=="Tab") return;
@@ -5148,6 +5968,9 @@ function initModal(){
     else if(tab==="outreach") renderOutreach(rec);
     else if(tab==="history") renderHistory(rec);
   }
-  window.thriveModal={ open:open, close:close, isOpen:()=>open_, reread:reread };
+  /* switchTo is exported so the Outreach tab can hand off to the composer
+     without leaving the window. Sending it through goTo would close the window
+     and lose the reader's place. */
+  window.thriveModal={ open:open, close:close, isOpen:()=>open_, reread:reread, tab:switchTo };
   return window.thriveModal;
 }

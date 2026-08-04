@@ -1,5 +1,26 @@
 # The relay
 
+> ## The deployment ritual, the five taps
+>
+> **Saving the script is not deploying it.** The editor can hold new code while the live URL keeps
+> serving the old. That is the mismatch that failed every send one night with `missing "to"`. When
+> the console shows the version banner, this is the fix, in order:
+>
+> 1. **Deploy** (top right in the Apps Script editor)
+> 2. **Manage deployments**
+> 3. the **pencil** (Edit) on the one deployment
+> 4. **Version: New version**
+> 5. **Deploy**
+>
+> Never **New deployment**: it mints a different URL and the console keeps calling the old one. One
+> deployment, forever. The URL must never change.
+>
+> The version the console requires is `REQUIRED_RELAY` in `library/app.js`; the version the relay
+> serves is `RELAY_VERSION` at the top of `relay/thrive-relay.gs`. They must be equal. When they are
+> not, the relay stamps its number on every response, the console compares on every request, and it
+> refuses to send until the two agree. Bump both numbers in the same commit as any change to the
+> request or response shape, never separately.
+
 The console is a static page and one moving part. This is the moving part.
 
 **Until WO-013 the relay had no source in this repository.** `Brain/RUNBOOK-sync.md` said "replace

@@ -47,6 +47,10 @@ const life = read(path.join(LIB, "lifecycle.js"));
 const intake = read(path.join(LIB, "intake.js"));
 const numbers = read(path.join(LIB, "numbers.js"));
 const inbound = read(path.join(LIB, "inbound.js"));
+const kinds = read(path.join(LIB, "kinds.js"));
+const drafts = read(path.join(LIB, "drafts.js"));
+const flows = read(path.join(LIB, "flows.js"));
+const store = read(path.join(LIB, "store.js"));
 const app = read(path.join(LIB, "app.js"));
 let published = {};
 try { published = JSON.parse(read(path.join(LIB, "sync.json"))); } catch (e) {}
@@ -102,11 +106,16 @@ const MODAL = `
       <span class="pill" id="modalState"></span>
     </div>
     <div class="modal-acts">
+      <!-- Back exists everywhere, in a consistent position, and it mirrors by
+           logical property rather than by a second rule. WO-013 §6.1. -->
+      <button class="btn ghost sm modal-back" id="modalBack" type="button" data-icon="undo" data-i18n="mw_back">Back</button>
       <button class="btn ghost sm" id="modalCopy" type="button" data-icon="link" data-i18n="mw_copy_link">Copy link</button>
       <button class="modal-close" id="modalClose" type="button" data-icon="close" data-i18n="dw_close">Close</button>
     </div>
     <p class="modal-why" id="modalWhy" hidden></p>
   </header>
+  <!-- We kept what you wrote. The band, and Discard beside it. §6.2. -->
+  <div class="draft-band" id="draftBand" hidden></div>
   <nav class="modal-tabs" id="modalTabs" role="tablist">
     <button class="modal-tab on" role="tab" aria-selected="true"  data-tab="overview" data-icon="spark" data-i18n="mw_overview">Overview</button>
     <button class="modal-tab"    role="tab" aria-selected="false" data-tab="text"     data-icon="text" data-i18n="mw_text">Text</button>
@@ -146,11 +155,17 @@ const body = inline
     '\n<script>\n' + intake + '\n</script>'+
     '\n<script>\n' + numbers + '\n</script>'+
     '\n<script>\n' + inbound + '\n</script>'+
+    '\n<script>\n' + kinds + '\n</script>'+
+    '\n<script>\n' + store + '\n</script>'+
+    '\n<script>\n' + drafts + '\n</script>'+
+    '\n<script>\n' + flows + '\n</script>'+
     '\n<script>\n' + app + '\n</script>'
   : '<script src="icons.js"></script>\n<script src="i18n.js"></script>\n<script src="gate.js"></script>' +
     '\n<script src="stage-model.js"></script>\n<script src="lifecycle.js"></script>' +
     '\n<script src="intake.js"></script>\n<script src="numbers.js"></script>'+
-    '\n<script src="inbound.js"></script>\n<script src="app.js"></script>';
+    '\n<script src="inbound.js"></script>\n<script src="kinds.js"></script>'+
+    '\n<script src="store.js"></script>\n<script src="drafts.js"></script>'+
+    '\n<script src="flows.js"></script>\n<script src="app.js"></script>';
 const icon = inline ? logo : "../assets/thrive-logo.png";
 const mark = inline ? logo : "../assets/thrive-logo.png";
 const sections2 = inline ? sections : sectionsLinked;

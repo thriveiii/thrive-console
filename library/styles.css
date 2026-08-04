@@ -240,7 +240,11 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100
 .devtoggle button{padding:7px 12px;border:0;background:transparent;color:var(--ink-3);font-weight:800;font-size:12px;cursor:pointer;font-family:inherit}
 .devtoggle button.on{background:rgba(150,133,202,.16);color:var(--ink)}
 .framewrap{display:flex;justify-content:center;background:#0a0a0c;border:1px solid var(--hair);border-radius:14px;padding:0;overflow:hidden}
-.frame{width:100%;height:70vh;min-height:460px;border:0;border-radius:14px;background:#0a0a0c;transition:width .25s var(--ease)}
+/* The device toggle used to animate `width`, which reflows every frame and makes
+   the previewed text unreadable while it moves. WO-012 phase 7 located it and
+   §2.4 required leaving it; VISUAL_MEMORY Law 5 now forbids it outright, so the
+   width changes at once and only the opacity is animated. */
+.frame{width:100%;height:70vh;min-height:460px;border:0;border-radius:14px;background:#0a0a0c;transition:opacity .25s var(--ease)}
 .frame.phone{width:390px;max-width:100%}
 .bar-actions{margin-top:12px}
 
@@ -1357,3 +1361,171 @@ body.modal-open{
   margin-block-end:var(--s-2);
 }
 .rp-auto .ic{ color:var(--state-stall) }
+
+/* --- three kinds, three treatments -----------------------------------------
+   The review's confusion was structural: three objects through overlapping
+   paths, so nobody could predict what uploading a file would do. They never
+   look alike now. WO-013 §3.4. */
+.lib-rule{
+  margin:0 0 var(--s-4);
+  padding:var(--s-3) var(--s-4);
+  border-inline-start:3px solid var(--purple);
+  background:var(--lane-draft-t);
+  border-radius:var(--r-md);
+  color:var(--ink-2); font-size:14px; line-height:1.7;
+}
+.kind-tag{
+  font-size:11px; color:var(--ink-4);
+  border:1px solid var(--hair); border-radius:var(--r-pill);
+  padding:1px var(--s-2);
+}
+[dir="rtl"] .kind-tag{ letter-spacing:normal }
+/* .tpl .id carries letter-spacing and uppercase, and until this phase it only
+   ever held an id and a two letter locale. It now holds the kind and the locale
+   NAME, which in Arabic is Arabic text, and tracking breaks the cursive joins.
+   IDENTITY §7 and WO-013 §8.2 rule 6. */
+[dir="rtl"] .tpl .id{ letter-spacing:normal; text-transform:none }
+/* A page template is teal and always carries its field count and its locale. */
+.tpl.kind-page .name .ic{ color:var(--lane-live); margin-inline-end:var(--s-2) }
+.tpl.kind-page{ border-inline-start:2px solid var(--lane-live) }
+/* Outreach text takes no colour: it is words, and colouring words is noise. */
+.kind-text .mw-h .ic{ color:var(--ink-4) }
+.tok-name .ic{ margin-inline-end:var(--s-1); color:var(--purple); vertical-align:-1px }
+
+/* --- what the console decided, said out loud -------------------------------
+   Every upload ends with one sentence. A file that vanishes into the right
+   place without saying so is the same experience as one that vanished into the
+   wrong place. */
+.kd-report:empty{ display:none }
+.kd-report{ margin-block-start:var(--s-3) }
+.kd-said{
+  display:flex; align-items:flex-start; gap:var(--s-2);
+  margin:0 0 var(--s-2); color:var(--ink-2); font-size:14px; line-height:1.6;
+}
+.kd-said .ic{ flex:0 0 auto; margin-block-start:2px; color:var(--lane-replied) }
+.kd-said.bad{ color:var(--state-stall) }
+.kd-said.bad .ic{ color:var(--state-stall) }
+.kd-q{ margin:0 0 var(--s-3); font-weight:600 }
+.kd-prev{
+  border:1px solid var(--hair); border-radius:var(--r-md);
+  overflow:hidden; block-size:220px; margin-block-end:var(--s-3);
+}
+.kd-prev iframe{ inline-size:100%; block-size:100%; border:0; background:#fff }
+.kd-line{ margin:0 0 var(--s-2); font-size:14px; color:var(--ink-3) }
+.kd-fields{ margin:0 0 var(--s-3); padding-inline-start:var(--s-5); color:var(--ink-3) }
+.kd-fields li{ font-size:13px; line-height:1.9 }
+.kd-unk{ color:var(--state-stall); font-size:12px }
+.kd-warn{
+  display:flex; align-items:flex-start; gap:var(--s-2);
+  margin:0 0 var(--s-2); color:var(--state-stall); font-size:13px; line-height:1.6;
+}
+.kd-blank-l{ font-size:13px; color:var(--ink-4); align-self:center }
+
+/* --- the channel question ---------------------------------------------------
+   Two choices, sized as real decisions rather than chips. The tab used to open
+   on a row of send-from options, one of which rendered as a bare dot because
+   its label was a literal ".". WO-013 §4.1. */
+.och-grid{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:var(--s-3); margin-block-end:var(--s-5);
+}
+.och-card{
+  display:flex; flex-direction:column; align-items:flex-start; gap:var(--s-2);
+  min-block-size:96px; padding:var(--s-4);
+  border:1px solid var(--hair); border-radius:var(--r-lg);
+  background:var(--panel); text-align:start; cursor:pointer;
+  font:inherit; color:inherit;
+  transition:border-color var(--t-quick) var(--e-standard);
+}
+.och-card:hover{ border-color:var(--purple) }
+.och-card:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
+.och-card .ic{ color:var(--purple) }
+.och-card.is-off{ opacity:.55; cursor:default; border-style:dashed }
+.och-card.is-off .ic{ color:var(--ink-4) }
+.och-t{ font-weight:600 }
+/* Arabic runs 20 to 30 percent longer than English, so nothing here is a fixed
+   width and nothing truncates. WO-013 §8.2 rule 7. */
+.och-s{ font-size:12px; color:var(--ink-4); overflow-wrap:anywhere }
+[dir="rtl"] .och-s,[dir="rtl"] .och-t{ letter-spacing:normal }
+.och-change{ margin-block-end:var(--s-3) }
+
+/* --- the link card, one component, used by both paths ----------------------
+   Both paths deliver the same two things: the text and the page link. A prospect
+   reading either should see the same object. WO-013 §4.4. */
+.link-card{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:var(--s-3); flex-wrap:wrap;
+  border:1px solid var(--hair); border-radius:var(--r-md);
+  padding:var(--s-3); margin-block:var(--s-3);
+  background:var(--panel-2);
+}
+.lc-body{ min-inline-size:0; flex:1 1 240px }
+.lc-title{ font-weight:600; margin-block-end:2px }
+.lc-desc{ font-size:13px; color:var(--ink-3); margin-block-end:var(--s-2) }
+.lc-url{ font-size:12px; color:var(--ink-4); text-decoration:none; overflow-wrap:anywhere }
+.lc-url:hover{ color:var(--purple) }
+.lc-copy{ flex:0 0 auto }
+[dir="rtl"] .lc-desc,[dir="rtl"] .lc-title{ letter-spacing:normal }
+
+/* --- what the editor gained ------------------------------------------------
+   Each of these removes a failure the team has actually hit. WO-013 §5.2. */
+.subj-meter.is-long{ color:var(--state-stall) }
+[dir="rtl"] .subj-meter{ letter-spacing:normal }
+.sig-loc{ font-size:12px; color:var(--ink-4) }
+[dir="rtl"] .sig-loc{ letter-spacing:normal }
+.cmp-preview{
+  border:1px solid var(--hair); border-radius:var(--r-md);
+  overflow:hidden; block-size:360px; background:#fff;
+}
+.cmp-preview iframe{ inline-size:100%; block-size:100%; border:0 }
+/* Three lines, shown once, before it leaves. */
+.pre-send{ margin-block:var(--s-3) }
+.ps-list{ list-style:none; margin:0; padding:0 }
+.ps-list li{
+  display:flex; align-items:center; gap:var(--s-2);
+  font-size:13px; line-height:2; color:var(--ink-3);
+}
+.ps-list li.ok .ic{ color:var(--lane-replied) }
+.ps-list li.no{ color:var(--state-stall) }
+.ps-list li.no .ic{ color:var(--state-stall) }
+[dir="rtl"] .ps-list li{ letter-spacing:normal }
+
+/* --- back, and work that survives a dismissal -------------------------------
+   Losing a draft by tapping outside the window was the most common frustration
+   in the review, and there was no back anywhere. WO-013 §6. */
+.modal-back{ order:-1 }
+.draft-band{
+  display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap;
+  padding:var(--s-2) var(--s-4);
+  background:var(--lane-draft-t);
+  border-block-end:1px solid var(--hair);
+  font-size:13px; color:var(--ink-2);
+}
+[dir="rtl"] .draft-band{ letter-spacing:normal }
+/* A question with three answers, because the one a person wants when they tap
+   outside a half written message is the third: keep editing. */
+.tw-scrim{
+  position:fixed; inset:0; z-index:120;
+  display:flex; align-items:center; justify-content:center;
+  padding:var(--s-4);
+  background:rgba(0,0,0,.62);
+  -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+}
+.tw-box{
+  inline-size:min(460px,92vw);
+  background:var(--panel); border:1px solid var(--hair);
+  border-radius:var(--r-xl); padding:var(--s-5);
+  box-shadow:var(--el-raised);
+}
+.tw-t{ margin:0 0 var(--s-2); font-size:17px }
+.tw-p{ margin:0 0 var(--s-4); color:var(--ink-3); font-size:14px; line-height:1.7 }
+.tw-acts{ display:flex; gap:var(--s-2); flex-wrap:wrap }
+[dir="rtl"] .tw-t,[dir="rtl"] .tw-p{ letter-spacing:normal }
+
+/* Law 4: an empty state is an icon, a sentence, and exactly one action. */
+.lane-empty{
+  display:flex; flex-direction:column; align-items:center; gap:var(--s-2);
+  text-align:center;
+}
+.lane-empty .ic{ opacity:.4; color:var(--lane-c, var(--ink-4)) }
+.lane-empty p{ margin:0 }
