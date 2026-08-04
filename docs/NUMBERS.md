@@ -27,9 +27,43 @@ source in one sentence. That is what permanently ends "which number is right".
 | `sent_today` | Outbound mail ledger entries plus hand contacts stamped inside today's local day | mail ledger, `manual_contacts` |
 | `sent_month` | The same for the current calendar month, local time | rollup plus live ledger |
 | `people_contacted` | Distinct recipients across the mail ledger and `manual_contacts` | both |
-| `replies` | Inbound mail ledger entries plus `record_reply` events | mail ledger, activity |
+| `replies` | Attributed inbound records from the inbox scan, excluding machinery, plus inbound mail ledger entries, plus `record_reply` events with no record of either | inbound store, mail ledger, activity |
 | `reply_rate` | `replies / people_contacted`, always shown with its denominator | derived |
 | `needs_followup` | Sent, zero opens, age at or beyond the follow-up threshold | derived |
+
+## The source of `replies` changed, and that is why this file changed with it
+
+A definition whose source changed is a definition that changed, so this is written down rather
+than quietly true.
+
+Until WO-013, `replies` could only ever count what somebody typed in by hand. Nothing watched the
+inbox. A campaign went to a real recipient, he replied, the reply landed in `hi@thriveiii.com`, and
+this column read zero, as it always had. **That is not a rounding error in a metric. It is the
+business's most valuable signal being invisible to the system built to track it.**
+
+The relay now scans the inbox every fifteen minutes and files inbound records. `replies` and
+`reply_rate` read those first. The three ways one reply can reach the console do not add up to
+three:
+
+- The **inbound record**, keyed on the Gmail message id.
+- The **mail ledger entry**, if a person also logged it, deduplicated against the same key.
+- The **`record_reply` activity entry**, which the scan itself writes when it moves the card, and
+  which is therefore subtracted when an inbound record already exists for that opportunity.
+
+`tools/numbers.py` and `ThriveNumbers.selfTest` both assert that a second scan of the same batch
+moves no count.
+
+**An unmatched reply is not counted, and it is not hidden either.** `reply_rate` is replies over
+people contacted, so a message from somebody nobody wrote to would inflate a number about outreach
+with something that answered none of it. Settings, Replies names every unmatched message and prints
+how many there are, under the heading `A reply arrived that we could not match`. The rule is that a
+number about outreach counts outreach, and everything else is on screen by name where a person can
+act on it.
+
+**Machinery is not a reply.** A bounce and an out of office are stored, because a bounce is
+evidence about an address, and neither is a person answering. They carry `kind: "auto"`, they move
+no card, and they count in nothing. The attribution order and the full exclusion list are in
+`docs/RELAY.md`.
 
 **Off-channel sends count everywhere email sends count.** A send is a send. The console did not
 witness either one: it witnessed a mail relay's answer in one case and your word in the other,

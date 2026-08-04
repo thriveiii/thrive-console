@@ -217,6 +217,19 @@
       patch.replied_on = opts.replied_on;
       undo.replied_on = o.replied_on || "";
       detail = opts.replied_on;
+      /* A reply on Instagram is a reply. The channel and the note are additive
+         and optional, so a reply the relay attributed from the inbox carries
+         neither and still counts exactly the same. What differs is only how the
+         console came to know, and that is worth recording rather than flattening. */
+      if (opts.channel) {
+        patch.reply_channel = opts.channel;
+        undo.reply_channel = o.reply_channel || "";
+        detail = opts.replied_on + " · " + opts.channel;
+      }
+      if (opts.note) {
+        patch.reply_note = String(opts.note).slice(0, 600);
+        undo.reply_note = o.reply_note || "";
+      }
     }
     if (move === "mark_won") { setStage("won"); patch.prev_stage = st; undo.prev_stage = o.prev_stage || ""; }
     if (move === "mark_lost") {

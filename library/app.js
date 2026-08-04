@@ -54,6 +54,9 @@ function download(name, text, type){
 const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thrive_activity_v1:1,
   /* Derived, but a device whose log has truncated cannot rebuild it, so it travels. */
   thrive_rollup_v1:1,
+  /* Inbound mail. The relay writes it, every device reads it, and it is evidence
+     about a prospect rather than posture about a device, so it travels. */
+  thrive_inbound_v1:1,
   thrive_email_templates_v1:1, thrive_templates_v1:1, thrive_removed_v1:1, thrive_etpl_seed_v1:1 };
 /* WebKit deletes ALL script writeable storage for an origin with no user interaction in the
    last seven days of browser use. Not part of it: all of it, at once. And localStorage throws
@@ -118,6 +121,17 @@ window.logActivity = logActivity;
    screen or left the shell.
 
    So: every internal destination is built here, and every parameter is read here. */
+/* A run of digits, an address or a URL reads left to right inside an Arabic
+   sentence. Also one definition rather than one per surface, for the same reason
+   as ic() below: the second surface that wanted it threw instead. */
+function ltr(s){ return '<span class="mono-iso">'+esc(s)+'</span>'; }
+
+/* One symbol helper for the whole file. It was a local inside the board render,
+   so every other surface that wanted a symbol either duplicated it or, as the
+   replies panel did, threw. One definition, module scope, guarded for the pages
+   that load app.js before icons.js has run. */
+function ic(n, sz){ return (typeof thriveIcon==="function") ? thriveIcon(n,{size:sz||14}) : ""; }
+
 function inShell(){ return !!document.getElementById("view-board"); }
 function viewHref(view, query){
   const q = query ? ("?" + query) : "";
@@ -753,6 +767,60 @@ function classifySyncError(msg){
   if(/state too large/i.test(msg)) return t("sy_err_toobig");
   return msg;
 }
+/* ---------- inbound mail ----------
+   The relay scans the inbox and writes records; the console reads them and moves
+   what they prove. It never writes a stage directly: a matched reply goes through
+   the same lifecycle move a person would use, with the same guards and the same
+   activity entry, because a card that arrived in `replied` by a different route
+   is a card whose history has a hole in it. */
+const INBOUND="thrive_inbound_v1";
+function getInbound(){ try{ return JSON.parse(localStorage.getItem(INBOUND)||"[]"); }catch(e){ return []; } }
+function setInbound(a){ lsSet(INBOUND, JSON.stringify((a||[]).slice(-800))); }
+function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
+/* Named on screen rather than counted: a reply nobody could attribute is the one
+   most likely to be worth money, because it is the one nobody is expecting. */
+function inboundUnmatched(){ return getInbound().filter(r=> r && r.kind!=="auto" && !r.opp); }
+
+/* Pull, merge, then move. Idempotent at every step: the merge is keyed on the
+   Gmail message id, and the move is refused by the lifecycle if the card is
+   already there, so a second sync in the same minute changes nothing. */
+async function pullInbound(ep, auth){
+  let j=null;
+  try{
+    const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify({ op:"inbound_get", auth:auth }) });
+    j=await r.json();
+  }catch(e){ return 0; }
+  /* A relay still on v4 does not know this op. That is not an error worth
+     showing: it is a relay that has not been redeployed yet, and docs/RELAY.md
+     is where that is fixed. */
+  if(!j || !j.ok || !Array.isArray(j.records)) return 0;
+
+  const before=getInbound();
+  const merged=ThriveInbound.mergeInbound(before, j.records);
+  if(merged.length===before.length && JSON.stringify(merged)===JSON.stringify(before)) return 0;
+  setInbound(merged);
+  try{ if(j.scan) __inboxScan=j.scan; }catch(e){}
+  await applyInboundMoves(merged);
+  return merged.length-before.length;
+}
+let __inboxScan=null;
+function inboxScanInfo(){ return __inboxScan; }
+
+async function applyInboundMoves(records){
+  const want=ThriveInbound.repliedSlugs(records);
+  if(!want.length) return;
+  const all=await mergedOpps();
+  for(const w of want){
+    const o=all.find(x=>x.slug===w.slug);
+    if(!o) continue;
+    if(ThriveLifecycle.stageOf(o)==="replied") continue;
+    if(!ThriveLifecycle.can("record_reply", o)) continue;   // won, lost, archived: leave it alone
+    const day=ThriveInbound.dayOf(w.ts)||today();
+    await runMove("record_reply", w.slug, { replied_on:day, silent:true });
+  }
+}
+
 async function doSyncRound(ep, auth){
   const g=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
     body:JSON.stringify({ op:"state_get", auth:auth }) });
@@ -767,6 +835,9 @@ async function doSyncRound(ep, auth){
   // this, a page that syncs right after unlocking never re-checks collection and sits on a
   // stale "not collecting" message no matter how the relay is actually deployed.
   try{ await fetchRemoteHits(); }catch(e){}
+  // Replies ride the same round. A reply that arrives fifteen minutes after a
+  // send should be on the board before the next time anybody looks at it.
+  try{ await pullInbound(ep, auth); }catch(e){}
   if(typeof window.onThriveSync==="function"){ try{ window.onThriveSync(); }catch(e){} }
 }
 async function syncNow(){
@@ -2463,6 +2534,7 @@ async function connCheck(candidate, onStep){
 
 function initSettings(){
   renderStorageMeter();
+  renderRepliesPanel();
   const el=id=>document.getElementById(id);
   const c=ghConfig();
   el("gh_owner").value=c.owner||"thriveiii";
@@ -3479,7 +3551,6 @@ async function initBoard(){
     else meta=txt("tok_idle", tk.age).replace(String(tk.age), num(tk.age));
     /* The card is a row now, not a single button: the label opens the window, the grip picks it
        up, and the overflow control is the path that needs no dragging at all. */
-    const ic=(n,sz)=> (typeof thriveIcon==="function"? thriveIcon(n,{size:sz||14}) : "");
     return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
       '<button class="tok-open" type="button">'+
         '<span class="tok-name">'+esc(tk.biz)+'</span>'+
@@ -3857,6 +3928,120 @@ function renderStorageMeter(){
   });
 }
 
+/* ---------- the replies panel ----------
+   Three questions on one screen, because they fail together: is the relay
+   watching, what could it not attribute, and is there room in the store for what
+   it finds. A full store is the reason a reply would silently fail to arrive, so
+   measuring it belongs beside the thing it would break. */
+async function relayOp(op, body){
+  const ep=getSyncEndpoint(), auth=syncAuth();
+  if(!ep) return { ok:false, error:"no_endpoint" };
+  if(!auth) return { ok:false, error:"no_auth" };
+  try{
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify(Object.assign({ op:op, auth:auth }, body||{})) }, 30000);
+    const txt=await r.text();
+    try{ return JSON.parse(txt); }catch(e){ return { ok:false, error:txt.slice(0,120) }; }
+  }catch(e){ return { ok:false, error:String((e&&e.message)||e) }; }
+}
+
+function renderRepliesPanel(){
+  const host=document.getElementById("rpPanel");
+  if(!host) return;
+  const all=getInbound();
+  const real=all.filter(r=>r && r.kind!=="auto");
+  const unmatched=inboundUnmatched();
+  const scan=inboxScanInfo();
+  const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
+    {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
+
+  let h='<p class="st-line"><b>'+esc(t("rp_have"))+'</b> <span class="n">'+real.length+'</span> '+
+        esc(t("rp_of_which"))+' <span class="n">'+unmatched.length+'</span> '+esc(t("rp_unmatched_n"))+'</p>';
+  h+= scan
+    ? '<p class="st-line">'+esc(t("rp_last_scan"))+' '+ltr(when(scan.ts))+
+      ' · <span class="n">'+(scan.ms||0)+'</span> ms</p>'
+    : '<p class="st-line st-miss">'+esc(t("rp_never_scanned"))+'</p>';
+
+  /* Named, never counted. A reply nobody could attribute is the one most likely
+     to matter, because it is the one nobody is expecting. */
+  if(unmatched.length){
+    h+='<p class="st-line"><b class="st-miss">'+esc(t("rp_unmatched_h"))+'</b></p><ul class="st-keys">'+
+      unmatched.slice(0,10).map(r=>'<li><span class="mono-iso">'+ltr(esc(r.from))+'</span>'+
+        '<span>'+esc((r.subject||"").slice(0,60))+'</span></li>').join("")+'</ul>';
+  }
+
+  h+='<div class="bar">'+
+     '<button class="btn ghost sm" id="rpStore" type="button">'+esc(t("rp_store_btn"))+'</button>'+
+     '<button class="btn ghost sm" id="rpScan" type="button">'+esc(t("rp_scan_btn"))+'</button>'+
+     '<button class="btn ghost sm" id="rpRepair" type="button">'+esc(t("rp_repair_btn"))+'</button>'+
+     '</div><div id="rpOut" class="st-line"></div>';
+  host.innerHTML=h;
+
+  const out=()=>document.getElementById("rpOut");
+  const busy=k=>{ const o=out(); if(o) o.textContent=t(k); };
+
+  /* §10.1: report the real number before changing anything. The health panel had
+     been saying "the relay is out of Script properties space" with no number
+     behind it, and a warning nobody can measure is a warning nobody acts on. */
+  const sb=document.getElementById("rpStore");
+  if(sb) sb.addEventListener("click", async ()=>{
+    busy("rp_working");
+    const r=await relayOp("store_stats");
+    const o=out(); if(!o) return;
+    if(!r.ok){ o.textContent=t("rp_store_old")+" "+(r.error||""); return; }
+    const p=r.properties||{}, d=r.drive||{};
+    o.innerHTML='<p class="st-line"><b>'+esc(t("rp_props"))+'</b> <span class="n">'+
+      Math.round((p.bytes||0)/1024)+'</span> KB '+esc(t("st_of"))+' <span class="n">500</span> KB'+
+      ' (<span class="n">'+(p.pct||0)+'</span>%) · <span class="n">'+(p.keys||0)+'</span> '+esc(t("rp_keys"))+'</p>'+
+      '<p class="st-line"><b>'+esc(t("rp_drive"))+'</b> <span class="n">'+
+      Math.round((d.bytes||0)/1024)+'</span> KB · '+esc(r.migrated? t("rp_migrated") : t("rp_not_migrated"))+'</p>'+
+      '<ul class="st-keys">'+(p.largest||[]).map(x=>'<li><span class="mono-iso">'+esc(x.key)+
+      '</span><span class="n">'+Math.round(x.bytes/1024)+'</span> KB</li>').join("")+'</ul>';
+  });
+
+  const nb=document.getElementById("rpScan");
+  if(nb) nb.addEventListener("click", async ()=>{
+    busy("rp_working");
+    const r=await relayOp("inbox_scan");
+    const o=out(); if(!o) return;
+    if(!r.ok){ o.textContent=t("rp_store_old")+" "+(r.error||""); return; }
+    await syncNow();
+    o.textContent=boardText(getLang(),"rp_scanned", r.added||0);
+    renderRepliesPanel();
+  });
+
+  /* The repair pass reports before it writes. An action that walks 90 days of a
+     person's inbox and changes the board is an action they get to see the size
+     of first. */
+  const rb=document.getElementById("rpRepair");
+  if(rb) rb.addEventListener("click", async ()=>{
+    busy("rp_working");
+    const dry=await relayOp("inbox_repair", { days:90, dryRun:true });
+    const o=out(); if(!o) return;
+    if(!dry.ok){ o.textContent=t("rp_store_old")+" "+(dry.error||""); return; }
+    const by=dry.byRule||{};
+    /* The breakdown is one phrase carrying five numbers, so it is assembled here
+       and passed in as an extra. Inflecting on five counts at once is not a thing
+       any language does; the sentence inflects on the one count it is about. */
+    const breakdown=t("rp_repair_by")
+      .replace("{tag}", String(by.tag||0))
+      .replace("{thread}", String(by.thread||0))
+      .replace("{sender}", String(by.sender||0))
+      .replace("{none}", String(by.none||0))
+      .replace("{auto}", String(dry.auto||0));
+    const msg=boardText(getLang(),"rp_repair_found", dry.count||0, { breakdown:breakdown });
+    o.textContent=msg;
+    if(!dry.count){ return; }
+    if(!confirm(msg+"\n\n"+t("rp_repair_confirm"))) return;
+    busy("rp_working");
+    const real=await relayOp("inbox_repair", { days:90, dryRun:false });
+    if(!real.ok){ const o2=out(); if(o2) o2.textContent=t("rp_store_old")+" "+(real.error||""); return; }
+    await syncNow();
+    const o3=out(); if(o3) o3.textContent=boardText(getLang(),"rp_repaired", real.count||0);
+    renderRepliesPanel();
+  });
+}
+
 /* ---------- the monthly rollup ----------
    Written when a month closes and never again, because the log it would be recounted from may
    since have lost its head and the smaller answer would silently replace the true one. */
@@ -3875,7 +4060,7 @@ async function refreshRollup(){
 async function numberCtx(){
   const opps=await mergedOpps();
   return { mail:getMailLog(), hits:allHits({self:true}), opps:opps,
-           activity:getActivity(), rollup:getRollup(),
+           activity:getActivity(), rollup:getRollup(), inbound:getInbound(),
            today:ThriveNumbers.localDay(), month:ThriveNumbers.localMonth() };
 }
 
@@ -4064,6 +4249,18 @@ async function movePrompt(m, o){
   if(m==="record_reply"){
     const r=prompt(t("lc_reply_q"), today()); if(r===null) return null;
     opts.replied_on=String(r).trim();
+    /* A reply on Instagram is a reply, so the channel is asked and stored. Both
+       of these are optional: pressing past them records the reply exactly as the
+       inbox scan would, which is the point. The console must never make a hand
+       recorded reply worth less than a scanned one. */
+    const chs=ThriveLifecycle.CHANNELS;
+    const c=prompt(t("rp_chan_q")+"\n"+chs.map((x,i)=>(i+1)+". "+lcChannelLabel(x)).join("\n"), "");
+    if(c!==null && String(c).trim()){
+      const pick=chs[parseInt(String(c).trim(),10)-1];
+      if(pick) opts.channel=pick;
+    }
+    const n=prompt(t("rp_note_q"), "");
+    if(n!==null && String(n).trim()) opts.note=String(n).trim();
   }
   if(m==="reopen"){ if(!confirm(t("lc_reopen_q"))) return null; opts.confirmed=true; }
   if(m==="retire_page"){
@@ -4406,7 +4603,11 @@ async function runMove(move, slug, opts){
   const o=all.find(x=>x.slug===slug);
   if(!o) return { ok:false, error:"lc_err_illegal" };
   const r=ThriveLifecycle.apply(move, o, opts);
-  if(!r.ok){ toast(t(r.error)); return r; }
+  /* A move the console made on its own, from a sync round, reports through the
+     board rather than through a toast. Five replies landing at once must not be
+     five toasts stacked over the card the reader is trying to look at, and a
+     guard that refuses one of them is a line in the log, not an interruption. */
+  if(!r.ok){ if(!opts.silent) toast(t(r.error)); return r; }
 
   saveDraft(Object.assign({ slug:slug }, r.patch));
   logActivity(r.action, slug, r.detail||"");
@@ -4427,7 +4628,7 @@ async function runMove(move, slug, opts){
       done();
       toast(t("lc_undone"));
     }});
-  } else toast(t("lc_"+move)+" · "+t("lc_done"));
+  } else if(!opts.silent) toast(t("lc_"+move)+" · "+t("lc_done"));
   return r;
 }
 
@@ -4483,7 +4684,6 @@ function initModal(){
      A slug, a URL, an address and a timestamp are read left to right whatever the interface
      language is, so they are isolated rather than left to the bidi algorithm, which would
      otherwise reorder them inside an Arabic line and make them read as a different value. */
-  function ltr(s){ return '<span class="mono-iso">'+esc(s)+'</span>'; }
   function row(label, value){
     return '<div class="mw-row"><dt>'+esc(label)+'</dt><dd>'+value+'</dd></div>';
   }
@@ -4712,15 +4912,52 @@ function initModal(){
     const box=el("modalHistory"); if(!box) return;
     const slug=(o&&o.slug)||current;
     const rows=getActivity().filter(a=>a && a.slug===slug).reverse();
-    if(!rows.length){ box.innerHTML='<div class="mw-empty"><p>'+esc(t("mw_hist_empty"))+'</p></div>'; return; }
     const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
       {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
+
+    /* The reply comes first, above the log, because it is the only thing on this
+       tab that somebody is waiting for. A log entry saying the stage changed is
+       a fact about the console; the words the prospect wrote are a fact about
+       the business. */
+    const replies=inboundFor(slug).filter(r=>r.kind!=="auto")
+      .sort((a,b)=> String(b.ts).localeCompare(String(a.ts)));
+    const autos=inboundFor(slug).filter(r=>r.kind==="auto");
+    let head="";
+    if(replies.length){
+      head='<div class="mw-replies"><h4 class="mw-h">'+ic("mail")+esc(t("rp_head"))+'</h4>'+
+        replies.map(r=>{
+          const link=ThriveInbound.gmailLink(r);
+          return '<div class="rp-card">'+
+            '<div class="rp-top"><span class="rp-who">'+esc(r.name||r.from)+'</span>'+
+            '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
+            '<div class="rp-from mono">'+ltr(esc(r.from))+'</div>'+
+            (r.subject? '<div class="rp-subj">'+esc(r.subject)+'</div>':'')+
+            (r.snippet? '<p class="rp-snip">'+esc(r.snippet)+'</p>':'')+
+            '<div class="rp-foot">'+
+              '<span class="rp-rule">'+esc(t("rp_rule_"+(r.rule||"none")))+'</span>'+
+              (link? '<a class="btn ghost sm" href="'+esc(link)+'" target="_blank" rel="noopener">'+
+                     ic("link")+esc(t("rp_open_gmail"))+'</a>' : '')+
+            '</div></div>';
+        }).join("")+'</div>';
+    }
+    /* Machinery is shown and labelled rather than hidden. A bounce is evidence
+       about an address, and hiding it is how a dead address gets written to for
+       a year. It is simply never counted as a reply. */
+    if(autos.length){
+      head+='<div class="mw-autos">'+autos.map(r=>
+        '<div class="rp-auto">'+ic("alert")+'<span>'+esc(t(r.bounce==="hard"?"rp_bounce_hard":
+          r.bounce==="soft"?"rp_bounce_soft":"rp_auto"))+'</span>'+
+        '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>').join("")+'</div>';
+    }
+
+    if(!rows.length && !head){ box.innerHTML='<div class="mw-empty">'+ic("clock")+
+      '<p>'+esc(t("mw_hist_empty"))+'</p></div>'; return; }
     const label=a=>{ const k="act_"+a; const v=t(k); return v===k? a : v; };
-    box.innerHTML='<ol class="mw-hist">'+rows.map(a=>
+    box.innerHTML=head+(rows.length? '<ol class="mw-hist">'+rows.map(a=>
       '<li><span class="mw-hist-when">'+ltr(when(a.ts))+'</span>'+
       '<span class="mw-hist-what">'+esc(label(a.action))+'</span>'+
       (a.detail? '<span class="mw-hist-detail">'+esc(a.detail)+'</span>' : '')+
-      '</li>').join("")+'</ol>';
+      '</li>').join("")+'</ol>' : "");
   }
 
   /* ---- tabs -------------------------------------------------------------- */

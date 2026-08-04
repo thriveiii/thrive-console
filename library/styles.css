@@ -1315,3 +1315,45 @@ body.modal-open{
   .btn,.btn.sm{min-height:44px}
   .tray-toggle{min-height:40px}
 }
+
+/* --- replies ---------------------------------------------------------------
+   The words a prospect wrote are the most valuable thing on the History tab, so
+   they sit above the log rather than inside it. A log entry is a fact about the
+   console; this is a fact about the business. */
+.mw-replies{ margin-block-end:var(--s-5) }
+.mw-h{
+  display:flex; align-items:center; gap:var(--s-2);
+  margin:0 0 var(--s-3); font-size:14px; color:var(--ink-2);
+}
+.rp-card{
+  border:1px solid var(--hair); border-radius:var(--r-md);
+  padding:var(--s-3); margin-block-end:var(--s-2);
+  background:var(--panel);
+}
+.rp-top{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s-2) }
+.rp-who{ font-weight:600 }
+.rp-when,.rp-from{ font-size:12px; color:var(--ink-4) }
+.rp-subj{ margin-block-start:var(--s-2); color:var(--ink-2) }
+/* The snippet is 300 characters by design: the full body stays in Gmail, so
+   private correspondence never enters a blob that syncs to every device. */
+.rp-snip{
+  margin:var(--s-2) 0 0; color:var(--ink-3); font-size:14px; line-height:1.6;
+  white-space:pre-wrap; overflow-wrap:anywhere;
+}
+.rp-foot{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:var(--s-2); margin-block-start:var(--s-3); flex-wrap:wrap;
+}
+/* Which rule matched is on screen, not only in the record. A wrong attribution
+   is then diagnosable by the person looking at it rather than mysterious. */
+.rp-rule{ font-size:12px; color:var(--ink-4) }
+[dir="rtl"] .rp-rule,[dir="rtl"] .rp-when,[dir="rtl"] .rp-from{ letter-spacing:normal }
+.mw-autos{ margin-block-end:var(--s-4) }
+.rp-auto{
+  display:flex; align-items:center; gap:var(--s-2);
+  font-size:13px; color:var(--ink-4);
+  padding:var(--s-2) var(--s-3);
+  border:1px dashed var(--hair); border-radius:var(--r-md);
+  margin-block-end:var(--s-2);
+}
+.rp-auto .ic{ color:var(--state-stall) }

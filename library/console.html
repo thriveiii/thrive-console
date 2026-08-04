@@ -541,6 +541,16 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <div id="stMeter"></div>
   </section>
 
+  <!-- Replies. The relay watches the inbox; this panel is where you see that it is
+       watching, what it could not attribute, and how much room the shared store has
+       left. The store measurement lives here because a full store is the reason a
+       reply would fail to arrive, and the two questions belong on one screen. -->
+  <section class="panel settings-panel">
+    <h3 class="block-h" data-icon="mail" data-i18n="rp_h">Replies</h3>
+    <p class="sub" data-i18n="rp_sub"></p>
+    <div id="rpPanel"></div>
+  </section>
+
   <section class="panel">
     <h3 class="block-h" data-icon="archive" data-i18n="set_backup_h">Backup &amp; restore</h3>
     <p class="sub" data-i18n="set_backup_sub"></p>
@@ -588,6 +598,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="lifecycle.js"></script>
 <script src="intake.js"></script>
 <script src="numbers.js"></script>
+<script src="inbound.js"></script>
 <script src="app.js"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
