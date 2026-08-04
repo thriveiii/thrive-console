@@ -206,6 +206,91 @@ let I18N = null, BOARD = null;
   }
 }
 
+/* ================= 3b. flows (WO-013 §7) ================= */
+head("Flows");
+{
+  /* A flow that can be entered and not left is a dead end, and the review found
+     several. Finding them one at a time does not last. This makes a flow with no
+     ending impossible to ship: the registry declares every multi-step
+     interaction, and the build fails on one missing a back, a close or a defined
+     completion. Proven by removing one and watching this go red. */
+  const src = read(path.join(ROOT, "library", "flows.js"));
+  let Flows = null;
+  try {
+    const mod = { exports: {} };
+    new Function("module", "globalThis", src)(mod, {});
+    Flows = mod.exports;
+  } catch (e) { bad("the flow registry loads", [String(e.message)]); }
+
+  if (Flows) {
+    const a = Flows.audit();
+    a.ok ? ok("every registered flow declares a back, a close and a completion (" + a.count + ")")
+         : bad("every registered flow declares a back, a close and a completion", a.problems);
+
+    const st = Flows.selfTest();
+    st.pass ? ok("the flow registry passes its own test")
+            : bad("the flow registry passes its own test", st.failures);
+
+    /* Every id the registry names has to exist in the markup, or the back
+       control it promises is a promise to nobody. */
+    /* The shell for the ones in markup, app.js for the ones a flow renders as it
+       goes. Both count: what matters is that the control the flow promises is
+       built somewhere, not which file builds it. */
+    const shell = read(path.join(ROOT, "library", "console.html")) +
+                  read(path.join(ROOT, "library", "app.js"));
+    const missing = [];
+    for (const n of Flows.names()) {
+      const f = Flows.get(n);
+      for (const which of ["back", "close"]) {
+        const id = f[which];
+        if (id && shell.indexOf('id="' + id + '"') < 0) missing.push(n + "." + which + " = #" + id);
+      }
+    }
+    missing.length ? bad("every control a flow names is built somewhere", missing)
+                   : ok("every control a flow names is built somewhere");
+  }
+
+  /* ONE STATE AUTHORITY. Any change to an opportunity reaches storage through
+     saveDraft and nothing else. A second writer is how two surfaces end up
+     disagreeing about what a card is, and the disagreement is silent. */
+  {
+    const appSrc = read(path.join(ROOT, "library", "app.js"));
+    const lines = appSrc.split("\n");
+    const rogue = [];
+    lines.forEach((ln, i) => {
+      const m = /localStorage\.setItem\(\s*(OPPS|"thrive_opps_v1"|'thrive_opps_v1')/.exec(ln);
+      if (m) rogue.push("library/app.js:" + (i + 1) + " " + ln.trim().slice(0, 70));
+    });
+    /* setDrafts is the one legitimate low level writer, and saveDraft is the one
+       thing callers use. Anything else touching the key directly is a second
+       authority wearing a disguise. */
+    const allowed = /function setDrafts/;
+    const real = rogue.filter(r => !allowed.test(lines[parseInt(r.split(":")[2] || r.match(/:(\d+)/)[1], 10) - 1] || ""));
+    real.length ? bad("one function per state change, no second writer", real)
+                : ok("one function per state change, no second writer");
+  }
+
+  /* Every network call has a timeout. A promise that never settles is a frozen
+     console, and the relay is slow often enough that this is not theoretical. */
+  {
+    const appSrc = read(path.join(ROOT, "library", "app.js"));
+    const bare = [];
+    const lines = appSrc.split("\n");
+    lines.forEach((ln, i) => {
+      if (!/\bfetch\s*\(/.test(ln)) return;
+      if (/fetchT\s*\(/.test(ln)) return;                 // the timeout wrapper itself
+      if (/function fetchT/.test(ln)) return;
+      /* A window of a few lines, because the options object is usually wrapped. */
+      const win = lines.slice(i, i + 6).join(" ");
+      if (/signal\s*:/.test(win)) return;                  // an explicit AbortController
+      if (/sync\.json|templates\/|manifest\.json/.test(win)) return;  // same-origin static reads
+      bare.push("library/app.js:" + (i + 1) + " " + ln.trim().slice(0, 70));
+    });
+    bare.length ? bad("every relay call is time-boxed", bare)
+                : ok("every relay call is time-boxed");
+  }
+}
+
 /* ================= 4. copy gates (Brain/01 §7, Brain/03 §2, Brain/04 §3) ================= */
 head("Copy");
 {

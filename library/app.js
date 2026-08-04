@@ -257,12 +257,12 @@ async function relayProbe(){
   const auth=syncAuth();
   if(!auth){ out.state=out.hits="(not unlocked, no sync credential)"; return out; }
   try{
-    const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({op:"state_get",auth:auth})});
     const j=await r.json(); out.state = j.ok? "ok" : ("✕ "+(j.error||"failed"));
   }catch(e){ out.state="✕ "+e.message; }
   try{
-    const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({op:"hits_get",auth:auth})});
     const j=await r.json();
     out.hits = j.ok? ("ok: "+((j.events||[]).length)+" events") : ("✕ "+(j.error||"failed"));
@@ -275,7 +275,7 @@ async function fetchRemoteHits(){
   await syncBootstrap();
   const ep=getSyncEndpoint(); if(!ep){ __hitsState="off"; return false; }
   try{
-    const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"hits_get", auth:auth }) });
     const j=await r.json();
     if(!j.ok || !Array.isArray(j.events)){
@@ -411,7 +411,7 @@ function outreachOpens(o){
    and recording one as the other would put a false note on a record nobody would question. */
 async function pageIsGone(slug){
   try{
-    const r=await fetch(liveUrl(slug), { method:"GET", cache:"no-store", redirect:"follow" });
+    const r=await fetchT(liveUrl(slug), { method:"GET", cache:"no-store", redirect:"follow" });
     if(r.status===404 || r.status===410) return true;
     if(r.ok) return false;
     return null;
@@ -790,7 +790,7 @@ function inboundUnmatched(){ return getInbound().filter(r=> r && r.kind!=="auto"
 async function pullInbound(ep, auth){
   let j=null;
   try{
-    const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"inbound_get", auth:auth }) });
     j=await r.json();
   }catch(e){ return 0; }
@@ -825,12 +825,12 @@ async function applyInboundMoves(records){
 }
 
 async function doSyncRound(ep, auth){
-  const g=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+  const g=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
     body:JSON.stringify({ op:"state_get", auth:auth }) });
   const gj=await g.json();
   if(!gj.ok) throw new Error(gj.error||"sync auth");
   if(gj.data) syncMergeApply(gj.data);
-  const p=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+  const p=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
     body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
   const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
   try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
@@ -879,7 +879,7 @@ async function syncPush(){
   await syncBootstrap();
   const ep=getSyncEndpoint(); if(!ep){ __syncErr=t("sy_need_ep"); return false; }
   try{
-    const p=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const p=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
     const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
     try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
@@ -974,7 +974,7 @@ function b64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function unb64(str){ try{ return decodeURIComponent(escape(atob((str||"").replace(/\n/g,"")))); }catch(e){ return ""; } }
 async function ghApi(path, opts){
   const c=ghConfig();
-  return fetch("https://api.github.com/repos/"+c.owner+"/"+c.repo+path, Object.assign({}, opts, {
+  return fetchT("https://api.github.com/repos/"+c.owner+"/"+c.repo+path, Object.assign({}, opts, {
     headers: Object.assign({ "Authorization":"Bearer "+c.token, "Accept":"application/vnd.github+json",
       "X-GitHub-Api-Version":"2022-11-28" }, (opts&&opts.headers)||{}) }));
 }
@@ -999,7 +999,7 @@ async function ghDeleteFile(path, message){
 }
 async function ghVerify(){
   const c=ghConfig();
-  const r=await fetch("https://api.github.com/repos/"+c.owner+"/"+c.repo,
+  const r=await fetchT("https://api.github.com/repos/"+c.owner+"/"+c.repo,
     {headers:{ "Authorization":"Bearer "+c.token, "Accept":"application/vnd.github+json" }});
   if(!r.ok) throw new Error("GitHub "+r.status);
   return r.json();
@@ -1609,7 +1609,7 @@ async function initEditor(slugArg){
       } else if(editingLive && !hasFields && !d._local){
         // Live opp published elsewhere (manifest-only, no local fields): pull the real page so a
         // save/publish can't overwrite it with a blank template regeneration.
-        try{ const r=await fetch(relOpp(d.slug)+"index.html",{cache:"no-store"});
+        try{ const r=await fetchT(relOpp(d.slug)+"index.html",{cache:"no-store"});
           if(r.ok){ const html=await r.text();
             mode="upload"; uploadedHTML=html; uploadedName=(d.slug||"page")+".html";
             el("mode_upload").classList.add("on"); el("mode_fill").classList.remove("on");
@@ -2701,7 +2701,7 @@ async function initCompose(slugArg){
       html:composedHtml(), text:composedText(), slug:slug||"" };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
-      const r=await fetch(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
+      const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
       const txt=await r.text();
       if(!r.ok) throw new Error(r.status+" "+txt.slice(0,140));
       let id="", parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
@@ -2882,7 +2882,7 @@ function initSettings(){
     connRender([], true);
     // 1. never adopt a URL that is not a v4 relay
     let version="";
-    try{ const r=await fetch(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }catch(e){}
+    try{ const r=await fetchT(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }catch(e){}
     if(!(/Thrive relay/i.test(version) && /v4/.test(version))){
       connRender(await connCheck(ep), false);
       note.hidden=false; note.className="gh-result warn";
@@ -3794,7 +3794,7 @@ async function initHome(){
     unmeasured=[];
     for(const o of opps){
       try{
-        const r=await fetch(relOpp(o.slug)+"index.html",{cache:"no-store"});
+        const r=await fetchT(relOpp(o.slug)+"index.html",{cache:"no-store"});
         if(!r.ok) continue;
         const html=await r.text();
         if(!hasBeacon(html)) unmeasured.push({slug:o.slug, business:o.business||o.slug, html});
@@ -3840,7 +3840,7 @@ async function initInsights(){
     const ep=getEndpoint();
     if(ep){
       try{
-        const r=await fetch(ep,{cache:"no-store"});
+        const r=await fetchT(ep,{cache:"no-store"});
         const j=await r.json();
         return { source:"remote", events: Array.isArray(j)?j : (j.events||[]) };
       }catch(e){ toast(t("ins_fetch_err")); return { source:"remote-error", events:getHits() }; }
@@ -4282,7 +4282,7 @@ async function relayCompleteness(){
   if(!ep) return { ok:false, reason:"no_endpoint" };
   let remote=null;
   try{
-    const r=await fetch(ep, { method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    const r=await fetchT(ep, { method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify({ op:"state_get", auth:syncAuth() }) });
     const j=await r.json();
     if(!j || j.ok===false) return { ok:false, reason:"relay_error" };
@@ -5597,6 +5597,11 @@ function initModal(){
   }
 
   async function open(slug, tab, title){
+    /* A flow not in the registry does not open. WO-013 §7. The registry is the
+       only place a multi-step interaction is declared, and declaring one without
+       a back, a close and a completion fails the build. */
+    const gate=ThriveFlows.canOpen("opportunity");
+    if(!gate.ok){ toast(t("fl_blocked")+" "+gate.why); return; }
     tab=tab||"overview";
     opener=document.activeElement;
     current=slug||"";
