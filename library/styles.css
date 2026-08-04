@@ -1357,3 +1357,62 @@ body.modal-open{
   margin-block-end:var(--s-2);
 }
 .rp-auto .ic{ color:var(--state-stall) }
+
+/* --- three kinds, three treatments -----------------------------------------
+   The review's confusion was structural: three objects through overlapping
+   paths, so nobody could predict what uploading a file would do. They never
+   look alike now. WO-013 §3.4. */
+.lib-rule{
+  margin:0 0 var(--s-4);
+  padding:var(--s-3) var(--s-4);
+  border-inline-start:3px solid var(--purple);
+  background:var(--lane-draft-t);
+  border-radius:var(--r-md);
+  color:var(--ink-2); font-size:14px; line-height:1.7;
+}
+.kind-tag{
+  font-size:11px; color:var(--ink-4);
+  border:1px solid var(--hair); border-radius:var(--r-pill);
+  padding:1px var(--s-2);
+}
+[dir="rtl"] .kind-tag{ letter-spacing:normal }
+/* .tpl .id carries letter-spacing and uppercase, and until this phase it only
+   ever held an id and a two letter locale. It now holds the kind and the locale
+   NAME, which in Arabic is Arabic text, and tracking breaks the cursive joins.
+   IDENTITY §7 and WO-013 §8.2 rule 6. */
+[dir="rtl"] .tpl .id{ letter-spacing:normal; text-transform:none }
+/* A page template is teal and always carries its field count and its locale. */
+.tpl.kind-page .name .ic{ color:var(--lane-live); margin-inline-end:var(--s-2) }
+.tpl.kind-page{ border-inline-start:2px solid var(--lane-live) }
+/* Outreach text takes no colour: it is words, and colouring words is noise. */
+.kind-text .mw-h .ic{ color:var(--ink-4) }
+.tok-name .ic{ margin-inline-end:var(--s-1); color:var(--purple); vertical-align:-1px }
+
+/* --- what the console decided, said out loud -------------------------------
+   Every upload ends with one sentence. A file that vanishes into the right
+   place without saying so is the same experience as one that vanished into the
+   wrong place. */
+.kd-report:empty{ display:none }
+.kd-report{ margin-block-start:var(--s-3) }
+.kd-said{
+  display:flex; align-items:flex-start; gap:var(--s-2);
+  margin:0 0 var(--s-2); color:var(--ink-2); font-size:14px; line-height:1.6;
+}
+.kd-said .ic{ flex:0 0 auto; margin-block-start:2px; color:var(--lane-replied) }
+.kd-said.bad{ color:var(--state-stall) }
+.kd-said.bad .ic{ color:var(--state-stall) }
+.kd-q{ margin:0 0 var(--s-3); font-weight:600 }
+.kd-prev{
+  border:1px solid var(--hair); border-radius:var(--r-md);
+  overflow:hidden; block-size:220px; margin-block-end:var(--s-3);
+}
+.kd-prev iframe{ inline-size:100%; block-size:100%; border:0; background:#fff }
+.kd-line{ margin:0 0 var(--s-2); font-size:14px; color:var(--ink-3) }
+.kd-fields{ margin:0 0 var(--s-3); padding-inline-start:var(--s-5); color:var(--ink-3) }
+.kd-fields li{ font-size:13px; line-height:1.9 }
+.kd-unk{ color:var(--state-stall); font-size:12px }
+.kd-warn{
+  display:flex; align-items:flex-start; gap:var(--s-2);
+  margin:0 0 var(--s-2); color:var(--state-stall); font-size:13px; line-height:1.6;
+}
+.kd-blank-l{ font-size:13px; color:var(--ink-4); align-self:center }
