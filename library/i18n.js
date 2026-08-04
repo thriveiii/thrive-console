@@ -787,6 +787,11 @@ const I18N = {
     mw_copy_why:    "Not published yet, so there is no link to copy.",
 
     mw_hist_empty:  "Nothing has happened to this opportunity yet.",
+    th_sent:        "Sent",
+    th_opened:      "Opened the page",
+    th_someone:     "They",
+    th_chapter_offer: "The offer",
+    th_chapter_more:  "A new chapter",
 
     mw_o_slug:      "Name in the URL",
     mw_o_state:     "State",
@@ -1625,6 +1630,11 @@ const I18N = {
     mw_copy_why:    "لم تُنشر بعد، فلا يوجد رابط لنسخه.",
 
     mw_hist_empty:  "لم يحدث شيء لهذه الفرصة بعد.",
+    th_sent:        "رسالة صادرة",
+    th_opened:      "فتحوا الصفحة",
+    th_someone:     "المتلقي",
+    th_chapter_offer: "العرض",
+    th_chapter_more:  "فصل جديد",
 
     mw_o_slug:      "الاسم في الرابط",
     mw_o_state:     "الحالة",

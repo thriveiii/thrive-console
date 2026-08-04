@@ -1270,6 +1270,27 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .mw-hist-what{ font-size:var(--fs-xs); color:var(--ink); font-weight:var(--w-head) }
 .mw-hist-detail{ font-size:var(--fs-xs); color:var(--ink-4); min-width:0; word-break:break-word }
 
+/* WO-015 Phase A: the thread, one continuous record oldest to newest. */
+.th-list{ list-style:none; margin:0; padding:0; display:grid; gap:var(--s-2) }
+.th-line{
+  display:flex; gap:var(--s-3); align-items:baseline; flex-wrap:wrap;
+  padding:var(--s-2) var(--s-3);
+  border:1px solid var(--hair-2); border-radius:var(--r-sm);
+}
+.th-icn{ flex:0 0 auto; color:var(--ink-4); display:inline-flex; align-items:center }
+.th-what{ font-size:var(--fs-xs); color:var(--ink); font-weight:var(--w-head) }
+.th-detail{ font-size:var(--fs-xs); color:var(--ink-4); min-width:0; word-break:break-word; flex:1 1 auto }
+.th-when{ font-size:var(--fs-micro); color:var(--ink-4); flex:0 0 auto; margin-inline-start:auto }
+.th-chan{ color:var(--ink-4) }
+.th-reply{ margin-block:var(--s-2) }
+/* The chapter divider marks where the offer began. One quiet rule with a word, not a banner. */
+.th-chapter{
+  display:flex; align-items:center; gap:var(--s-3);
+  font-size:var(--fs-micro); color:var(--ink-4); font-weight:var(--w-head);
+  margin-block:var(--s-3) var(--s-2);
+}
+.th-chapter::before,.th-chapter::after{ content:""; height:1px; background:var(--hair-2); flex:1 1 auto }
+
 /* The textarea the clipboard fallback selects. Off the canvas, never display:none,
    because a hidden element cannot be selected and the copy would silently fail. */
 .mw-offscreen{

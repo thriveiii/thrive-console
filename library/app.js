@@ -2123,6 +2123,80 @@ function getThreads(){
     .sort((a,b)=> (a.last<b.last?1:-1));
 }
 
+/* ---------- WO-015 Phase A: the thread, derived and read-only ----------
+   The thread already exists as data. Every outbound message is in the mail
+   ledger under its slug, every reply the relay captured is attributed to that
+   slug, every open is in the hits map, every stage change is in the activity
+   log. It has never been shown as one thing. This assembles the one thing.
+
+   I7: the thread stores nothing. buildThread reads the four sources and returns
+   a time ordered array. It writes nowhere, holds no state, and derives no stage
+   (I3 leaves that to effStage). If the thread and the ledger ever disagree, the
+   bug is here, because here is the only place that can be wrong.
+
+   Order: oldest first, newest at the foot. A thread is read as a story, from the
+   first contact forward to the reply that first contact earned, and the chapter
+   divider (Phase C) between the first contact and the offer only reads in that
+   direction. A reply carries the snippet the relay stored and a link to open it
+   in Gmail, never a full body: the body lives in Gmail and stays there. */
+function buildThread(slug){
+  slug=String(slug||"");
+  if(!slug) return [];
+  const out=[];
+  const ms=v=>{ const n=tsMs(v); return n||0; };
+
+  // 1. the sends and any manually logged replies in the ledger, this slug only
+  getMailLog().forEach(m=>{
+    if(!m || m.opp!==slug) return;
+    if(m.direction==="in" || m.status==="replied" || m.status==="received"){
+      out.push({ kind:"reply", ts:m.ts, source:"ledger", from:(m.toName||m.to||""),
+                 subject:m.subject||"", snippet:(m.preview||"").slice(0,600), chapter:m.chapter||1, mid:m.mid });
+    }else{
+      out.push({ kind:"sent", ts:m.ts, to:m.to||"", toName:m.toName||"",
+                 subject:m.subject||"", channel:m.provider||"", status:m.status||"sent",
+                 templateName:m.templateName||"", chapter:m.chapter||1, mid:m.mid });
+    }
+  });
+
+  // 2. the relay inbox: real replies carry a snippet and a Gmail link, autos are
+  //    machinery (a bounce) shown and labelled, never counted as a reply.
+  inboundFor(slug).forEach(r=>{
+    if(r.kind==="auto"){
+      out.push({ kind:"auto", ts:r.ts, bounce:r.bounce||"", from:r.from||"" });
+    }else{
+      out.push({ kind:"reply", ts:r.ts, source:"inbox", from:(r.name||r.from||""),
+                 fromAddr:r.from||"", subject:r.subject||"", snippet:(r.snippet||"").slice(0,600),
+                 rule:r.rule||"none", chapter:r.chapter||1, gmail:(typeof ThriveInbound!=="undefined"&&ThriveInbound.gmailLink)?ThriveInbound.gmailLink(r):"" });
+    }
+  });
+
+  // 3. every open of this slug's page. An open is a fact the prospect produced,
+  //    so it belongs in the thread beside the sends that could have caused it.
+  allHits().forEach(e=>{
+    if(!e || e.slug!==slug) return;
+    if(e.type && e.type!=="open") return;
+    out.push({ kind:"open", ts:e.ts, ms:e.ms });
+  });
+
+  // 4. the stage changes and notes, from the activity log
+  getActivity().forEach(a=>{
+    if(!a || a.slug!==slug) return;
+    out.push({ kind:"act", ts:a.ts, action:a.action||"", detail:a.detail||"", actor:a.actor||"" });
+  });
+
+  out.sort((x,y)=>{ const dx=ms(x.ts), dy=ms(y.ts); return dx===dy? 0 : (dx<dy? -1 : 1); });
+  return out;
+}
+/* The active chapter is a reading of the ledger, never stored on the opportunity
+   (I8). It is the highest chapter number any send to this slug carries, or 1 when
+   there is none. Phase C gives the card its marker and Phase D opens chapter 2;
+   this is the one derivation both read. */
+function activeChapter(slug){
+  let ch=1;
+  getMailLog().forEach(m=>{ if(m && m.opp===slug && (m.chapter||1)>ch) ch=m.chapter||1; });
+  return ch;
+}
+
 async function initCompose(slugArg){
   const el=id=>document.getElementById(id);
   const body=el("ebody");
@@ -5581,59 +5655,68 @@ function initModal(){
     bindMoves(box, o);
   }
 
-  /* ---- History ----------------------------------------------------------
-     The activity entries already recorded against this opportunity, newest first. Nothing new
-     is written or derived here: it is the same log the Activity page reads. */
+  /* ---- The thread (WO-015 Phase A) --------------------------------------
+     One continuous record per opportunity, assembled by buildThread from the
+     ledger, the inbox, the opens map and the activity log, ordered oldest at
+     the head to newest at the foot, because a thread is read as a story from
+     first contact forward. Nothing is written or derived here (I7): it renders
+     what buildThread returns and touches no storage. A reply shows the snippet
+     the relay stored and a Gmail link, never a full body. */
   function renderHistory(o){
     const box=el("modalHistory"); if(!box) return;
     const slug=(o&&o.slug)||current;
-    const rows=getActivity().filter(a=>a && a.slug===slug).reverse();
+    const entries=buildThread(slug);
     const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
       {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
-
-    /* The reply comes first, above the log, because it is the only thing on this
-       tab that somebody is waiting for. A log entry saying the stage changed is
-       a fact about the console; the words the prospect wrote are a fact about
-       the business. */
-    const replies=inboundFor(slug).filter(r=>r.kind!=="auto")
-      .sort((a,b)=> String(b.ts).localeCompare(String(a.ts)));
-    const autos=inboundFor(slug).filter(r=>r.kind==="auto");
-    let head="";
-    if(replies.length){
-      head='<div class="mw-replies"><h4 class="mw-h">'+ic("mail")+esc(t("rp_head"))+'</h4>'+
-        replies.map(r=>{
-          const link=ThriveInbound.gmailLink(r);
-          return '<div class="rp-card">'+
-            '<div class="rp-top"><span class="rp-who">'+esc(r.name||r.from)+'</span>'+
-            '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
-            '<div class="rp-from mono">'+ltr(esc(r.from))+'</div>'+
-            (r.subject? '<div class="rp-subj">'+esc(r.subject)+'</div>':'')+
-            (r.snippet? '<p class="rp-snip">'+esc(r.snippet)+'</p>':'')+
-            '<div class="rp-foot">'+
-              '<span class="rp-rule">'+esc(t("rp_rule_"+(r.rule||"none")))+'</span>'+
-              (link? '<a class="btn ghost sm" href="'+esc(link)+'" target="_blank" rel="noopener">'+
-                     ic("link")+esc(t("rp_open_gmail"))+'</a>' : '')+
-            '</div></div>';
-        }).join("")+'</div>';
-    }
-    /* Machinery is shown and labelled rather than hidden. A bounce is evidence
-       about an address, and hiding it is how a dead address gets written to for
-       a year. It is simply never counted as a reply. */
-    if(autos.length){
-      head+='<div class="mw-autos">'+autos.map(r=>
-        '<div class="rp-auto">'+ic("alert")+'<span>'+esc(t(r.bounce==="hard"?"rp_bounce_hard":
-          r.bounce==="soft"?"rp_bounce_soft":"rp_auto"))+'</span>'+
-        '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>').join("")+'</div>';
-    }
-
-    if(!rows.length && !head){ box.innerHTML='<div class="mw-empty">'+ic("clock")+
-      '<p>'+esc(t("mw_hist_empty"))+'</p></div>'; return; }
     const label=a=>{ const k="act_"+a; const v=t(k); return v===k? a : v; };
-    box.innerHTML=head+(rows.length? '<ol class="mw-hist">'+rows.map(a=>
-      '<li><span class="mw-hist-when">'+ltr(when(a.ts))+'</span>'+
-      '<span class="mw-hist-what">'+esc(label(a.action))+'</span>'+
-      (a.detail? '<span class="mw-hist-detail">'+esc(a.detail)+'</span>' : '')+
-      '</li>').join("")+'</ol>' : "");
+
+    if(!entries.length){ box.innerHTML='<div class="mw-empty">'+ic("clock")+
+      '<p>'+esc(t("mw_hist_empty"))+'</p></div>'; return; }
+
+    function line(icn, what, detail, ts){
+      return '<li class="th-line"><span class="th-icn">'+ic(icn)+'</span>'+
+        '<span class="th-what">'+esc(what)+'</span>'+
+        (detail? '<span class="th-detail">'+detail+'</span>':'')+
+        '<span class="th-when">'+ltr(when(ts))+'</span></li>';
+    }
+    function replyCard(r){
+      return '<li class="th-reply"><div class="rp-card">'+
+        '<div class="rp-top"><span class="rp-who">'+esc(r.from||t("th_someone"))+'</span>'+
+        '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
+        (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
+        (r.subject? '<div class="rp-subj">'+esc(r.subject)+'</div>':'')+
+        (r.snippet? '<p class="rp-snip">'+esc(r.snippet)+'</p>':'')+
+        '<div class="rp-foot">'+
+          (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>':'')+
+          (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+
+                 ic("link")+esc(t("rp_open_gmail"))+'</a>' : '')+
+        '</div></div></li>';
+    }
+    let html='<ol class="th-list">', lastCh=0;
+    entries.forEach(e=>{
+      /* The chapter divider marks where the offer began (Phase C). It appears the
+         moment an entry carries a higher chapter than the one before it, so a
+         thread that never converted shows no divider at all. */
+      const ch=e.chapter||1;
+      if(lastCh && ch>lastCh){
+        html+='<li class="th-chapter"><span>'+esc(t("th_chapter_"+(ch===2?"offer":"more")))+'</span></li>';
+      }
+      if(ch>lastCh) lastCh=ch;
+      if(e.kind==="sent"){
+        html+=line("mail", t("th_sent"),
+          (e.subject? esc(e.subject) : "")+(e.channel? ' <span class="th-chan">'+esc(e.channel)+'</span>':''), e.ts);
+      }else if(e.kind==="open"){
+        html+=line("globe", t("th_opened"), "", e.ts);
+      }else if(e.kind==="reply"){
+        html+=replyCard(e);
+      }else if(e.kind==="auto"){
+        html+=line("alert", t(e.bounce==="hard"?"rp_bounce_hard":e.bounce==="soft"?"rp_bounce_soft":"rp_auto"), "", e.ts);
+      }else if(e.kind==="act"){
+        html+=line("clock", label(e.action), e.detail? esc(e.detail):"", e.ts);
+      }
+    });
+    html+='</ol>';
+    box.innerHTML=html;
   }
 
   /* ---- tabs -------------------------------------------------------------- */
