@@ -1,0 +1,146 @@
+[
+ {
+  "view": "en/390/board",
+  "density": 51.7
+ },
+ {
+  "view": "en/390/home",
+  "density": 54.9
+ },
+ {
+  "view": "en/390/library",
+  "density": 57.8
+ },
+ {
+  "view": "en/390/templates",
+  "density": 65.5
+ },
+ {
+  "view": "en/390/activity",
+  "density": 49.3
+ },
+ {
+  "view": "en/390/settings",
+  "density": 70.2
+ },
+ {
+  "view": "en/768/board",
+  "density": 40.3
+ },
+ {
+  "view": "en/768/home",
+  "density": 64.3
+ },
+ {
+  "view": "en/768/library",
+  "density": 68
+ },
+ {
+  "view": "en/768/templates",
+  "density": 70.1
+ },
+ {
+  "view": "en/768/activity",
+  "density": 38.9
+ },
+ {
+  "view": "en/768/settings",
+  "density": 78.8
+ },
+ {
+  "view": "en/1440/board",
+  "density": 33.3
+ },
+ {
+  "view": "en/1440/home",
+  "density": 44.2
+ },
+ {
+  "view": "en/1440/library",
+  "density": 52.2
+ },
+ {
+  "view": "en/1440/templates",
+  "density": 50.9
+ },
+ {
+  "view": "en/1440/activity",
+  "density": 32.3
+ },
+ {
+  "view": "en/1440/settings",
+  "density": 47.4
+ },
+ {
+  "view": "ar/390/board",
+  "density": 49.1
+ },
+ {
+  "view": "ar/390/home",
+  "density": 54.8
+ },
+ {
+  "view": "ar/390/library",
+  "density": 54.5
+ },
+ {
+  "view": "ar/390/templates",
+  "density": 65.4
+ },
+ {
+  "view": "ar/390/activity",
+  "density": 48.4
+ },
+ {
+  "view": "ar/390/settings",
+  "density": 70
+ },
+ {
+  "view": "ar/768/board",
+  "density": 44.5
+ },
+ {
+  "view": "ar/768/home",
+  "density": 62.4
+ },
+ {
+  "view": "ar/768/library",
+  "density": 70.7
+ },
+ {
+  "view": "ar/768/templates",
+  "density": 70.9
+ },
+ {
+  "view": "ar/768/activity",
+  "density": 39
+ },
+ {
+  "view": "ar/768/settings",
+  "density": 78.2
+ },
+ {
+  "view": "ar/1440/board",
+  "density": 33.6
+ },
+ {
+  "view": "ar/1440/home",
+  "density": 43.7
+ },
+ {
+  "view": "ar/1440/library",
+  "density": 51.8
+ },
+ {
+  "view": "ar/1440/templates",
+  "density": 51
+ },
+ {
+  "view": "ar/1440/activity",
+  "density": 30.8
+ },
+ {
+  "view": "ar/1440/settings",
+  "density": 47.7
+ }
+]

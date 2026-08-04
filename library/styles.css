@@ -240,7 +240,11 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100
 .devtoggle button{padding:7px 12px;border:0;background:transparent;color:var(--ink-3);font-weight:800;font-size:12px;cursor:pointer;font-family:inherit}
 .devtoggle button.on{background:rgba(150,133,202,.16);color:var(--ink)}
 .framewrap{display:flex;justify-content:center;background:#0a0a0c;border:1px solid var(--hair);border-radius:14px;padding:0;overflow:hidden}
-.frame{width:100%;height:70vh;min-height:460px;border:0;border-radius:14px;background:#0a0a0c;transition:width .25s var(--ease)}
+/* The device toggle used to animate `width`, which reflows every frame and makes
+   the previewed text unreadable while it moves. WO-012 phase 7 located it and
+   §2.4 required leaving it; VISUAL_MEMORY Law 5 now forbids it outright, so the
+   width changes at once and only the opacity is animated. */
+.frame{width:100%;height:70vh;min-height:460px;border:0;border-radius:14px;background:#0a0a0c;transition:opacity .25s var(--ease)}
 .frame.phone{width:390px;max-width:100%}
 .bar-actions{margin-top:12px}
 
@@ -1517,3 +1521,11 @@ body.modal-open{
 .tw-p{ margin:0 0 var(--s-4); color:var(--ink-3); font-size:14px; line-height:1.7 }
 .tw-acts{ display:flex; gap:var(--s-2); flex-wrap:wrap }
 [dir="rtl"] .tw-t,[dir="rtl"] .tw-p{ letter-spacing:normal }
+
+/* Law 4: an empty state is an icon, a sentence, and exactly one action. */
+.lane-empty{
+  display:flex; flex-direction:column; align-items:center; gap:var(--s-2);
+  text-align:center;
+}
+.lane-empty .ic{ opacity:.4; color:var(--lane-c, var(--ink-4)) }
+.lane-empty p{ margin:0 }

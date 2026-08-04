@@ -4043,7 +4043,9 @@ async function initBoard(){
       });
       body.innerHTML = b.lanes[k].length
         ? b.lanes[k].map((tk,i)=> tokenHtml(tk).replace('class="tok ', 'class="tok '+(i<3?"enter enter-"+(i+1)+" ":"")) ).join("")
-        : '<div class="lane-empty">'+esc(t("lane_"+k+"_empty"))+'</div>';
+        /* Law 4: an icon, a sentence, and at most one action. A bare sentence in
+           the middle of a field is the shrug this law exists to stop. */
+        : '<div class="lane-empty">'+ic("spark",18)+'<p>'+esc(t("lane_"+k+"_empty"))+'</p></div>';
     });
 
     // One sentence, chosen by priority. The console says one thing at a time.
@@ -4073,7 +4075,7 @@ async function initBoard(){
     el("trayList").innerHTML = closed.length
       ? b.closed.won.map(o=>'<span class="tray-item won">'+esc(o.business||o.slug)+'</span>').join("")+
         b.closed.lost.map(o=>'<span class="tray-item lost">'+esc(o.business||o.slug)+'</span>').join("")
-      : '<div class="lane-empty">'+esc(t("tray_empty"))+'</div>';
+      : '<div class="lane-empty">'+ic("archive",18)+'<p>'+esc(t("tray_empty"))+'</p></div>';
 
     const empty=b.summary.total===0 && closed.length===0;
     el("boardEmpty").hidden=!empty;
