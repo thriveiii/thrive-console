@@ -1416,3 +1416,49 @@ body.modal-open{
   margin:0 0 var(--s-2); color:var(--state-stall); font-size:13px; line-height:1.6;
 }
 .kd-blank-l{ font-size:13px; color:var(--ink-4); align-self:center }
+
+/* --- the channel question ---------------------------------------------------
+   Two choices, sized as real decisions rather than chips. The tab used to open
+   on a row of send-from options, one of which rendered as a bare dot because
+   its label was a literal ".". WO-013 §4.1. */
+.och-grid{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:var(--s-3); margin-block-end:var(--s-5);
+}
+.och-card{
+  display:flex; flex-direction:column; align-items:flex-start; gap:var(--s-2);
+  min-block-size:96px; padding:var(--s-4);
+  border:1px solid var(--hair); border-radius:var(--r-lg);
+  background:var(--panel); text-align:start; cursor:pointer;
+  font:inherit; color:inherit;
+  transition:border-color var(--t-quick) var(--e-standard);
+}
+.och-card:hover{ border-color:var(--purple) }
+.och-card:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
+.och-card .ic{ color:var(--purple) }
+.och-card.is-off{ opacity:.55; cursor:default; border-style:dashed }
+.och-card.is-off .ic{ color:var(--ink-4) }
+.och-t{ font-weight:600 }
+/* Arabic runs 20 to 30 percent longer than English, so nothing here is a fixed
+   width and nothing truncates. WO-013 §8.2 rule 7. */
+.och-s{ font-size:12px; color:var(--ink-4); overflow-wrap:anywhere }
+[dir="rtl"] .och-s,[dir="rtl"] .och-t{ letter-spacing:normal }
+.och-change{ margin-block-end:var(--s-3) }
+
+/* --- the link card, one component, used by both paths ----------------------
+   Both paths deliver the same two things: the text and the page link. A prospect
+   reading either should see the same object. WO-013 §4.4. */
+.link-card{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:var(--s-3); flex-wrap:wrap;
+  border:1px solid var(--hair); border-radius:var(--r-md);
+  padding:var(--s-3); margin-block:var(--s-3);
+  background:var(--panel-2);
+}
+.lc-body{ min-inline-size:0; flex:1 1 240px }
+.lc-title{ font-weight:600; margin-block-end:2px }
+.lc-desc{ font-size:13px; color:var(--ink-3); margin-block-end:var(--s-2) }
+.lc-url{ font-size:12px; color:var(--ink-4); text-decoration:none; overflow-wrap:anywhere }
+.lc-url:hover{ color:var(--purple) }
+.lc-copy{ flex:0 0 auto }
+[dir="rtl"] .lc-desc,[dir="rtl"] .lc-title{ letter-spacing:normal }

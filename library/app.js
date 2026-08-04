@@ -2189,6 +2189,31 @@ async function initCompose(slugArg){
   el("efrom").value=getFromName()+" <"+FROM_EMAIL+">";
   let oppObj=null;
   if(slug){ const all=await mergedOpps(); oppObj=all.find(x=>x.slug===slug)||null; }
+  /* Prefilled from the opportunity: recipient, name, subject from the manifest,
+     the outreach text as the body, and the page link ALREADY SUBSTITUTED for
+     [LINK]. WO-013 §4.2.
+
+     It never overwrites something a person typed. Only an empty field is filled,
+     so arriving here a second time to finish a half written message finds it
+     exactly as it was left. */
+  if(oppObj){
+    const addr=(oppObj.channel && /@/.test(String(oppObj.channel.to||"")) ? oppObj.channel.to : "")
+             || oppObj.email || "";
+    const toEl=el("eto");
+    if(toEl && !toEl.value.trim() && addr) toEl.value=addr;
+    const nm=el("ename");
+    if(nm && !nm.value.trim()) nm.value=oppObj.owner||oppObj.business||"";
+    const su=el("esubject");
+    if(su && !su.value.trim() && oppObj.outreach_subject) su.value=oppObj.outreach_subject;
+    const bd=el("ebody");
+    if(bd && !(bd.textContent||"").trim() && oppObj.outreach_text){
+      /* The placeholder is substituted here rather than left for the writer,
+         because a message that reaches a prospect still saying [LINK] is the one
+         failure the whole guard exists to prevent. */
+      const filled=String(oppObj.outreach_text).split("[LINK]").join(liveUrl(oppObj.slug));
+      bd.innerHTML=esc(filled).split("\n").join("<br>");
+    }
+  }
   const nameEl=el("ename"), tplSel=el("etpl"), firstEl=el("efirst"),
         monthEl=el("emonth"), monthWrap=el("emonthWrap");
   let tplCache=getEmailTemplates();                       // parse localStorage once, not on every keystroke
@@ -4881,73 +4906,212 @@ function initModal(){
      else's contact form, so it records your word for it and labels it as your word. What it
      will not do is invent one, and what it will not allow is sending a message that still
      says [LINK] where the page address should be. */
+  /* ---- the link card, one component, used by both paths -------------------
+     Both paths deliver the same two things: the campaign text and the page
+     link. A prospect reading either should see the same object, so the card is
+     built once. It is what makes a message pasted into a contact form look
+     considered rather than pasted. */
+  function linkCard(o, opts){
+    opts=opts||{};
+    const url=liveUrl(o.slug);
+    const title=o.business||o.slug;
+    const desc=o.descriptor||o.outreach_subject||t("lc_card_desc");
+    return '<div class="link-card">'+
+      '<div class="lc-body">'+
+        '<div class="lc-title">'+esc(title)+'</div>'+
+        '<div class="lc-desc">'+esc(desc)+'</div>'+
+        '<a class="lc-url" href="'+esc(url)+'" target="_blank" rel="noopener">'+ltr(esc(url))+'</a>'+
+      '</div>'+
+      (opts.copy===false? '' :
+        '<button class="btn ghost sm lc-copy" type="button" data-lcurl="'+esc(url)+'">'+
+        ic("copy")+esc(t("lc_copy_link"))+'</button>')+
+      '</div>';
+  }
+  function bindLinkCards(root){
+    (root||document).querySelectorAll("[data-lcurl]").forEach(b=>b.addEventListener("click",()=>{
+      const u=b.getAttribute("data-lcurl");
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(u).then(()=>toast(t("oc_copied")),
+          ()=>toast(legacyCopy(u)? t("oc_copied") : t("cmp_copy_err")));
+        return;
+      }
+      toast(legacyCopy(u)? t("oc_copied") : t("cmp_copy_err"));
+    }));
+  }
+
+  /* ---- the Outreach tab ---------------------------------------------------
+     It used to open on a row of send-from options, one of which rendered as a
+     bare dot because its label was a literal ".". That is the wrong question in
+     the wrong place: at that moment the only thing that matters is whether this
+     is going by email or through one of their own channels, and everything after
+     it follows from the answer.
+
+     The choice is stored on the opportunity, so returning to the tab RESUMES
+     rather than asking again, and changing it keeps what was already written. */
+  function emailAddress(o){
+    const c=o.channel||{};
+    if(c.kind==="email" && c.to) return c.to;
+    if(o.email) return o.email;
+    /* Tier A is the manifest saying an owner address was found. An address with
+       no tier is still an address; a tier with no address is not one. */
+    if(/@/.test(String(c.to||""))) return c.to;
+    return "";
+  }
+  function channelChoices(o){
+    const out=[];
+    const c=o.channel||{};
+    if(c.kind && c.kind!=="email") out.push({ kind:c.kind, url:c.to||"", first:true });
+    (o.channel_alternates||[]).forEach(a=>{
+      if(!a || !a.channel || a.channel==="email") return;
+      if(out.some(x=>x.kind===a.channel)) return;
+      out.push({ kind:a.channel, url:a.url||"" });
+    });
+    return out;
+  }
+  function outreachPath(o){ return (o && o.outreach_path) || ""; }
+
   function renderOutreach(o){
     const box=el("modalOutreach"); if(!box) return;
     if(!o){ box.innerHTML=""; return; }
+    const path=outreachPath(o);
+    if(!path){ renderChannelQuestion(o); return; }
+    if(path==="email") renderEmailPath(o); else renderChannelPath(o, path);
+  }
+
+  /* Two choices, sized as real decisions rather than chips. */
+  function renderChannelQuestion(o){
+    const box=el("modalOutreach");
+    const addr=emailAddress(o);
+    const chs=channelChoices(o);
+    const tierA=(o.contact_tier||"").toUpperCase()==="A";
+    /* Email is offered only when a Tier A address exists on the record, and it
+       says the address. Offering a send you cannot make is worse than not
+       offering it. */
+    const emailOn = !!addr && tierA;
+    let h=prohibitionBand(o)+
+      '<section class="mw-sec"><h4 class="mw-h">'+ic("channel")+esc(t("och_h"))+'</h4>'+
+      '<p class="mw-note">'+esc(t("och_p"))+'</p></section>'+
+      '<div class="och-grid">';
+    h+= emailOn
+      ? '<button class="och-card" type="button" data-path="email">'+
+          ic("mail",20)+'<span class="och-t">'+esc(t("och_email"))+'</span>'+
+          '<span class="och-s">'+ltr(esc(addr))+'</span></button>'
+      : '<div class="och-card is-off">'+ic("mail",20)+
+          '<span class="och-t">'+esc(t("och_email"))+'</span>'+
+          '<span class="och-s">'+esc(addr? t("och_no_tier") : t("och_no_email"))+'</span></div>';
+    h+= chs.length
+      ? chs.map(c=>'<button class="och-card" type="button" data-path="'+esc(c.kind)+'">'+
+          ic(LC_CHANNEL_ICON[c.kind]||"channel",20)+
+          '<span class="och-t">'+esc(lcChannelLabel(c.kind))+'</span>'+
+          '<span class="och-s">'+(c.url? ltr(esc(c.url)) : esc(t("oc_no_url")))+'</span></button>').join("")
+      : '<div class="och-card is-off">'+ic("channel",20)+
+          '<span class="och-t">'+esc(t("och_own"))+'</span>'+
+          '<span class="och-s">'+esc(t("och_no_channels"))+'</span></div>';
+    h+='</div>';
+    box.innerHTML=h;
+    box.querySelectorAll("[data-path]").forEach(b=>b.addEventListener("click", async ()=>{
+      saveDraft({ slug:o.slug, outreach_path:b.getAttribute("data-path") });
+      logActivity("och_path", o.slug, b.getAttribute("data-path"));
+      /* Re-entering the tab rather than re-rendering the panel, because the
+         answer decides whether the composer is adopted at all. */
+      await reread();
+      await switchTo("outreach");
+    }));
+  }
+
+  function changeBar(o){
+    return '<div class="och-change"><button class="btn ghost sm" type="button" id="ochChange">'+
+      ic("undo")+esc(t("och_change"))+'</button></div>';
+  }
+  function bindChange(o){
+    const b=el("ochChange");
+    if(b) b.addEventListener("click", async ()=>{
+      /* Changing the channel must never lose what was written, so only the path
+         is cleared. The body, the note and the date are properties of the
+         message, not of the road it takes. */
+      saveDraft({ slug:o.slug, outreach_path:"" });
+      await reread();
+      await switchTo("outreach");
+    });
+  }
+
+  /* The email path continues into the composer, prefilled from the opportunity. */
+  function renderEmailPath(o){
+    const box=el("modalOutreach");
+    const addr=emailAddress(o);
+    box.innerHTML=prohibitionBand(o)+changeBar(o)+
+      '<section class="mw-sec"><h4 class="mw-h">'+ic("mail")+esc(t("och_email_h"))+'</h4>'+
+      '<p class="mw-note">'+esc(t("och_email_p"))+' <span class="mono-iso">'+esc(addr)+'</span></p>'+
+      linkCard(o)+'</section>';
+    /* The composer itself is adopted directly below this, so there is nothing to
+       press to reach it. A button whose only job is to scroll is not a decision. */
+    bindLinkCards(box); bindChange(o);
+  }
+
+  /* One calm screen, not a form. */
+  function renderChannelPath(o, kind){
+    const box=el("modalOutreach");
     const text=(o.outreach_text||"");
     const hasLink=text.indexOf("[LINK]")>=0;
-    const ch=(o.channel&&o.channel.kind)||"";
-    const url=(o.channel&&o.channel.to)||"";
+    const all=channelChoices(o);
+    const pick=all.find(c=>c.kind===kind)||{kind:kind,url:""};
+    const target=pick.url? (/^https?:/i.test(pick.url)? pick.url : "https://"+pick.url) : "";
     const done=ThriveLifecycle.manualContacts(o);
 
-    const step=(n,title,inner)=>'<section class="mw-sec oc-step"><h4 class="mw-h">'+
-      '<span class="oc-n">'+n+'</span>'+esc(title)+'</h4>'+inner+'</section>';
-
-    let one;
-    if(!text) one='<p class="mw-empty">'+esc(t("ot_none"))+'</p>';
-    else one='<pre class="mw-pitch" dir="auto">'+esc(text)+'</pre>'+
-      (hasLink? '<p class="mw-warn-line">'+esc(t("oc_copy_blocked"))+'</p>' : '')+
-      '<div class="mw-acts"><button type="button" class="btn ghost sm" id="ocCopy"'+
-      (hasLink?" disabled":"")+'>'+esc(t("oc_copy"))+'</button></div>';
-
-    const target=url? (/^https?:/i.test(url)? url : "https://"+url) : "";
-    const two=target
-      ? '<a class="btn ghost sm" href="'+esc(target)+'" target="_blank" rel="noopener">'+
-        esc(t("oc_go"))+'</a><p class="mw-note">'+esc(lcChannelLabel(ch)||"")+' · '+
-        '<span class="mono-iso">'+esc(url)+'</span></p>'
-      : '<p class="mw-empty">'+esc(t("oc_no_url"))+'</p>';
-
-    const sel=ThriveLifecycle.CHANNELS.map(k=>
-      '<option value="'+k+'"'+(k===ch?" selected":"")+'>'+esc(lcChannelLabel(k))+'</option>').join("");
-    const three=
-      '<div class="mw-off-grid">'+
-        '<div class="field"><label for="ocCh">'+esc(t("oc_channel"))+'</label>'+
-          '<select id="ocCh" class="input">'+(ch?"":'<option value="">.</option>')+sel+'</select></div>'+
-        '<div class="field"><label for="ocWhen">'+esc(t("oc_when"))+'</label>'+
-          '<input id="ocWhen" class="input" type="date" max="'+today()+'" value="'+today()+'"></div>'+
-      '</div>'+
+    box.innerHTML=prohibitionBand(o)+changeBar(o)+
+      '<section class="mw-sec"><h4 class="mw-h">'+ic(LC_CHANNEL_ICON[kind]||"channel")+
+        esc(lcChannelLabel(kind))+'</h4>'+
+      /* Editable, because what was actually sent is what must be recorded and
+         people edit before they send. */
       '<div class="field"><label for="ocBody">'+esc(t("oc_body"))+'</label>'+
-        '<textarea id="ocBody" class="input oc-body" rows="5">'+esc(text)+'</textarea></div>'+
-      '<div class="field"><label for="ocNote">'+esc(t("oc_note"))+'</label>'+
-        '<input id="ocNote" class="input" autocomplete="off"></div>'+
-      '<button class="btn" id="ocDo" type="button">'+esc(t("oc_confirm"))+'</button>';
+        '<textarea id="ocBody" class="input oc-body" rows="8">'+esc(text)+'</textarea></div>'+
+      (hasLink? '<p class="mw-warn-line">'+ic("alert")+esc(t("oc_copy_blocked"))+'</p>' : '')+
+      '<div class="mw-acts"><button type="button" class="btn ghost sm" id="ocCopy"'+
+        (hasLink?" disabled":"")+'>'+ic("copy")+esc(t("oc_copy"))+'</button></div>'+
+      linkCard(o)+
+      (target? '<div class="mw-acts"><a class="btn ghost" href="'+esc(target)+'" target="_blank" '+
+        'rel="noopener">'+ic("link")+esc(t("oc_go"))+'</a></div>'
+             : '<p class="mw-empty">'+esc(t("oc_no_url"))+'</p>')+
+      '</section>'+
+      '<section class="mw-sec"><h4 class="mw-h">'+ic("check")+esc(t("och_sent_h"))+'</h4>'+
+        '<div class="mw-off-grid">'+
+          '<div class="field"><label for="ocWhen">'+esc(t("oc_when"))+'</label>'+
+            '<input id="ocWhen" class="input" type="date" max="'+today()+'" value="'+today()+'"></div>'+
+          '<div class="field"><label for="ocNote">'+esc(t("oc_note"))+'</label>'+
+            '<input id="ocNote" class="input" autocomplete="off"></div>'+
+        '</div>'+
+        '<button class="btn" id="ocDo" type="button">'+ic("check")+esc(t("oc_confirm"))+'</button>'+
+      '</section>'+
+      '<section class="mw-sec"><h4 class="mw-h">'+esc(t("md_sends_h"))+'</h4>'+
+        (done.length
+          ? '<ul class="oc-list">'+done.map(c=>'<li><b>'+esc(lcChannelLabel(c.channel))+'</b>'+
+              '<span class="mono-iso">'+esc(c.sent_on)+'</span>'+
+              (c.note? '<span class="mw-note">'+esc(c.note)+'</span>':'')+'</li>').join("")+'</ul>'
+          : '<p class="mw-empty">'+esc(t("oc_none"))+'</p>')+
+      '</section>';
 
-    const list=done.length
-      ? '<ul class="oc-list">'+done.map(c=>'<li><b>'+esc(lcChannelLabel(c.channel))+'</b>'+
-          '<span class="mono-iso">'+esc(c.sent_on)+'</span>'+
-          (c.note? '<span class="mw-note">'+esc(c.note)+'</span>':'')+'</li>').join("")+'</ul>'
-      : '<p class="mw-empty">'+esc(t("oc_none"))+'</p>';
-
-    box.innerHTML=prohibitionBand(o)+
-      '<section class="mw-sec"><h4 class="mw-h">'+esc(t("oc_h"))+'</h4>'+
-      '<p class="mw-note">'+esc(t("oc_p"))+'</p></section>'+
-      step(1,t("oc_step1"),one)+step(2,t("oc_step2"),two)+step(3,t("oc_step3"),three)+
-      '<section class="mw-sec"><h4 class="mw-h">'+esc(t("md_sends_h"))+'</h4>'+list+'</section>';
-
+    bindLinkCards(box); bindChange(o);
     const copy=el("ocCopy");
     if(copy) copy.addEventListener("click", ()=>{
+      /* The [LINK] guard stays. An unsubstituted placeholder means the prospect
+         received a broken message, and the console makes that impossible rather
+         than detectable, because detectable is after it was sent. */
       if(hasLink){ toast(t("oc_copy_blocked")); return; }
+      const body=el("ocBody").value;
       if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(text).then(()=>toast(t("oc_copied")),
-          ()=>toast(legacyCopy(text)? t("oc_copied") : t("cmp_copy_err")));
+        navigator.clipboard.writeText(body).then(()=>toast(t("oc_copied")),
+          ()=>toast(legacyCopy(body)? t("oc_copied") : t("cmp_copy_err")));
         return;
       }
-      toast(legacyCopy(text)? t("oc_copied") : t("cmp_copy_err"));
+      toast(legacyCopy(body)? t("oc_copied") : t("cmp_copy_err"));
     });
     const go=el("ocDo");
     if(go) go.addEventListener("click", async ()=>{
+      /* The body stored is the body AS EDITED, byte for byte. Recording what was
+         drafted rather than what was sent puts a message on the record that
+         nobody ever received. */
       await runMove("send_offchannel", o.slug, {
-        channel: el("ocCh").value,
+        channel: kind,
         url: target,
         sent_on: el("ocWhen").value,
         body: el("ocBody").value,
@@ -5089,9 +5253,16 @@ function initModal(){
   }
 
   /* ---- tabs -------------------------------------------------------------- */
+  /* The composer is only adopted when the reader has chosen the email path. The
+     tab used to open on the composer AND the send options at once, which asked
+     the second question before the first. WO-013 §4.1. */
+  function borrows(tab){
+    if(tab!=="outreach") return !!BORROWED[tab];
+    return outreachPath(rec)==="email";
+  }
   function show(tab){
     Object.keys(PANELS).forEach(k=>{ const p=el(PANELS[k]); if(p) p.hidden=(k!==tab); });
-    host.hidden=!BORROWED[tab];
+    host.hidden=!borrows(tab);
     modal.querySelectorAll(".modal-tab").forEach(b=>{
       const on=b.getAttribute("data-tab")===tab;
       b.classList.toggle("on", on);
@@ -5100,6 +5271,13 @@ function initModal(){
   }
   async function switchTo(tab){
     if(!PANELS[tab] && !BORROWED[tab]) tab="overview";
+    if(tab==="outreach" && !borrows(tab)){
+      /* The question, or the channel screen, on its own. */
+      giveBack();
+      show(tab);
+      renderOutreach(rec);
+      return;
+    }
     if(BORROWED[tab]){
       const view=document.getElementById(BORROWED[tab]);
       if(!view) return;
@@ -5276,6 +5454,9 @@ function initModal(){
     else if(tab==="outreach") renderOutreach(rec);
     else if(tab==="history") renderHistory(rec);
   }
-  window.thriveModal={ open:open, close:close, isOpen:()=>open_, reread:reread };
+  /* switchTo is exported so the Outreach tab can hand off to the composer
+     without leaving the window. Sending it through goTo would close the window
+     and lose the reader's place. */
+  window.thriveModal={ open:open, close:close, isOpen:()=>open_, reread:reread, tab:switchTo };
   return window.thriveModal;
 }
