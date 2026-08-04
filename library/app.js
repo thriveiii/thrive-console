@@ -257,8 +257,11 @@ async function relayProbe(){
     const v=classifyRelayBody(await r.text());
     out.version = v.kind==="signin"? t("sy_v_signin") : (v.version||"(empty answer)");
     out.signin  = v.kind==="signin";
+    out.ver     = v.ver!=null? v.ver : null;
   }catch(e){ out.version="(unreachable: "+e.message+")"; }
-  out.v4=/v4/.test(out.version);
+  /* The green light is "matches the version this build needs", read from
+     REQUIRED_RELAY, not the literal v4 this once tested for. */
+  out.v4=(out.ver===REQUIRED_RELAY);
   const auth=syncAuth();
   if(!auth){ out.state=out.hits="(not unlocked, no sync credential)"; return out; }
   try{
@@ -831,13 +834,16 @@ async function applyInboundMoves(records){
 
 async function doSyncRound(ep, auth){
   const g=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
-    body:JSON.stringify({ op:"state_get", auth:auth }) });
-  const gj=await g.json();
+    body:relayBody({ op:"state_get", auth:auth }) });
+  const gj=noteRelayVersion(await g.json());
+  /* §3: a version mismatch is reported as the version banner, not as a sync-auth
+     failure, because the fix is a redeploy and not a credential. */
+  if(!relayReady()) throw new Error(relayBannerText());
   if(!gj.ok) throw new Error(gj.error||"sync auth");
   if(gj.data) syncMergeApply(gj.data);
   const p=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
-    body:JSON.stringify({ op:"state_put", auth:auth, data:syncSnapshot() }) });
-  const pj=await p.json(); if(!pj.ok) throw new Error(pj.error||"sync put");
+    body:relayBody({ op:"state_put", auth:auth, data:syncSnapshot() }) });
+  const pj=noteRelayVersion(await p.json()); if(!pj.ok) throw new Error(pj.error||"sync put");
   try{ localStorage.setItem(SYNC_LAST, new Date().toISOString()); }catch(e){}
   // Analytics share this endpoint and credential, so refresh them in the same round. Without
   // this, a page that syncs right after unlocking never re-checks collection and sits on a
@@ -2693,6 +2699,10 @@ async function initCompose(slugArg){
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
     const ep=getEmailEndpoint();
     if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>goTo("settings"),1100); return; }
+    /* §3: a known version mismatch makes the send impossible to attempt. This is
+       the exact send that failed with `missing "to"`, and refusing it here is the
+       difference between a named problem and a mysterious one. */
+    if(!relayReady()){ toast(relayBannerText()); setTimeout(()=>goTo("settings"),1200); return; }
     // Resend free-tier guard: block before we would exceed the daily/monthly cap.
     const q=quotaUsage();
     if(q.dayFull){ toast(t("cmp_quota_day_hit")+(q.freeInMs>0?" "+t("cmp_quota_resets")+" "+fmtDur(q.freeInMs):"")); return; }
@@ -2711,7 +2721,7 @@ async function initCompose(slugArg){
     const left=unresolvedTokens(resolveTokens(htmlOut()+" "+el("esubject").value));
     if(left.length){ toast(t("ps_tokens_block")+" "+left.join(", ")); renderPreSend(); return; }
     const loc=docLoc();
-    const payload={ from:FROM_EMAIL, fromName:getFromName(), to:to,
+    const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:to,
       subject:resolveTokens(el("esubject").value.trim()),
       /* The physical address and the one line opt out are required by US law for
          commercial email, and both are already true of Thrive. List-Unsubscribe
@@ -2727,6 +2737,10 @@ async function initCompose(slugArg){
       const txt=await r.text();
       if(!r.ok) throw new Error(r.status+" "+txt.slice(0,140));
       let id="", parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
+      noteRelayVersion(parsed);
+      /* If the send only now revealed the relay is behind, say so with the banner
+         rather than a generic send error, and refresh so the gate takes hold. */
+      if(parsed && !relayReady()){ throw new Error(relayBannerText()); }
       if(parsed && parsed.ok===false) throw new Error(parsed.error||"send failed");
       if(parsed) id=parsed.id||"";
       const m=tplMeta();
@@ -2759,6 +2773,52 @@ async function fetchT(url, opts, ms){
   }
   finally{ clearTimeout(to); }
 }
+
+/* ---------- WO-014 §3: the version contract ----------
+   The night this was written, the relay editor held v5 and the deployment served
+   v4, and every send failed with `missing "to"`. The console asked v5 questions
+   and the deployment gave v4 answers, and nobody could see the mismatch without
+   reading two screens at once. This closes the gap: the relay stamps its version
+   onto every response (relay/thrive-relay.gs, RELAY_VERSION), the console carries
+   the version it was built for, and on a disagreement it does not degrade quietly.
+   It shows one banner, everywhere a send or a sync would appear, with the exact
+   five taps that fix it, and it makes every relay-dependent action impossible to
+   attempt. A send that would fail with `missing "to"` is refused before it leaves. */
+const REQUIRED_RELAY = 5;
+let __relaySeen = null;                 // the version the last relay response declared, or null
+let __relayChecked = false;             // whether we have parsed any relay response this session
+/* A relay response that omits relay_version is, by definition, older than the
+   contract: a v4 deployment predates the field entirely. So an absent version
+   reads as a mismatch, not as "unknown, assume fine". That absence was the whole
+   failure. */
+function noteRelayVersion(j){
+  const v = (j && typeof j === "object" && j.relay_version != null) ? Number(j.relay_version) : null;
+  __relaySeen = v; __relayChecked = true;
+  return j;
+}
+/* null when no relay response has been seen yet (nothing to disagree with), or
+   when the versions match. An object {seen, need} the moment a parsed response
+   disagrees, which is what the banner and every gate read. */
+function relayMismatch(){
+  if(!__relayChecked) return null;
+  if(__relaySeen === REQUIRED_RELAY) return null;
+  return { seen: __relaySeen, need: REQUIRED_RELAY };
+}
+function relayReady(){ return relayMismatch() === null; }
+/* Stamp the request with the version it was written for, so a relay older than
+   the request can refuse it by name (`request v6, relay v5`) instead of misreading
+   the shape the way a v4 handler misread a v5 send. */
+function relayBody(o){ return JSON.stringify(Object.assign({ v: REQUIRED_RELAY }, o || {})); }
+/* The one banner, verbatim per §3.1, with the remedy inside it because the
+   knowledge that was missing that night was exactly those five taps. The version
+   numbers are not counts, so they do not take a plural form; they are stamped as
+   Western numerals. */
+function relayBannerText(){
+  const m = relayMismatch(); if(!m) return "";
+  const seen = m.seen == null ? t("relay_ver_unknown") : String(m.seen);
+  return t("relay_ver_banner").replace("{relay}", seen).replace("{need}", String(m.need));
+}
+
 /* What a relay URL actually answered. An Apps Script deployment whose access is not "Anyone"
    returns a Google sign-in page to every unauthenticated caller, which is HTML, not JSON. That
    is a completely different fault from a stale deployment and it needs its own name: prospects
@@ -2766,7 +2826,15 @@ async function fetchT(url, opts, ms){
 function classifyRelayBody(body){
   const s=String(body||"").trim();
   if(!s) return { kind:"net" };
-  if(/Thrive relay/i.test(s)) return { kind:/v4/.test(s)? "v4":"old", version:s.slice(0,90) };
+  /* §3: "current" is the version this build requires, read from REQUIRED_RELAY,
+     never a literal. The day the relay became v5 a hardcoded "v4" here turned a
+     correct deployment into a reported fault, which is the exact class of drift
+     this round exists to end. Any Thrive relay whose stamped version is not the
+     required one is "old", whichever number it carries. */
+  if(/Thrive relay/i.test(s)){
+    const m=/v(\d+)/i.exec(s); const ver=m? Number(m[1]) : null;
+    return { kind: ver===REQUIRED_RELAY? "current":"old", ver:ver, version:s.slice(0,90) };
+  }
   // Only a Google page counts as "not open to Anyone". Any other HTML is simply the wrong URL.
   if(/accounts\.google\.com|ServiceLogin|Web word processing|Google Drive|Google Accounts|google\.com\/accounts/i.test(s))
     return { kind:"signin" };
@@ -2788,7 +2856,7 @@ async function connCheck(candidate, onStep){
   let body="";
   try{ const r=await fetchT(ep,{cache:"no-store"},9000); body=await r.text(); }catch(e){ body=""; }
   const v=classifyRelayBody(body);
-  if(!add("conn_v4", v.kind==="v4",
+  if(!add("conn_v4", v.kind==="current",
           v.kind==="signin"? t("sy_v_signin") : (v.version||t("sy_err_net")),
           v.kind==="signin"? t("conn_v4_fix_access") : "")) return steps;
 
@@ -2870,6 +2938,17 @@ function initSettings(){
     }).join("");
     const note=el("connNote"); if(!note) return;
     if(running){ note.hidden=false; note.textContent=t("testing"); note.className="gh-result"; return; }
+    /* §3: a version mismatch outranks every other verdict here, because until the
+       relay is redeployed no other check can pass and attempting a send is
+       pointless. The banner carries the five taps that fix it and a link to the
+       ritual in docs/RELAY.md, so the knowledge lives where the failure shows. */
+    const mm=relayMismatch();
+    if(mm){
+      note.hidden=false; note.className="gh-result warn";
+      note.innerHTML='<strong>'+esc(relayBannerText())+'</strong>'
+        +' <a class="conn-d" href="../docs/RELAY.md" target="_blank" rel="noopener">'+esc(t("relay_ver_ritual"))+'</a>';
+      return;
+    }
     const all=CONN_STEPS.every(k=>byKey[k]&&byKey[k].ok);
     note.hidden=false;
     note.textContent = all? t("conn_all_ok") : t("conn_broken");
@@ -2903,10 +2982,12 @@ function initSettings(){
     const ep=((el("sy_ep")&&el("sy_ep").value)||getSyncEndpoint()||"").trim();
     if(!ep){ note.hidden=false; note.className="gh-result warn"; note.textContent=t("sy_need_ep"); return; }
     connRender([], true);
-    // 1. never adopt a URL that is not a v4 relay
+    // 1. never adopt a URL that is not the relay this build was written for. The
+    //    version this line names is REQUIRED_RELAY, never a literal, so it cannot
+    //    drift the way a hardcoded "v4" did the day the relay became v5.
     let version="";
     try{ const r=await fetchT(ep,{cache:"no-store"}); version=(await r.text()).slice(0,120).trim(); }catch(e){}
-    if(!(/Thrive relay/i.test(version) && /v4/.test(version))){
+    if(!(/Thrive relay/i.test(version) && new RegExp("v"+REQUIRED_RELAY+"\\b").test(version))){
       connRender(await connCheck(ep), false);
       note.hidden=false; note.className="gh-result warn";
       note.textContent="✕ "+(version||t("sy_err_net"))+": "+t("sy_v_howto");
@@ -3054,7 +3135,7 @@ function initSettings(){
     el("syEnable").addEventListener("click", async ()=>{
       const ep=el("sy_ep").value.trim();
       if(!ep){ toast(t("sy_need_ep")); return; }
-      // Refuse to publish a URL that isn't a v4 relay: publishing a stale one breaks every device.
+      // Refuse to publish a URL that is not the required relay version: publishing a stale one breaks every device.
       const v=await verifyUrl(ep);
       if(!v.ok){ syShow("✕ "+(v.version||"–")+": "+v.msg+" "+t("sy_v_howto"), "warn"); return; }
       const now=Date.now();

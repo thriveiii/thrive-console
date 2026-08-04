@@ -32,6 +32,19 @@
 
 /* ===================== configuration ===================== */
 
+/**
+ * WO-014 §3: the version contract, so a mismatch is named rather than mysterious.
+ *
+ * The night this was written, the editor held v5 and the live deployment served
+ * v4, and every send failed with `missing "to"`: a v5 request shape hitting a v4
+ * handler. The only person who could see the mismatch was the one reading two
+ * screens at once. This number closes that gap. It rides on EVERY response,
+ * including errors, so the console can compare on every request and refuse to
+ * send into a relay it does not match. Bump it whenever the request or response
+ * shape changes, and only then, in the same commit as the change.
+ */
+var RELAY_VERSION = 5;
+
 var TAG_LOCAL   = 'hi';
 var TAG_DOMAIN  = 'thriveiii.com';
 var STORE_NAME  = 'thrive-console-store.json';
@@ -533,6 +546,12 @@ function sendMail_(d) {
 /* ===================== HTTP ===================== */
 
 function json_(o) {
+  /* Stamp the version onto every response, including errors. The console
+     compares this against the version it was built for and refuses to send into
+     a relay it does not match. A response that omits it reads, correctly, as a
+     relay too old to know the contract. */
+  o = o || {};
+  o.relay_version = RELAY_VERSION;
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -546,7 +565,8 @@ function doGet(e) {
       return json_({ ok: true });
     } catch (err) { return json_({ ok: false, error: String(err.message || err) }); }
   }
-  return ContentService.createTextOutput('Thrive relay v5 (email + sync + analytics + inbox) is running.');
+  return ContentService.createTextOutput(
+    'Thrive relay v' + RELAY_VERSION + ' (email + sync + analytics + inbox) is running.');
 }
 
 function doPost(e) {
@@ -555,6 +575,17 @@ function doPost(e) {
   var op = d.op || '';
 
   try {
+    /* §3.2 the request contract, versioned. `missing "to"` happened because a v5
+       request shape hit a v4 handler that answered it as an email. From now on a
+       request may declare the version it was written for, and a relay older than
+       that request refuses BY NAME rather than misreading the shape. A request
+       that declares nothing is a legacy caller and is allowed through, so an old
+       page never breaks against a new relay. */
+    if (d.v != null && Number(d.v) > RELAY_VERSION) {
+      return json_({ ok: false,
+        error: 'request v' + Number(d.v) + ', relay v' + RELAY_VERSION });
+    }
+
     if (!op) return json_(sendMail_(d));          // v4 shape: a bare body is a send
 
     authOk_(d.auth);
