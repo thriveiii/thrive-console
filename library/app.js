@@ -463,6 +463,37 @@ function effStage(o, opensOverride, sendOverride){
   const op=(opensOverride===undefined)? outreachOpens(o) : (opensOverride||0);
   return op>0 ? "opened" : "sent";
 }
+/* WO-015 §5.1: status is causal. Every status a card can display is a reading of a
+   documented event, never an assertion. This is the one place the map lives, so the
+   display and the Phase F causal scan cannot disagree. effStage (I3) stays the
+   authority on the derived stage; this wraps it with the two flags a stage cannot
+   express (archived, and won which only a contract may set) and names, for each
+   status, the event that backs it. `event:""` means "nothing backs this", which is
+   a defect the scan reports, not a state a person can reach by clicking. */
+function wonHasContract(o){
+  /* The contracts module is not built (§5.2). Until it emits a signature, no `won`
+     is backed, so every legacy `won` is surfaced for reconciliation rather than
+     trusted. When the module exists it will record the event this reads. */
+  return !!(o && o.contract_signed);
+}
+function causalStatus(o){
+  if(!o) return { status:"", event:"" };
+  if(o.archived) return { status:"archived", event:"archive" };
+  const declared=ThriveLifecycle.norm(o.stage||"");
+  if(declared==="won") return { status:"won", event: wonHasContract(o) ? "contract" : "" };
+  /* Phase D fields, forward compatible: undefined reads as not converted. */
+  if(o.converted_at && o.offer) return { status:"converted", event:"convert" };
+  /* A reply is read before the send gate: an inbound attribution backs "replied"
+     directly, and a hand recorded reply is backed by its record_reply in the log.
+     Checking the send count first would drop a replied card with no ledger send
+     down to "live", which is the exact opinion-over-evidence this phase removes. */
+  if(inboundFor(o.slug).some(r=>r && r.kind!=="auto")) return { status:"replied", event:"inbound" };
+  if(declared==="replied") return { status:"replied", event:"record_reply" };
+  const s=sendsFor(o);
+  if(!s || !s.count) return isLive(o) ? { status:"live", event:"publish" } : { status:"draft", event:"local" };
+  return outreachOpens(o)>0 ? { status:"opened", event:"open" } : { status:"sent", event:"send" };
+}
+
 /* Follow-up is a thing you do about a message. A page you have not written to yet does not
    need following up, it needs sending, and calling that "needs follow-up" made the console
    ask for the wrong action on the wrong record. */
@@ -1130,6 +1161,28 @@ function removeDraftUndoable(slug, label){
     if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
   }});
   return true;
+}
+
+/* WO-015 §5.3: migrate retired statuses, non-destructively.
+   A `lost` record becomes archived, its whole record retained (I5), with the
+   outcome kept as `outcome_was:"lost"` and a migration note in the activity log
+   so nothing is lost and the reason it was lost is still readable. `won` records
+   are left exactly as they are: the causal scan (Phase F) surfaces each for Thyab
+   to reconcile against a contract event, and none is converted or hidden here.
+   Idempotent: a record already archived is skipped, so a second load is a no-op.
+   Every write is through saveDraft then logActivity (I2), never a direct write. */
+function migrateRetiredStatuses(){
+  var changed=false;
+  getDrafts().forEach(function(d){
+    if(!d || d.archived) return;
+    if(ThriveLifecycle.norm(d.stage)==="lost"){
+      saveDraft({ slug:d.slug, archived:true, outcome_was:"lost",
+                  prev_stage:(d.prev_stage||"sent") });   // where recall returns it, never back to a retired stage
+      logActivity("lc_migrate_lost", d.slug, d.lost_reason||"");
+      changed=true;
+    }
+  });
+  return changed;
 }
 
 async function mergedOpps(){
@@ -4093,6 +4146,10 @@ async function initInsights(){
    stage write goes through the same saveDraft plus logActivity pair the Library select uses,
    so the two surfaces can never disagree about what happened. */
 async function initBoard(){
+  /* §5.3: retire any `lost` records into the archive once, before the board draws,
+     so no retired stage ever reaches a lane. Idempotent and safe to call on every
+     load. */
+  try{ migrateRetiredStatuses(); }catch(e){}
   const el=id=>document.getElementById(id);
   const lang=()=>getLang();
   const txt=(k,n,extra)=> (typeof boardText==="function")? boardText(lang(),k,n,extra) : "";
@@ -4800,15 +4857,24 @@ async function applyDrop(slug, from, to, opts){
    Every card carries a control that lists every legal destination for that card, plus move up
    and move down. Illegal destinations are ABSENT, not disabled: a person should not have to
    read greyed options to work out the rules, and a rule learned that way is learned wrong. */
+/* WO-015 §5.2: the opinion controls. "won", "lost" and "exclude" (drop) assert an
+   outcome no event backs, so they are never offered on the board or in the window.
+   A dead opportunity is archived (Phase E), where the "no" lives with its whole
+   thread intact. "won" is emitted only by the contracts module on a signature,
+   never set by hand. These moves stay in the lifecycle table because migration and
+   the future contracts module still reach them through apply(); they are removed
+   only from what a person can click. Status is read, never asserted (I9). */
+const RETIRED_MOVES = { mark_won:1, mark_lost:1, drop:1 };
 function cardMenuFor(o, lane){
   const out=[];
   ThriveBoard.LANES.forEach(k=>{
     if(k===lane || k==="opened") return;
     const mv=moveForLane(lane, k);
-    if(mv && ThriveLifecycle.can(mv, o)) out.push({ kind:"lane", to:k, label:laneLabel(k) });
+    if(mv && !RETIRED_MOVES[mv] && ThriveLifecycle.can(mv, o)) out.push({ kind:"lane", to:k, label:laneLabel(k) });
   });
   ThriveLifecycle.movesFor(o).forEach(m=>{
     if(["publish","unpublish","send_email","send_offchannel","record_reply"].indexOf(m)>=0) return;
+    if(RETIRED_MOVES[m]) return;                 // §5.2 an outcome is read, not clicked
     out.push({ kind:"move", move:m, label:t("lc_"+m) });
   });
   return out;
@@ -5363,7 +5429,9 @@ function initModal(){
      the rules, and a rule you learn by reading disabled controls is a rule you learn wrong. */
   function movesBar(o){
     if(!o) return "";
-    const moves=ThriveLifecycle.movesFor(o).filter(m=> m!=="send_email" && m!=="send_offchannel");
+    /* §5.2: the opinion moves are never offered in the window either. Archive is
+       how a "no" is recorded; won waits for the contracts module. */
+    const moves=ThriveLifecycle.movesFor(o).filter(m=> m!=="send_email" && m!=="send_offchannel" && !RETIRED_MOVES[m]);
     if(!moves.length) return "";
     const primary={ publish:1, record_reply:1, restore:1, unarchive:1 };
     return '<section class="mw-sec"><h4 class="mw-h">'+esc(t("lc_h"))+'</h4>'+
