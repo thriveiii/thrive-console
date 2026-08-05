@@ -21,14 +21,18 @@
   /* ---- space: a 4px base scale ---- */
   --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:20px; --s-6:26px; --s-7:34px; --s-8:48px;
   /* ---- type ---- */
-  --font:"Lato","Segoe UI",Roboto,-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,"Alyamama","Noto Sans Arabic",sans-serif;
-  /* Lato comes first and Alyamama second on purpose. A font stack is resolved per character,
-     not per element, so Latin letters find Lato and Arabic letters fall through to Alyamama.
-     With Alyamama first, every Latin word inside an Arabic screen was drawn in Alyamama's own
-     Latin, which is a serif: business names on the board, on their cards and in every table
-     came out in a different typeface from the rest of the console. One Latin face and one
-     Arabic face, everywhere, in both directions. */
-  --font-ar:"Lato","Alyamama","Noto Sans Arabic","Segoe UI",Tahoma,sans-serif;
+  --font:"Lato","Alyamama",sans-serif;
+  /* One Latin face and one Arabic face, and nothing between them. A stack resolves per
+     character, not per element, so Latin letters find Lato and Arabic letters, which Lato
+     does not carry, fall through to Alyamama. The six system families that used to sit
+     between Lato and Alyamama here (Segoe UI, Roboto, -apple-system, BlinkMacSystemFont,
+     Helvetica Neue, Arial) were the defect: on a device that has them, an Arabic glyph
+     resolved to a system Arabic face long before it reached Alyamama, so the bold headline
+     and every Arabic word in the English chrome came out in a system font. Removing them
+     is the root fix. Alyamama is self hosted in fonts.css, so the trailing sans-serif is
+     only a last resort if it ever fails to load. Lato stays first, not Alyamama, because
+     Alyamama first would draw Latin business names in Alyamama's own serif Latin. */
+  --font-ar:"Lato","Alyamama",sans-serif;
   --fs-micro:10.5px; --fs-xs:11.5px; --fs-sm:12.5px; --fs-base:13.5px;
   --fs-md:15px; --fs-lg:17px; --fs-xl:22px; --fs-2xl:30px;
   --lh-tight:1.25; --lh-base:1.55; --lh-read:1.85;
