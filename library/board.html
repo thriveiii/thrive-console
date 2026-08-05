@@ -66,6 +66,16 @@
     <div class="intake-out" id="intakeOut"></div>
   </section>
 
+  <!-- Status tab bar. Shown only below the breakpoint, where the five columns cannot sit side by
+       side; it switches which lane is visible. Same icons and counts as the lanes, filled by initBoard. -->
+  <div class="board-tabs" id="boardTabs" role="tablist">
+    <button class="btab" data-tab="draft" role="tab" aria-selected="false"><span class="btab-ic" data-icon="edit" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_draft">Draft</span><span class="btab-n" data-count-tab="draft">0</span></button>
+    <button class="btab" data-tab="live" role="tab" aria-selected="false"><span class="btab-ic" data-icon="check" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_live">Live</span><span class="btab-n" data-count-tab="live">0</span></button>
+    <button class="btab" data-tab="sent" role="tab" aria-selected="false"><span class="btab-ic" data-icon="send" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_sent">Sent</span><span class="btab-n" data-count-tab="sent">0</span></button>
+    <button class="btab" data-tab="opened" role="tab" aria-selected="false"><span class="btab-ic" data-icon="spark" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_opened">Opened</span><span class="btab-n" data-count-tab="opened">0</span></button>
+    <button class="btab" data-tab="replied" role="tab" aria-selected="false"><span class="btab-ic" data-icon="mail" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_replied">Replied</span><span class="btab-n" data-count-tab="replied">0</span></button>
+  </div>
+
   <!-- Lanes. Order is the order of the gradient, and the order is the journey. -->
   <div class="board" id="boardLanes">
     <section class="lane" data-lane="draft">

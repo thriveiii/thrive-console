@@ -4256,6 +4256,25 @@ async function initBoard(){
   const txt=(k,n,extra)=> (typeof boardText==="function")? boardText(lang(),k,n,extra) : "";
   const num=v=>'<span class="n">'+v+'</span>';
 
+  /* The status tab bar (narrow layout). It does not build a second card list: it sets which lane is
+     visible, and the same rendered lane content shows. activeTab is remembered across renders so a
+     re-render never steals the operator's chosen column. */
+  let activeTab=null;
+  function setActiveTab(k, animate){
+    activeTab=k;
+    const lanes=document.getElementById("boardLanes");
+    if(lanes) lanes.setAttribute("data-active-lane", k);
+    document.querySelectorAll("#boardTabs .btab").forEach(btn=>{
+      const on=btn.getAttribute("data-tab")===k;
+      btn.classList.toggle("is-on", on);
+      btn.setAttribute("aria-selected", on?"true":"false");
+    });
+    if(animate){   // re-trigger the soft switch; CSS removes it under reduced motion
+      const lane=document.querySelector('#boardLanes .lane[data-lane="'+k+'"]');
+      if(lane){ lane.classList.remove("tab-in"); void lane.offsetWidth; lane.classList.add("tab-in"); }
+    }
+  }
+
   function syncPill(){
     const p=el("boardSync"); if(!p) return;
     const last=syncLast();
@@ -4353,6 +4372,8 @@ async function initBoard(){
       const body=document.querySelector('[data-body="'+k+'"]');
       const count=document.querySelector('[data-count="'+k+'"]');
       if(count) count.textContent=b.lanes[k].length;
+      const tabCount=document.querySelector('[data-count-tab="'+k+'"]');
+      if(tabCount) tabCount.textContent=b.lanes[k].length;
       if(!body) return;
       /* The order somebody arranged on this device, applied on top of the lane's own sort.
          Anything not in the stored order keeps its place after the ones that are. */
@@ -4386,6 +4407,17 @@ async function initBoard(){
            the middle of a field is the shrug this law exists to stop. */
         : '<div class="lane-empty">'+ic("spark",18)+'<p>'+esc(t("lane_"+k+"_empty"))+'</p></div>';
     });
+
+    // Status tab bar: wire the taps once, then sync the active column every render (counts changed,
+    // choice preserved). Default to the first column that holds a card so the operator lands on work.
+    const tabsEl=document.getElementById("boardTabs");
+    if(tabsEl && !tabsEl.dataset.wired){
+      tabsEl.dataset.wired="1";
+      tabsEl.addEventListener("click", e=>{ const btn=e.target.closest(".btab"); if(btn) setActiveTab(btn.getAttribute("data-tab"), true); });
+    }
+    if(!activeTab || ThriveBoard.LANES.indexOf(activeTab)<0)
+      activeTab = ThriveBoard.LANES.find(k=>b.lanes[k].length) || ThriveBoard.LANES[0];
+    setActiveTab(activeTab, false);
 
     // One sentence, chosen by priority. The console says one thing at a time.
     // T4: the same number, given a counter treatment. num() is v.n, the value
@@ -4425,6 +4457,7 @@ async function initBoard(){
     const empty=b.summary.total===0 && closed.length===0;
     el("boardEmpty").hidden=!empty;
     el("boardLanes").hidden=empty;
+    if(el("boardTabs")) el("boardTabs").hidden=empty;
     el("boardChips").hidden=empty;
     el("boardTray").hidden=empty;
 
