@@ -16,6 +16,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const ROOT = path.resolve(__dirname, "..");
 const LIB = path.join(ROOT, "library");
@@ -38,7 +39,9 @@ const VIEWS = [
 
 /* ---- assets ---- */
 const logo = "data:image/png;base64," + fs.readFileSync(path.join(ROOT, "assets/thrive-logo.png")).toString("base64");
-const css = read(path.join(LIB, "fonts.css")) + "\n" + read(path.join(LIB, "styles.css"));
+const fontsCss = read(path.join(LIB, "fonts.css"));
+const stylesCss = read(path.join(LIB, "styles.css"));
+const css = fontsCss + "\n" + stylesCss;
 const icons = read(path.join(LIB, "icons.js"));
 const i18n = read(path.join(LIB, "i18n.js"));
 const gate = read(path.join(LIB, "gate.js"));
@@ -52,6 +55,26 @@ const drafts = read(path.join(LIB, "drafts.js"));
 const flows = read(path.join(LIB, "flows.js"));
 const store = read(path.join(LIB, "store.js"));
 const app = read(path.join(LIB, "app.js"));
+
+/* ---- cache busting: a content fingerprint per linked asset -----------------
+   The served shell console.html LINKS these files by name, and GitHub Pages serves them cacheable,
+   so Safari kept painting an old styles.css and app.js long after a deploy landed. Each link now
+   carries ?v=<hash of that file's bytes>, computed here at build time from the same content the
+   build reads. Change a file and its hash changes, so its URL changes and the browser must fetch
+   it; leave a file alone and its hash is identical, so the URL is stable and the cache is used
+   correctly. No hand-typed version to forget. The entry HTML itself (console.html) is served by
+   Pages with a short max-age and an ETag, so it revalidates and always points at the current
+   hashes. dist inlines everything, so it carries no external asset and needs no fingerprint. */
+const fphash = s => crypto.createHash("sha256").update(s, "utf8").digest("hex").slice(0, 10);
+const FP = {
+  "fonts.css": fphash(fontsCss), "styles.css": fphash(stylesCss),
+  "icons.js": fphash(icons), "i18n.js": fphash(i18n), "gate.js": fphash(gate),
+  "stage-model.js": fphash(model), "lifecycle.js": fphash(life), "intake.js": fphash(intake),
+  "numbers.js": fphash(numbers), "inbound.js": fphash(inbound), "kinds.js": fphash(kinds),
+  "store.js": fphash(store), "drafts.js": fphash(drafts), "flows.js": fphash(flows), "app.js": fphash(app)
+};
+const fp = f => f + "?v=" + FP[f];
+
 let published = {};
 try { published = JSON.parse(read(path.join(LIB, "sync.json"))); } catch (e) {}
 
@@ -145,7 +168,7 @@ const GATE_HASH = "0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395
 function build(inline){
 const head = inline
   ? '<style>\n' + css + '\n.view[hidden]{display:none!important}\n</style>'
-  : '<link rel="stylesheet" href="fonts.css">\n<link rel="stylesheet" href="styles.css">' +
+  : '<link rel="stylesheet" href="' + fp("fonts.css") + '">\n<link rel="stylesheet" href="' + fp("styles.css") + '">' +
     '\n<style>.view[hidden]{display:none!important}</style>';
 const body = inline
   ? '<script>window.THRIVE_SYNC_JSON = ' + JSON.stringify(published) + ';</script>' +
@@ -160,12 +183,12 @@ const body = inline
     '\n<script>\n' + drafts + '\n</script>'+
     '\n<script>\n' + flows + '\n</script>'+
     '\n<script>\n' + app + '\n</script>'
-  : '<script src="icons.js"></script>\n<script src="i18n.js"></script>\n<script src="gate.js"></script>' +
-    '\n<script src="stage-model.js"></script>\n<script src="lifecycle.js"></script>' +
-    '\n<script src="intake.js"></script>\n<script src="numbers.js"></script>'+
-    '\n<script src="inbound.js"></script>\n<script src="kinds.js"></script>'+
-    '\n<script src="store.js"></script>\n<script src="drafts.js"></script>'+
-    '\n<script src="flows.js"></script>\n<script src="app.js"></script>';
+  : '<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>\n<script src="' + fp("gate.js") + '"></script>' +
+    '\n<script src="' + fp("stage-model.js") + '"></script>\n<script src="' + fp("lifecycle.js") + '"></script>' +
+    '\n<script src="' + fp("intake.js") + '"></script>\n<script src="' + fp("numbers.js") + '"></script>'+
+    '\n<script src="' + fp("inbound.js") + '"></script>\n<script src="' + fp("kinds.js") + '"></script>'+
+    '\n<script src="' + fp("store.js") + '"></script>\n<script src="' + fp("drafts.js") + '"></script>'+
+    '\n<script src="' + fp("flows.js") + '"></script>\n<script src="' + fp("app.js") + '"></script>';
 const icon = inline ? logo : "../assets/thrive-logo.png";
 const mark = inline ? logo : "../assets/thrive-logo.png";
 const sections2 = inline ? sections : sectionsLinked;
