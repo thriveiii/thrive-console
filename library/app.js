@@ -1438,17 +1438,27 @@ async function initDashboard(){
       /* The undo puts the record back, so the list has to be able to see it again. */
       window.thriveBoardRefresh=window.thriveBoardRefresh||null;
     }));
-    grid.querySelectorAll("[data-arch]").forEach(b=>b.addEventListener("click",()=>{
+    grid.querySelectorAll("[data-arch]").forEach(b=>b.addEventListener("click",async ()=>{
       const slug=b.getAttribute("data-arch"); const val=b.getAttribute("data-val")==="1";
       const o=state.data.find(x=>x.slug===slug); if(!o) return;
-      // carry the summary into the overlay so manifest-only items keep rendering
-      saveDraft({ slug, business:o.business, template:o.template, sent_on:o.sent_on,
-                  location:o.location, phone:o.phone, status:o.status||"sent", archived:val });
-      o.archived=val;
-      if(isLive(o) && ghReady()) setManifestArchived(slug, val).catch(()=>{}); // sync across devices
-      logActivity(val?"archive":"unarchive", slug, "");
-      toast(val?t("archived_toast"):t("unarchived_toast"));
-      render();
+      /* WO-015 Phase E follow-up: archive and recall go through the ONE shared,
+         documented, chapter aware path the board uses, runMove, rather than the
+         second write that used to bypass the chapter aware recall. A converted
+         card recalled from the Library now returns to its active chapter exactly
+         as it does from the board, and both surfaces write the same lc_archive and
+         lc_unarchive events through saveDraft then logActivity. runMove reads the
+         record from mergedOpps, so a manifest only item keeps its fields from the
+         manifest and still renders without carrying a summary by hand. */
+      await runMove(val?"archive":"unarchive", slug, {});
+      /* The one thing the board does not need and the Library keeps: committing the
+         archived flag to the manifest, so a published page's archive is durable
+         across devices before the next state sync. It is an addition beside the
+         shared recall, never a substitute for it. */
+      if(isLive(o) && ghReady()) setManifestArchived(slug, val).catch(()=>{});
+      /* Re-read the overlay runMove just wrote, so the grid reflects the new
+         archived flag and any chapter aware stage the recall stored. This is the
+         same refresh the rest of the Library uses after a write. */
+      state.data=await mergedOpps(); render();
     }));
   }
 

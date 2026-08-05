@@ -43,12 +43,16 @@ SEED = """()=>{ const now=Date.now(), iso=d=>new Date(now-d*86400000).toISOStrin
   {slug:'arch-co',business:'Arch Co',published:true,up:now,stage:'replied',archived:true,prev_stage:'sent'},
   {slug:'offer-co',business:'Offer Co',published:true,up:now,stage:'replied',archived:true,prev_stage:'replied',
    converted_at:'2026-08-01T00:00:00Z',offer:{text:'the offer',html:'<p>offer</p>',published:true}},
-  {slug:'plain-co',business:'Plain Co',published:true,up:now,stage:'sent'}]));
+  {slug:'plain-co',business:'Plain Co',published:true,up:now,stage:'sent'},
+  {slug:'lib-conv',business:'Lib Conv',published:true,up:now,stage:'replied',
+   converted_at:'2026-08-01T00:00:00Z',offer:{text:'the offer',html:'<p>offer</p>',published:true}}]));
  localStorage.setItem('thrive_mail_v1', JSON.stringify([
   {ts:iso(6),mid:'a1',opp:'arch-co',direction:'out',to:'a@x',subject:'Arch Co x Thrive',status:'sent',chapter:1},
   {ts:iso(7),mid:'o1',opp:'offer-co',direction:'out',to:'o@x',status:'sent',chapter:1},
   {ts:iso(2),mid:'o2',opp:'offer-co',direction:'out',to:'o@x',subject:'Your offer',status:'sent',chapter:2},
-  {ts:iso(5),mid:'p1',opp:'plain-co',direction:'out',to:'p@x',status:'sent',chapter:1}]));
+  {ts:iso(5),mid:'p1',opp:'plain-co',direction:'out',to:'p@x',status:'sent',chapter:1},
+  {ts:iso(7),mid:'l1',opp:'lib-conv',direction:'out',to:'l@x',status:'sent',chapter:1},
+  {ts:iso(2),mid:'l2',opp:'lib-conv',direction:'out',to:'l@x',subject:'Your offer',status:'sent',chapter:2}]));
  localStorage.setItem('thrive_inbound_v1', JSON.stringify([
   {ts:iso(4),opp:'arch-co',kind:'reply',from:'a@x',snippet:'a real reply worth keeping',chapter:1}]));
 }"""
@@ -118,6 +122,44 @@ with sync_playwright() as p:
     detail = pg.evaluate("()=>{ const a=getActivity().filter(x=>x.slug==='offer-co'&&x.action==='lc_unarchive').pop(); return a?a.detail:''; }")
     ck("the recall records which chapter it reopened into (read through activeChapterStage)",
        "chapter 2" in detail, detail)
+
+    # ---- the Library surface goes through the SAME shared path (follow-up) ----
+    # The observable signature of the shared runMove path is the documented event
+    # name: lc_archive and lc_unarchive with a chapter detail. The old Library
+    # bypass logged bare "archive"/"unarchive" with no detail. So the event name is
+    # the proof the Library now shares one code path, not a copy of it.
+    def last_action(slug):
+        return pg.evaluate("(s)=>{ const a=getActivity().filter(x=>x.slug===s); return a.length?a[a.length-1].action:''; }", slug)
+
+    pg.evaluate("x=>location.hash='#library'"); pg.wait_for_timeout(900)
+    # archive lib-conv from the Library grid button
+    btn = pg.query_selector('.grid [data-arch="lib-conv"], [data-arch="lib-conv"]')
+    ck("the Library shows an archive control for the converted card", btn is not None, None)
+    if btn:
+        btn.click(); pg.wait_for_timeout(400)
+    ck("Library archive is now archived", pg.evaluate("()=>!!getDraft('lib-conv').archived"), None)
+    ck("Library archive goes through the shared path (logs lc_archive, not the bare bypass)",
+       last_action("lib-conv") == "lc_archive", last_action("lib-conv"))
+
+    # count stays honest after a Library archive
+    cc = build_counts(); ret = pg.evaluate("()=>getDrafts().filter(o=>o.archived).length")
+    ck("the archived count is honest after a Library archive", cc["archived"] == ret, {"count": cc["archived"], "retained": ret})
+
+    # reveal archived items and recall lib-conv from the Library grid
+    pg.evaluate("""()=>{ const s=document.getElementById('statusFilter'); if(s){ s.value='archived';
+      s.dispatchEvent(new Event('change')); } }""")
+    pg.wait_for_timeout(500)
+    rbtn = pg.query_selector('[data-arch="lib-conv"]')
+    ck("the Library archived view shows the recall control", rbtn is not None, None)
+    if rbtn:
+        rbtn.click(); pg.wait_for_timeout(400)
+    ck("Library recall goes through the shared chapter aware path (lc_unarchive with chapter 2)",
+       last_action("lib-conv") == "lc_unarchive" and
+       "chapter 2" in pg.evaluate("()=>{ const a=getActivity().filter(x=>x.slug==='lib-conv'&&x.action==='lc_unarchive').pop(); return a?a.detail:''; }"),
+       pg.evaluate("()=>{ const a=getActivity().filter(x=>x.slug==='lib-conv'&&x.action==='lc_unarchive').pop(); return a?a.detail:''; }"))
+    pg.evaluate("x=>location.hash='#board'"); pg.wait_for_timeout(700)
+    ck("a card recalled from the Library lands in its active chapter's lane, same as the board",
+       lane_of(pg, "lib-conv") == "sent", lane_of(pg, "lib-conv"))
 
     ctx.close(); b.close()
 
