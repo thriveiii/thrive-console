@@ -786,6 +786,9 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   .board[data-active-lane="opened"]  .lane[data-lane="opened"],
   .board[data-active-lane="replied"] .lane[data-lane="replied"]{ display:flex }
   .board .lane.tab-in{ animation:tab-in var(--t-base) var(--e-enter) both }
+  /* De-duplicate the count: the tab pill owns it in this layout, so the column header no longer
+     repeats the number above the column. The header keeps its icon and word as the column's title. */
+  .lane-head .lane-count{ display:none }
 }
 /* the soft switch between columns, removed under reduced motion */
 @keyframes tab-in{ from{ opacity:0; transform:translateY(6px) } to{ opacity:1; transform:none } }
@@ -795,6 +798,15 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
    tabs share the width so all five, and all five counts, are always in view without a swipe, which
    is the point of the strip. The label rides in when there is room (iPad portrait, large phone) and
    steps aside on the narrowest phones, where the icon and the count carry the state. */
+/* ===========================================================================
+   The status component. One visual language, two densities. A pill in the state's
+   own colour: the warm state icon leads, an integrated count sits inside as a
+   small quiet chip (shown once, never a bare digit), and the current state carries
+   one calm accent, its own lane hue, so the bar reads warm without a field of
+   bright pills. Below the breakpoint (phone, iPad portrait) it is the tab bar
+   pill: icon plus count, no visible word. At and above (iPad landscape, desktop)
+   it is the column header: the same icon and the same count chip, with the word.
+   =========================================================================== */
 .btab{
   flex:1 1 0; min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:6px;
   padding:8px 10px; border-radius:var(--r-pill);
@@ -804,13 +816,28 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   transition:color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
 }
 .btab .btab-ic{ color:var(--ink-4); display:inline-flex }
-.btab-l{ overflow:hidden; text-overflow:ellipsis }
-@media(max-width:479px){ .btab-l{ display:none } }
-.btab-n{ font-weight:800; color:var(--ink-4) }
-.btab.is-on{ color:var(--ink); border-color:var(--purple); background:var(--panel-2) }
-.btab.is-on .btab-ic{ color:var(--purple) }
-.btab.is-on .btab-n{ color:var(--ink-2) }
+/* the pill shows no word; its label stays for assistive tech so the tab keeps a real name */
+.btab-l{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0 }
+.btab.is-on{ color:var(--ink); border-color:var(--lane-c, var(--purple)); background:var(--panel-2) }
+.btab.is-on .btab-ic{ color:var(--lane-c, var(--purple)) }
 @media(pointer:coarse){ .btab{ min-height:44px } }
+
+/* the integrated count: one designed chip, shared by the pill and the column header */
+.btab-n, .lane-count{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:18px; height:18px; padding:0 5px; border-radius:var(--r-pill);
+  font-family:var(--font-lat); font-size:var(--fs-micro); font-weight:800;
+  font-variant-numeric:tabular-nums; line-height:1;
+  background:var(--hair-2); color:var(--ink-3);
+  direction:ltr; unicode-bidi:isolate;
+}
+.btab.is-on .btab-n{ background:var(--lane-t, rgba(150,133,202,.16)); color:var(--lane-c, var(--purple)) }
+/* each pill's state hue, applied only when it is the current one, so one accent lights at a time */
+.btab[data-tab="draft"]{   --lane-c:var(--lane-draft);   --lane-t:var(--lane-draft-t) }
+.btab[data-tab="live"]{    --lane-c:var(--lane-live);    --lane-t:var(--lane-live-t) }
+.btab[data-tab="sent"]{    --lane-c:var(--lane-sent);    --lane-t:var(--lane-sent-t) }
+.btab[data-tab="opened"]{  --lane-c:var(--lane-opened);  --lane-t:var(--lane-opened-t) }
+.btab[data-tab="replied"]{ --lane-c:var(--lane-replied); --lane-t:var(--lane-replied-t) }
 
 /* --- lane ----------------------------------------------------------------- */
 
@@ -835,11 +862,8 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   letter-spacing:normal; text-transform:none;
   font-size:var(--fs-xs);
 }
-.lane-count{
-  font-family:var(--font-lat); font-size:var(--fs-sm); font-weight:900;
-  color:var(--lane-c);
-  direction:ltr; unicode-bidi:isolate;
-}
+/* the column header's count is the same chip, worn in its lane hue quietly */
+.lane-count{ background:var(--lane-t); color:var(--lane-c) }
 
 .lane[data-lane="draft"]{   --lane-c:var(--lane-draft);   --lane-t:var(--lane-draft-t) }
 .lane[data-lane="live"]{    --lane-c:var(--lane-live);    --lane-t:var(--lane-live-t) }
