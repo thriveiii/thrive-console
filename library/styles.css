@@ -16,6 +16,9 @@
   /* ---- states ---- */
   --state-stall:#F6CF5B; --state-stall-t:rgba(246,207,91,.11); --state-stall-b:rgba(246,207,91,.55);
   --state-good:#7EE0B8; --state-bad:#EE8C9D;
+  /* ---- T4 glow: one calm accent for the value that earned attention ---- */
+  --glow:#7EE0B8; --glow-1:rgba(126,224,184,.42); --glow-0:rgba(126,224,184,0); --glow-t:rgba(126,224,184,.10);
+  --t-glow:1600ms;   /* one slow cycle: deliberately outside the interaction scale, a glow is not a transition */
   /* ---- radii: four values, nothing else ---- */
   --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:18px; --r-pill:999px;
   /* ---- space: a 4px base scale ---- */
@@ -448,11 +451,30 @@ html[dir="rtl"] .logtable td.mono{direction:ltr;text-align:start}
 .enter{animation:rise-in var(--t-base) var(--e-enter) both}
 .enter-1{animation-delay:0ms} .enter-2{animation-delay:40ms} .enter-3{animation-delay:80ms}
 
+/* T4: the quiet glow. It marks one thing per column or section, the value that
+   earned attention, and a card in a state to act on. .is-glow is the resting
+   accent that holds while the fact holds; .is-glow-new plays ONE slow cycle when
+   the fact becomes true, gated in app.js (glowChanged) so a re-render never
+   replays it. One accent, never the gradient, never a field of pulses. */
+@keyframes glow-swell{ 0%{box-shadow:0 0 0 0 var(--glow-0)} 35%{box-shadow:0 0 0 4px var(--glow-1)} 100%{box-shadow:0 0 0 0 var(--glow-0)} }
+@keyframes glow-fill{ 0%{background-color:var(--glow-0)} 35%{background-color:var(--glow-1)} 100%{background-color:var(--glow-t)} }
+.is-glow-new{ animation:glow-swell var(--t-glow) var(--e-standard) 1 both }
+/* a card in an actionable state rests with a hair-thin accent ring */
+.tok.is-glow{ box-shadow:0 0 0 1px var(--glow-1) }
+/* the top cell of a column rests with a faint accent wash and its figure in accent */
+.logtable td.is-glow{ background:var(--glow-t) }
+.logtable td.is-glow b,.logtable td.is-glow .ok-n{ color:var(--glow) }
+.logtable td.is-glow-new{ animation:glow-fill var(--t-glow) var(--e-standard) 1 both }
+
 @media (prefers-reduced-motion:reduce){
   .brand img,.gate-logo,.card,.card:hover{animation:none!important;transition:none!important}
   .rv{opacity:1;transform:none;transition:opacity var(--t-instant) linear}
   .enter{animation:none}
   .card:hover{transform:none}
+  /* the one slow cycle is removed; the resting accent (.is-glow) stays as a static emphasis, and a
+     card that just changed shows the same static ring in place of the cycle it would have played */
+  .is-glow-new,.logtable td.is-glow-new{ animation:none!important }
+  .tok.is-glow-new{ box-shadow:0 0 0 1px var(--glow-1) }
 }
 html.tab-hidden .brand img,html.tab-hidden .gate-logo{animation-play-state:paused}
 
@@ -644,14 +666,24 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   gap:var(--s-4); flex-wrap:wrap; margin-bottom:var(--s-5);
 }
 .verdict{
+  display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap;
   font-family:var(--font-display);
   font-weight:var(--w-max);
   font-size:clamp(20px,3.2vw,var(--fs-2xl));
   line-height:var(--lh-tight);
   color:var(--ink);
   letter-spacing:-.01em;
-  max-width:34ch;
 }
+/* T4 counter: the verdict number shown as a figure you read at a glance, with
+   the sentence as its label. It is the same value ThriveBoard.verdict derives;
+   there is no second count. aria-hidden on the figure so a reader hears the
+   sentence once, not the number and then the number spelled out. */
+.vcount{
+  display:inline-block; border-radius:var(--r-md);
+  font-size:clamp(34px,6vw,58px); line-height:.9; color:var(--lane-opened);
+  font-variant-numeric:tabular-nums; unicode-bidi:isolate;
+}
+.vtext{ max-width:34ch }
 [dir="rtl"] .verdict{ letter-spacing:normal; text-transform:none }
 .verdict em{ font-style:normal; color:var(--lane-opened) }
 .verdict-sub{

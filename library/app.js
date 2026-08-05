@@ -3957,6 +3957,21 @@ async function initHome(){
       .sort((a,b)=> (b.sent+b.opens+b.replies)-(a.sent+a.opens+a.replies) || String(a.biz).localeCompare(String(b.biz)));
     /* The story sentence counts opens the same way, so the line above the table and the table
        can never report two different numbers. */
+    /* T4 glow: the highest value in each comparable column, one per column, found by Math.max
+       over the rows. A column that is all zeros has no top to mark. gc() puts the resting
+       accent on that one cell, and one slow cycle on it when the top changes. */
+    const dwellAvg=r=> r.dwellN? r.dwellMs/r.dwellN : 0;
+    const GCOLS=[["sent",r=>r.sent],["views",r=>r.views],["opens",r=>r.opens],
+                 ["uniq",r=>r.uniq],["dwell",dwellAvg],["replies",r=>r.replies]];
+    const gTop={}, gNew={};
+    GCOLS.forEach(function(col){
+      var name=col[0], get=col[1], mx=0, slug=null;      // start at 0: a column of zeros marks nothing
+      rows.forEach(function(r){ var val=get(r); if(val>mx){ mx=val; slug=r.slug; } });
+      gTop[name]=slug;
+      gNew[name]=glowChanged("col:"+name, slug? slug+":"+Math.round(mx) : "none");
+    });
+    const gc=(name,r)=> (gTop[name]&&gTop[name]===r.slug)
+      ? ' class="is-glow'+(gNew[name]?" is-glow-new":"")+'"' : '';
     const hth=(label,tip)=>'<th>'+label+'<button type="button" class="info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button></th>';
     const num=v=>v?('<b>'+v+'</b>'):'<span class="zero">0</span>';
     el("homeCampaigns").innerHTML = rows.length
@@ -3967,9 +3982,9 @@ async function initHome(){
         hth(t("cmp_replied_n"),t("tip_replies"))+hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
         rows.map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.biz)+'</a>'+
           (r.live?'':' <span class="tag tag-plain">'+t("draft")+'</span>')+'</td>'+
-          '<td>'+num(r.sent)+'</td><td>'+num(r.views)+'</td><td>'+num(r.opens)+'</td><td>'+num(r.uniq)+'</td>'+
-          '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):'<span class="zero">–</span>')+'</td>'+
-          '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
+          '<td'+gc("sent",r)+'>'+num(r.sent)+'</td><td'+gc("views",r)+'>'+num(r.views)+'</td><td'+gc("opens",r)+'>'+num(r.opens)+'</td><td'+gc("uniq",r)+'>'+num(r.uniq)+'</td>'+
+          '<td'+gc("dwell",r)+'>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):'<span class="zero">–</span>')+'</td>'+
+          '<td'+gc("replies",r)+'>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
           '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">–</span>')+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_no_campaigns")+'</div>';
@@ -4197,6 +4212,20 @@ async function initInsights(){
   render();
 }
 
+/* T4: the glow fires once on change, then rests. A full board or table re-render
+   rebuilds the same HTML each time, so a class baked into that HTML would replay
+   the animation on every render. This remembers, per marked slot, the signature of
+   what currently holds it (a column's top slug and value, a card's lane, the
+   verdict number); the caller adds .is-glow-new only when the signature is new.
+   First sight is not a change, so a fresh load never storms with glows. */
+var _glowSig = {};
+function glowChanged(key, sig){
+  var had = Object.prototype.hasOwnProperty.call(_glowSig, key);
+  var prev = _glowSig[key];
+  _glowSig[key] = sig;
+  return had && prev !== sig;
+}
+
 /* ---------- the board ----------
    State is position. Every opportunity sits in the lane that is its state, so you learn
    where everything stands by looking rather than by reading a number, and follow-up debt
@@ -4325,15 +4354,37 @@ async function initBoard(){
         return i-j;
       });
       body.innerHTML = b.lanes[k].length
-        ? b.lanes[k].map((tk,i)=> tokenHtml(tk).replace('class="tok ', 'class="tok '+(i<3?"enter enter-"+(i+1)+" ":"")) ).join("")
+        /* T4: a card in an actionable lane (a reply just in, or ready to send) carries
+           the glow. glowChanged is called for every card in every lane so a later move
+           INTO replied or live is seen as a change and plays one cycle; other lanes just
+           record the card's position and show no glow. It reads the lane the causal
+           status put the card in, so it marks a fact, not a guess. */
+        ? b.lanes[k].map((tk,i)=>{
+            const gnew=glowChanged("card:"+tk.slug, k);
+            // replied is a standing call to action, a reply waiting for you: a resting accent, and
+            // one cycle when it arrives. live (ready to send) is a moment: one cycle when it becomes
+            // ready, then rest, because ready cards are many and a field of rings is the failure the
+            // rule forbids. Both read the lane the causal status put the card in, so it marks a fact.
+            let gcls="";
+            if(k==="replied") gcls="is-glow "+(gnew?"is-glow-new ":"");
+            else if(k==="live" && gnew) gcls="is-glow-new ";
+            const enter=i<3 ? "enter enter-"+(i+1)+" " : "";
+            return tokenHtml(tk).replace('class="tok ', 'class="tok '+enter+gcls);
+          }).join("")
         /* Law 4: an icon, a sentence, and at most one action. A bare sentence in
            the middle of a field is the shrug this law exists to stop. */
         : '<div class="lane-empty">'+ic("spark",18)+'<p>'+esc(t("lane_"+k+"_empty"))+'</p></div>';
     });
 
     // One sentence, chosen by priority. The console says one thing at a time.
+    // T4: the same number, given a counter treatment. num() is v.n, the value
+    // ThriveBoard.verdict already derived; no second count is computed here.
     const v=ThriveBoard.verdict(b);
-    el("boardVerdict").innerHTML = txt(v.key, v.n).replace(String(v.n), num(v.n));
+    const vLine=txt(v.key, v.n).replace(String(v.n), num(v.n));
+    const vNew=glowChanged("counter", v.key+":"+v.n) ? " is-glow-new" : "";
+    el("boardVerdict").innerHTML = (v.n>0)
+      ? '<span class="vcount'+vNew+'" aria-hidden="true">'+v.n+'</span><span class="vtext">'+vLine+'</span>'
+      : '<span class="vtext">'+vLine+'</span>';
     el("boardVerdictSub").innerHTML = b.summary.stalled
       ? txt("vd_sub_stalled", ThriveBoard.STALL_DAYS).replace(String(ThriveBoard.STALL_DAYS), num(ThriveBoard.STALL_DAYS))
       : txt("vd_sub_none");
