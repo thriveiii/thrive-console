@@ -5389,6 +5389,22 @@ async function runMove(move, slug, opts){
      guard that refuses one of them is a line in the log, not an interruption. */
   if(!r.ok){ if(!opts.silent) toast(t(r.error)); return r; }
 
+  /* WO-015 Phase E, recall is chapter aware. The lifecycle restores an archived
+     card to the stage it declared when it was archived, which for a converted
+     opportunity may belong to chapter one, a chapter that has since closed. So a
+     recall of a card whose active chapter is past the first reads its lane through
+     activeChapterStage and returns it there, storing a derived stage as no
+     declaration so the board reads the active chapter rather than a stale one. It
+     also records which chapter it reopened into, so the documented event is
+     honest. Chapter one cards and closed stage restores are untouched: this only
+     fires once an offer has opened a second chapter. */
+  if(move==="unarchive" && activeChapter(slug)>1){
+    const merged=Object.assign({}, o, r.patch, { archived:false });
+    const st=activeChapterStage(merged);
+    r.patch.stage = (st==="ready"||st==="draft"||st==="live") ? "" : st;
+    r.detail = "chapter "+activeChapter(slug)+", "+st;
+  }
+
   saveDraft(Object.assign({ slug:slug }, r.patch));
   logActivity(r.action, slug, r.detail||"");
   invalidateSends();
