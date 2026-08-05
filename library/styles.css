@@ -123,7 +123,7 @@ select{cursor:pointer}
 
 /* cards / table */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-.card{background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:18px;transition:border-color .2s,transform .2s}
+.card{background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:18px;transition:border-color .2s,transform .2s;display:flex;flex-direction:column}
 .card:hover{border-color:rgba(150,133,202,.5);transform:translateY(-2px)}
 .card.is-arch{opacity:.62}
 .card.is-arch:hover{opacity:1}
@@ -142,6 +142,39 @@ select{cursor:pointer}
 .badge.arch{color:var(--ink-3);background:rgba(255,255,255,.06)}
 .card .row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px}
 .card .actions{display:flex;gap:8px}
+
+/* --- Library card, one shared structure --------------------------------------
+   Three tiers on one skeleton, so every card is the same shape and the grid stays
+   even. Primary: name, state, the one primary action. Secondary: the url and the
+   supporting facts, present but quiet, one line of muted text rather than a wall of
+   bright chips. Tertiary: the rest of the actions, reachable behind a native
+   disclosure so the face is not a row of equal buttons. Nothing is removed, only
+   re-tiered. The foot pins to the bottom (flex-column card + margin-top:auto) so
+   every card's action row lines up, whatever facts it carries. */
+.card-state{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+.card-state .flag{white-space:nowrap;font-size:var(--fs-micro);font-weight:800;padding:3px 8px;border-radius:var(--r-pill)}
+.card-state .flag-fu{color:var(--state-stall);background:var(--state-stall-t);border:1px solid var(--state-stall-b)}
+.card-state .flag-half{color:var(--lane-live);background:var(--lane-live-t);border:1px solid var(--hair)}
+.card-facts{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 0;margin:12px 0 0;font-size:var(--fs-xs);color:var(--ink-4);font-weight:600;line-height:1.6}
+.card-facts .fact{white-space:nowrap}
+.card-facts .fact-tmpl{color:var(--ink-3);font-weight:700}
+.card-facts .fact:not(:last-child)::after{content:"\00B7";margin:0 8px;opacity:.5}
+.card-foot{margin-top:auto;padding-top:14px}
+.card-act{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.card-act .btn.sm{flex:0 0 auto}
+.card-act .stage-sel{margin-inline-start:auto}
+.card-more{margin-top:10px}
+.card-more-s{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-xs);font-weight:700;color:var(--ink-3);user-select:none;width:max-content}
+.card-more-s::-webkit-details-marker{display:none}
+.card-more-s .ic{transition:transform var(--t-quick) var(--ease)}
+.card-more[open] .card-more-s .ic{transform:rotate(180deg)}
+.card-more-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin-top:10px}
+.card-more-list>*{justify-content:center;text-align:center;white-space:nowrap}
+/* The state badge is a Latin abbreviation styled with tracking and caps; neither may touch
+   Arabic, where tracking breaks the joins and caps do nothing. Cleared in RTL. */
+[dir="rtl"] .badge{letter-spacing:normal;text-transform:none}
+@media (pointer:coarse){ .card-more-s{min-height:44px} }
+
 .empty{text-align:center;color:var(--ink-3);padding:60px 20px;border:1px dashed var(--hair);border-radius:16px}
 
 /* editor */

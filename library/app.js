@@ -1342,32 +1342,43 @@ async function initDashboard(){
       const primary = live
         ? `<a class="btn sm" href="${relOpp(o.slug)}" target="_blank" rel="noopener">${t("open_page")}</a>`
         : `<button class="btn sm" data-pub="${esc(o.slug)}">${t("publish")}</button>`;
+      /* T-Library: one skeleton, three tiers. Primary (name, state, primary action) is prominent;
+         the supporting facts are one quiet muted line, not a wall of bright chips; the rest of the
+         actions sit behind a native <details> disclosure, reachable but off the face. Every value
+         and every action from the old card is still here, only re-tiered. */
+      const moreActions =
+          (!live?`<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>`:``)
+        + (live?`<a class="btn ghost sm" href="${viewHref("compose","slug="+enc)}">${t("email_btn")}</a><button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:``)
+        + `<a class="btn ghost sm" href="${viewHref("editor","slug="+enc)}">${t("edit")}</a>`
+        + `<button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>`
+        + (half?`<button class="btn sm" data-finish="${esc(o.slug)}">${t("pub_finish")}</button>`:``)
+        + (live?`<button class="btn ghost sm danger" data-unpub="${esc(o.slug)}">${t("unpublish")}</button>`:``)
+        + ((o._local&&!o.published)?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:``);
       return `<div class="card${arch?" is-arch":""}${live?"":" is-draft"}${fu?" needs-fu":""}">
         <div class="card-top">
           <div class="card-id"><p class="biz">${esc(o.business)||esc(o.slug)}</p>${linkRow}</div>
-          ${badgeFor(o)}
+          <div class="card-state">
+            ${badgeFor(o)}
+            ${fu?`<span class="flag flag-fu">${t("followup")}</span>`:""}
+            ${half?`<span class="flag flag-half">${t("pub_half_chip")}</span>`:""}
+          </div>
         </div>
-        <div class="meta">
-          <span class="chip tmpl">${esc(o.template)||t("none")}</span>
-          <span class="chip">${t("col_made")}: ${esc(o.sent_on)||t("none")}</span>
-          ${snd.count?`<span class="chip">${t("col_sent")}: ${esc(sentDay)||t("none")}</span>`:""}
-          ${live?`<span class="chip">${snd.count?t("ins_opens")+": "+outreachOpens(o):t("col_views")+": "+opensForSlug(o.slug)}</span>`:""}
-          <span class="chip">${t("col_location")}: ${esc(o.location)||t("none")}</span>
-          ${fu?`<span class="chip fu-chip">${t("followup")}</span>`:""}
-          ${half?`<span class="chip fu-chip">${t("pub_half_chip")}</span>`:""}
-        </div>
-        <div class="row">
-          ${primary}
-          ${stageSel(o)}
-        </div>
-        <div class="actions actions-wrap">
-          ${!live?`<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>`:""}
-          ${live?`<a class="btn ghost sm" href="${viewHref("compose","slug="+enc)}">${t("email_btn")}</a><button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:""}
-          <a class="btn ghost sm" href="${viewHref("editor","slug="+enc)}">${t("edit")}</a>
-          <button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>
-          ${half?`<button class="btn sm" data-finish="${esc(o.slug)}">${t("pub_finish")}</button>`:""}
-          ${live?`<button class="btn ghost sm danger" data-unpub="${esc(o.slug)}">${t("unpublish")}</button>`:""}
-          ${(o._local&&!o.published)?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:""}
+        <p class="card-facts">
+          <span class="fact fact-tmpl">${esc(o.template)||t("none")}</span>
+          <span class="fact">${t("col_made")}: ${esc(o.sent_on)||t("none")}</span>
+          ${snd.count?`<span class="fact">${t("col_sent")}: ${esc(sentDay)||t("none")}</span>`:""}
+          ${live?`<span class="fact">${snd.count?t("ins_opens")+": "+outreachOpens(o):t("col_views")+": "+opensForSlug(o.slug)}</span>`:""}
+          <span class="fact">${t("col_location")}: ${esc(o.location)||t("none")}</span>
+        </p>
+        <div class="card-foot">
+          <div class="card-act">
+            ${primary}
+            ${stageSel(o)}
+          </div>
+          <details class="card-more">
+            <summary class="card-more-s">${ic("chevron",14)}<span>${t("lib_more")}</span></summary>
+            <div class="card-more-list">${moreActions}</div>
+          </details>
         </div>
       </div>`;
     }).join("");
