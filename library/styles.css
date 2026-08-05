@@ -675,8 +675,12 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .board::-webkit-scrollbar-thumb{ background:var(--hair); border-radius:var(--r-pill) }
 
 /* Below 900px the lanes stop sharing the width and keep a readable minimum,
-   so the board scrolls. No lane is ever hidden. IDENTITY §3.2. */
+   so the board scrolls. No lane is ever hidden. IDENTITY §3.2. The minimum is
+   the same 236 a finger already gets, so the card body is sized for two lines
+   of name at every narrow width, whatever the pointer: one sizing model, not a
+   fine/coarse split that left a mouse-driven narrow window with a 132 sliver. */
 @media(max-width:900px){
+  :root{ --lane-min:236px }
   .board{ grid-auto-columns:var(--lane-min) }
 }
 
@@ -738,15 +742,17 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .tok:hover{ border-color:var(--lane-c) }
 .tok:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
 
-/* display:block is load-bearing. On an inline span, overflow, white-space and
-   text-overflow are all ignored, and a long business name silently widens the
-   lane instead of truncating. */
+/* A long business name wraps to two lines instead of truncating: a clipped
+   "Ludic..." is a name you cannot read, and the lane is now sized to hold two
+   lines. The box still clips at the second line so one very long name cannot
+   push the card taller than its neighbours, and overflow-wrap breaks a single
+   unspaced token rather than letting it widen the lane. */
 .tok-name{
-  display:block;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
   font-family:var(--font-lat);
   font-size:var(--fs-xs); font-weight:var(--w-head); color:var(--ink);
   line-height:var(--lh-tight);
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  overflow:hidden; overflow-wrap:anywhere;
 }
 [dir="rtl"] .tok-name{ font-family:var(--font-ar) }
 /* A business name is a name, not a sentence, and it keeps its own reading order. In an Arabic
@@ -767,7 +773,7 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   font-size:var(--fs-micro); color:var(--ink-4);
   font-weight:var(--w-strong); margin-top:var(--s-1);
   text-align:start;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  overflow-wrap:anywhere;
 }
 /* WO-015 §6: the chapter marker. One quiet word, never a badge. The offer chapter
    carries the spark accent so a live offer reads at a glance; the first contact is
