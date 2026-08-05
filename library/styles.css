@@ -731,35 +731,73 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   font-weight:var(--w-strong); margin-top:var(--s-1);
 }
 
-/* --- board scroller ------------------------------------------------------- */
+/* --- board: two layouts, one board ------------------------------------------
+   One breakpoint at 1024 forks the board, because horizontal scroll hides the
+   columns behind a swipe and that is the same frustration as a card off the edge.
 
+   At and above 1024 (iPad landscape and desktop): a CONDENSED five-column board.
+   repeat(5, minmax(0,1fr)) makes the five columns share the width and SHRINK to
+   fit, so the row is always inside the viewport and never overflows and never needs
+   a sideways swipe. min-width:0 on the lane lets a column shrink and its card wrap.
+
+   Below 1024 (iPad portrait and phone): five 236px columns cannot sit readably
+   inside the screen (768 portrait leaves each column ~139px, below the touch card),
+   so instead of hiding them behind a swipe the board becomes a status TAB BAR: one
+   column shown in full at a time, stacked, all reachable, nothing hidden off a swipe.
+
+   One card component and one lane content feed both layouts; nothing is rendered twice. */
 .board{
   display:grid;
-  grid-auto-flow:column;
-  grid-auto-columns:minmax(var(--lane-min),1fr);
+  grid-template-columns:repeat(5, minmax(0,1fr));
   gap:var(--s-2);
-  /* the sole horizontal scroller. min-width:0 and max-width:100% keep the grid bounded to .wrap so
-     it scrolls within its own box instead of expanding the page (the containment some engines miss),
-     and the trailing scroll padding keeps the last lane off the very edge as it comes into view. */
-  min-width:0; max-width:100%;
-  overflow-x:auto;
-  overscroll-behavior-x:contain;
-  scroll-padding-inline-end:var(--s-3);
-  padding-bottom:var(--s-3);
-  scrollbar-width:thin;
+  min-width:0;
 }
-.board::-webkit-scrollbar{ height:6px }
-.board::-webkit-scrollbar-thumb{ background:var(--hair); border-radius:var(--r-pill) }
+.board-tabs{ display:none }   /* the tab bar belongs to the narrow layout only */
 
-/* Below 900px the lanes stop sharing the width and keep a readable minimum,
-   so the board scrolls. No lane is ever hidden. IDENTITY §3.2. The minimum is
-   the same 236 a finger already gets, so the card body is sized for two lines
-   of name at every narrow width, whatever the pointer: one sizing model, not a
-   fine/coarse split that left a mouse-driven narrow window with a 132 sliver. */
-@media(max-width:900px){
-  :root{ --lane-min:236px }
-  .board{ grid-auto-columns:var(--lane-min) }
+@media(min-width:1024px){
+  /* condensed: a tighter gap and a tighter card so five columns read calmly at ~190 to 230px */
+  .board{ gap:var(--s-1) }
+  .board .tok{ padding:var(--s-1) var(--s-2) }
 }
+
+@media(max-width:1023px){
+  .board-tabs{
+    display:flex; gap:var(--s-1); margin-bottom:var(--s-4);
+  }
+  /* one lane at a time, stacked, full width, nothing hidden off a swipe */
+  .board{ display:block }
+  .board .lane{ display:none }
+  .board[data-active-lane="draft"]   .lane[data-lane="draft"],
+  .board[data-active-lane="live"]    .lane[data-lane="live"],
+  .board[data-active-lane="sent"]    .lane[data-lane="sent"],
+  .board[data-active-lane="opened"]  .lane[data-lane="opened"],
+  .board[data-active-lane="replied"] .lane[data-lane="replied"]{ display:flex }
+  .board .lane.tab-in{ animation:tab-in var(--t-base) var(--e-enter) both }
+}
+/* the soft switch between columns, removed under reduced motion */
+@keyframes tab-in{ from{ opacity:0; transform:translateY(6px) } to{ opacity:1; transform:none } }
+@media(prefers-reduced-motion:reduce){ .board .lane.tab-in{ animation:none } }
+
+/* the tab: its lane icon, its label, its count; the active one carries one quiet accent. The five
+   tabs share the width so all five, and all five counts, are always in view without a swipe, which
+   is the point of the strip. The label rides in when there is room (iPad portrait, large phone) and
+   steps aside on the narrowest phones, where the icon and the count carry the state. */
+.btab{
+  flex:1 1 0; min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  padding:8px 10px; border-radius:var(--r-pill);
+  background:var(--panel); border:1px solid var(--hair);
+  color:var(--ink-3); font:inherit; font-size:var(--fs-xs); font-weight:700;
+  cursor:pointer; white-space:nowrap;
+  transition:color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
+}
+.btab .btab-ic{ color:var(--ink-4); display:inline-flex }
+.btab-l{ overflow:hidden; text-overflow:ellipsis }
+@media(max-width:479px){ .btab-l{ display:none } }
+.btab-n{ font-weight:800; color:var(--ink-4) }
+.btab.is-on{ color:var(--ink); border-color:var(--purple); background:var(--panel-2) }
+.btab.is-on .btab-ic{ color:var(--purple) }
+.btab.is-on .btab-n{ color:var(--ink-2) }
+@media(pointer:coarse){ .btab{ min-height:44px } }
 
 /* --- lane ----------------------------------------------------------------- */
 
