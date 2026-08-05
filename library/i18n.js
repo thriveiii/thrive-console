@@ -1868,8 +1868,8 @@ var I18N_BOARD = {
   },
 
   en: {
-    nav_board:      "Board",
-    board_title:    "Board",
+    nav_board:      "Thrive Operations",
+    board_title:    "Thrive Operations",
     board_sub:      "Where every opportunity stands right now.",
     board_numbers:  "See the numbers",
 
@@ -1992,8 +1992,8 @@ var I18N_BOARD = {
   },
 
   ar: {
-    nav_board:      "اللوح",
-    board_title:    "اللوح",
+    nav_board:      "عمليات ثرايف",
+    board_title:    "عمليات ثرايف",
     board_sub:      "أين تقف كل فرصة الآن.",
     board_numbers:  "اطّلع على الأرقام",
 
