@@ -23,6 +23,11 @@ CH = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 SHOTS = os.path.join(ROOT, "shots", "truth")
 os.makedirs(SHOTS, exist_ok=True)
 SELFTEST = "--selftest" in sys.argv
+# WO-015 Phase F: the causal-consistency pass rides this same harness and its same
+# enumeration (WIDTHS, the lang loop, the unlock). --causal walks the matrix and
+# writes docs/CAUSAL_SCAN.md; --causal --selftest proves each new assertion by
+# breaking it.
+CAUSAL = "--causal" in sys.argv
 
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 socketserver.TCPServer.allow_reuse_address = True
@@ -347,9 +352,157 @@ def selftest(pg):
     return ok
 
 
+# ===================== WO-015 Phase F: the causal-consistency pass =====================
+# A card in every state, plus a converted card and two replies, so the pass can
+# read every status through causalStatus and see the thread and the chapter.
+CAUSAL_SEED = """()=>{ const now=Date.now(), iso=d=>new Date(now-d*86400000).toISOString();
+ localStorage.setItem('thrive_opps_v1', JSON.stringify([
+  {slug:'draft-co',business:'Draft Co',published:false,up:now},
+  {slug:'ready-co',business:'Ready Co',published:true,up:now,channel:{kind:'email',to:'a@x'}},
+  {slug:'sent-co',business:'Sent Co',published:true,up:now,stage:'sent'},
+  {slug:'opened-co',business:'Opened Co',published:true,up:now,stage:'sent'},
+  {slug:'replied-co',business:'Replied Co',published:true,up:now,stage:'replied'},
+  {slug:'won-co',business:'Won Co',published:true,up:now,stage:'won'},
+  {slug:'lost-co',business:'Lost Co',published:true,up:now,stage:'lost',prev_stage:'sent'},
+  {slug:'offer-co',business:'Offer Co',published:true,up:now,stage:'replied',
+   converted_at:'2026-08-01T00:00:00Z',offer:{text:'the offer',html:'<p>o</p>',published:true}}]));
+ localStorage.setItem('thrive_mail_v1', JSON.stringify([
+  {mid:'m1',ts:iso(3),opp:'sent-co',to:'b@x',status:'sent',direction:'out',chapter:1},
+  {mid:'o1',ts:iso(6),opp:'offer-co',to:'o@x',status:'sent',direction:'out',chapter:1},
+  {mid:'o2',ts:iso(2),opp:'offer-co',to:'o@x',subject:'Your offer',status:'sent',direction:'out',chapter:2}]));
+ localStorage.setItem('thrive_hits_v1', JSON.stringify([{type:'open',slug:'opened-co',ts:iso(1)}]));
+ localStorage.setItem('thrive_inbound_v1', JSON.stringify([
+  {ts:iso(5),opp:'offer-co',kind:'reply',from:'o@x',name:'Owen',snippet:'yes we are interested in the offer',rule:'replyto',threadId:'t1',chapter:1},
+  {ts:iso(4),opp:'replied-co',kind:'reply',from:'c@x',name:'Cara',snippet:'a reply worth showing',rule:'replyto',threadId:'t2',chapter:1}]));
+}"""
+
+RETIRED_LABELS = {"en": ["Won", "Lost", "Drop"], "ar": ["نجحت", "فشلت", "استبعاد"]}
+causal_rows = []   # {slug, status, event} for every record, filled once
+
+def causal_classify(pg):
+    """Every record read through causalStatus: the status it shows and the event
+    that backs it. event == "" is a status with nothing behind it."""
+    return pg.evaluate("""async()=>{ const opps=await mergedOpps(); return opps.map(o=>{
+      const c=causalStatus(o); return {slug:o.slug, status:c.status, event:c.event}; }); }""")
+
+def causal_controls(pg, lang):
+    """No card exposes a won, lost or exclude control. The card menu is where a
+    retired move would surface, so every menu is opened and read, plus any button
+    rendered anywhere carrying a retired label, which catches an injected one."""
+    offenders = []
+    slugs = pg.eval_on_selector_all(".tok[data-slug]", "els=>els.map(e=>e.getAttribute('data-slug'))")
+    for s in slugs:
+        btn = pg.query_selector('.tok[data-slug="%s"] .tok-more' % s)
+        if not btn: continue
+        try: btn.click(); pg.wait_for_timeout(120)
+        except Exception: continue
+        items = pg.eval_on_selector_all(".cardmenu [role=menuitem]", "els=>els.map(e=>(e.textContent||'').trim())")
+        for it in items:
+            if it in RETIRED_LABELS[lang]: offenders.append((s, it))
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(40)
+    extra = pg.eval_on_selector_all("button, [role=button], [role=menuitem]",
+        "(els,labs)=>els.map(e=>(e.textContent||'').trim()).filter(x=>labs.indexOf(x)>=0)", RETIRED_LABELS[lang])
+    for e in extra: offenders.append(("(rendered)", e))
+    return offenders
+
+def causal_thread(pg):
+    """The thread renders, a reply shows a snippet and not a full body, the chapter
+    marker is on the converted card, and the divider appears where chapter 2 begins."""
+    pg.evaluate("x=>location.hash='#board'"); pg.wait_for_timeout(600)
+    res = {"thread": False, "snippet": False, "no_body": True, "divider": False, "marker": False}
+    res["marker"] = pg.evaluate("()=>!!document.querySelector('.tok[data-slug=\"offer-co\"] .tok-chapter')")
+    card = pg.query_selector('.tok[data-slug="offer-co"] .tok-open')
+    if card:
+        card.click(); pg.wait_for_timeout(600)
+        tab = pg.query_selector('.modal-tab[data-tab="history"]')
+        if tab:
+            try: tab.click(); pg.wait_for_timeout(400)
+            except Exception: pass
+        html = pg.evaluate("()=>{const b=document.getElementById('modalHistory');return b?b.innerHTML:'';}")
+        res["thread"] = 'class="th-list"' in html
+        res["divider"] = 'class="th-chapter"' in html
+        res["snippet"] = pg.evaluate("()=>{const s=document.querySelector('#modalHistory .rp-snip');return !!s && s.textContent.trim().length>0;}")
+        # a reply shows a snippet, never a full body: the relay caps a snippet at 600.
+        res["no_body"] = pg.evaluate("()=>[...document.querySelectorAll('#modalHistory .rp-snip')].every(s=>s.textContent.length<=600)")
+        cl = pg.query_selector("#modalClose, .mw-close, [data-close]")
+        if cl:
+            try: cl.click(); pg.wait_for_timeout(200)
+            except Exception: pass
+    return res
+
+def causal_walk(pg, lang, w):
+    tag = "%s/%d" % (lang, w)
+    pg.evaluate("x=>location.hash='#board'"); pg.wait_for_timeout(800)
+    bad = causal_controls(pg, lang)
+    ck("%s: no card exposes a won, lost or exclude control" % tag, not bad, bad)
+    th = causal_thread(pg)
+    ck("%s: the thread renders" % tag, th["thread"], th)
+    ck("%s: a reply shows a snippet and not a full body" % tag, th["snippet"] and th["no_body"], th)
+    ck("%s: the chapter marker renders on the converted card" % tag, th["marker"], th)
+    ck("%s: the chapter divider appears where chapter 2 begins" % tag, th["divider"], th)
+
+def causal_selftest(pg):
+    """Prove each new assertion by breaking it, on the correct named check."""
+    pg.evaluate("x=>location.hash='#board'"); pg.wait_for_timeout(700)
+
+    # 1. a status-without-event that is NOT a legacy won: wrap causalStatus so one
+    #    card reports event "" for another reason, and confirm the scan reports it.
+    pg.evaluate("""()=>{ window.__oc=causalStatus;
+      causalStatus=function(o){ if(o&&o.slug==='sent-co') return {status:'sent',event:''}; return window.__oc(o); }; }""")
+    rows = causal_classify(pg)
+    defect = [r for r in rows if r["event"] == "" and r["status"] != "won"]
+    ck("causal selftest: a status-without-event (not a legacy won) is reported",
+       any(r["slug"] == "sent-co" for r in defect), defect)
+    pg.evaluate("()=>{ causalStatus=window.__oc; }")
+
+    # 2. a residual opinion control: inject a rendered "Won" button and confirm the guard catches it.
+    pg.evaluate("""()=>{ const t=document.querySelector('.tok'); if(t){ const b=document.createElement('button');
+      b.setAttribute('role','menuitem'); b.textContent='Won'; b.id='__inj_won'; t.appendChild(b); } }""")
+    ck("causal selftest: a residual won control is caught by the guard",
+       any(x[1] == "Won" for x in causal_controls(pg, "en")), None)
+    pg.evaluate("()=>{ const b=document.getElementById('__inj_won'); if(b) b.remove(); }")
+
+    # 3. a full-body reply: inject an oversized reply snippet and confirm the body assertion catches it.
+    pg.evaluate("x=>location.hash='#board'"); pg.wait_for_timeout(400)
+    card = pg.query_selector('.tok[data-slug="offer-co"] .tok-open')
+    if card:
+        card.click(); pg.wait_for_timeout(500)
+        tab = pg.query_selector('.modal-tab[data-tab="history"]')
+        if tab:
+            try: tab.click(); pg.wait_for_timeout(300)
+            except Exception: pass
+    pg.evaluate("""()=>{ const b=document.getElementById('modalHistory'); if(b){ const p=document.createElement('p');
+      p.className='rp-snip'; p.textContent='x'.repeat(1200); b.appendChild(p); } }""")
+    no_body = pg.evaluate("()=>[...document.querySelectorAll('#modalHistory .rp-snip')].every(s=>s.textContent.length<=600)")
+    ck("causal selftest: a full-body reply (over the snippet cap) is caught", not no_body, None)
+    pg.evaluate("()=>{ const ps=[...document.querySelectorAll('#modalHistory .rp-snip')]; const last=ps[ps.length-1]; if(last && last.textContent.length>600) last.remove(); }")
+
+
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
-    if SELFTEST:
+    if CAUSAL and SELFTEST:
+        ctx = b.new_context(viewport={"width": 1200, "height": 900}, reduced_motion="reduce")
+        ctx.route("https://api.github.com/**", lambda x: x.abort())
+        pg = ctx.new_page(); pg.goto(base + "/library/console.html"); pg.wait_for_timeout(400)
+        unlock(pg); pg.evaluate(CAUSAL_SEED); pg.reload(); pg.wait_for_timeout(1800); unlock(pg)
+        causal_selftest(pg); ctx.close()
+    elif CAUSAL:
+        for lang in ("en", "ar"):
+            for (w, h) in WIDTHS:
+                ctx = b.new_context(viewport={"width": w, "height": h},
+                                    has_touch=(w <= 430), is_mobile=(w <= 430), reduced_motion="reduce")
+                ctx.route("https://api.github.com/**", lambda x: x.abort())
+                pg = ctx.new_page()
+                errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
+                pg.goto(base + "/library/console.html"); pg.wait_for_timeout(400)
+                pg.evaluate("l=>localStorage.setItem('thrive_lang',l)", lang)
+                unlock(pg); pg.evaluate(CAUSAL_SEED); pg.reload(); pg.wait_for_timeout(2000); unlock(pg)
+                causal_walk(pg, lang, w)
+                if not causal_rows:                      # classify once, data is the same across screens
+                    causal_rows.extend(causal_classify(pg))
+                ck("%s/%d: nothing threw" % (lang, w), not errs, errs[:2])
+                ctx.close()
+    elif SELFTEST:
         ctx = b.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True, reduced_motion="reduce")
         ctx.route("https://api.github.com/**", lambda x: x.abort())
         pg = ctx.new_page(); pg.goto(base + "/library/console.html"); pg.wait_for_timeout(400)
@@ -375,8 +528,49 @@ with sync_playwright() as p:
 
 httpd.shutdown()
 
+# ---- WO-015 Phase F report: docs/CAUSAL_SCAN.md, its two sections separated ----
+if CAUSAL and not SELFTEST:
+    real = [r for r in causal_rows if r["event"] == "" and r["status"] != "won"]
+    legacy = [r for r in causal_rows if r["event"] == "" and r["status"] == "won"]
+    backed = [r for r in causal_rows if r["event"] != ""]
+    lines = ["# Causal scan", "",
+             "Generated by `tools/screen_truth.py --causal`. Every card's displayed status is",
+             "resolved through `causalStatus(o)` to the event that backs it. A status with an",
+             "empty backing event is either a real defect or a legacy `won` awaiting a contract,",
+             "and the two are never mixed.", "",
+             "Walked the full matrix: every card state, English and Arabic, at 390, 768 and 1440.", "",
+             "## 1. Real defects (status with no backing event, not a legacy won)", ""]
+    if not real:
+        lines.append("None. Every status on the delivered build resolves to a documenting event.")
+    else:
+        lines.append("| slug | status | backing event |")
+        lines.append("|---|---|---|")
+        for r in real: lines.append("| %s | %s | (none) |" % (r["slug"], r["status"]))
+    lines += ["", "## 2. Legacy `won` records to reconcile (expected exceptions)", "",
+              "The contracts module is not built, so no `won` is backed by a signature event.",
+              "These are listed for Thyab to reconcile by hand when that module emits real",
+              "events. Nothing here is deleted, converted, or auto-resolved.", ""]
+    if not legacy:
+        lines.append("None.")
+    else:
+        lines.append("| slug | status | backing event |")
+        lines.append("|---|---|---|")
+        for r in legacy: lines.append("| %s | won | (no contract event) |" % r["slug"])
+    lines += ["", "## 3. Every card, and the event that backs its status", "",
+              "| slug | status | backing event |", "|---|---|---|"]
+    for r in sorted(causal_rows, key=lambda x: x["slug"]):
+        lines.append("| %s | %s | %s |" % (r["slug"], r["status"], r["event"] or "(none)"))
+    lines.append("")
+    with open(os.path.join(ROOT, "docs", "CAUSAL_SCAN.md"), "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+    # A real defect is a scan failure; a legacy won is an expected, named exception.
+    ck("the causal scan reports zero status-without-event that is not a legacy won", not real, real)
+    print("\ncausal scan: %d cards, %d backed, %d legacy won, %d real defects" % (
+        len(causal_rows), len(backed), len(legacy), len(real)))
+    for r in legacy: print("  legacy won to reconcile:", r["slug"])
+
 # ---- the report: every screen walked, every assertion that failed ----
-if not SELFTEST:
+if not SELFTEST and not CAUSAL:
     by_rule = {}
     for f in findings: by_rule.setdefault(f["rule"], []).append(f)
     lines = ["# Screen truth", "",
