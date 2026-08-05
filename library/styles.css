@@ -62,7 +62,14 @@
 html[dir="rtl"]{ --dir:-1; --w-body:400; --w-strong:500; --w-head:600; --w-max:700; --font-lat:var(--font-ar) }
 *{box-sizing:border-box}
 :focus-visible{outline:2px solid var(--purple);outline-offset:2px;border-radius:6px}
-html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* The containment model, stated once. The viewport is the hard right and left edge: nothing paints
+   past it. overflow-x:clip bounds the page without creating a scroll box, so the sticky header still
+   sticks and vertical scroll is untouched (unlike overflow:hidden, which would break both). Inside
+   this, .wrap sets the equal margins and the max width, and .board is the ONE element allowed to
+   scroll horizontally, and it scrolls WITHIN its own box, so a lane that overflows is reachable by
+   scrolling the board, never pushed off the screen. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:clip}
+body{overflow-x:clip}
 body{margin:0;background:var(--bg);color:var(--ink-2);font-family:var(--font);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
 a{color:inherit}
 img{max-width:100%;height:auto;border:0}
@@ -698,8 +705,13 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   grid-auto-flow:column;
   grid-auto-columns:minmax(var(--lane-min),1fr);
   gap:var(--s-2);
+  /* the sole horizontal scroller. min-width:0 and max-width:100% keep the grid bounded to .wrap so
+     it scrolls within its own box instead of expanding the page (the containment some engines miss),
+     and the trailing scroll padding keeps the last lane off the very edge as it comes into view. */
+  min-width:0; max-width:100%;
   overflow-x:auto;
   overscroll-behavior-x:contain;
+  scroll-padding-inline-end:var(--s-3);
   padding-bottom:var(--s-3);
   scrollbar-width:thin;
 }
@@ -1126,7 +1138,13 @@ body.is-dragging{ cursor:grabbing; user-select:none }
    label carries the meaning, so every one of these is aria-hidden and every
    control keeps its words.                                                   */
 
-.ic{ flex:0 0 auto; vertical-align:-.16em; opacity:.85 }
+/* The one alignment rule for every icon. In a flex row (buttons, chips, headings, the
+   .has-ic wrapper applyIcons adds) align-items:center governs and this is ignored. In an
+   inline run of text the icon rides the baseline, and this em offset drops it onto the text's
+   optical centre. It is em, not px, so it tracks the text size, and it is measured: at -.16em
+   the icon sat 1.3px high (the float), at -.28em it centres (+0.4px). One value, every context,
+   so no page has to nudge its own icons. */
+.ic{ flex:0 0 auto; vertical-align:-.28em; opacity:.85 }
 /* An element given a symbol becomes a row, so the symbol and its label share a
    baseline instead of the symbol pushing the line height around. */
 .has-ic{ display:inline-flex; align-items:center; gap:.45em }
@@ -1462,7 +1480,7 @@ body.modal-open{
 .tpl.kind-page{ border-inline-start:2px solid var(--lane-live) }
 /* Outreach text takes no colour: it is words, and colouring words is noise. */
 .kind-text .mw-h .ic{ color:var(--ink-4) }
-.tok-name .ic{ margin-inline-end:var(--s-1); color:var(--purple); vertical-align:-1px }
+.tok-name .ic{ margin-inline-end:var(--s-1); color:var(--purple) }
 
 /* --- what the console decided, said out loud -------------------------------
    Every upload ends with one sentence. A file that vanishes into the right
