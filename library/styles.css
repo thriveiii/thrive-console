@@ -734,16 +734,18 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 /* --- board scroller ------------------------------------------------------- */
 
 .board{
-  display:grid;
-  grid-auto-flow:column;
-  grid-auto-columns:minmax(var(--lane-min),1fr);
+  /* The sole horizontal scroller, and it is a FLEX row, not a grid. A grid with
+     grid-auto-flow:column plus overflow-x:auto scrolls correctly on Chromium but iOS Safari
+     (WebKit) does not reliably contain it: the auto-flow track row keeps its content width and
+     pushes past the viewport instead of scrolling inside the board, which is the lane that ran
+     off the right edge of the iPad. A flex row with overflow-x:auto is the containment WebKit
+     honors. The lanes carry the sizing (below), so behaviour is unchanged on Chromium. */
+  display:flex;
   gap:var(--s-2);
-  /* the sole horizontal scroller. min-width:0 and max-width:100% keep the grid bounded to .wrap so
-     it scrolls within its own box instead of expanding the page (the containment some engines miss),
-     and the trailing scroll padding keeps the last lane off the very edge as it comes into view. */
-  min-width:0; max-width:100%;
+  min-width:0; max-width:100%; width:100%;
   overflow-x:auto;
   overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;
   scroll-padding-inline-end:var(--s-3);
   padding-bottom:var(--s-3);
   scrollbar-width:thin;
@@ -758,12 +760,16 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
    fine/coarse split that left a mouse-driven narrow window with a 132 sliver. */
 @media(max-width:900px){
   :root{ --lane-min:236px }
-  .board{ grid-auto-columns:var(--lane-min) }
 }
 
 /* --- lane ----------------------------------------------------------------- */
 
-.lane{ min-width:0; display:flex; flex-direction:column }
+/* The lane carries the width the board used to set as a grid track. flex-grow:1 lets the lanes
+   share the width and fill it when the board is wide (the old minmax(...,1fr)); flex-shrink:0 with
+   flex-basis var(--lane-min) keeps each lane at its readable minimum when the board is narrow, so
+   the row overflows the board and the board scrolls, never the page. min-width:0 lets the card body
+   inside wrap rather than force the lane wider. */
+.lane{ flex:1 0 var(--lane-min); min-width:0; display:flex; flex-direction:column }
 .lane-head{
   display:flex; align-items:center; justify-content:space-between;
   gap:var(--s-1);
@@ -1177,7 +1183,13 @@ body.is-dragging{ cursor:grabbing; user-select:none }
    optical centre. It is em, not px, so it tracks the text size, and it is measured: at -.16em
    the icon sat 1.3px high (the float), at -.28em it centres (+0.4px). One value, every context,
    so no page has to nudge its own icons. */
-.ic{ flex:0 0 auto; vertical-align:-.28em; opacity:.85 }
+/* Alignment for every icon. In a flex holder (buttons, chips, headings, the .has-ic wrapper)
+   align-items:center centers it, engine independent. In an inline run of text the icon rides the
+   line box, and vertical-align governs. The measured em offset from #47 (-.28em) centred it on
+   Chromium, but WebKit places an inline SVG's baseline differently, so that same offset floated on
+   the iPad. vertical-align:middle aligns to the font's mid-line, computed from font metrics rather
+   than the SVG baseline, so it lands the same on both engines: the cross-engine value. */
+.ic{ flex:0 0 auto; vertical-align:middle; opacity:.85 }
 /* An element given a symbol becomes a row, so the symbol and its label share a
    baseline instead of the symbol pushing the line height around. */
 .has-ic{ display:inline-flex; align-items:center; gap:.45em }
