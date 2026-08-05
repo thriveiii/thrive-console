@@ -693,6 +693,26 @@ a.conn-d{color:var(--teal);text-decoration:underline;text-underline-offset:3px}
 .lede .q{color:var(--ink-3);font-weight:400}
 html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 
+/* --- page header state strip -------------------------------------------------
+   The summary paragraph, redesigned. A calm row of the header's real numbers, each a compact cell:
+   a warm icon in one accent, the number, a quiet label. It echoes the status component (#52): the
+   icon and the figure carry the meaning, the cell stays quiet, and there is no field of bright
+   colours. The figures are isolated LTR so Arabic keeps them upright with the icon on the leading
+   (right) side. This is the header language that will later reach the other page tops. */
+.statstrip{ display:flex; flex-wrap:wrap; gap:var(--s-2); margin:var(--s-3) 0 var(--s-5) }
+.statcell{
+  display:inline-flex; align-items:center; gap:var(--s-2);
+  padding:var(--s-2) var(--s-3); border-radius:var(--r-md);
+  background:var(--panel); border:1px solid var(--hair);
+}
+.statcell-ic{ display:inline-flex; flex:0 0 auto; color:var(--teal) }
+.statcell-n{
+  font-family:var(--font-lat); font-size:var(--fs-lg); font-weight:900; color:var(--ink);
+  font-variant-numeric:tabular-nums; line-height:1; direction:ltr; unicode-bidi:isolate;
+}
+.statcell-l{ font-size:var(--fs-xs); font-weight:700; color:var(--ink-4) }
+@media(pointer:coarse){ .statcell{ min-height:44px } }
+
 /* ============================================================================
    Thrive Console · board view
    Depends on tokens.css and motion.css.

@@ -15,7 +15,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=a0b1e8a54e">
+<link rel="stylesheet" href="styles.css?v=faf5c1e717">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -151,7 +151,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <main class="wrap view" id="view-home" hidden>
   <div class="page-h"><h1 class="title" id="homeGreet" data-i18n="home_title">Performance</h1><span class="pill" id="homeSync"></span></div>
   <p class="sub" data-i18n="home_sub"></p>
-  <p class="lede" id="homeStory"></p>
+  <div id="homeStory"></div>
 
   <div class="toolbar">
     <a class="btn" href="#compose" data-icon="send" data-i18n="home_send">Send an email</a>
@@ -679,7 +679,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=de7cbabaa3"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=78a6c0f3af"></script>
+<script src="app.js?v=8868c01b12"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

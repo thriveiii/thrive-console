@@ -3860,23 +3860,23 @@ async function initHome(){
     const contacted=new Set(mail.filter(m=>m.to).map(m=>String(m.to).toLowerCase())).size;
     const answered=threads.filter(th=>th.replied>0).length;
     const rate=threads.length? Math.round(answered/threads.length*100) : 0;
-    /* One sentence that reads the numbers back, in the order a person actually cares about:
-       is anyone answering, is anyone reading, and who is waiting on me. Tiles tell you what
-       happened; this tells you what it means. */
-    const waiting=threads.filter(th=>!th.replied).length;
-    const story=[];
-    if(!sent) story.push(t("story_none"));
-    else{
-      const L=getLang();
-      story.push(boardText(L,"story_sent",contacted));
-      story.push(boardText(L,"story_sent_n",sent));
-      if(replies) story.push(boardText(L,"story_replies",replies,{r:rate}));
-      else if(waiting) story.push(boardText(L,"story_no_replies",waiting));
-      if(totalOpens) story.push(boardText(L,"story_opens",totalOpens));
-      else if(totalViews) story.push(boardText(L,"story_views",totalViews));
-      else if(usingCollected()) story.push(t("story_no_opens"));
-    }
-    el("homeStory").innerHTML=story.join(" ");
+    /* The header's state strip. The summary paragraph used to read these same numbers back as a
+       sentence; the strip shows them as compact designed cells with a warm icon each, read once.
+       contacted, sent, replies and totalOpens are the values computed above, so nothing new is
+       derived and no number is invented here. When nothing has gone out yet, the gentle prompt
+       stays as prose rather than a row of zeros. */
+    const statCell=(icon,n,labelKey)=>
+      '<div class="statcell"><span class="statcell-ic">'+ic(icon,16)+'</span>'+
+      '<span class="statcell-n">'+n+'</span>'+
+      '<span class="statcell-l">'+esc(t(labelKey))+'</span></div>';
+    el("homeStory").innerHTML = sent
+      ? '<div class="statstrip">'+
+          statCell("channel", contacted,  "home_contacts")+
+          statCell("send",    sent,       "home_sent_total")+
+          statCell("mail",    replies,    "home_replies")+
+          statCell("spark",   totalOpens, "home_opens")+
+        '</div>'
+      : '<p class="lede">'+esc(t("story_none"))+'</p>';
 
     el("tilesOutreach").innerHTML=
       tile(q.day+" / "+q.dailyCap, t("home_sent_today"), q.dayFull?"t-warn":"", t("tip_sent_today"))+
