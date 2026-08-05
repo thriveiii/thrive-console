@@ -103,7 +103,17 @@ img{max-width:100%;height:auto;border:0}
 .more-bar .chk{flex:1 1 100%}
 #libMoreBtn.has-on,#cmpMoreBtn.has-on{border-color:var(--purple);color:var(--ink)}
 .wrap{max-width:1080px;margin:0 auto;padding:26px 20px 60px}
-.page-h{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+/* Heading and its status badge on one anchor. align-items:center puts the badge on the heading's
+   vertical centerline (flex-end sat it 7px low, off the line, on iPad and desktop). Below 640, where
+   a long sync line cannot share the row with the heading, the badge holds ONE steady position on its
+   own line under the heading (flex-basis:100%), leading-aligned, instead of drifting between inline
+   and wrapped as the sync text changes. So it is centered when it is beside the heading and steady
+   when it is below, never moving with the state. RTL inherits this: the leading edge is the right. */
+.page-h{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+@media(max-width:640px){
+  .page-h{ align-items:flex-start; row-gap:6px }
+  .page-h > .pill{ flex-basis:100% }
+}
 h1.title{font-size:26px;font-weight:800;color:var(--ink);margin:0;letter-spacing:-.01em}
 .sub{color:var(--ink-3);font-size:14px;margin:4px 0 22px}
 
@@ -194,7 +204,10 @@ select{cursor:pointer}
 .frame{width:100%;height:70vh;min-height:460px;border:1px solid var(--hair);border-radius:14px;background:#0a0a0c}
 .dz{border:1.5px dashed var(--hair);border-radius:12px;padding:26px;text-align:center;color:var(--ink-3);font-size:13px;cursor:pointer;transition:.2s}
 .dz.over{border-color:var(--purple);background:rgba(150,133,202,.08);color:var(--ink)}
-.note{font-size:12.5px;color:var(--ink-3);background:var(--panel-2);border:1px solid var(--hair);border-radius:10px;padding:12px 14px;line-height:1.6;margin-top:14px}
+/* One block shell for every notice: a bordered panel, one radius, one padding rhythm. The quiet note
+   and the louder amber band (.mw-band) share this shell and differ only by the state colour they carry,
+   so a notice reads the same on every page rather than each its own shape. */
+.note{font-size:12.5px;color:var(--ink-3);background:var(--panel-2);border:1px solid var(--hair);border-radius:var(--r-md);padding:12px 14px;line-height:1.6;margin-top:14px}
 .note code{color:var(--teal);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
 .toast{position:fixed;inset-inline-end:20px;bottom:20px;z-index:50;background:#16161d;border:1px solid var(--purple);color:var(--ink);padding:13px 18px;border-radius:12px;font-size:13.5px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none}
 .toast.show{opacity:1;transform:none;pointer-events:auto}
@@ -965,9 +978,9 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
    you must not miss.                                                        */
 
 .mw-band{
-  display:flex; align-items:flex-start; gap:var(--s-3);
-  margin-block-end:var(--s-4); padding:var(--s-3);
-  border:1px solid rgba(246,207,91,.34); border-radius:var(--r-sm);
+  display:flex; align-items:center; gap:var(--s-3);
+  margin-block-end:var(--s-4); padding:var(--s-3) var(--s-4);
+  border:1px solid rgba(246,207,91,.34); border-radius:var(--r-md);
   background:var(--state-stall-t);
 }
 .mw-band-i{
