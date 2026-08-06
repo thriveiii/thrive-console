@@ -1599,27 +1599,151 @@ async function initEditor(slugArg){
   // store the page HTML only for uploads (template drafts regenerate on demand, which saves storage)
   async function fullRecord(){ const r=record(); if(mode==="upload") r.html=uploadedHTML||""; else delete r.html; return r; }
 
-  // mode switch
-  el("mode_fill").addEventListener("click",()=>{ mode="fill"; el("mode_fill").classList.add("on"); el("mode_upload").classList.remove("on");
-    el("fillFields").hidden=false; el("uploadBox").hidden=true; refresh(); });
-  el("mode_upload").addEventListener("click",()=>{ mode="upload"; el("mode_upload").classList.add("on"); el("mode_fill").classList.remove("on");
-    el("fillFields").hidden=true; el("uploadBox").hidden=false; refresh(); });
+  // mode switch. Upload mode is a different act: it hosts a finished file, so it never shows the
+  // fill-template picker (#templateField) or the fill-only quote fields (#quoteFields), both of
+  // which leaked into upload mode before because they live outside #fillFields.
+  function applyMode(){
+    const up = mode==="upload";
+    el("mode_upload").classList.toggle("on", up);
+    el("mode_fill").classList.toggle("on", !up);
+    el("fillFields").hidden = up;
+    el("uploadBox").hidden = !up;
+    const tf=el("templateField"); if(tf) tf.hidden = up;
+    const qf=el("quoteFields");   if(qf) qf.hidden = up;
+    const ed=document.querySelector(".editor"); if(ed) ed.classList.toggle("mode-upload", up);
+  }
+  function setMode(m){ mode=m; applyMode(); refresh(); }
+  el("mode_fill").addEventListener("click",()=>setMode("fill"));
+  el("mode_upload").addEventListener("click",()=>setMode("upload"));
+  applyMode();   // reflect the resting mode so the picker and quote state is never stale
 
-  // upload handling
-  const dz=el("dz"), fileInput=el("fileInput");
+  // upload handling. One finished .html is the single-page path (kept as it was). Anything else,
+  // a zip or several files or a batch document, is a batch: read it, match by slug, and show the
+  // report. Nothing is hosted or stored from a batch until it is approved below.
+  const dz=el("dz"), fileInput=el("fileInput"), batchPanel=el("batchPanel");
+  let batch=null;
   dz.addEventListener("click",()=>fileInput.click());
   dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("over");});
   dz.addEventListener("dragleave",()=>dz.classList.remove("over"));
-  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("over"); if(e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);});
-  fileInput.addEventListener("change",e=>{ if(e.target.files[0]) readFile(e.target.files[0]); });
+  dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("over"); onFiles(e.dataTransfer&&e.dataTransfer.files);});
+  fileInput.addEventListener("change",e=>{ onFiles(e.target.files); fileInput.value=""; });
+  /* A zip dropped an inch wide of the box is the browser navigating away to open it, a day's work
+     replaced by a file listing. Missing the target has to cost nothing. */
+  if(!window.__thriveEdDropGuard){
+    window.__thriveEdDropGuard=1;
+    ["dragover","drop"].forEach(k=>document.addEventListener(k, e=>{
+      if(e.target.closest && e.target.closest("#uploadBox")) return;
+      e.preventDefault();
+    }));
+  }
+  function onFiles(files){
+    const arr=files? [].slice.call(files):[];
+    if(!arr.length) return;
+    if(arr.length===1 && /\.html?$/i.test(arr[0].name)) readFile(arr[0]);
+    else runBatch(arr);
+  }
   function readFile(f){
     if(!/\.html?$/i.test(f.name)){ toast(t("need_html")); return; }
     const fr=new FileReader();
-    fr.onload=()=>{ uploadedHTML=fr.result; uploadedName=f.name;
+    fr.onload=()=>{ uploadedHTML=fr.result; uploadedName=f.name; batch=null; batchPanel.hidden=true; batchPanel.innerHTML="";
       dz.innerHTML=t("uploaded")+"<b>"+esc(f.name)+"</b>"; if(!el("f_biz").value){ el("f_biz").value=f.name.replace(/\.html?$/i,""); }
       logActivity("upload", curSlug(), f.name); refresh(); };
     fr.onerror=()=>toast(t("read_err"));
     fr.readAsText(f);
+  }
+
+  /* The match report and the warn-before-write gate. Every reason names itself; a warned row is
+     never guessed past. The reasons reuse the intake warning labels where they already exist. */
+  const B_REASON={ no_page:"in_w_no_page", no_manifest_entry:"in_w_no_manifest_entry",
+    no_text:"btr_no_text", duplicate_slug:"btr_dupe", exists_would_overwrite:"btr_exists",
+    missing_business:"in_w_no_business", no_channel:"in_w_no_channel" };
+  const reasonLabel=x=> t(B_REASON[x]||x);
+  // Hostable: a real page and a manifest entry, not a duplicate, and not already live. This is the
+  // matched set plus the "no text" and "no channel" pages Thyab is allowed to host as they are.
+  function hostable(r){
+    return r.hasPage && r.hasManifest
+      && r.reasons.indexOf("duplicate_slug")<0
+      && r.reasons.indexOf("exists_would_overwrite")<0;
+  }
+  async function runBatch(files){
+    dz.innerHTML=esc(t("in_reading"));
+    let out=null;
+    try{
+      const existing=await allSlugs();
+      out=await ThriveIntake.readBatch(files, { existingSlugs:existing });
+    }catch(e){
+      dz.innerHTML=esc(t("upload_dz"));
+      toast(/zip|inflate/i.test((e&&e.message)||"") ? t("in_zip_err") : t("in_none"));
+      return;
+    }
+    dz.innerHTML=esc(t("upload_dz"));
+    batch=out; renderBatch();
+  }
+  function batchCell(v){ return '<td class="bt-c">'+(v?'<span class="bt-y" data-icon="check"></span>':'<span class="bt-n">·</span>')+'</td>'; }
+  function renderBatch(){
+    if(!batch){ batchPanel.hidden=true; batchPanel.innerHTML=""; return; }
+    const rep=batch.report;
+    if(!rep.rows.length){ batchPanel.hidden=true; batchPanel.innerHTML=""; toast(t("in_none")); return; }
+    const canHost=rep.rows.filter(hostable).length;
+    const skip=rep.rows.length-canHost;
+    let summary=boardText(getLang(),"bt_summary",canHost);
+    if(skip>0) summary+=" "+boardText(getLang(),"bt_warned",skip);
+    const head='<tr><th>'+esc(t("bt_slug"))+'</th><th>'+esc(t("bt_html"))+'</th><th>'+esc(t("bt_mfst"))+
+      '</th><th>'+esc(t("bt_subj"))+'</th><th>'+esc(t("bt_body"))+'</th><th>'+esc(t("bt_send"))+'</th><th>'+esc(t("bt_verdict"))+'</th></tr>';
+    const rows=rep.rows.map(r=>{
+      const verdict = r.verdict==="matched"
+        ? '<span class="bt-ok">'+esc(t("bt_matched"))+'</span>'
+        : '<span class="bt-warn">'+r.reasons.map(x=>esc(reasonLabel(x))).join(", ")+'</span>';
+      return '<tr class="'+(r.verdict==="matched"?"is-matched":"is-warned")+'">'+
+        '<td class="mono-iso" dir="ltr">'+esc(r.slug)+'</td>'+
+        batchCell(r.hasPage)+batchCell(r.hasManifest)+batchCell(r.hasSubject)+batchCell(r.hasBody)+batchCell(r.hasSendTo)+
+        '<td>'+verdict+'</td></tr>';
+    }).join("");
+    batchPanel.innerHTML=
+      '<h4 class="sec-h" data-icon="check">'+esc(t("in_report_h"))+'</h4>'+
+      (batch.jsonError? '<div class="note warn-note">'+esc(t("bt_jsonerr"))+': '+esc(batch.jsonError)+'</div>':'')+
+      '<div class="bt-wrap"><table class="bt">'+head+rows+'</table></div>'+
+      '<p class="hint">'+esc(summary)+'</p>'+
+      '<div class="bar bar-actions">'+
+        '<button class="btn" id="batchApprove" data-icon="send"'+(canHost?'':' disabled')+'>'+esc(t("bt_approve"))+'</button>'+
+        '<button class="btn ghost" id="batchDiscard">'+esc(t("in_cancel"))+'</button>'+
+      '</div>';
+    batchPanel.hidden=false;
+    if(typeof applyIcons==="function") applyIcons(batchPanel);
+    el("batchDiscard").addEventListener("click",()=>{ batch=null; renderBatch(); });
+    const ab=el("batchApprove"); if(ab && canHost) ab.addEventListener("click", approveBatch);
+  }
+  async function approveBatch(){
+    if(!batch) return;
+    if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
+    const rows=batch.report.rows.filter(hostable);
+    if(!rows.length){ toast(t("bt_nothing")); return; }
+    const btn=el("batchApprove"); btn.disabled=true; const old=btn.textContent; btn.textContent=t("publishing");
+    let hosted=0, stored=0, failed=0;
+    for(let k=0;k<rows.length;k++){
+      const e=rows[k].entry;
+      try{
+        const rec=ThriveIntake.toRecord(e, { today:today(), note_text:batch.notes, batch:batch.batch });
+        // Host the finished page as it is. publishOpp adds or merges the manifest entry
+        // additively and idempotently; hostable already excluded any slug already live.
+        await publishOpp(Object.assign({}, rec, { html:(e.file&&e.file.html)||"" }));
+        hosted++;
+        // Store the matched email text (subject, body, send-to) additively on the opportunity,
+        // through saveDraft then logActivity, ready for the later send.
+        rec.published=true;
+        saveDraft(rec);
+        logActivity("upload", rec.slug, rec.business||"");
+        if(rec.outreach_text || rec.outreach_subject){ logActivity("in_import", rec.slug, t("bt_text_stored")); stored++; }
+      }catch(err){ failed++; logActivity("publish_half", (e.slug_hint||""), String((err&&err.message)||err)); }
+    }
+    logActivity("in_batch", "", hosted+" hosted, "+stored+" texts stored, "+failed+" failed");
+    let msg=boardText(getLang(),"bt_done",hosted);
+    if(stored) msg+=" "+boardText(getLang(),"bt_stored",stored);
+    if(failed) msg+=" "+boardText(getLang(),"bt_failed",failed);
+    toast(msg);
+    batch=null; batchPanel.hidden=true; batchPanel.innerHTML="";
+    try{ scheduleSyncPush(); }catch(_){}
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
   }
 
   // live inputs
@@ -1717,8 +1841,7 @@ async function initEditor(slugArg){
       // restore an uploaded/custom page so editing keeps its content
       if((d.mode==="upload" || d.template==="custom") && d.html){
         mode="upload"; uploadedHTML=d.html; uploadedName=(d.slug||"page")+".html";
-        el("mode_upload").classList.add("on"); el("mode_fill").classList.remove("on");
-        el("fillFields").hidden=true; el("uploadBox").hidden=false;
+        applyMode();
         dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>";
       } else if(editingLive && !hasFields && !d._local){
         // Live opp published elsewhere (manifest-only, no local fields): pull the real page so a
@@ -1726,8 +1849,7 @@ async function initEditor(slugArg){
         try{ const r=await fetchT(relOpp(d.slug)+"index.html",{cache:"no-store"});
           if(r.ok){ const html=await r.text();
             mode="upload"; uploadedHTML=html; uploadedName=(d.slug||"page")+".html";
-            el("mode_upload").classList.add("on"); el("mode_fill").classList.remove("on");
-            el("fillFields").hidden=true; el("uploadBox").hidden=false;
+            applyMode();
             dz.innerHTML=t("uploaded")+"<b>"+esc(uploadedName)+"</b>";
           }
         }catch(_){}

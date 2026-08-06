@@ -452,17 +452,20 @@
      A page alone, a page and its manifest, or a zip of both. The caller hands
      over File objects and gets the same answer in every case, so nothing
      downstream has to know which of the three happened. */
-  async function readDrop(files) {
+  /* Read a drop into its two kinds, unpacking any zip. One place decides what a
+     page is and what a manifest is, so readDrop and the editor's batch pipeline
+     can never disagree about which file was which. */
+  async function readFiles(files) {
     var pages = [], manifests = [], skipped = [];
     var list = Array.prototype.slice.call(files || []);
-
     for (var i = 0; i < list.length; i++) {
       var f = list[i], name = f.name || "";
       if (/\.zip$/i.test(name)) {
         var inner = await readZip(await f.arrayBuffer());
         inner.forEach(function (z) {
           if (/\.html?$/i.test(z.name)) pages.push({ name: z.name, html: z.text });
-          else manifests.push({ name: z.name, text: z.text });
+          else if (/\.(md|txt)$/i.test(z.name)) manifests.push({ name: z.name, text: z.text });
+          else skipped.push(z.name);
         });
         continue;
       }
@@ -470,6 +473,12 @@
       if (/\.(md|txt)$/i.test(name)) { manifests.push({ name: name, text: await f.text() }); continue; }
       skipped.push(name);
     }
+    return { pages: pages, manifests: manifests, skipped: skipped };
+  }
+
+  async function readDrop(files) {
+    var read = await readFiles(files);
+    var pages = read.pages, manifests = read.manifests, skipped = read.skipped;
 
     var entries = [], notes = "", batch = { title: "", sub: "" };
     manifests.forEach(function (m) {
@@ -501,5 +510,177 @@
   }
 
   global.ThriveIntake.readZip = readZip;
+  global.ThriveIntake.readFiles = readFiles;
   global.ThriveIntake.readDrop = readDrop;
+})(typeof window !== "undefined" ? window : this);
+
+/* ============================================================================
+   The batch report, and the warn-before-write gate (upload mode)
+
+   readDrop already parses each section (subject, body, send-to, page file) and
+   matches pages to entries by slug, never by position. This layer adds the two
+   things the upload gate needs on top of that: the optional structured JSON
+   manifest block (a second, machine-reliable source for the structured fields
+   when a batch carries one), and a per-slug report that marks the five things
+   for every slug and classifies matched or warned, so nothing is written until
+   the operator approves what it says. It invents nothing: a missing anchor is a
+   warning, never a guess.
+   ============================================================================ */
+(function (global) {
+  "use strict";
+  var TI = global.ThriveIntake;
+
+  /* The structured source of truth, when the batch provides one: a fenced ```json block (usually
+     under a "## Manifest entries" heading) of comma separated objects with slug, business, template,
+     sent_on, location, phone, status. Returned as {present, entries, error}. Present but unparseable
+     is an error the report shows by name, never a guess. Absent is simply the bullet format. */
+  function parseJsonManifest(md) {
+    var m = String(md || "").match(/```json\s*([\s\S]*?)```/i);
+    if (!m) return { present: false, entries: [] };
+    var raw = m[1].trim().replace(/,\s*$/, "");
+    if (raw.charAt(0) !== "[") raw = "[" + raw + "]";
+    try {
+      var arr = JSON.parse(raw);
+      return { present: true, entries: Array.isArray(arr) ? arr : [arr] };
+    } catch (e) { return { present: true, entries: [], error: String((e && e.message) || e) }; }
+  }
+
+  function slugOf(e) {
+    return e.slug_hint || TI.slugify(e.business) || TI.slugify(e.page_file) || "";
+  }
+
+  /* Overlay the JSON block's structured fields onto the parsed sections, by slug, so the section's
+     subject, body and send-to meet the JSON's business, template, location, phone and status on one
+     entry. A JSON object with no matching section becomes its own entry (a manifest entry that may
+     have no page). The JSON is the structured source of truth for the fields it carries. */
+  function applyJson(entries, jsonEntries) {
+    var bySlug = {};
+    entries.forEach(function (e) { var s = slugOf(e); if (s) bySlug[s] = e; });
+    (jsonEntries || []).forEach(function (j) {
+      var s = j.slug || TI.slugify(j.business || "");
+      if (!s) return;
+      var e = bySlug[s];
+      if (!e) {
+        e = { n: 0, business: "", city: "", descriptor: "", channel: "", url: "", alternates: [],
+              email: "", page_file: (j.slug ? j.slug + ".html" : ""), slug_hint: s, subject: "",
+              owner: "", owner_note: "", prohibition: "", body: "", extra: {}, warnings: [], _fromJson: true };
+        entries.push(e); bySlug[s] = e;
+      }
+      e.from_manifest_json = true;
+      if (j.business) e.business = j.business;
+      if (j.location) e.city = j.location;
+      if (j.template) e.extra.template = j.template;
+      if (j.sent_on)  e.extra.sent_on = j.sent_on;
+      if (j.phone)    e.extra.phone = j.phone;
+      if (j.status)   e.extra.status = j.status;
+      if (j.slug)     e.slug_hint = j.slug;
+    });
+    return entries;
+  }
+
+  /* The report: one row per slug, the five columns marked present or missing, and a verdict. Matched
+     means an HTML page and a manifest entry are both present and nothing else is off. Every other
+     state is warned, with its reason named, and a warned row blocks approval until the operator
+     decides. Nothing here writes; it only reads and reports. */
+  function batchReport(entries, opts) {
+    opts = opts || {};
+    var existing = opts.existingSlugs || [];
+    var jsonError = opts.jsonError || "";
+    var counts = {};
+    (entries || []).forEach(function (e) { var s = slugOf(e) || "(unnamed)"; counts[s] = (counts[s] || 0) + 1; });
+
+    var rows = (entries || []).map(function (e) {
+      var slug = slugOf(e) || "(unnamed)";
+      var hasPage = !!e.file;
+      var hasManifest = e.warnings.indexOf("no_manifest_entry") < 0 && (!!e.business || !!e.from_manifest_json);
+      var hasSubject = !!e.subject;
+      var hasBody = !!e.body;
+      var hasSendTo = !!(e.email || e.url || (e.channel && e.channel !== ""));
+      var reasons = [];
+      if (counts[slug] > 1) reasons.push("duplicate_slug");
+      if (existing.indexOf(slug) >= 0) reasons.push("exists_would_overwrite");
+      if (!hasPage) reasons.push("no_page");                                  // text with no page
+      if (!hasManifest) reasons.push("no_manifest_entry");                    // page with no manifest
+      if (hasPage && hasManifest && !hasSubject && !hasBody) reasons.push("no_text"); // page with no text
+      if (!e.business && hasManifest) reasons.push("missing_business");       // a missing required field
+      // surface, without duplicating, the parser's own field warnings
+      ["no_channel"].forEach(function (w) { if (e.warnings.indexOf(w) >= 0 && reasons.indexOf(w) < 0) reasons.push(w); });
+      return {
+        slug: slug, business: e.business || slug,
+        hasPage: hasPage, hasManifest: hasManifest, hasSubject: hasSubject, hasBody: hasBody, hasSendTo: hasSendTo,
+        verdict: reasons.length ? "warned" : "matched", reasons: reasons, entry: e
+      };
+    });
+
+    return {
+      rows: rows,
+      jsonError: jsonError,
+      matched: rows.filter(function (r) { return r.verdict === "matched"; }).length,
+      warned: rows.filter(function (r) { return r.verdict === "warned"; }).length,
+      allMatched: rows.length > 0 && rows.every(function (r) { return r.verdict === "matched"; }) && !jsonError
+    };
+  }
+
+  /* The whole reading of a batch, from already read text to the report, in one pure place. The
+     editor calls it through readBatch (which reads the files first); the Node proof calls it
+     directly with the fixture. Both run the identical pipeline, so what the sandbox proves is
+     exactly what the editor does: parse the sections, overlay the JSON block by slug, match pages
+     to entries by slug (never by position), give a page with no section its own entry, and report.
+     Nothing here writes; it reads and returns what a write would touch. */
+  function buildBatch(pages, manifestTexts, opts) {
+    opts = opts || {};
+    pages = pages || [];
+    var texts = manifestTexts || [];
+    var joined = texts.join("\n\n");
+
+    var entries = [], notes = "", batch = { title: "", sub: "" };
+    texts.forEach(function (text) {
+      var r = TI.parseManifest(text);
+      r.entries.forEach(function (e) {
+        entries.push(Object.assign({}, e, { warnings: e.warnings.slice(), file: null }));
+      });
+      if (r.note_text) notes = notes ? notes + "\n\n" + r.note_text : r.note_text;
+      if (r.batch && r.batch.title && !batch.title) batch = r.batch;
+    });
+
+    var jm = parseJsonManifest(joined);
+    if (jm.entries && jm.entries.length) applyJson(entries, jm.entries);
+
+    TI.match(entries, pages);
+
+    /* A page the document never named is still a real page and still work. It becomes an entry
+       named after its file, flagged, so the report says exactly what it is rather than dropping it. */
+    var used = {};
+    entries.forEach(function (e) { if (e.file) used[e.file.name] = 1; });
+    pages.forEach(function (p) {
+      if (used[p.name]) return;
+      entries.push({ n: 0, business: p.name.replace(/^.*\//, "").replace(/\.html?$/i, "").replace(/[-_]+/g, " ").trim(),
+        city: "", descriptor: "", channel: "", url: "", alternates: [], email: "", tier: "",
+        page_file: p.name, slug_hint: "", subject: "", owner: "", owner_note: "",
+        prohibition: "", body: "", extra: {}, warnings: ["no_manifest_entry"], file: p });
+    });
+
+    var report = batchReport(entries, { existingSlugs: opts.existingSlugs || [], jsonError: jm.error || "" });
+    return {
+      entries: entries, report: report,
+      pages: pages.length, manifests: texts.length,
+      notes: notes, batch: batch,
+      jsonPresent: !!jm.present, jsonError: jm.error || ""
+    };
+  }
+
+  /* Read the dropped files, then build the batch. The editor's one entry point. */
+  async function readBatch(files, opts) {
+    var read = await TI.readFiles(files);
+    var out = buildBatch(read.pages, read.manifests.map(function (m) { return m.text; }), opts);
+    out.skipped = read.skipped;
+    out.pageList = read.pages;
+    return out;
+  }
+
+  global.ThriveIntake.parseJsonManifest = parseJsonManifest;
+  global.ThriveIntake.applyJson = applyJson;
+  global.ThriveIntake.batchReport = batchReport;
+  global.ThriveIntake.buildBatch = buildBatch;
+  global.ThriveIntake.readBatch = readBatch;
 })(typeof window !== "undefined" ? window : this);

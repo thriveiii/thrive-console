@@ -66,9 +66,13 @@
         <div class="field"><label for="f_sent" data-i18n="f_sent">Send date</label><input id="f_sent" class="input" type="date"></div>
         <div class="field"><label for="f_location" data-i18n="f_location">Location</label><input id="f_location" class="input" autocomplete="off"></div>
         <div class="field"><label for="f_phone" data-i18n="f_phone">Phone (if any)</label><input id="f_phone" class="input" autocomplete="off"></div>
-        <div class="field"><label for="f_quote" data-i18n="f_quote">Quote</label><textarea id="f_quote" rows="2"></textarea>
-          <div class="hint" data-i18n="f_quotehint"></div></div>
-        <div class="field"><label for="f_quoteby" data-i18n="f_quoteby">Quote attribution</label><input id="f_quoteby" class="input" autocomplete="off"></div>
+        <!-- The quote and its attribution fill a template's quote slot. Upload mode hosts a
+             finished page, so it never shows them (they are grouped here to hide as one). -->
+        <div id="quoteFields">
+          <div class="field"><label for="f_quote" data-i18n="f_quote">Quote</label><textarea id="f_quote" rows="2"></textarea>
+            <div class="hint" data-i18n="f_quotehint"></div></div>
+          <div class="field"><label for="f_quoteby" data-i18n="f_quoteby">Quote attribution</label><input id="f_quoteby" class="input" autocomplete="off"></div>
+        </div>
       </div>
 
       <div id="fillFields">
@@ -82,8 +86,10 @@
 
       <div id="uploadBox" hidden>
         <h4 class="sec-h" data-i18n="mode_upload">Upload HTML</h4>
+        <p class="hint" data-i18n="up_batch_hint"></p>
         <div class="dz" id="dz" data-i18n="upload_dz">Drop a finished .html file here, or click to choose</div>
-        <input id="fileInput" type="file" accept=".html,.htm,text/html" hidden>
+        <input id="fileInput" type="file" accept=".html,.htm,.zip,.md,.txt,text/html" multiple hidden>
+        <div id="batchPanel" hidden></div>
       </div>
 
       <div class="note" data-i18n="help_body"></div>
