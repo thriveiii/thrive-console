@@ -572,10 +572,17 @@ const I18N = {
     cmp_self_tag:    "proof",
     cmp_self_sent:   "Sent to hi@thriveiii.com. It does not count against the quota and it is not in the ledger.",
     subj_long:       "most clients truncate past 60",
+    ps_live_ok:      "The live page loads",
+    ps_live_no:      "The live page is not confirmed",
+    ps_live_wait:    "Confirming the live page",
     ps_link:         "The page link resolves",
     ps_tokens:       "No placeholder is left in the message",
     ps_sig:          "The closing block matches the opportunity's language",
     ps_tokens_block: "This still carries a placeholder, so it cannot be sent:",
+    /* the send-safety gate: a message never leaves for a party until the page is proven live */
+    send_block_draft:       "Not published yet, so this cannot be sent. Publish the page first.",
+    send_block_dead:        "The live link did not load, so sending is blocked. Check the page, then try again.",
+    send_block_unconfirmed: "The live link could not be confirmed right now, so sending stays blocked. Check the connection, then try again.",
 
     /* ---- back, and work that survives, WO-013 phase 5 -------------------- */
     mw_back:         "Back",
@@ -1459,10 +1466,17 @@ const I18N = {
     cmp_self_tag:    "تجربة",
     cmp_self_sent:   "تم الإرسال إلى hi@thriveiii.com. ولا يدخل في الحصة ولا في السجل.",
     subj_long:       "أغلب البرامج تقتطع ما بعد 60",
+    ps_live_ok:      "الصفحة الحيّة تفتح",
+    ps_live_no:      "الصفحة الحيّة غير مؤكَّدة",
+    ps_live_wait:    "جارٍ تأكيد الصفحة الحيّة",
     ps_link:         "رابط الصفحة يعمل",
     ps_tokens:       "لا عنصر نائب باقٍ في الرسالة",
     ps_sig:          "الخاتمة تطابق لغة الفرصة",
     ps_tokens_block: "ما زالت تحمل عنصرًا نائبًا، فلا يمكن إرسالها:",
+    /* بوابة أمان الإرسال: لا رسالة تخرج إلى طرف قبل التأكد أن الصفحة حيّة */
+    send_block_draft:       "غير منشورة بعد، فلا يمكن إرسالها. انشر الصفحة أولًا.",
+    send_block_dead:        "الرابط الحيّ لم يفتح، فالإرسال متوقف. تحقّق من الصفحة ثم أعد المحاولة.",
+    send_block_unconfirmed: "تعذّر تأكيد الرابط الحيّ الآن، فالإرسال متوقف. تحقّق من الاتصال ثم أعد المحاولة.",
 
     /* ---- الرجوع، وما يبقى ---- */
     mw_back:         "رجوع",

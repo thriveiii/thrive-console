@@ -274,8 +274,10 @@
       fields: {},
       html: (e.file && e.file.html) || "",
       mode: "upload",
-      /* the channel the lifecycle needs to record a hand send against */
-      channel: { kind: e.channel || "", to: e.url || e.email || "", note: e.extra["Send to"] || "" },
+      /* the channel the lifecycle needs to record a hand send against. `to` is the bare address or
+         url, never the mailto scheme: for an email channel the bare address (e.email) comes first,
+         so the scheme lives only in a send action's href, not in what the console shows or seeds. */
+      channel: { kind: e.channel || "", to: e.email || e.url || "", note: e.extra["Send to"] || "" },
       channel_alternates: e.alternates || [],
       contact_tier: e.tier || "",
       outreach_text: e.body || "",

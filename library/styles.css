@@ -1726,6 +1726,8 @@ body.modal-open{
 .ps-list li.ok .ic{ color:var(--lane-replied) }
 .ps-list li.no{ color:var(--state-stall) }
 .ps-list li.no .ic{ color:var(--state-stall) }
+.ps-list li.wait{ color:var(--ink-4) }
+.ps-list li.wait .ic{ color:var(--ink-4) }
 [dir="rtl"] .ps-list li{ letter-spacing:normal }
 
 /* --- back, and work that survives a dismissal -------------------------------

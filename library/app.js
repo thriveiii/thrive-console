@@ -425,6 +425,25 @@ async function pageIsGone(slug){
     return null;
   }catch(e){ return null; }
 }
+/* The bare email address, without the mailto scheme. The scheme belongs in a send action's href,
+   never in the address a person reads or the field they edit. A record imported before this fix
+   may still carry "mailto:" on channel.to, so every place that shows or sends an address strips it
+   here rather than trusting the stored value. */
+function bareAddress(v){ return String(v==null?"":v).replace(/^\s*mailto:/i,"").trim(); }
+/* The one truth every send to a party asks before a message leaves: the page is activated AND its
+   live link actually loads, confirmed by a real fetch at this moment. Activation alone is not
+   enough, a Pages build can still be in flight or a slug can be wrong, and a fetch that cannot
+   confirm blocks rather than assuming success. The preview looking right is never the proof; this
+   is. Returns {ok:true} or {ok:false, reason}. The copy-link control reads the same isLive truth,
+   so "ready" is one notion, not two. */
+async function pageSendable(o){
+  const rec=(typeof o==="string") ? ((await mergedOpps()).find(x=>x.slug===o)||null) : o;
+  if(!rec || !isLive(rec)) return { ok:false, reason:t("send_block_draft") };
+  const gone=await pageIsGone(rec.slug);
+  if(gone===true)  return { ok:false, reason:t("send_block_dead") };        // 404 or 410, a dead link
+  if(gone===null)  return { ok:false, reason:t("send_block_unconfirmed") }; // could not tell, so block
+  return { ok:true, reason:"" };                                            // activated and it loads
+}
 function today(){
   const d=new Date();
   const p=n=>String(n).padStart(2,"0");
@@ -2645,10 +2664,10 @@ async function initCompose(slugArg){
      so arriving here a second time to finish a half written message finds it
      exactly as it was left. */
   if(oppObj){
-    const addr=(oppObj.channel && /@/.test(String(oppObj.channel.to||"")) ? oppObj.channel.to : "")
-             || oppObj.email || "";
+    const addr=bareAddress((oppObj.channel && /@/.test(String(oppObj.channel.to||"")) ? oppObj.channel.to : "")
+             || oppObj.email || "");
     const toEl=el("eto");
-    if(toEl && !toEl.value.trim() && addr) toEl.value=addr;
+    if(toEl && !toEl.value.trim() && addr) toEl.value=addr;   // the bare address, mailto lives in the send href
     const nm=el("ename");
     if(nm && !nm.value.trim()) nm.value=oppObj.owner||oppObj.business||"";
     const su=el("esubject");
@@ -2850,6 +2869,8 @@ async function initCompose(slugArg){
     return "";
   }
   el("eCopy").addEventListener("click", async ()=>{
+    // Copying for Gmail is a send to a party, so it waits on the same proof as any other send.
+    if(!(await ensureLive())) return;
     try{
       const html=brandWrap(htmlOut(), isBranded()), text=plainText();
       if(navigator.clipboard && window.ClipboardItem){
@@ -2863,8 +2884,10 @@ async function initCompose(slugArg){
       toast(t("cmp_copied"));
     }catch(e){ toast(t("cmp_copy_err")); }
   });
-  el("eMail").addEventListener("click",()=>{
-    const to=el("eto").value.trim(), subject=el("esubject").value.trim();
+  el("eMail").addEventListener("click", async ()=>{
+    if(!(await ensureLive())) return;
+    const to=bareAddress(el("eto").value), subject=el("esubject").value.trim();
+    // The mailto scheme is added only here, in the action's target, never in the field value.
     location.href="mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(plainText());
   });
   // live Resend free-tier meter under the Send button
@@ -2966,22 +2989,47 @@ async function initCompose(slugArg){
       'style="margin:0;padding:16px;background:#fff">'+composedHtml()+card+'</body></html>';
   }
 
-  /* Three lines, shown once, before it leaves. */
+  /* Send safety: the page is proven live before any message leaves for a party. liveState is the
+     last known answer, refreshed on open and re-checked at the moment of each send. `null` means
+     not yet checked; the send re-checks regardless, so a stale yes can never let a message out. */
+  let liveState={ ok:null, reason:"" };
+  async function checkLive(){
+    if(!slug){ liveState={ ok:true, reason:"" }; return liveState; }   // a message tied to no page
+    liveState=await pageSendable(oppObj || slug);
+    return liveState;
+  }
+  // The at-send gate: re-confirm now, show the line, and block with the reason if it is not live.
+  async function ensureLive(){
+    await checkLive();
+    renderPreSend();
+    if(!liveState.ok) toast(liveState.reason);
+    return liveState.ok;
+  }
+
+  /* The lines shown before it leaves. The live-page line is first, because it is the one whose
+     failure is a message delivered to a dead link. */
   function preSendChecks(){
     const bodyHtml=htmlOut();
     const left=unresolvedTokens(resolveTokens(bodyHtml+" "+(el("esubject").value||"")));
+    const live = slug
+      ? (liveState.ok===null
+          ? { k:"ps_live_wait", ok:false, pending:true }
+          : { k: liveState.ok? "ps_live_ok" : "ps_live_no", ok: liveState.ok,
+              detail: liveState.ok? "" : liveState.reason })
+      : null;
     return [
+      live,
       { k:"ps_link", ok: !oppUrl || composedHtml().indexOf(oppUrl)>=0 },
       { k:"ps_tokens", ok: left.length===0, detail:left.join(", ") },
       { k:"ps_sig", ok: !!(sigBox && sigBox.value.trim()) }
-    ];
+    ].filter(Boolean);
   }
   function renderPreSend(){
     const host=el("preSend"); if(!host) return;
     const rows=preSendChecks();
     host.hidden=false;
     host.innerHTML='<ul class="ps-list">'+rows.map(r=>
-      '<li class="'+(r.ok?"ok":"no")+'">'+ic(r.ok?"check":"alert")+esc(t(r.k))+
+      '<li class="'+(r.pending?"wait":(r.ok?"ok":"no"))+'">'+ic(r.pending?"clock":(r.ok?"check":"alert"))+esc(t(r.k))+
       (r.detail? ' <span class="mono-iso">'+esc(r.detail)+'</span>':'')+'</li>').join("")+'</ul>';
   }
 
@@ -2992,6 +3040,9 @@ async function initCompose(slugArg){
   const prevWrap=el("prevWrap");
   if(prevWrap) prevWrap.addEventListener("toggle", ()=>{ if(prevWrap.open) refreshPreview(); });
   refreshPreview();
+  // Confirm the live page when the composer opens, so a draft or a dead link is visible before a
+  // click. The send actions re-check regardless: the gate is the send-time confirmation.
+  checkLive().then(renderPreSend);
 
   /* Send to myself. The only honest way to see what a client sees. */
   const selfBtn=el("eSelf");
@@ -3016,7 +3067,9 @@ async function initCompose(slugArg){
   });
 
   el("eSend").addEventListener("click", async ()=>{
-    const to=el("eto").value.trim();
+    // Nothing leaves for a party until the page is proven live, at this moment, not on appearance.
+    if(!(await ensureLive())) return;
+    const to=bareAddress(el("eto").value);
     if(!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast(t("cmp_need_to")); return; }
     const ep=getEmailEndpoint();
     if(!ep){ toast(t("cmp_no_ep")); setTimeout(()=>goTo("settings"),1100); return; }
@@ -5792,11 +5845,13 @@ function initModal(){
      rather than asking again, and changing it keeps what was already written. */
   function emailAddress(o){
     const c=o.channel||{};
-    if(c.kind==="email" && c.to) return c.to;
-    if(o.email) return o.email;
+    /* Always the bare address. A record imported before the address fix may carry "mailto:" on
+       channel.to; the scheme belongs in a send href, never in what is shown or seeded here. */
+    if(c.kind==="email" && c.to) return bareAddress(c.to);
+    if(o.email) return bareAddress(o.email);
     /* Tier A is the manifest saying an owner address was found. An address with
        no tier is still an address; a tier with no address is not one. */
-    if(/@/.test(String(c.to||""))) return c.to;
+    if(/@/.test(String(c.to||""))) return bareAddress(c.to);
     return "";
   }
   function channelChoices(o){
@@ -5934,11 +5989,14 @@ function initModal(){
 
     bindLinkCards(box); bindChange(o);
     const copy=el("ocCopy");
-    if(copy) copy.addEventListener("click", ()=>{
+    if(copy) copy.addEventListener("click", async ()=>{
       /* The [LINK] guard stays. An unsubstituted placeholder means the prospect
          received a broken message, and the console makes that impossible rather
          than detectable, because detectable is after it was sent. */
       if(hasLink){ toast(t("oc_copy_blocked")); return; }
+      // The message carries the page link, so copying it to paste to a party waits on the same
+      // proof as any send: the page must be live and its link must load.
+      const s=await pageSendable(o); if(!s.ok){ toast(s.reason); return; }
       const body=el("ocBody").value;
       if(navigator.clipboard && navigator.clipboard.writeText){
         navigator.clipboard.writeText(body).then(()=>toast(t("oc_copied")),
@@ -5949,6 +6007,9 @@ function initModal(){
     });
     const go=el("ocDo");
     if(go) go.addEventListener("click", async ()=>{
+      // Recording a send to a party asserts a message went out. It cannot assert that for a page
+      // that is not live, so the same proof gates it.
+      const s=await pageSendable(o); if(!s.ok){ toast(s.reason); return; }
       /* The body stored is the body AS EDITED, byte for byte. Recording what was
          drafted rather than what was sent puts a message on the record that
          nobody ever received. */
