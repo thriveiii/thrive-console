@@ -1159,6 +1159,34 @@ function sendChapter(slug){
 /* Finish a publish that got halfway. The page is already live, so this writes only the entry
    that lists it. */
 async function finishPublish(rec){ await publishManifest(rec); logActivity("publish", rec.slug, "finished"); }
+const sleep=ms=>new Promise(function(r){ setTimeout(r, ms); });
+/* The confirm half of activation. After the commit, the page is in the repo but GitHub Pages has
+   to rebuild before the URL resolves, so this polls the live link until it actually loads, over a
+   build-sized window, and returns whether it went live. It reads the SAME live-state truth the
+   send-safety gate reads (pageIsGone, a real fetch of liveUrl): a page is live when its URL
+   resolves, full stop. A timeout is not a claim that it failed, only that it is not confirmed yet. */
+async function confirmLive(slug, opts){
+  opts=opts||{};
+  const tries=opts.tries||8, gap=opts.gap||8000;   // about a minute, a normal Pages build
+  for(let i=0;i<tries;i++){
+    const gone=await pageIsGone(slug);              // false means the URL returned 200, it resolves
+    if(gone===false) return true;
+    if(i<tries-1) await sleep(gap);
+  }
+  return false;
+}
+/* Activation, in the sacred order: commit, confirm, then flip. NEVER flip first. The page and the
+   manifest are committed for real (additive and idempotent: a re-activation updates the same file
+   by sha and merges the one manifest entry by slug, never duplicating). Only after the live link is
+   confirmed to resolve does the state flip to activated. A commit that cannot be confirmed live
+   leaves the state not activated, so nothing is ever shown as live that was not confirmed. Returns
+   whether it went live; publishOpp's half-commit error propagates to the caller. */
+async function activateAndConfirm(o, html){
+  await publishOpp(Object.assign({}, o, { html: html }));   // 1. commit the page and the manifest
+  const live=await confirmLive(o.slug);                     // 2. confirm the live URL resolves
+  if(live){ saveDraft({ slug:o.slug, published:true }); logActivity("publish", o.slug, o.business||""); }  // 3. flip only now
+  return live;
+}
 async function unpublishOpp(slug){
   await ghDeleteFile("opp/"+slug+"/index.html", "Unpublish opp/"+slug);
   const mf=await ghGetFile("library/manifest.json");
@@ -1455,12 +1483,19 @@ async function initDashboard(){
       try{
         const html=await renderOppHtml(o);
         if(!html){ toast(t("no_content_publish")); b.disabled=false; b.textContent=t("publish"); return; }
-        await publishOpp(Object.assign({}, o, {html})); saveDraft({slug, published:true}); o.published=true;
-        logActivity("publish", slug, o.business); toast(t("published_live")); render();
+        // Commit, confirm, then flip. The state does not move to Ready until the live link resolves.
+        b.textContent=t("act_confirming");
+        const live=await activateAndConfirm(o, html);
+        if(!live){
+          // Committed for real, but the live link has not resolved yet, so the state stays not
+          // activated with the reason. Re-activating once Pages is up confirms it (idempotent).
+          toast(t("act_unconfirmed")); b.disabled=false; b.textContent=t("publish"); render(); return;
+        }
+        o.published=true; toast(t("activated_live")); render();
       }catch(e){
-        // A half publish is not a failed publish. The page is live and only its entry is
-        // missing, so say which half is done and leave the record able to finish.
-        if(e.half){ saveDraft({slug, published:true}); o.published=true; toast(t("pub_half")); render(); }
+        // A half commit wrote the page but not the manifest. Nothing is claimed activated: the state
+        // stays not activated with the reason, and the record can finish the manifest write.
+        if(e.half){ toast(t("pub_half")); b.disabled=false; b.textContent=t("publish"); render(); }
         else { toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("publish"); }
       }
     }));
@@ -1468,7 +1503,13 @@ async function initDashboard(){
       const slug=b.getAttribute("data-finish"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
       if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
       b.disabled=true; b.textContent=t("publishing");
-      try{ await finishPublish(o); toast(t("published_live")); render(); }
+      try{
+        await finishPublish(o);                 // write the missing manifest entry
+        b.textContent=t("act_confirming");
+        const live=await confirmLive(slug);      // confirm before declaring it activated
+        if(!live){ toast(t("act_unconfirmed")); b.disabled=false; b.textContent=t("pub_finish"); render(); return; }
+        saveDraft({slug, published:true}); o.published=true; toast(t("activated_live")); render();
+      }
       catch(e){ toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("pub_finish"); }
     }));
     grid.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
@@ -1835,12 +1876,16 @@ async function initEditor(slugArg){
     const pubRec=Object.assign({}, rec, { html: await currentHTML() });
     pubBtn.disabled=true; const old=pubBtn.textContent; pubBtn.textContent=t("publishing");
     try{
+      // Commit, confirm, then flip: the editor never claims activated until the live link resolves.
       await publishOpp(pubRec);
+      pubBtn.textContent=t("act_confirming");
+      const live=await confirmLive(rec.slug);
+      if(!live){ toast(t("act_unconfirmed")); return; }   // committed, not yet confirmed live: state stays
       editingLive=true; rec.published=true; saveDraft(rec);
       if(existing.indexOf(rec.slug)<0) existing.push(rec.slug);
       logActivity("publish", rec.slug, rec.business);
-      toast(t("published_live"));
-    }catch(e){ toast(t("gh_err")+": "+e.message); }
+      toast(t("activated_live"));
+    }catch(e){ toast(e.half? t("pub_half") : (t("gh_err")+": "+e.message)); }
     finally{ pubBtn.disabled=false; pubBtn.textContent=old; }
   });
   el("copyManifest").addEventListener("click", ()=>{
