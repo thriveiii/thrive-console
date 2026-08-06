@@ -429,6 +429,10 @@ const I18N = {
     cmp_no_ep: "Set an email endpoint in Settings, or use \"Copy for Gmail\".",
     cmp_copied: "Copied. Paste into Gmail (hi@thriveiii.com).",
     cmp_copy_err: "Copy failed. Try \"Open in mail app\".",
+    /* draft integrity: the message is saved to the durable, synced record as it changes */
+    draft_saved: "Draft saved",
+    draft_restored: "Continued from your last saved draft.",
+    act_draft_save: "Draft saved",
     set_email_h: "Email sending",
     set_email_sub: "Endpoint that sends mail from hi@thriveiii.com (a Google Apps Script that calls Resend). Leave empty to use Copy-for-Gmail only.",
     set_email_ph: "Email send endpoint URL (optional)",
@@ -1333,6 +1337,10 @@ const I18N = {
     cmp_need_to: "أدخل بريد مستلِم صحيحًا.",
     cmp_no_ep: "اضبط نقطة إرسال في الإعدادات، أو استخدم «نسخ للـ Gmail».",
     cmp_copied: "تم النسخ. الصقه في Gmail (hi@thriveiii.com).",
+    /* سلامة المسودة: تُحفظ الرسالة في السجل الدائم المتزامن أثناء تغيّرها */
+    draft_saved: "المسودة محفوظة",
+    draft_restored: "تابعنا من آخر مسودة محفوظة.",
+    act_draft_save: "حفظ المسودة",
     cmp_copy_err: "فشل النسخ. جرّب «فتح في تطبيق البريد».",
     set_email_h: "إرسال البريد",
     set_email_sub: "نقطة تُرسل البريد من hi@thriveiii.com (سكربت Google Apps Script يستدعي Resend). اتركها فارغة لاستخدام النسخ للـ Gmail فقط.",
