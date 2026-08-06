@@ -218,7 +218,24 @@ const I18N = {
     f_want: "What they want busier",
     f_wanthint: "e.g. the nights or the shelf, the rack or the runway",
     upload_dz: "Drop a finished .html file here, or click to choose",
+    up_batch_hint: "One finished page, or a zip of pages with the batch document. Nothing is hosted until you approve the report.",
     uploaded: "Loaded file: ",
+    /* the batch match report, keyed by slug, shown before any write */
+    bt_slug: "Slug",
+    bt_html: "Page",
+    bt_mfst: "Manifest",
+    bt_subj: "Subject",
+    bt_body: "Body",
+    bt_send: "Send to",
+    bt_verdict: "Verdict",
+    bt_matched: "Matched",
+    btr_no_text: "no text",
+    btr_dupe: "duplicate slug",
+    btr_exists: "already live",
+    bt_jsonerr: "The manifest json block did not parse",
+    bt_approve: "Host the matched pages",
+    bt_nothing: "Nothing here can be hosted; every row is warned.",
+    bt_text_stored: "email text stored",
     dl_page: "Download page (index.html)",
     save_lib: "Save to library",
     copy_manifest: "Copy manifest entry",
@@ -1102,7 +1119,24 @@ const I18N = {
     f_want: "من أين تحب أن نبدأ",
     f_wanthint: "قل لنا من أين تحب أن نبدأ، وسنشارك معك خطة 90 يومًا التالية",
     upload_dz: "أسقط ملف .html جاهزًا هنا، أو انقر للاختيار",
+    up_batch_hint: "صفحة واحدة جاهزة، أو ملف مضغوط يجمع الصفحات مع مستند الدفعة. الاستضافة لا تبدأ قبل اعتماد التقرير.",
     uploaded: "حُمِّل الملف: ",
+    /* تقرير المطابقة للدفعة، مرتّب باللاحقة، يظهر قبل أي كتابة */
+    bt_slug: "اللاحقة",
+    bt_html: "الصفحة",
+    bt_mfst: "المدخل",
+    bt_subj: "العنوان",
+    bt_body: "النص",
+    bt_send: "الوجهة",
+    bt_verdict: "الحكم",
+    bt_matched: "متطابق",
+    btr_no_text: "بلا نص",
+    btr_dupe: "لاحقة مكررة",
+    btr_exists: "منشورة بالفعل",
+    bt_jsonerr: "تعذّر تحليل كتلة json في التعليمات",
+    bt_approve: "استضف الصفحات المتطابقة",
+    bt_nothing: "لا شيء هنا قابل للاستضافة، كل صف عليه تنبيه.",
+    bt_text_stored: "حفظ نص البريد",
     dl_page: "تنزيل الصفحة (index.html)",
     save_lib: "حفظ في المكتبة",
     copy_manifest: "نسخ سطر المانيفست",
@@ -1976,6 +2010,13 @@ var I18N_BOARD = {
     in_found:  { one:"{n} opportunity read.", other:"{n} opportunities read." },
     in_added:  { one:"{n} opportunity imported into Draft.", other:"{n} opportunities imported into Draft." },
 
+    /* the batch upload gate: what will host, what is warned, and what the approval did */
+    bt_summary: { one:"{n} page ready to host.", other:"{n} pages ready to host." },
+    bt_warned:  { one:"{n} row warned.", other:"{n} rows warned." },
+    bt_done:    { one:"{n} page hosted.", other:"{n} pages hosted." },
+    bt_stored:  { one:"{n} email text stored.", other:"{n} email texts stored." },
+    bt_failed:  { one:"{n} failed.", other:"{n} failed." },
+
     tpl_del_blocked:  { one:"Cannot delete it: {n} opportunity is still a draft on this page template ({list}). Publish or drop it first.",
                         other:"Cannot delete it: {n} opportunities are still drafts on this page template ({list}). Publish or drop them first." },
     tpl_del_affects:  { one:"{n} opportunity was built from this page template. Its page is kept exactly as it is. Delete the template?",
@@ -2264,6 +2305,30 @@ var I18N_BOARD = {
       one:"استُوردت فرصة واحدة إلى المسودة.", two:"استُوردت فرصتان إلى المسودة.",
       few:"استُوردت {n} فرص إلى المسودة.", many:"استُوردت {n} فرصة إلى المسودة.",
       other:"استُوردت {n} فرصة إلى المسودة."
+    },
+
+    /* بوابة رفع الدفعة: ما سيُستضاف، وما عليه تنبيه، وما فعله الاعتماد. بصيغ فاعلة بلا مبني للمجهول */
+    bt_summary: {
+      one:"صفحة واحدة جاهزة للاستضافة.", two:"صفحتان جاهزتان للاستضافة.",
+      few:"{n} صفحات جاهزة للاستضافة.", many:"{n} صفحة جاهزة للاستضافة.",
+      other:"{n} صفحة جاهزة للاستضافة."
+    },
+    bt_warned: {
+      one:"تنبيه على صف واحد.", two:"تنبيه على صفين.",
+      few:"تنبيه على {n} صفوف.", many:"تنبيه على {n} صفًا.", other:"تنبيه على {n} صف."
+    },
+    bt_done: {
+      one:"صفحة واحدة الآن على الاستضافة.", two:"صفحتان الآن على الاستضافة.",
+      few:"{n} صفحات الآن على الاستضافة.", many:"{n} صفحة الآن على الاستضافة.",
+      other:"{n} صفحة الآن على الاستضافة."
+    },
+    bt_stored: {
+      one:"حفظ نص بريد واحد.", two:"حفظ نصّي بريد.",
+      few:"حفظ {n} نصوص بريد.", many:"حفظ {n} نص بريد.", other:"حفظ {n} نص بريد."
+    },
+    bt_failed: {
+      one:"أخفق واحد.", two:"أخفق اثنان.",
+      few:"أخفقت {n} حالات.", many:"أخفقت {n} حالة.", other:"أخفقت {n} حالة."
     },
 
     tpl_del_blocked: {

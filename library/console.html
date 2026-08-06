@@ -15,7 +15,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=faf5c1e717">
+<link rel="stylesheet" href="styles.css?v=c257afb0b2">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -258,9 +258,13 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
         <div class="field"><label for="f_sent" data-i18n="f_sent">Send date</label><input id="f_sent" class="input" type="date"></div>
         <div class="field"><label for="f_location" data-i18n="f_location">Location</label><input id="f_location" class="input" autocomplete="off"></div>
         <div class="field"><label for="f_phone" data-i18n="f_phone">Phone (if any)</label><input id="f_phone" class="input" autocomplete="off"></div>
-        <div class="field"><label for="f_quote" data-i18n="f_quote">Quote</label><textarea id="f_quote" rows="2"></textarea>
-          <div class="hint" data-i18n="f_quotehint"></div></div>
-        <div class="field"><label for="f_quoteby" data-i18n="f_quoteby">Quote attribution</label><input id="f_quoteby" class="input" autocomplete="off"></div>
+        <!-- The quote and its attribution fill a template's quote slot. Upload mode hosts a
+             finished page, so it never shows them (they are grouped here to hide as one). -->
+        <div id="quoteFields">
+          <div class="field"><label for="f_quote" data-i18n="f_quote">Quote</label><textarea id="f_quote" rows="2"></textarea>
+            <div class="hint" data-i18n="f_quotehint"></div></div>
+          <div class="field"><label for="f_quoteby" data-i18n="f_quoteby">Quote attribution</label><input id="f_quoteby" class="input" autocomplete="off"></div>
+        </div>
       </div>
 
       <div id="fillFields">
@@ -274,8 +278,10 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
       <div id="uploadBox" hidden>
         <h4 class="sec-h" data-i18n="mode_upload">Upload HTML</h4>
+        <p class="hint" data-i18n="up_batch_hint"></p>
         <div class="dz" id="dz" data-i18n="upload_dz">Drop a finished .html file here, or click to choose</div>
-        <input id="fileInput" type="file" accept=".html,.htm,text/html" hidden>
+        <input id="fileInput" type="file" accept=".html,.htm,.zip,.md,.txt,text/html" multiple hidden>
+        <div id="batchPanel" hidden></div>
       </div>
 
       <div class="note" data-i18n="help_body"></div>
@@ -668,18 +674,18 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 </div>
 
 <script src="icons.js?v=14a695bfb1"></script>
-<script src="i18n.js?v=d4e624ac38"></script>
+<script src="i18n.js?v=e9b9c39dbf"></script>
 <script src="gate.js?v=d3da6c583e"></script>
 <script src="stage-model.js?v=2d00f22b55"></script>
 <script src="lifecycle.js?v=16f886007a"></script>
-<script src="intake.js?v=1abb366cf8"></script>
+<script src="intake.js?v=9dddad6c7c"></script>
 <script src="numbers.js?v=2fa1ded9ee"></script>
 <script src="inbound.js?v=54868a3081"></script>
 <script src="kinds.js?v=6ab99c4e8b"></script>
 <script src="store.js?v=de7cbabaa3"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=8868c01b12"></script>
+<script src="app.js?v=42e1188430"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

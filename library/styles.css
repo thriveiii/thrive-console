@@ -1260,6 +1260,26 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 
 @media (pointer:coarse){ .in-card{ min-height:44px } }
 
+/* --- the batch match report, the warn-before-write gate in upload mode -----
+   One row per slug: five presence marks and a verdict. A matched row is calm,
+   a warned row carries the amber the rest of the console uses for "look here".
+   text-align:start and unicode-bidi keep it correct right to left, and the slug
+   stays a left to right identifier in both directions. */
+.bt-wrap{ overflow-x:auto; border:1px solid var(--hair-2); border-radius:var(--r-sm);
+  margin-block-end:var(--s-3) }
+.bt{ border-collapse:collapse; width:100%; font-size:var(--fs-xs) }
+.bt th,.bt td{ padding:7px 7px; text-align:start; border-block-end:1px solid var(--hair) }
+.bt th{ font-size:var(--fs-micro); font-weight:var(--w-head); color:var(--ink-4); white-space:nowrap }
+.bt tr:last-child td{ border-block-end:0 }
+.bt td.mono-iso{ font-family:var(--font-lat); direction:ltr; unicode-bidi:isolate }
+.bt td.bt-c{ text-align:center; width:1% }
+.bt-y{ display:inline-flex; color:var(--lane-live) }
+.bt-y svg{ width:14px; height:14px }
+.bt-n{ color:var(--ink-4) }
+.bt tr.is-warned{ background:var(--state-stall-t) }
+.bt-ok{ color:var(--lane-live); font-weight:var(--w-head); white-space:nowrap }
+.bt-warn{ color:var(--state-stall); font-weight:var(--w-strong) }
+
 /* --- the symbol set -------------------------------------------------------
    Stroke only, inheriting currentColor, so a symbol is never a second colour
    decision after the text beside it. Decoration in the accessibility sense: the
