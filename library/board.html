@@ -38,9 +38,12 @@
   <!-- The one Syne moment on this screen. Filled by initBoard from
        ThriveBoard.verdict(). IDENTITY §6.2 -->
   <div class="board-head">
-    <div>
-      <div class="verdict" id="boardVerdict"></div>
-      <div class="verdict-sub" id="boardVerdictSub"></div>
+    <div class="ops-status">
+      <span class="ops-badge" id="boardBadge" data-icon="eye" aria-hidden="true"></span>
+      <div class="ops-lines">
+        <div class="verdict" id="boardVerdict"></div>
+        <div class="verdict-sub" id="boardVerdictSub"></div>
+      </div>
     </div>
     <div class="toolbar" style="margin:0">
       <a class="btn" href="editor.html" data-icon="page" data-i18n="new_opp">New opportunity</a>
@@ -50,6 +53,11 @@
       <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
     </div>
   </div>
+
+  <!-- Direction A pipeline strip: the five stage counts from board state, the stage the headline
+       speaks to lit in the rose accent. A quiet visual summary, so it is hidden from the reader
+       that the interactive tab bar already announces. -->
+  <div class="ops-pipeline" id="boardPipeline" aria-hidden="true"></div>
 
   <!-- Not synced. Not dismissable: a warning you can dismiss is one you dismiss on the day
        you are busiest, which is the day it matters. -->

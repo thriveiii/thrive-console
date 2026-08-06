@@ -15,7 +15,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=f222d75941">
+<link rel="stylesheet" href="styles.css?v=312aa432d0">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -43,9 +43,12 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <!-- The one Syne moment on this screen. Filled by initBoard from
        ThriveBoard.verdict(). IDENTITY §6.2 -->
   <div class="board-head">
-    <div>
-      <div class="verdict" id="boardVerdict"></div>
-      <div class="verdict-sub" id="boardVerdictSub"></div>
+    <div class="ops-status">
+      <span class="ops-badge" id="boardBadge" data-icon="eye" aria-hidden="true"></span>
+      <div class="ops-lines">
+        <div class="verdict" id="boardVerdict"></div>
+        <div class="verdict-sub" id="boardVerdictSub"></div>
+      </div>
     </div>
     <div class="toolbar" style="margin:0">
       <a class="btn" href="#editor" data-icon="page" data-i18n="new_opp">New opportunity</a>
@@ -55,6 +58,11 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
     </div>
   </div>
+
+  <!-- Direction A pipeline strip: the five stage counts from board state, the stage the headline
+       speaks to lit in the rose accent. A quiet visual summary, so it is hidden from the reader
+       that the interactive tab bar already announces. -->
+  <div class="ops-pipeline" id="boardPipeline" aria-hidden="true"></div>
 
   <!-- Not synced. Not dismissable: a warning you can dismiss is one you dismiss on the day
        you are busiest, which is the day it matters. -->
@@ -674,7 +682,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   </div>
 </div>
 
-<script src="icons.js?v=14a695bfb1"></script>
+<script src="icons.js?v=e41377c5ce"></script>
 <script src="i18n.js?v=c8f7876bd5"></script>
 <script src="gate.js?v=d3da6c583e"></script>
 <script src="stage-model.js?v=2d00f22b55"></script>
@@ -686,7 +694,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=de7cbabaa3"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=0ce79c3b0f"></script>
+<script src="app.js?v=2125f8e15c"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

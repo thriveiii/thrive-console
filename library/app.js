@@ -4655,18 +4655,29 @@ async function initBoard(){
       activeTab = ThriveBoard.LANES.find(k=>b.lanes[k].length) || ThriveBoard.LANES[0];
     setActiveTab(activeTab, false);
 
-    // One sentence, chosen by priority. The console says one thing at a time.
-    // T4: the same number, given a counter treatment. num() is v.n, the value
-    // ThriveBoard.verdict already derived; no second count is computed here.
+    // Direction A: one sentence, one accented number, read once. The giant duplicate figure is
+    // gone. v.n is the single value ThriveBoard.verdict derived from b.summary.counts; the same
+    // counts feed the pipeline strip below, so the headline number and its stage chip are one
+    // value from one source, never a second figure.
     const v=ThriveBoard.verdict(b);
     const vLine=txt(v.key, v.n).replace(String(v.n), num(v.n));
     const vNew=glowChanged("counter", v.key+":"+v.n) ? " is-glow-new" : "";
-    el("boardVerdict").innerHTML = (v.n>0)
-      ? '<span class="vcount'+vNew+'" aria-hidden="true">'+v.n+'</span><span class="vtext">'+vLine+'</span>'
-      : '<span class="vtext">'+vLine+'</span>';
+    el("boardVerdict").innerHTML = '<span class="vtext'+vNew+'">'+vLine+'</span>';
     el("boardVerdictSub").innerHTML = b.summary.stalled
       ? txt("vd_sub_stalled", ThriveBoard.STALL_DAYS).replace(String(ThriveBoard.STALL_DAYS), num(ThriveBoard.STALL_DAYS))
       : txt("vd_sub_none");
+
+    // The rose badge icon reflects the verdict, and the pipeline lights the stage the headline is
+    // about. One accent (the dusty rose) across the badge, the number, and the lit chip.
+    const VMAP={ vd_replied:{icon:"channel",lane:"replied"}, vd_opened:{icon:"eye",lane:"opened"},
+      vd_stalled:{icon:"clock",lane:""}, vd_live:{icon:"send",lane:"live"},
+      vd_quiet:{icon:"spark",lane:""}, vd_empty:{icon:"spark",lane:""} };
+    const vm=VMAP[v.key]||VMAP.vd_quiet;
+    if(el("boardBadge")) el("boardBadge").innerHTML=ic(vm.icon, 20);
+    const PL=[["draft","lane_draft"],["live","lane_live"],["sent","lane_sent"],["opened","lane_opened"],["replied","lane_replied"]];
+    el("boardPipeline").innerHTML = PL.map(([k,lbl])=>
+      '<span class="plchip'+(k===vm.lane?" is-live":"")+'"><span class="pl-l">'+esc(t(lbl))+'</span>'+
+      '<span class="pl-n">'+b.summary.counts[k]+'</span></span>').join("");
 
     // Every number here is also an action.
     const q=quotaUsage(), left=Math.max(0, q.dailyCap-q.day);
@@ -4694,6 +4705,7 @@ async function initBoard(){
     el("boardEmpty").hidden=!empty;
     el("boardLanes").hidden=empty;
     if(el("boardTabs")) el("boardTabs").hidden=empty;
+    if(el("boardPipeline")) el("boardPipeline").hidden=empty;   // all zeros is noise on an empty board
     el("boardChips").hidden=empty;
     el("boardTray").hidden=empty;
 

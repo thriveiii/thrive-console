@@ -486,8 +486,8 @@ head("Symbols");
   let m;
   const nm = /^\s{4}"?([a-z]+)"?:\s*'/gm;
   while ((m = nm.exec(iconSrc))) names.push(m[1]);
-  names.length === 22 ? ok("twenty-two symbols are defined (" + names.length + ")")
-                      : bad("twenty-two symbols are defined", names.length + ": " + names.join(","));
+  names.length === 23 ? ok("twenty-three symbols are defined (" + names.length + ")")
+                      : bad("twenty-three symbols are defined", names.length + ": " + names.join(","));
 
   /* every place a symbol can be asked for */
   const surfaces = ["library/app.js", "tools/bundle.js"].concat(

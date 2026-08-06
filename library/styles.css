@@ -13,6 +13,8 @@
   --lane-draft-t:rgba(113,191,204,.12); --lane-live-t:rgba(127,159,212,.12);
   --lane-sent-t:rgba(150,133,202,.12); --lane-opened-t:rgba(238,140,157,.12);
   --lane-replied-t:rgba(126,224,184,.12);
+  /* ---- Thrive Operations status bar: the one dusty rose accent (Direction A, approved) ---- */
+  --ops-rose:#C98B8B; --ops-rose-fill:rgba(201,139,139,.16); --ops-rose-bd:rgba(201,139,139,.34);
   /* ---- states ---- */
   --state-stall:#F6CF5B; --state-stall-t:rgba(246,207,91,.11); --state-stall-b:rgba(246,207,91,.55);
   --state-good:#7EE0B8; --state-bad:#EE8C9D;
@@ -762,11 +764,36 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 }
 .vtext{ max-width:34ch }
 [dir="rtl"] .verdict{ letter-spacing:normal; text-transform:none }
-.verdict em{ font-style:normal; color:var(--lane-opened) }
+.verdict em{ font-style:normal; color:var(--ops-rose) }
 .verdict-sub{
   font-size:var(--fs-sm); color:var(--ink-4);
   font-weight:var(--w-strong); margin-top:var(--s-1);
 }
+
+/* Direction A: an icon in a soft rose badge stands where the giant number was, and the one
+   accented number is read once inside the sentence. One accent, the dusty rose, nowhere twice. */
+.ops-status{ display:flex; align-items:center; gap:var(--s-3); min-width:0 }
+.ops-badge{ flex:none; width:44px; height:44px; border-radius:var(--r-md);
+  display:inline-flex; align-items:center; justify-content:center;
+  background:var(--ops-rose-fill); border:1px solid var(--ops-rose-bd); color:var(--ops-rose) }
+.ops-badge .ic{ display:block }
+.ops-lines{ min-width:0 }
+.verdict .n{ color:var(--ops-rose); font-weight:var(--w-max);
+  font-variant-numeric:tabular-nums; unicode-bidi:isolate }
+
+/* The slim pipeline strip: five real stage counts, the live stage lit in the rose accent, the
+   rest quiet. A read only summary that reads as one family with the status component. */
+.ops-pipeline{ display:flex; align-items:center; flex-wrap:wrap; gap:var(--s-2);
+  margin:0 0 var(--s-5) }
+.plchip{ display:inline-flex; align-items:baseline; gap:var(--s-2);
+  padding:5px 11px; border-radius:var(--r-pill);
+  border:1px solid var(--hair); background:var(--panel);
+  font-size:var(--fs-xs); font-weight:var(--w-strong); color:var(--ink-4) }
+.plchip .pl-n{ font-family:var(--font-lat); font-weight:var(--w-head); color:var(--ink-3);
+  font-variant-numeric:tabular-nums; unicode-bidi:isolate }
+.plchip.is-live{ border-color:var(--ops-rose-bd); background:var(--ops-rose-fill); color:var(--ops-rose) }
+.plchip.is-live .pl-n{ color:var(--ops-rose) }
+[dir="rtl"] .plchip{ letter-spacing:normal }
 
 /* --- board: two layouts, one board ------------------------------------------
    One breakpoint at 1024 forks the board, because horizontal scroll hides the
