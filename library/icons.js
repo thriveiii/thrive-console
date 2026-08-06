@@ -47,7 +47,8 @@
     channel: '<circle cx="10" cy="10" r="2.4"/><path d="M14.6 5.4a6.5 6.5 0 0 1 0 9.2M5.4 14.6a6.5 6.5 0 0 1 0-9.2"/>',
     undo:    '<path d="M4 9.5h8.5a4 4 0 0 1 0 8H8"/><path d="M7 6 3.5 9.5 7 13"/>',
     lock:    '<rect x="4.5" y="9" width="11" height="7.5" rx="1.8"/><path d="M7 9V6.8a3 3 0 0 1 6 0V9"/>',
-    globe:   '<circle cx="10" cy="10" r="7"/><path d="M3 10h14"/><path d="M10 3a11 11 0 0 1 0 14 11 11 0 0 1 0-14z"/>'
+    globe:   '<circle cx="10" cy="10" r="7"/><path d="M3 10h14"/><path d="M10 3a11 11 0 0 1 0 14 11 11 0 0 1 0-14z"/>',
+    eye:     '<path d="M2.5 10S5.5 4.5 10 4.5 17.5 10 17.5 10 14.5 15.5 10 15.5 2.5 10 2.5 10z"/><circle cx="10" cy="10" r="2.3"/>'
   };
 
   var NAMES = Object.keys(P);
