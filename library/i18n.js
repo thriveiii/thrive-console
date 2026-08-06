@@ -359,6 +359,10 @@ const I18N = {
     published_live: "Activated. The link is live in about a minute.",
     /* activation, in the sacred order: commit, confirm the live link, then flip the state */
     act_confirming: "Confirming the live link…",
+    /* the shared action runner: every action shows working, done, or the real error */
+    act_working: "Working…",
+    act_done: "Done.",
+    act_err_unknown: "That action failed and returned no message.",
     activated_live: "Activated. The link is live now.",
     act_unconfirmed: "The page is committed, but the live link has not resolved yet. Give it a minute, then activate again.",
     preview: "Preview",
@@ -1282,6 +1286,10 @@ const I18N = {
     published_live: "تم التنشيط. يصبح الرابط حيًّا خلال دقيقة تقريبًا.",
     /* التنشيط بالترتيب الصحيح: الإيداع، ثم تأكيد الرابط الحيّ، ثم قلب الحالة */
     act_confirming: "جارٍ تأكيد الرابط الحيّ…",
+    /* منفّذ الأفعال المشترك: كل فعل يُظهر التنفيذ أو الإتمام أو نص الخطأ الحقيقي */
+    act_working: "جارٍ التنفيذ…",
+    act_done: "تم.",
+    act_err_unknown: "أخفق هذا الفعل دون رسالة.",
     activated_live: "تم التنشيط. الرابط حيّ الآن.",
     act_unconfirmed: "الصفحة في المستودع الآن، لكن الرابط الحيّ لم يفتح بعد. أمهله دقيقة ثم أعد التنشيط.",
     preview: "معاينة",
