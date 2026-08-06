@@ -1649,6 +1649,13 @@ body.modal-open{
   padding:1px var(--s-2);
 }
 [dir="rtl"] .kind-tag{ letter-spacing:normal }
+/* Template taxonomy: a migrated item is flagged for review, and a snippet's binding to an
+   editable template is a labelled reference. Logic surfaced quietly, the visual polish is later. */
+.type-mig{ color:var(--state-stall); font-weight:var(--w-strong) }
+.et-bind{ display:flex; align-items:center; gap:var(--s-2); margin-block-start:var(--s-2);
+  font-size:var(--fs-xs); color:var(--ink-4) }
+.et-bind select{ flex:0 1 auto; min-width:0 }
+[dir="rtl"] .et-bind{ letter-spacing:normal }
 /* .tpl .id carries letter-spacing and uppercase, and until this phase it only
    ever held an id and a two letter locale. It now holds the kind and the locale
    NAME, which in Arabic is Arabic text, and tracking breaks the cursive joins.

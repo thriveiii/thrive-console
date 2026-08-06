@@ -201,11 +201,20 @@ function mergeKeyed(local, remote, key, tombKind, allTombs, carry){
 }
 
 /* ---------- custom page templates (local registry) ---------- */
+/* The three explicit item types of the template taxonomy. The type is a fixed attribute, decided
+   at creation and stored on the record, and it never changes implicitly: no code path flips one
+   type into another. An editable template is edited, activated, and generates offers; a ready
+   offer is activated and sent, never edited; a text snippet is recalled into outreach and may hold
+   a live reference to an editable template. */
+const T_EDITABLE="editable-template", T_OFFER="ready-offer", T_SNIPPET="text-snippet";
+
 const TPLSTORE = "thrive_templates_v1";
 function getCustomTemplates(){ try{ return JSON.parse(localStorage.getItem(TPLSTORE)||"[]"); }catch(e){ return []; } }
 function setCustomTemplates(a){ return lsSet(TPLSTORE, JSON.stringify(a)); }
 function getCustomTemplate(id){ return getCustomTemplates().find(x=>x.id===id); }
-function saveCustomTemplate(rec){ rec.up=Date.now(); const a=getCustomTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setCustomTemplates(a); }
+function saveCustomTemplate(rec){ rec.up=Date.now(); const a=getCustomTemplates(); const i=a.findIndex(x=>x.id===rec.id);
+  if(i<0 && !rec.type) rec.type=T_EDITABLE;   // a page template is an editable template, typed at creation
+  if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setCustomTemplates(a); }
 function removeCustomTemplate(id){ markRemoved("tpl", id); setCustomTemplates(getCustomTemplates().filter(x=>x.id!==id)); }
 
 /* ---------- analytics (beacon hits stored same-origin) ---------- */
@@ -1365,10 +1374,13 @@ async function initDashboard(){
          the supporting facts are one quiet muted line, not a wall of bright chips; the rest of the
          actions sit behind a native <details> disclosure, reachable but off the face. Every value
          and every action from the old card is still here, only re-tiered. */
+      // A ready offer is not edited on the platform, so its Edit action is not present at all,
+      // never a disabled one. Every other type keeps Edit.
+      const isOffer = o.type===T_OFFER;
       const moreActions =
           (!live?`<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>`:``)
         + (live?`<a class="btn ghost sm" href="${viewHref("compose","slug="+enc)}">${t("email_btn")}</a><button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:``)
-        + `<a class="btn ghost sm" href="${viewHref("editor","slug="+enc)}">${t("edit")}</a>`
+        + (isOffer?``:`<a class="btn ghost sm" href="${viewHref("editor","slug="+enc)}">${t("edit")}</a>`)
         + `<button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>`
         + (half?`<button class="btn sm" data-finish="${esc(o.slug)}">${t("pub_finish")}</button>`:``)
         + (live?`<button class="btn ghost sm danger" data-unpub="${esc(o.slug)}">${t("unpublish")}</button>`:``)
@@ -2297,7 +2309,31 @@ function getEmailTemplates(){
   return a;
 }
 function setEmailTemplates(a){ return lsSet(ETPL, JSON.stringify(a)); }
-function saveEmailTemplate(rec){ rec.up=Date.now(); const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id); if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
+function saveEmailTemplate(rec){ rec.up=Date.now(); const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id);
+  if(i<0 && !rec.type) rec.type=T_SNIPPET;   // a message template is a text snippet, typed at creation
+  if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
+/* A bound snippet holds a REFERENCE to its editable template, its id, never a copy of the
+   template's text. So the binding is resolved live here, and an edit to the template propagates the
+   next time the snippet is read: a copied snippet would silently go stale. */
+function boundTemplate(et){ return (et && et.template_ref) ? getCustomTemplate(et.template_ref) : null; }
+/* Conscious migration (page templates only). Every page template made before the taxonomy has no
+   type; default each to the widest type, the editable template, and mark it migrated so Thyab can
+   review and correct. Message templates are text snippets by their store, so they are typed as
+   such, not defaulted to editable. Additive and idempotent: a record that already carries a type is
+   skipped, and every write is through the store's save path then logActivity, never a direct write.
+   Returns the counts so the count can be shown. */
+function migrateItemTypes(){
+  let pages=0, snippets=0;
+  getCustomTemplates().forEach(function(ct){
+    if(ct && !ct.type){ saveCustomTemplate({ id:ct.id, type:T_EDITABLE, type_migrated:true });
+      logActivity("type_migrate", ct.id, T_EDITABLE); pages++; }
+  });
+  getEmailTemplates().forEach(function(et){
+    if(et && !et.type){ saveEmailTemplate({ id:et.id, type:T_SNIPPET }); snippets++; }  // typed by store, not a guess
+  });
+  if(pages||snippets) logActivity("type_migrate_batch", "", pages+" pages to editable-template, "+snippets+" messages typed");
+  return { pages:pages, snippets:snippets };
+}
 function removeEmailTemplate(id){ markRemoved("etpl", id); setEmailTemplates(getEmailTemplates().filter(x=>x.id!==id)); }
 /* Merge fields, two variants:
    - mergeFieldsText: plain replacements for the subject input (.value, never HTML).
@@ -3641,6 +3677,9 @@ const APPROVED_TEMPLATES = [
 function initTemplates(){
   const el=id=>document.getElementById(id);
   let pendingHTML=null;
+  // Migrate any pre-taxonomy items to their type before the lists draw, so nothing renders typeless.
+  const __mig=migrateItemTypes();
+  if(__mig.pages) try{ scheduleSyncPush(); }catch(e){}
 
   function renderBuiltin(){
     const l=getLang();
@@ -3669,17 +3708,20 @@ function initTemplates(){
         <div class="tpl kind-page">
           <div class="tpl-b">
             <div class="name">${ic("page",16)}${esc(ct.name||ct.id)}</div>
-            <!-- A page template ALWAYS shows its field count and its locale. That is
-                 what distinguishes it on sight from a finished offer, which has no
-                 fields and belongs to one prospect. WO-013 §3.4. -->
-            <div class="id">${esc(ct.id)} · <span class="kind-tag">${esc(t("kd_kind_page"))}</span>
+            <!-- An editable template ALWAYS shows its type, field count and locale. That is
+                 what distinguishes it on sight from a ready offer, which has no fields and
+                 belongs to one prospect. WO-013 §3.4. -->
+            <div class="id">${esc(ct.id)} · <span class="kind-tag">${esc(t("type_editable"))}</span>
               · ${esc(t("loc_"+String(localeOf(ct)||"en").toLowerCase()))}
-              · ${esc(boardText(getLang(),"kd_fields", (ct.fields||ThriveKinds.fillableFields(ct.html||"")).length))}</div>
+              · ${esc(boardText(getLang(),"kd_fields", (ct.fields||ThriveKinds.fillableFields(ct.html||"")).length))}
+              ${ct.type_migrated?`· <span class="type-mig">${esc(t("type_migrated"))}</span>`:""}</div>
           </div>
+          <!-- Editable template actions only: edit it, generate an offer from it, activate it. -->
           <div class="tpl-a">
-            <a class="btn ghost sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("use_template")}</a>
-            <button class="btn ghost sm" data-cp="${esc(ct.id)}">${t(localeTab()==="EN"?"loc_counterpart":"loc_counterpart_en")}</button>
+            <a class="btn ghost sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id))}">${t("tpl_edit")}</a>
+            <a class="btn ghost sm" href="${viewHref("editor","t="+encodeURIComponent(ct.id)+"&gen=offer")}">${t("tpl_gen_offer")}</a>
             <button class="btn ghost sm" data-pubtpl="${esc(ct.id)}">${t("publish")}</button>
+            <button class="btn ghost sm" data-cp="${esc(ct.id)}">${t(localeTab()==="EN"?"loc_counterpart":"loc_counterpart_en")}</button>
             <button class="btn ghost sm" data-dl="${esc(ct.id)}">${t("dl_template")}</button>
             <button class="btn ghost sm danger" data-del="${esc(ct.id)}">${t("tpl_delete")}</button>
           </div>
@@ -3822,8 +3864,8 @@ function initTemplates(){
     let slug=slugify(biz), n=2;
     const have=getDrafts();
     while(have.some(d=>d.slug===slug)) slug=slugify(biz)+"-"+(n++);
-    saveDraft({ slug:slug, business:biz, mode:"upload", html:pendingHTML,
-                doc_lang:c.locale||"", published:false, up:Date.now() });
+    saveDraft({ slug:slug, business:biz, mode:"upload", html:pendingHTML, type:T_OFFER,
+                doc_lang:c.locale||"", published:false, up:Date.now() });   // a ready offer, typed at creation
     logActivity("opp_add", slug, "offer upload");
     said(t("kd_went_board").replace("{biz}", biz), "");
     pendingHTML=null; pendingRead=null;
@@ -3980,28 +4022,47 @@ function initTemplates(){
     if(!list.length){ wrap.innerHTML=chrome+tail; bindTabs(); return; }
     wrap.innerHTML = chrome + list.map(et=>{
       const usesMonth=tplUsesMonth(et);
+      const bound=boundTemplate(et);          // resolved live: an edit to the template propagates here
+      const tplOpts=localeTemplates(getCustomTemplates(), localeTab());
+      const bindSel=`<label class="et-bind"><span>${esc(t("type_bind"))}</span>`+
+        `<select class="input sm" data-etbind="${esc(et.id)}">`+
+        `<option value="">${esc(t("type_bind_none"))}</option>`+
+        tplOpts.map(tp=>`<option value="${esc(tp.id)}"${tp.id===et.template_ref?" selected":""}>${esc(tp.name||tp.id)}</option>`).join("")+
+        `</select></label>`;
       return `
       <div class="item no-thumb">
         <div class="item-body">
-          <div class="id">${t("tpl_kind_mail")} · ${esc(et.id)}</div>
+          <div class="id"><span class="kind-tag">${esc(t("type_snippet"))}</span> · ${esc(et.id)}</div>
           <h3>${esc(et.name||et.id)}</h3>
           <div class="meta">
             ${et.id==="monthly"?`<span class="chip">${t("et_default")}</span>`:""}
             ${usesMonth?`<span class="chip tmpl">${t("et_asks_month")}</span>`:""}
             ${/\{\{LINK\}\}/.test(et.html||"")?`<span class="chip">${t("et_has_link")}</span>`:""}
+            ${bound?`<span class="chip tmpl">${t("type_bound_to")} ${esc(bound.name||bound.id)}</span>`:""}
           </div>
           <p class="meta-line"><b>${esc(et.subject||"–")}</b></p>
           <p class="meta-line">${esc(etPreview(et.html))}</p>
           ${etPerf(stats[et.id])}
+          <!-- Text snippet actions only: recall it into a message, bind it to an editable template
+               (a live reference, not a copy), edit, duplicate, delete. No activate, no generate. -->
           <div class="actions">
             <a class="btn sm" href="${viewHref("compose","etpl="+encodeURIComponent(et.id))}">${t("cmp_compose_with")}</a>
             <button class="btn ghost sm" data-etedit="${esc(et.id)}">${t("cmp_link_edit")}</button>
             <button class="btn ghost sm" data-etdup="${esc(et.id)}">${t("et_duplicate")}</button>
             <button class="btn ghost sm danger" data-etdel="${esc(et.id)}">${t("tpl_delete")}</button>
           </div>
+          ${bindSel}
         </div>
       </div>`;}).join("") + tail;
     bindTabs();
+    // Binding a snippet to an editable template stores a reference (the template id), never a copy.
+    wrap.querySelectorAll("[data-etbind]").forEach(sel=>sel.addEventListener("change",()=>{
+      const id=sel.getAttribute("data-etbind"), ref=sel.value;
+      saveEmailTemplate({ id:id, template_ref:ref });
+      logActivity("etpl_bind", id, ref||"(none)");
+      try{ scheduleSyncPush(); }catch(e){}
+      renderEmailTpls();
+    }));
     wrap.querySelectorAll("[data-etedit]").forEach(b=>b.addEventListener("click",()=>etOpen(b.getAttribute("data-etedit"))));
     wrap.querySelectorAll("[data-etdup]").forEach(b=>b.addEventListener("click",()=>{
       const src=getEmailTemplates().find(x=>x.id===b.getAttribute("data-etdup")); if(!src) return;
