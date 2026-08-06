@@ -357,6 +357,10 @@ const I18N = {
     publish: "Activate",
     publishing: "Activating…",
     published_live: "Activated. The link is live in about a minute.",
+    /* activation, in the sacred order: commit, confirm the live link, then flip the state */
+    act_confirming: "Confirming the live link…",
+    activated_live: "Activated. The link is live now.",
+    act_unconfirmed: "The page is committed, but the live link has not resolved yet. Give it a minute, then activate again.",
     preview: "Preview",
     no_content_publish: "Nothing to activate yet. Save it in the Editor first.",
     gh_needed: "Connect GitHub in Settings to activate with one click.",
@@ -1276,6 +1280,10 @@ const I18N = {
     publish: "تنشيط",
     publishing: "جارٍ التنشيط…",
     published_live: "تم التنشيط. يصبح الرابط حيًّا خلال دقيقة تقريبًا.",
+    /* التنشيط بالترتيب الصحيح: الإيداع، ثم تأكيد الرابط الحيّ، ثم قلب الحالة */
+    act_confirming: "جارٍ تأكيد الرابط الحيّ…",
+    activated_live: "تم التنشيط. الرابط حيّ الآن.",
+    act_unconfirmed: "الصفحة في المستودع الآن، لكن الرابط الحيّ لم يفتح بعد. أمهله دقيقة ثم أعد التنشيط.",
     preview: "معاينة",
     no_content_publish: "لا محتوى للتنشيط. احفظها في المحرّر أولًا.",
     gh_needed: "اربط GitHub من الإعدادات للتنشيط بضغطة واحدة.",
