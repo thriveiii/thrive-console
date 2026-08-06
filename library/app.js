@@ -2881,6 +2881,7 @@ async function initCompose(slugArg){
       const to=el("eto").value.trim(), subject=el("esubject").value.trim(), m=tplMeta();
       logActivity("email_copy", oppOf(), (to?to+" · ":"")+subject);
       logMail({ opp:oppOf(), to:to, toName:recName(), subject:subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"gmail-copy", status:"copied", chapter:sendChapter(oppOf()) });
+      clearComposeDraft();                                  // copied to Gmail to send, so the working draft is done
       toast(t("cmp_copied"));
     }catch(e){ toast(t("cmp_copy_err")); }
   });
@@ -3033,12 +3034,71 @@ async function initCompose(slugArg){
       (r.detail? ' <span class="mono-iso">'+esc(r.detail)+'</span>':'')+'</li>').join("")+'</ul>';
   }
 
+  /* ---- draft integrity: continuous save to the durable, synced record ------
+     The message, its subject, recipient, and campaign settings are written to the opportunity
+     record as they change, additively under compose_draft, through saveDraft (which schedules the
+     relay sync, because thrive_opps_v1 is a synced key) then logActivity. An accidental close then
+     loses nothing, and another device continues from the last point. Only real input is saved: an
+     untouched composer writes nothing, and no empty field is ever invented into a value. */
+  function composeState(){
+    return {
+      to: bareAddress(el("eto").value), name: (nameEl? nameEl.value : "").trim(),
+      subject: el("esubject").value, body_html: htmlOut(),
+      template: tplSel? tplSel.value : "", branded: isBranded(),
+      first: !!(firstEl && firstEl.checked), month: monthVal(),
+      plain: (plainBox && plainBox.dataset.dirty==="1") ? plainBox.value : ""
+    };
+  }
+  function composeHasContent(s){
+    return !!(String(s.body_html||"").replace(/<[^>]*>/g,"").trim() || (s.subject||"").trim()
+              || s.to || s.name || (s.plain||"").trim());
+  }
+  const savedTag=el("draftSaved");
+  let composeDirty=false, composeLogged=false, restoring=false;
+  const persistCompose=debounce(()=>{
+    if(!slug || !composeDirty || restoring) return;   // no record to hold it, or nothing real typed
+    const s=composeState();
+    if(!composeHasContent(s)) return;                 // an untouched composer writes nothing
+    saveDraft({ slug, compose_draft: Object.assign({}, s, { up:Date.now() }) });
+    if(!composeLogged){ logActivity("draft_save", slug, ""); composeLogged=true; }  // one audit line per editing session
+    if(savedTag){ savedTag.textContent=t("draft_saved"); savedTag.hidden=false; }
+  }, 600);
+  function touchCompose(){ if(restoring) return; composeDirty=true; persistCompose(); }
+  // Once the message has gone out, the working draft is done: it is cleared from the record so a
+  // reopen starts fresh rather than restoring a message already sent. Additive, keyed by slug.
+  function clearComposeDraft(){ if(slug) saveDraft({ slug, compose_draft:null }); composeDirty=false; composeLogged=false; if(savedTag) savedTag.hidden=true; }
+  [["ebody","input"],["esubject","input"],["eto","input"],["ename","input"],
+   ["emonth","input"],["etpl","change"],["ebrand","change"],["efirst","change"],
+   ["plainBox","input"]].forEach(([id,ev])=>{ const e=el(id); if(e) e.addEventListener(ev, touchCompose); });
+
+  /* Continue from the last saved point. If the record carries a compose_draft, the composer is
+     restored to it exactly, over the fresh seed, so a reopen resumes rather than restarts. The
+     restore is not an edit, so it neither marks the draft dirty nor writes anything back. */
+  function restoreCompose(){
+    const d=oppObj && oppObj.compose_draft; if(!d) return false;
+    restoring=true;
+    if(d.template && tplSel && [...tplSel.options].some(o=>o.value===d.template)) tplSel.value=d.template;
+    if("subject" in d){ el("esubject").value=d.subject||""; subjectDirty=true; }
+    if(nameEl && "name" in d) nameEl.value=d.name||"";
+    if(el("eto") && "to" in d) el("eto").value=d.to||"";
+    if(brandEl && "branded" in d) brandEl.checked=!!d.branded;
+    if(firstEl && "first" in d) firstEl.checked=!!d.first;
+    if(monthEl && "month" in d && d.month) monthEl.value=d.month;
+    if("body_html" in d){ body.innerHTML=d.body_html||"";
+      body.querySelectorAll("a").forEach(a=>{ if(!a.getAttribute("data-origin")) a.setAttribute("data-origin","custom"); }); }
+    if(plainBox && d.plain){ plainBox.value=d.plain; plainBox.dataset.dirty="1"; }
+    refreshLinks();
+    restoring=false;
+    return true;
+  }
+
   ["esubject","eto","ename"].forEach(id=>{
     const e=el(id); if(e) e.addEventListener("input", debounce(refreshPreview, 300));
   });
   body.addEventListener("input", debounce(refreshPreview, 400));
   const prevWrap=el("prevWrap");
   if(prevWrap) prevWrap.addEventListener("toggle", ()=>{ if(prevWrap.open) refreshPreview(); });
+  if(restoreCompose()) toast(t("draft_restored"));
   refreshPreview();
   // Confirm the live page when the composer opens, so a draft or a dead link is visible before a
   // click. The send actions re-check regardless: the gate is the send-time confirmation.
@@ -3121,6 +3181,7 @@ async function initCompose(slugArg){
       recordSend(); renderQuota();
       logActivity("email", slug||"", to+" · "+payload.subject);
       logMail({ opp:oppOf(), to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id, chapter:sendChapter(oppOf()) });
+      clearComposeDraft();                                  // the message went out, so the working draft is done
       toast(t("cmp_sent"));
     }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
     finally{ el("eSend").disabled=false; el("eSend").textContent=old; }

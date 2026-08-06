@@ -575,6 +575,10 @@ html[dir="rtl"] .mdir.out,html[dir="rtl"] .mdir.in{transform:scaleX(-1);display:
 
 /* ---------- Resend free-tier send meter ---------- */
 .quota-meter{font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:999px;white-space:nowrap;align-self:center}
+/* A quiet confirmation that the working draft is safe in the durable record, never a claim of a send. */
+.draft-saved{display:inline-flex;align-items:center;gap:.4em;align-self:center;
+  font-size:var(--fs-xs);font-weight:var(--w-head);color:var(--lane-replied)}
+.draft-saved .ic{color:var(--lane-replied)}
 .quota-meter:empty{display:none}
 .quota-meter.ok{background:rgba(113,191,204,.12);color:#8fd3de}
 .quota-meter.near{background:rgba(230,180,90,.15);color:#e6b45a}
