@@ -41,6 +41,55 @@ function toast(msg, action){
   el.classList.add("show");
   clearTimeout(window.__tt); window.__tt=setTimeout(()=>el.classList.remove("show"), ms);
 }
+/* ---------- the one action runner ----------
+   Every action passes through here, so no action can complete without the user seeing it start,
+   succeed, or fail. On invoke, the tapped control shows a working state and is guarded from a second
+   tap until the action settles. On success, a visible confirmed outcome. On any failure or thrown
+   error, the real text (the message, and for a failed request the HTTP status and the response body,
+   which ghPutFile already puts in the Error) is rendered into a surface that always sits above every
+   overlay, never a toast that can render behind the modal, never blank. No fabricated success, and no
+   silent failure: this is the single choke point that guarantees both, everywhere, at once. */
+function errText(e){
+  if(e==null) return t("act_err_unknown");
+  if(typeof e==="string") return e;
+  var m=(e && e.message!=null) ? String(e.message) : String(e);
+  return m || t("act_err_unknown");
+}
+function actionStatus(kind, msg){
+  var el=document.getElementById("actionStatus");
+  if(!el){ el=document.createElement("div"); el.id="actionStatus"; el.className="act-status";
+    el.setAttribute("role","status"); el.setAttribute("aria-live","polite"); document.body.appendChild(el); }
+  el.className="act-status act-"+kind+" show";
+  var icn = kind==="err" ? "alert" : (kind==="ok" ? "check" : "clock");
+  el.innerHTML='<span class="act-ic">'+(typeof thriveIcon==="function"? thriveIcon(icn,{size:16}) : "")+'</span>'+
+    '<span class="act-msg"></span>'+(kind==="err"? '<button type="button" class="act-x" aria-label="dismiss">×</button>' : '');
+  el.querySelector(".act-msg").textContent=msg;   // textContent, so the raw error text is shown verbatim and safely
+  var x=el.querySelector(".act-x"); if(x) x.addEventListener("click", function(){ el.classList.remove("show"); });
+  clearTimeout(window.__as);
+  // An error persists until the next action or a manual dismiss, because an error you cannot read in
+  // time is an error nobody saw. Working and success states clear on their own.
+  if(kind!=="err") window.__as=setTimeout(function(){ el.classList.remove("show"); }, kind==="work"? 20000 : 2600);
+}
+function clearActionStatus(){ var el=document.getElementById("actionStatus"); if(el) el.classList.remove("show"); }
+async function runAction(control, opts){
+  opts=opts||{};
+  var btn=(typeof control==="string") ? document.getElementById(control) : control;
+  if(btn && btn.dataset.running==="1") return;                 // guard: no second invocation until it settles
+  var oldText=btn? btn.textContent : "", oldDis=btn? btn.disabled : false;
+  if(btn){ btn.dataset.running="1"; btn.disabled=true; btn.classList.add("is-running"); if(opts.working) btn.textContent=opts.working; }
+  actionStatus("work", opts.workingMsg || opts.working || t("act_working"));
+  try{
+    var result=await opts.run();
+    actionStatus("ok", opts.doneMsg || (typeof result==="string" && result) || t("act_done"));
+    return result===undefined? true : result;
+  }catch(e){
+    actionStatus("err", errText(e));                           // the real reason, always visible
+    if(typeof opts.onError==="function") try{ opts.onError(e); }catch(_){}
+    return undefined;
+  }finally{
+    if(btn){ btn.dataset.running=""; btn.disabled=oldDis; btn.textContent=oldText; btn.classList.remove("is-running"); }
+  }
+}
 function download(name, text, type){
   const blob=new Blob([text], {type:type||"text/html;charset=utf-8"});
   const url=URL.createObjectURL(blob); const a=document.createElement("a");
@@ -1453,12 +1502,11 @@ async function initDashboard(){
       if(isLive(o)){ const w=window.open(relOpp(o.slug),"_blank"); if(w) w.addEventListener("load",()=>setTimeout(()=>w.print(),300)); }
       else { const w=openLocalPreview(await renderOppHtml(o)); if(w) setTimeout(()=>{ try{w.print();}catch(e){} },500); }
     }));
-    grid.querySelectorAll("[data-unpub]").forEach(b=>b.addEventListener("click", async ()=>{
+    grid.querySelectorAll("[data-unpub]").forEach(b=>b.addEventListener("click", ()=>{
       const slug=b.getAttribute("data-unpub"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
-      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
-      if(!confirm(t("confirm_unpublish"))) return;
-      b.disabled=true; b.textContent=t("publishing");
-      try{
+      if(!confirm(t("confirm_unpublish"))) return;   // the guard question stays a native confirm
+      runAction(b, { doneMsg:t("unpublished_ok"), run: async ()=>{
+        if(!ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
         // Capture the live page BEFORE deleting: for opps published on another device we have no
         // local fields to regenerate from, so keep the real HTML so re-publishing isn't blank.
         const hasFields=o.fields && Object.keys(o.fields).some(k=>o.fields[k]);
@@ -1469,49 +1517,34 @@ async function initDashboard(){
         const back={slug, business:o.business, template:o.template, sent_on:o.sent_on, location:o.location, phone:o.phone, status:o.status||"sent", published:false, mode:useUpload?"upload":(o.mode||(o.template&&o.template!=="custom"?"fill":"upload")), fields:o.fields||{}};
         if(liveHtml) back.html=liveHtml;
         saveDraft(back);
-        logActivity("unpublish", slug, o.business); toast(t("unpublished_ok"));
+        logActivity("unpublish", slug, o.business);
         state.data=await mergedOpps(); render();
-      }catch(e){ toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("unpublish"); }
+      }});
     }));
     grid.querySelectorAll("[data-prev]").forEach(b=>b.addEventListener("click", async ()=>{
       const o=state.data.find(x=>x.slug===b.getAttribute("data-prev")); if(o) openLocalPreview(await renderOppHtml(o));
     }));
-    grid.querySelectorAll("[data-pub]").forEach(b=>b.addEventListener("click", async ()=>{
-      const slug=b.getAttribute("data-pub"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
-      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
-      b.disabled=true; b.textContent=t("publishing");
-      try{
-        const html=await renderOppHtml(o);
-        if(!html){ toast(t("no_content_publish")); b.disabled=false; b.textContent=t("publish"); return; }
-        // Commit, confirm, then flip. The state does not move to Ready until the live link resolves.
-        b.textContent=t("act_confirming");
-        const live=await activateAndConfirm(o, html);
-        if(!live){
-          // Committed for real, but the live link has not resolved yet, so the state stays not
-          // activated with the reason. Re-activating once Pages is up confirms it (idempotent).
-          toast(t("act_unconfirmed")); b.disabled=false; b.textContent=t("publish"); render(); return;
-        }
-        o.published=true; toast(t("activated_live")); render();
-      }catch(e){
-        // A half commit wrote the page but not the manifest. Nothing is claimed activated: the state
-        // stays not activated with the reason, and the record can finish the manifest write.
-        if(e.half){ toast(t("pub_half")); b.disabled=false; b.textContent=t("publish"); render(); }
-        else { toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("publish"); }
-      }
-    }));
-    grid.querySelectorAll("[data-finish]").forEach(b=>b.addEventListener("click", async ()=>{
-      const slug=b.getAttribute("data-finish"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
-      if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
-      b.disabled=true; b.textContent=t("publishing");
-      try{
-        await finishPublish(o);                 // write the missing manifest entry
-        b.textContent=t("act_confirming");
-        const live=await confirmLive(slug);      // confirm before declaring it activated
-        if(!live){ toast(t("act_unconfirmed")); b.disabled=false; b.textContent=t("pub_finish"); render(); return; }
-        saveDraft({slug, published:true}); o.published=true; toast(t("activated_live")); render();
-      }
-      catch(e){ toast(t("gh_err")+": "+e.message); b.disabled=false; b.textContent=t("pub_finish"); }
-    }));
+    grid.querySelectorAll("[data-pub]").forEach(b=>b.addEventListener("click", ()=> runAction(b, { working:t("publishing"), run: async ()=>{
+      const slug=b.getAttribute("data-pub"); const o=state.data.find(x=>x.slug===slug); if(!o) throw new Error(t("act_err_unknown"));
+      if(!ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
+      const html=await renderOppHtml(o);
+      if(!html) throw new Error(t("no_content_publish"));
+      // Commit, confirm, then flip. The state does not move to Ready until the live link resolves.
+      let live;
+      try{ live=await activateAndConfirm(o, html); }
+      catch(e){ throw new Error(e && e.half ? t("pub_half") : (t("gh_err")+": "+errText(e))); }
+      if(!live){ render(); return t("act_unconfirmed"); }   // committed, not yet resolved: reason shown, state stays
+      o.published=true; render(); return t("activated_live");
+    }})));
+    grid.querySelectorAll("[data-finish]").forEach(b=>b.addEventListener("click", ()=> runAction(b, { working:t("publishing"), run: async ()=>{
+      const slug=b.getAttribute("data-finish"); const o=state.data.find(x=>x.slug===slug); if(!o) throw new Error(t("act_err_unknown"));
+      if(!ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
+      try{ await finishPublish(o); }             // write the missing manifest entry
+      catch(e){ throw new Error(t("gh_err")+": "+errText(e)); }
+      const live=await confirmLive(slug);        // confirm before declaring it activated
+      if(!live){ render(); return t("act_unconfirmed"); }
+      saveDraft({slug, published:true}); o.published=true; render(); return t("activated_live");
+    }})));
     grid.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
       const slug=b.getAttribute("data-del");
       if(!confirm(t("confirm_remove"))) return;
@@ -1783,14 +1816,13 @@ async function initEditor(slugArg){
     batchPanel.hidden=false;
     if(typeof applyIcons==="function") applyIcons(batchPanel);
     el("batchDiscard").addEventListener("click",()=>{ batch=null; renderBatch(); });
-    const ab=el("batchApprove"); if(ab && canHost) ab.addEventListener("click", approveBatch);
+    const ab=el("batchApprove"); if(ab && canHost) ab.addEventListener("click", ()=> runAction("batchApprove", { working:t("publishing"), run: approveBatch }));
   }
   async function approveBatch(){
-    if(!batch) return;
-    if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
+    if(!batch) throw new Error(t("bt_nothing"));
+    if(!ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
     const rows=batch.report.rows.filter(hostable);
-    if(!rows.length){ toast(t("bt_nothing")); return; }
-    const btn=el("batchApprove"); btn.disabled=true; const old=btn.textContent; btn.textContent=t("publishing");
+    if(!rows.length) throw new Error(t("bt_nothing"));
     let hosted=0, stored=0, failed=0;
     for(let k=0;k<rows.length;k++){
       const e=rows[k].entry;
@@ -1812,10 +1844,10 @@ async function initEditor(slugArg){
     let msg=boardText(getLang(),"bt_done",hosted);
     if(stored) msg+=" "+boardText(getLang(),"bt_stored",stored);
     if(failed) msg+=" "+boardText(getLang(),"bt_failed",failed);
-    toast(msg);
     batch=null; batchPanel.hidden=true; batchPanel.innerHTML="";
     try{ scheduleSyncPush(); }catch(_){}
     if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+    return msg;                                  // shown by the runner as the confirmed outcome
   }
 
   // live inputs
@@ -1832,10 +1864,11 @@ async function initEditor(slugArg){
     const w=window.open("","_blank"); if(!w) return;
     w.document.open(); w.document.write(await currentHTML()); w.document.close();
   });
-  if(copyLink) copyLink.addEventListener("click", ()=>{
+  if(copyLink) copyLink.addEventListener("click", ()=> runAction(copyLink, { doneMsg:t("link_copied"), run: async ()=>{
     const url=liveUrl(curSlug()||"<name>");
-    navigator.clipboard.writeText(url).then(()=>toast(t("link_copied")), ()=>toast(url));
-  });
+    try{ await navigator.clipboard.writeText(url); }
+    catch(e){ throw new Error(url); }   // no clipboard: show the link itself so it can be copied by hand
+  }}));
   document.querySelectorAll(".devtoggle [data-dev]").forEach(b=>b.addEventListener("click",()=>{
     document.querySelectorAll(".devtoggle [data-dev]").forEach(x=>x.classList.remove("on"));
     b.classList.add("on"); el("frame").classList.toggle("phone", b.getAttribute("data-dev")==="phone");
@@ -1847,54 +1880,48 @@ async function initEditor(slugArg){
     return need.filter(([id])=>!el(id).value.trim()).map(([,k])=>k);
   }
 
-  // actions
-  el("dlPage").addEventListener("click", async ()=>{
-    if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
-    const miss=missingRequired();
-    if(miss.length){ toast(t("need_fields")); return; }
+  // actions, every one through the shared runner so its outcome is always visible
+  el("dlPage").addEventListener("click", ()=> runAction("dlPage", { doneMsg:t("dl_toast"), run: async ()=>{
+    if(!el("f_biz").value.trim()) throw new Error(t("need_biz"));
+    if(missingRequired().length) throw new Error(t("need_fields"));
     download("index.html", await currentHTML());
     logActivity("download", curSlug(), el("f_biz").value.trim());
-    toast(t("dl_toast"));
-  });
-  el("saveLib").addEventListener("click", async ()=>{
-    if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
-    if(collides()){ toast(t("slug_taken")); return; }   // never clobber another opp's record
+  }}));
+  el("saveLib").addEventListener("click", ()=> runAction("saveLib", { doneMsg:t("saved_toast"), run: async ()=>{
+    if(!el("f_biz").value.trim()) throw new Error(t("need_biz"));
+    if(collides()) throw new Error(t("slug_taken"));   // never clobber another opp's record
     const rec=await fullRecord(); const isNew = existing.indexOf(rec.slug)<0;
     saveDraft(rec);
     if(isNew) existing.push(rec.slug);
     editingSlug = rec.slug;                              // this opp is now the one we're editing
     logActivity(isNew?"create":"save", rec.slug, rec.business);
-    toast(t("saved_toast"));
-  });
+  }}));
   const pubBtn=el("publishBtn");
-  if(pubBtn) pubBtn.addEventListener("click", async ()=>{
-    if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
-    if(missingRequired().length){ toast(t("need_fields")); return; }
-    if(collides()){ toast(t("slug_taken")); return; }   // never overwrite another opp's live page
-    if(!ghReady()){ toast(t("gh_needed")); setTimeout(()=>goTo("settings"),900); return; }
+  if(pubBtn) pubBtn.addEventListener("click", ()=> runAction("publishBtn", { working:t("publishing"), run: async ()=>{
+    if(!el("f_biz").value.trim()) throw new Error(t("need_biz"));
+    if(missingRequired().length) throw new Error(t("need_fields"));
+    if(collides()) throw new Error(t("slug_taken"));   // never overwrite another opp's live page
+    if(!ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
     const rec=await fullRecord();
     const pubRec=Object.assign({}, rec, { html: await currentHTML() });
-    pubBtn.disabled=true; const old=pubBtn.textContent; pubBtn.textContent=t("publishing");
+    // Commit, confirm, then flip: the editor never claims activated until the live link resolves.
     try{
-      // Commit, confirm, then flip: the editor never claims activated until the live link resolves.
       await publishOpp(pubRec);
-      pubBtn.textContent=t("act_confirming");
-      const live=await confirmLive(rec.slug);
-      if(!live){ toast(t("act_unconfirmed")); return; }   // committed, not yet confirmed live: state stays
-      editingLive=true; rec.published=true; saveDraft(rec);
-      if(existing.indexOf(rec.slug)<0) existing.push(rec.slug);
-      logActivity("publish", rec.slug, rec.business);
-      toast(t("activated_live"));
-    }catch(e){ toast(e.half? t("pub_half") : (t("gh_err")+": "+e.message)); }
-    finally{ pubBtn.disabled=false; pubBtn.textContent=old; }
-  });
-  el("copyManifest").addEventListener("click", ()=>{
-    if(!el("f_biz").value.trim()){ toast(t("need_biz")); return; }
-    const r=record(); delete r.fields;
-    navigator.clipboard.writeText(JSON.stringify(r,null,2)).then(
-      ()=>{ logActivity("copy", r.slug, ""); toast(t("copied_toast")); },
-      ()=>{ download("entry.json", JSON.stringify(r,null,2), "application/json"); });
-  });
+    }catch(e){ throw new Error(e && e.half ? t("pub_half") : (t("gh_err")+": "+errText(e))); }
+    const live=await confirmLive(rec.slug);
+    if(!live) return t("act_unconfirmed");             // committed, not yet confirmed live: state stays, reason shown
+    editingLive=true; rec.published=true; saveDraft(rec);
+    if(existing.indexOf(rec.slug)<0) existing.push(rec.slug);
+    logActivity("publish", rec.slug, rec.business);
+    return t("activated_live");
+  }}));
+  el("copyManifest").addEventListener("click", ()=> runAction("copyManifest", { doneMsg:t("copied_toast"), run: async ()=>{
+    if(!el("f_biz").value.trim()) throw new Error(t("need_biz"));
+    const r=record(); delete r.fields; const json=JSON.stringify(r,null,2);
+    try{ await navigator.clipboard.writeText(json); }
+    catch(e){ download("entry.json", json, "application/json"); }
+    logActivity("copy", r.slug, "");
+  }}));
 
   // prefill from ?slug= (edit any existing opp) or default date today. The disclosure's count
   // is taken again afterwards: one taken before the record is loaded says nothing is filled in
