@@ -214,6 +214,11 @@ select{cursor:pointer}
 .seg{display:flex;gap:8px;margin-bottom:16px}
 .seg button{flex:1;padding:10px;border-radius:10px;border:1px solid var(--hair);background:transparent;color:var(--ink-3);font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
 .seg button.on{color:var(--ink);background:rgba(150,133,202,.16);border-color:var(--purple)}
+/* The undo and redo icons sit inside their own row at the top of the editor panel. Redo is the undo
+   glyph mirrored, so no new symbol is added. Disabled greying comes from the shared .btn:disabled. */
+.ed-hist{display:flex;gap:8px;margin:0 0 16px}
+.ed-hist .ed-h-btn{flex:0 0 auto;padding:8px 12px;line-height:0}
+.ed-hist .ed-redo .ic{transform:scaleX(-1)}
 .preview{position:sticky;top:76px}
 .preview .bar{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
 .urlpill{flex:1 1 auto;min-width:0;font-size:12.5px;font-weight:700;color:var(--teal);background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:9px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
