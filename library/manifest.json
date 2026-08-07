@@ -1,7 +1,7 @@
 {
   "site": "console.thriveiii.com",
   "base_path": "/opp/",
-  "updated": "2026-08-03",
+  "updated": "2026-08-07",
   "opportunities": [
     {
       "slug": "ludic-lillian",
@@ -45,6 +45,15 @@
       "template": "ar-opp1",
       "sent_on": "2026-08-03",
       "location": "المطلاع - الكويت",
+      "phone": "",
+      "status": "sent"
+    },
+    {
+      "slug": "simply-jia-style",
+      "business": "Simply Jia Style",
+      "template": "custom",
+      "sent_on": "2026-08-05",
+      "location": "Northern Virginia",
       "phone": "",
       "status": "sent"
     }
