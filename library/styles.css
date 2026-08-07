@@ -121,8 +121,15 @@ h1.title{font-size:26px;font-weight:800;color:var(--ink);margin:0;letter-spacing
 
 /* toolbar */
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
-.search{flex:1 1 220px;min-width:180px}
+.search{flex:1 1 220px;min-width:180px;position:relative}
+/* The magnifier is a field icon: it belongs inside the input, centered, not floating above it. It had
+   no rule at all, so it sat in normal flow before the block input and appeared out of place. Position
+   it inside the (now relative) container and reserve inline-start room on the input so text clears it.
+   inset-inline-start keeps it correct in both directions. */
+.search .fieldic{position:absolute;inset-inline-start:12px;inset-block-start:50%;transform:translateY(-50%);
+  display:inline-flex;align-items:center;color:var(--ink-3);pointer-events:none}
 .input,.search input,select,textarea{width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:10px;color:var(--ink);padding:11px 13px;font-size:14px;font-family:inherit;outline:none;transition:border-color .2s}
+.search input{padding-inline-start:38px}   /* after the base rule, so the shorthand does not reset it: room for the icon */
 .input:focus,.search input:focus,select:focus,textarea:focus{border-color:var(--purple)}
 select{cursor:pointer}
 .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:10px;font-weight:800;font-size:13.5px;border:0;cursor:pointer;text-decoration:none;font-family:inherit;color:#15121b;background:var(--grad);box-shadow:0 8px 24px rgba(150,133,202,.28);transition:transform .2s}
@@ -138,8 +145,11 @@ select{cursor:pointer}
 .btn.sm{padding:8px 13px;font-size:12.5px}
 
 /* cards / table */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+/* Wider tracks so the cards are not cramped, especially at iPad-landscape where 300px forced three
+   tight columns. min(100%,340px) keeps a single column from ever overflowing a narrow phone. */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:16px}
 .card{background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:18px;transition:border-color .2s,transform .2s;display:flex;flex-direction:column}
+.grid .card{padding:20px 22px}   /* more room for the title and body; the #48 skeleton is unchanged */
 .card:hover{border-color:rgba(150,133,202,.5);transform:translateY(-2px)}
 .card.is-arch{opacity:.62}
 .card.is-arch:hover{opacity:1}
