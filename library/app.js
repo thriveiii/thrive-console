@@ -72,6 +72,52 @@ function actionStatus(kind, msg){
   if(kind!=="err") window.__as=setTimeout(function(){ el.classList.remove("show"); }, kind==="work"? 20000 : 2600);
 }
 function clearActionStatus(){ var el=document.getElementById("actionStatus"); if(el) el.classList.remove("show"); }
+/* Copy helper with a fallback for engines without the async clipboard: a temporary textarea and
+   execCommand, so Copy confirms an actual copy rather than a swallowed failure. */
+async function copyToClipboard(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch(e){
+    try{ var ta=document.createElement("textarea"); ta.value=text; ta.setAttribute("readonly","");
+      ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta);
+      ta.select(); var ok=document.execCommand("copy"); document.body.removeChild(ta); return !!ok;
+    }catch(_){ return false; }
+  }
+}
+/* The activation crowning moment. On a confirmed activation the runner success surface becomes a
+   compact card in the same always-visible top layer (z-index 300), non-blocking, no scrim. It carries
+   the live link and its actions where the eye already is, and it persists until dismissed so there is
+   time to copy or share. The full brand gradient is spent here and only here: one sweep on appear,
+   then a calm static gradient. It never appears before the commit is confirmed. */
+function activationCard(slug){
+  var url=liveUrl(slug);
+  var el=document.getElementById("actionStatus");
+  if(!el){ el=document.createElement("div"); el.id="actionStatus"; el.setAttribute("role","status");
+    el.setAttribute("aria-live","polite"); document.body.appendChild(el); }
+  clearTimeout(window.__as);                            // the card does not auto-vanish
+  el.className="act-status act-card sweep show";
+  el.style.setProperty("--ac-ang","0deg");             // resolves the gradient even without @property
+  el.innerHTML=
+    '<div class="act-card-in">'+
+      '<button type="button" class="act-x" aria-label="dismiss">×</button>'+
+      '<div class="act-card-h">'+esc(t("ac_live_h"))+'</div>'+
+      '<a class="act-card-url" href="'+esc(url)+'" target="_blank" rel="noopener" dir="ltr">'+esc(url)+'</a>'+
+      '<div class="act-card-acts">'+
+        '<a class="btn sm" href="'+esc(url)+'" target="_blank" rel="noopener">'+esc(t("ac_open"))+'</a>'+
+        '<button type="button" class="btn sm" data-ac="copy">'+esc(t("ac_copy"))+'</button>'+
+        '<button type="button" class="btn sm" data-ac="share">'+esc(t("ac_share"))+'</button>'+
+      '</div>'+
+    '</div>';
+  el.querySelector(".act-x").addEventListener("click", function(){ el.classList.remove("show"); });
+  function confirmBtn(b){ var old=b.textContent; b.textContent=t("ac_copied"); setTimeout(function(){ b.textContent=old; }, 1600); }
+  var cp=el.querySelector('[data-ac="copy"]');
+  cp.addEventListener("click", async function(){ await copyToClipboard(url); confirmBtn(cp); });
+  var sh=el.querySelector('[data-ac="share"]');
+  sh.addEventListener("click", async function(){
+    if(typeof navigator!=="undefined" && typeof navigator.share==="function"){
+      try{ await navigator.share({ url:url, title:t("ac_live_h") }); }catch(e){}   // a cancelled share is not an error
+    } else { await copyToClipboard(url); confirmBtn(sh); }   // fall back to Copy where share is not available
+  });
+}
 async function runAction(control, opts){
   opts=opts||{};
   var btn=(typeof control==="string") ? document.getElementById(control) : control;
@@ -81,7 +127,9 @@ async function runAction(control, opts){
   actionStatus("work", opts.workingMsg || opts.working || t("act_working"));
   try{
     var result=await opts.run();
-    actionStatus("ok", opts.doneMsg || (typeof result==="string" && result) || t("act_done"));
+    // A success can render its own surface (the activation card) instead of the plain ok line.
+    if(typeof opts.okRender==="function") opts.okRender(result);
+    else actionStatus("ok", opts.doneMsg || (typeof result==="string" && result) || t("act_done"));
     return result===undefined? true : result;
   }catch(e){
     actionStatus("err", errText(e));                           // the real reason, always visible
@@ -1526,7 +1574,9 @@ async function initDashboard(){
     grid.querySelectorAll("[data-prev]").forEach(b=>b.addEventListener("click", async ()=>{
       const o=state.data.find(x=>x.slug===b.getAttribute("data-prev")); if(o) openLocalPreview(await renderOppHtml(o));
     }));
-    grid.querySelectorAll("[data-pub]").forEach(b=>b.addEventListener("click", ()=> runAction(b, { working:t("publishing"), workingMsg:t("act_step_check"), run: async ()=>{
+    grid.querySelectorAll("[data-pub]").forEach(b=>b.addEventListener("click", ()=> runAction(b, { working:t("publishing"), workingMsg:t("act_step_check"),
+      okRender:(res)=>{ if(res===t("activated_live")) activationCard(b.getAttribute("data-pub")); else actionStatus("ok", (typeof res==="string" && res) || t("act_done")); },
+      run: async ()=>{
       const slug=b.getAttribute("data-pub"); const o=state.data.find(x=>x.slug===slug); if(!o) throw new Error(t("act_err_unknown"));
       if(!ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
       const html=await renderOppHtml(o);
@@ -1904,7 +1954,10 @@ async function initEditor(slugArg){
     logActivity(isNew?"create":"save", rec.slug, rec.business);
   }}));
   const pubBtn=el("publishBtn");
-  if(pubBtn) pubBtn.addEventListener("click", ()=> runAction("publishBtn", { working:t("publishing"), workingMsg:t("act_step_check"), run: async ()=>{
+  if(pubBtn) pubBtn.addEventListener("click", ()=> runAction("publishBtn", { working:t("publishing"), workingMsg:t("act_step_check"),
+    // The confirmed activation presents the live link as a card; any other outcome stays a plain line.
+    okRender:(res)=>{ if(res===t("activated_live")) activationCard(curSlug()); else actionStatus("ok", (typeof res==="string" && res) || t("act_done")); },
+    run: async ()=>{
     // Narrate each step to the always-visible surface, so a tap that stops names where it stopped.
     if(!el("f_biz").value.trim()) throw new Error(t("need_biz"));
     if(missingRequired().length) throw new Error(t("need_fields"));
@@ -5955,6 +6008,7 @@ function initModal(){
   const BORROWED={ page:"view-editor", outreach:"view-compose" };
 
   let opener=null, current="", rec=null, open_=false, scrollY=0;
+  const __ovSwept=new Set();   // slugs whose Overview live link has already had its one gentle sweep
 
   /* Where each borrowed view lives when the window does not have it. Recorded once, on the
      first borrow, from the document itself rather than assumed. */
@@ -6307,12 +6361,28 @@ function initModal(){
     if(o.location) rows.push(row(t("mw_o_where"), esc(o.location)));
     if(o.template) rows.push(row(t("mw_o_tpl"), esc(o.template)));
     if(o.sent_on) rows.push(row(t("mw_o_made"), ltr(o.sent_on)));
+    // The live link has a permanent home here: Activated, the address, and a small Open and Copy, so
+    // it never has to be hunted for again. The gradient border sweeps once the first time this record
+    // shows the activated state, then calms.
+    var ovSweep = isLive(o) && !__ovSwept.has(o.slug);
+    if(isLive(o)) __ovSwept.add(o.slug);
     rows.push(row(t("mw_o_page"), isLive(o)
-      ? '<a class="has-ic" href="'+esc(liveUrl(o.slug))+'" target="_blank" rel="noopener">'+
-        (typeof thriveIcon==="function"? thriveIcon("globe",{size:14}) : "")+ltr(liveUrl(o.slug))+'</a>'
+      ? '<div class="ov-live'+(ovSweep?" sweep":"")+'" style="--ac-ang:0deg"><div class="ov-live-in">'+
+        '<span class="ov-live-tag">'+esc(t("ov_activated"))+'</span>'+
+        '<a class="ov-live-url has-ic" href="'+esc(liveUrl(o.slug))+'" target="_blank" rel="noopener" dir="ltr">'+
+          (typeof thriveIcon==="function"? thriveIcon("globe",{size:14}) : "")+ltr(liveUrl(o.slug))+'</a>'+
+        '<span class="ov-live-acts">'+
+          '<a class="btn sm" href="'+esc(liveUrl(o.slug))+'" target="_blank" rel="noopener">'+esc(t("ac_open"))+'</a>'+
+          '<button type="button" class="btn sm" data-ovcopy="'+esc(o.slug)+'">'+esc(t("ac_copy"))+'</button>'+
+        '</span></div></div>'
       : '<span class="mw-muted">'+esc(t("mw_o_unpub"))+'</span>'));
     box.innerHTML=prohibitionBand(o)+recordNotes(o)+
       '<dl class="mw-rows">'+rows.join("")+'</dl>'+movesBar(o);
+    box.querySelectorAll("[data-ovcopy]").forEach(b=>b.addEventListener("click", async ()=>{
+      var okc=await copyToClipboard(liveUrl(b.getAttribute("data-ovcopy")));
+      var old=b.textContent; b.textContent=t("ac_copied"); setTimeout(()=>{ b.textContent=old; }, 1600);
+      if(!okc) actionStatus("err", t("act_err_unknown"));
+    }));
     bindMoves(box, o);
   }
 
@@ -6430,7 +6500,12 @@ function initModal(){
     }
     giveBack();
     show(tab);
-    if(tab==="overview") renderOverview(rec);
+    if(tab==="overview"){
+      // Reflect reality: the record may have just been activated in the borrowed page view, so read
+      // the current state before drawing the row rather than trust a rec loaded before the commit.
+      if(current){ try{ rec=(await mergedOpps()).find(x=>x.slug===current)||rec; }catch(e){ actionStatus("err", errText(e)); } }
+      renderOverview(rec);
+    }
     else if(tab==="text") renderText(rec);
     else renderHistory(rec);
     if(__restored) applyDraftFields(__restored);
