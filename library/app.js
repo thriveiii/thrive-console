@@ -34,7 +34,8 @@ function toast(msg, action){
     b.addEventListener("click",()=>{
       el.classList.remove("show");
       clearTimeout(window.__tt);
-      try{ action.fn(); }catch(e){}
+      // An undo that throws must say so, not vanish: the user thinks it took when it did not.
+      try{ action.fn(); }catch(e){ actionStatus("err", errText(e)); }
     });
     el.appendChild(b);
   }
@@ -6514,7 +6515,8 @@ function initModal(){
     opener=document.activeElement;
     current=slug||"";
     rec=null;
-    if(current){ try{ rec=(await mergedOpps()).find(x=>x.slug===current)||null; }catch(e){} }
+    // Loading the record can fail (store read); surface it rather than open a blank window in silence.
+    if(current){ try{ rec=(await mergedOpps()).find(x=>x.slug===current)||null; }catch(e){ actionStatus("err", t("act_mount_fail")+" "+errText(e)); } }
     el("modalTitle").textContent=title||(rec&&rec.business)||slug||"";
     stamp();
     await switchTo(tab);
@@ -6706,7 +6708,8 @@ function initModal(){
      re-reads it rather than continuing to display what was true before the click. */
   async function reread(){
     if(!open_ || !current) return;
-    try{ rec=(await mergedOpps()).find(x=>x.slug===current)||rec; }catch(e){}
+    // Keep the last good record on a failed re-read, but say the refresh failed rather than swallow it.
+    try{ rec=(await mergedOpps()).find(x=>x.slug===current)||rec; }catch(e){ actionStatus("err", errText(e)); }
     stamp();
     const tab=currentTab();
     if(tab==="overview") renderOverview(rec);
