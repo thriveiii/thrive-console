@@ -717,6 +717,18 @@ html[dir="rtl"] #sy_ep,html[dir="rtl"] #em_ep,html[dir="rtl"] #ep2,html[dir="rtl
 .tile-v{padding-inline-end:22px}                 /* keep big numbers clear of the badge */
 .tile-k{display:block;text-align:inherit}        /* label is plain again, the badge lives in the corner */
 .zero{color:var(--ink-3);font-weight:600}
+/* Pages & visitors tiles carry their own icon and accent so the row reads at a glance rather than as
+   one grey block. Scoped to #tilesPages so the Outreach tiles above are untouched. The accent is on
+   the icon chip and a top edge; the number stays white for readability. */
+#tilesPages .tile{ border-block-start:2px solid var(--tile-acc,var(--hair)) }
+#tilesPages .tile-ic{ display:flex; width:34px; height:34px; margin:0 auto 8px; align-items:center;
+  justify-content:center; border-radius:10px; color:var(--tile-acc); background:var(--tile-acc-fill) }
+#tilesPages .tile.acc-teal{   --tile-acc:#71BFCC; --tile-acc-fill:rgba(113,191,204,.14) }
+#tilesPages .tile.acc-purple{ --tile-acc:#9685CA; --tile-acc-fill:rgba(150,133,202,.14) }
+#tilesPages .tile.acc-blue{   --tile-acc:#7F9FD4; --tile-acc-fill:rgba(127,159,212,.14) }
+#tilesPages .tile.acc-gold{   --tile-acc:#F6CF5B; --tile-acc-fill:rgba(246,207,91,.14) }
+#tilesPages .tile.acc-rose{   --tile-acc:#C98B8B; --tile-acc-fill:rgba(201,139,139,.14) }
+#tilesPages .tile.acc-green{  --tile-acc:#7EE0B8; --tile-acc-fill:rgba(126,224,184,.14) }
 /* header badges stay inline but never wrap away from their label */
 .logtable th .info{margin-inline-start:6px;vertical-align:middle}
 .logtable th{white-space:nowrap}

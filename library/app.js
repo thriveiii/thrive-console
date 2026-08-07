@@ -4308,8 +4308,9 @@ async function initHome(){
   // Every metric carries its own explanation. The ⓘ is pinned to the tile's top corner,
   // trailing edge, so top-right in English and top-left in Arabic, never inline with the
   // label (which made it wrap onto a second line and look scattered).
-  const tile=(v,k,cls,tip)=>'<div class="tile'+(cls?" "+cls:"")+'">'+
+  const tile=(v,k,cls,tip,icon)=>'<div class="tile'+(cls?" "+cls:"")+'">'+
     (tip?'<button type="button" class="info tile-info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button>':'')+
+    (icon?'<span class="tile-ic">'+ic(icon,18)+'</span>':'')+
     '<div class="tile-v">'+esc(String(v))+'</div>'+
     '<div class="tile-k">'+k+'</div></div>';
 
@@ -4373,13 +4374,15 @@ async function initHome(){
     /* Six, so the group is two even rows. Follow-up left this set on purpose: it is an action,
        not a page metric, and both the board and the library already carry it as something you
        can filter by and act on rather than only look at. */
+    // Each tile carries its own icon and accent so the row reads at a glance rather than as one grey
+    // block. The accent is cosmetic only; the numbers and the note below are unchanged.
     el("tilesPages").innerHTML=
-      tile(live, t("home_live_pages"), "", t("tip_live_pages"))+
-      tile(opps.length, t("home_total_opps"), "", t("tip_total_opps"))+
-      tile(totalViews, t("home_views"), "", t("tip_views"))+
-      tile(totalOpens, t("home_opens"), "", t("tip_opens"))+
-      tile(uniq.size, t("home_unique"), "", t("tip_unique"))+
-      tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("home_dwell"), "", t("tip_dwell"));
+      tile(live, t("home_live_pages"), "acc-teal", t("tip_live_pages"), "page")+
+      tile(opps.length, t("home_total_opps"), "acc-purple", t("tip_total_opps"), "archive")+
+      tile(totalViews, t("home_views"), "acc-blue", t("tip_views"), "eye")+
+      tile(totalOpens, t("home_opens"), "acc-gold", t("tip_opens"), "spark")+
+      tile(uniq.size, t("home_unique"), "acc-rose", t("tip_unique"), "channel")+
+      tile(fmtMs(dw.n? dw.ms/dw.n : 0), t("home_dwell"), "acc-green", t("tip_dwell"), "clock");
     // Honest note about where these numbers come from. "No opens yet" is a healthy state and
     // must not be reported as "not collecting": those are different problems.
     const note=el("homeDataNote");
@@ -4451,17 +4454,23 @@ async function initHome(){
     /* T4 glow: the highest value in each comparable column, one per column, found by Math.max
        over the rows. A column that is all zeros has no top to mark. gc() puts the resting
        accent on that one cell, and one slow cycle on it when the top changes. */
-    const dwellAvg=r=> r.dwellN? r.dwellMs/r.dwellN : 0;
+    /* The comparable value per column. Dwell is compared as the seconds the cell actually shows
+       (fmtMs rounds to whole seconds), so two cells reading "35s" tie rather than splitting on a raw
+       millisecond difference the eye cannot see. */
+    const dwellSecs=r=> r.dwellN? Math.round((r.dwellMs/r.dwellN)/1000) : 0;
     const GCOLS=[["sent",r=>r.sent],["views",r=>r.views],["opens",r=>r.opens],
-                 ["uniq",r=>r.uniq],["dwell",dwellAvg],["replies",r=>r.replies]];
+                 ["uniq",r=>r.uniq],["dwell",dwellSecs],["replies",r=>r.replies]];
     const gTop={}, gNew={};
     GCOLS.forEach(function(col){
-      var name=col[0], get=col[1], mx=0, slug=null;      // start at 0: a column of zeros marks nothing
-      rows.forEach(function(r){ var val=get(r); if(val>mx){ mx=val; slug=r.slug; } });
-      gTop[name]=slug;
-      gNew[name]=glowChanged("col:"+name, slug? slug+":"+Math.round(mx) : "none");
+      var name=col[0], get=col[1], mx=0;                  // start at 0: a column of zeros marks nothing
+      rows.forEach(function(r){ var val=get(r); if(val>mx) mx=val; });
+      // Every cell equal to the column top glows, so a tie is consistent: two equal tops both glow,
+      // never one on and one off. A column of all zeros has no top to mark.
+      var tops = mx>0 ? rows.filter(function(r){ return get(r)===mx; }).map(function(r){ return r.slug; }) : [];
+      gTop[name]=tops;
+      gNew[name]=glowChanged("col:"+name, tops.length? tops.slice().sort().join(",")+":"+mx : "none");
     });
-    const gc=(name,r)=> (gTop[name]&&gTop[name]===r.slug)
+    const gc=(name,r)=> (gTop[name] && gTop[name].indexOf(r.slug)>=0)
       ? ' class="is-glow'+(gNew[name]?" is-glow-new":"")+'"' : '';
     const hth=(label,tip)=>'<th>'+label+'<button type="button" class="info" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'">i</button></th>';
     const num=v=>v?('<b>'+v+'</b>'):'<span class="zero">0</span>';
