@@ -56,6 +56,15 @@
       "location": "Northern Virginia",
       "phone": "",
       "status": "sent"
+    },
+    {
+      "slug": "vsd-photography",
+      "business": "VSD Photography",
+      "template": "custom",
+      "sent_on": "2026-08-07",
+      "location": "Alexandria, VA",
+      "phone": "",
+      "status": "sent"
     }
   ]
 }
