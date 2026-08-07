@@ -1664,6 +1664,57 @@ async function initDashboard(){
   render();
 }
 
+/* ---------- editor undo/redo ----------
+   Native undo is dead in the editor because the opportunity window rebuilds the editor view from a
+   boot snapshot on every entry (thriveViewReset sets el.innerHTML), and initEditor re-hydrates each
+   field with `.value =`. A recreated node has an empty native undo stack, and a programmatic value
+   assignment clears whatever stack a fresh page had. So the history cannot live in the DOM. It lives
+   here, in memory, keyed by the editing slug and the field id, so it survives every re-render and the
+   auto-save. Depth is capped so memory stays bounded. This changes nothing that is saved; it only lets
+   the field step back and forward. */
+var ThriveEditHistory = (function(){
+  var CAP = 100;                 // per-field snapshots kept; older ones fall off the bottom
+  var COALESCE = 600;            // ms: a burst of typing in one field collapses to one undo step
+  var store = {};                // fieldId -> { stack:[{v,s,e}], idx, ts }
+  var slug = null;               // the document these histories belong to
+  var lastId = "";               // the field the icons act on (survives re-render: an id, not a node)
+  var applying = false;          // true while we set a value ourselves, so it is not recorded as an edit
+  function snap(f){ return { v: f.value, s: (f.selectionStart==null?f.value.length:f.selectionStart), e: (f.selectionEnd==null?f.value.length:f.selectionEnd) }; }
+  function reset(s){ if(s!==slug){ store = {}; slug = s; lastId = ""; } }   // a new document starts fresh
+  function seed(f){ if(!store[f.id]) store[f.id] = { stack:[snap(f)], idx:0, ts:0 }; }
+  function ensure(f){ seed(f); return store[f.id]; }
+  function record(f){
+    if(applying) return;
+    var h = ensure(f), now = nowMs(), top = h.stack[h.idx];
+    if(top && top.v === f.value){ top.s = f.selectionStart; top.e = f.selectionEnd; return; }   // caret move only
+    if(h.ts && (now - h.ts) < COALESCE && h.idx === h.stack.length - 1){
+      h.stack[h.idx] = snap(f);                 // same burst: evolve the current step, do not add one
+    } else {
+      h.stack = h.stack.slice(0, h.idx + 1);    // a fresh edit truncates any redo tail
+      h.stack.push(snap(f));
+      if(h.stack.length > CAP) h.stack.shift();
+      h.idx = h.stack.length - 1;
+    }
+    h.ts = now;
+  }
+  function apply(f, s){
+    applying = true;
+    f.value = s.v;
+    try{ f.setSelectionRange(s.s, s.e); }catch(e){}
+    try{ f.dispatchEvent(new Event("input", { bubbles:true })); }catch(e){}   // let the preview and slug follow
+    applying = false;
+  }
+  function canUndo(id){ var h = store[id]; return !!(h && h.idx > 0); }
+  function canRedo(id){ var h = store[id]; return !!(h && h.idx < h.stack.length - 1); }
+  function undo(f){ var h = store[f.id]; if(!h || h.idx <= 0) return false; h.idx--; apply(f, h.stack[h.idx]); h.ts = 0; return true; }
+  function redo(f){ var h = store[f.id]; if(!h || h.idx >= h.stack.length - 1) return false; h.idx++; apply(f, h.stack[h.idx]); h.ts = 0; return true; }
+  function nowMs(){ try{ return Date.now(); }catch(e){ return 0; } }
+  return {
+    reset: reset, seed: seed, record: record, undo: undo, redo: redo, canUndo: canUndo, canRedo: canRedo,
+    setLast: function(id){ lastId = id; }, last: function(){ return lastId; }, cap: CAP
+  };
+})();
+
 /* ---------- editor ---------- */
 async function initEditor(slugArg){
   const el=id=>document.getElementById(id);
@@ -2035,6 +2086,39 @@ async function initEditor(slugArg){
     if(edMore) edMore();                                 // and so does the disclosure's label
   });
   if(edMore) edMore();                                   // now the form is loaded, count it again
+
+  /* Undo and redo for the editor text fields. The history is keyed by the editing slug, so entering
+     the same document again (a re-render) keeps its steps, while a different document starts fresh.
+     Each field is seeded with its loaded value as the base step. */
+  const H=ThriveEditHistory;
+  const HIST_FIELDS=["f_biz","f_slug","f_location","f_phone","f_quoteby","f_want","f_quote","f_proof1","f_proof2","f_proof3"];
+  const edUndoBtn=el("edUndo"), edRedoBtn=el("edRedo");
+  function updateHist(){
+    const id=H.last();
+    if(edUndoBtn) edUndoBtn.disabled=!H.canUndo(id);
+    if(edRedoBtn) edRedoBtn.disabled=!H.canRedo(id);
+  }
+  H.reset(editSlug||"");
+  HIST_FIELDS.forEach(id=>{
+    const f=el(id); if(!f) return;
+    H.seed(f);
+    f.addEventListener("input", ()=>{ H.record(f); H.setLast(id); updateHist(); });
+    f.addEventListener("focus", ()=>{ H.setLast(id); updateHist(); });
+    // The shortcuts, on the field itself so a focused field owns them: Cmd/Ctrl+Z undo, +Shift+Z or +Y redo.
+    f.addEventListener("keydown", e=>{
+      const meta=e.metaKey||e.ctrlKey; if(!meta) return;
+      const k=(e.key||"").toLowerCase();
+      if(k==="z" && !e.shiftKey){ e.preventDefault(); H.setLast(id); if(H.undo(f)) updateHist(); }
+      else if((k==="z" && e.shiftKey) || k==="y"){ e.preventDefault(); H.setLast(id); if(H.redo(f)) updateHist(); }
+    });
+  });
+  function actOn(fn){ const f=el(H.last()); if(!f) return; if(fn(f)) updateHist(); }
+  if(edUndoBtn){ edUndoBtn.addEventListener("mousedown", e=>e.preventDefault());   // keep the field focused
+    edUndoBtn.addEventListener("click", ()=> actOn(f=>H.undo(f))); }
+  if(edRedoBtn){ edRedoBtn.addEventListener("mousedown", e=>e.preventDefault());
+    edRedoBtn.addEventListener("click", ()=> actOn(f=>H.redo(f))); }
+  updateHist();
+
   refresh();
 }
 
