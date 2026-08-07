@@ -565,8 +565,12 @@ function doGet(e) {
       return json_({ ok: true });
     } catch (err) { return json_({ ok: false, error: String(err.message || err) }); }
   }
-  return ContentService.createTextOutput(
-    'Thrive relay v' + RELAY_VERSION + ' (email + sync + analytics + inbox) is running.');
+  /* The bare GET reports through json_, so relay_version (from the single RELAY_VERSION constant)
+     is stamped on this endpoint too, exactly as it is on every sync and send response. The console
+     then reads one explicit field on every endpoint rather than scraping a prose string here and a
+     JSON field there, so the two readings can never drift apart. */
+  return json_({ ok: true, service: 'Thrive relay', running: true,
+                 features: 'email + sync + analytics + inbox' });
 }
 
 function doPost(e) {

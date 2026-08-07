@@ -3564,11 +3564,19 @@ function relayBannerText(){
 function classifyRelayBody(body){
   const s=String(body||"").trim();
   if(!s) return { kind:"net" };
-  /* §3: "current" is the version this build requires, read from REQUIRED_RELAY,
-     never a literal. The day the relay became v5 a hardcoded "v4" here turned a
-     correct deployment into a reported fault, which is the exact class of drift
-     this round exists to end. Any Thrive relay whose stamped version is not the
-     required one is "old", whichever number it carries. */
+  /* One explicit contract: any relay response carrying relay_version is authoritative, so the
+     Connection health line reads the same single field the sync and send paths read (noteRelayVersion),
+     from the same relay constant (RELAY_VERSION), on every endpoint. This is the drift this round ends:
+     the version is no longer scraped from prose in one place and read as a field in another. */
+  if(s.charAt(0)==="{" || s.charAt(0)==="["){
+    try{ const j=JSON.parse(s);
+      if(j && j.relay_version!=null){ const jv=Number(j.relay_version);
+        return { kind: jv===REQUIRED_RELAY? "current":"old", ver:jv, version:"Thrive relay v"+jv }; }
+    }catch(e){}
+  }
+  /* Fallback for a relay built before the contract, whose bare GET is the prose line. "current" is
+     read from REQUIRED_RELAY, never a literal: the day the relay became v5 a hardcoded "v4" here would
+     have turned a correct deployment into a reported fault, which is the exact class of drift this ends. */
   if(/Thrive relay/i.test(s)){
     const m=/v(\d+)/i.exec(s); const ver=m? Number(m[1]) : null;
     return { kind: ver===REQUIRED_RELAY? "current":"old", ver:ver, version:s.slice(0,90) };
