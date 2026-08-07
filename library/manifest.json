@@ -65,6 +65,15 @@
       "location": "Alexandria, VA",
       "phone": "",
       "status": "sent"
+    },
+    {
+      "slug": "alexandra-schmeling-fine-art",
+      "business": "Alexandra Schmeling Fine Art",
+      "template": "custom",
+      "sent_on": "2026-08-05",
+      "location": "Arlington, VA",
+      "phone": "",
+      "status": "sent"
     }
   ]
 }
