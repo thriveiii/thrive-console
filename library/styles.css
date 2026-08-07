@@ -1132,6 +1132,10 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 }
 .tray-item.won{ color:var(--state-good); border-color:rgba(126,224,184,.30) }
 .tray-item.lost{ color:var(--ink-4) }
+/* A bounced or failed delivery wears the warning rose, so a non-delivery reads as one, never as a
+   quiet Sent. Placement (this tray, a lane, or a card chip) is raised in the PR as a product-voice call. */
+.tray-item.bounced{ color:var(--state-bad); border-color:rgba(238,140,157,.34) }
+.tray-item.failed{ color:var(--state-stall); border-color:rgba(246,207,91,.34) }
 
 
 /* --- the lifecycle: moves, notes, and the standing prohibition -------------
