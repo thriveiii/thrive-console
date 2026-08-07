@@ -1232,6 +1232,7 @@ async function confirmLive(slug, opts){
    whether it went live; publishOpp's half-commit error propagates to the caller. */
 async function activateAndConfirm(o, html){
   await publishOpp(Object.assign({}, o, { html: html }));   // 1. commit the page and the manifest
+  if(typeof actionStatus==="function") actionStatus("work", t("act_step_confirm"));  // narrate the confirm step
   const live=await confirmLive(o.slug);                     // 2. confirm the live URL resolves
   if(live){ saveDraft({ slug:o.slug, published:true }); logActivity("publish", o.slug, o.business||""); }  // 3. flip only now
   return live;
@@ -1524,13 +1525,14 @@ async function initDashboard(){
     grid.querySelectorAll("[data-prev]").forEach(b=>b.addEventListener("click", async ()=>{
       const o=state.data.find(x=>x.slug===b.getAttribute("data-prev")); if(o) openLocalPreview(await renderOppHtml(o));
     }));
-    grid.querySelectorAll("[data-pub]").forEach(b=>b.addEventListener("click", ()=> runAction(b, { working:t("publishing"), run: async ()=>{
+    grid.querySelectorAll("[data-pub]").forEach(b=>b.addEventListener("click", ()=> runAction(b, { working:t("publishing"), workingMsg:t("act_step_check"), run: async ()=>{
       const slug=b.getAttribute("data-pub"); const o=state.data.find(x=>x.slug===slug); if(!o) throw new Error(t("act_err_unknown"));
       if(!ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
       const html=await renderOppHtml(o);
       if(!html) throw new Error(t("no_content_publish"));
       // Commit, confirm, then flip. The state does not move to Ready until the live link resolves.
       let live;
+      actionStatus("work", t("act_step_commit"));
       try{ live=await activateAndConfirm(o, html); }
       catch(e){ throw new Error(e && e.half ? t("pub_half") : (t("gh_err")+": "+errText(e))); }
       if(!live){ render(); return t("act_unconfirmed"); }   // committed, not yet resolved: reason shown, state stays
@@ -1617,7 +1619,11 @@ async function initEditor(slugArg){
   const existing = await allSlugs();
   // The slug currently being edited (null for a brand-new opp). Advances on first save so an
   // opp never collides with itself, and lets save/publish block collisions with OTHER opps.
-  let editingSlug = viewParams().get("slug");
+  // The caller passes it (the modal borrows this view and calls initEditor(current)); only the
+  // standalone editor page, which carries the slug in the URL, falls back to the query. Without
+  // this, editingSlug is null in the modal, so a page's own slug reads as a collision with
+  // "another" opp, and Activate throws slug_taken before it ever reaches the commit.
+  let editingSlug = slugArg || viewParams().get("slug");
 
   // add custom templates to the picker, then honor ?t=
   const tsel=el("f_template");
@@ -1897,7 +1903,8 @@ async function initEditor(slugArg){
     logActivity(isNew?"create":"save", rec.slug, rec.business);
   }}));
   const pubBtn=el("publishBtn");
-  if(pubBtn) pubBtn.addEventListener("click", ()=> runAction("publishBtn", { working:t("publishing"), run: async ()=>{
+  if(pubBtn) pubBtn.addEventListener("click", ()=> runAction("publishBtn", { working:t("publishing"), workingMsg:t("act_step_check"), run: async ()=>{
+    // Narrate each step to the always-visible surface, so a tap that stops names where it stopped.
     if(!el("f_biz").value.trim()) throw new Error(t("need_biz"));
     if(missingRequired().length) throw new Error(t("need_fields"));
     if(collides()) throw new Error(t("slug_taken"));   // never overwrite another opp's live page
@@ -1905,9 +1912,11 @@ async function initEditor(slugArg){
     const rec=await fullRecord();
     const pubRec=Object.assign({}, rec, { html: await currentHTML() });
     // Commit, confirm, then flip: the editor never claims activated until the live link resolves.
+    actionStatus("work", t("act_step_commit"));
     try{
       await publishOpp(pubRec);
     }catch(e){ throw new Error(e && e.half ? t("pub_half") : (t("gh_err")+": "+errText(e))); }
+    actionStatus("work", t("act_step_confirm"));
     const live=await confirmLive(rec.slug);
     if(!live) return t("act_unconfirmed");             // committed, not yet confirmed live: state stays, reason shown
     editingLive=true; rec.published=true; saveDraft(rec);
@@ -6412,7 +6421,10 @@ function initModal(){
          listener, and on a composer that means one click on Send sending twice. */
       if(typeof window.thriveViewReset==="function") window.thriveViewReset(BORROWED[tab].replace(/^view-/,""));
       show(tab);
-      try{ if(tab==="page") await initEditor(current); else await initCompose(current); }catch(e){}
+      // A borrowed view that fails to mount used to leave its buttons in place but unbound, and
+      // swallowed the reason here, so a tap did nothing with no word why. Surface it instead.
+      try{ if(tab==="page") await initEditor(current); else await initCompose(current); }
+      catch(e){ if(typeof actionStatus==="function") actionStatus("err", t("act_mount_fail")+" "+errText(e)); }
       return;
     }
     giveBack();
