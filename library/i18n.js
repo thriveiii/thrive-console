@@ -230,11 +230,12 @@ const I18N = {
     bt_verdict: "Verdict",
     bt_matched: "Matched",
     btr_no_text: "no text",
+    btr_page_pending: "stored as draft, page pending",
     btr_dupe: "duplicate slug",
-    btr_exists: "already live",
+    btr_exists: "already live, will update in place",
     bt_jsonerr: "The manifest json block did not parse",
-    bt_approve: "Host the matched pages",
-    bt_nothing: "Nothing here can be hosted; every row is warned.",
+    bt_approve: "Save every template",
+    bt_nothing: "Nothing here to save.",
     bt_text_stored: "email text stored",
     dl_page: "Download page (index.html)",
     save_lib: "Save to library",
@@ -1179,11 +1180,12 @@ const I18N = {
     bt_verdict: "الحكم",
     bt_matched: "متطابق",
     btr_no_text: "بلا نص",
+    btr_page_pending: "محفوظة كمسودة، الصفحة لاحقًا",
     btr_dupe: "لاحقة مكررة",
-    btr_exists: "مُنشّطة بالفعل",
+    btr_exists: "مُنشّطة بالفعل، ستُحدّث في مكانها",
     bt_jsonerr: "تعذّر تحليل كتلة json في التعليمات",
-    bt_approve: "استضف الصفحات المتطابقة",
-    bt_nothing: "لا شيء هنا قابل للاستضافة، كل صف عليه تنبيه.",
+    bt_approve: "احفظ كل قالب",
+    bt_nothing: "لا شيء هنا لحفظه.",
     bt_text_stored: "حفظ نص البريد",
     dl_page: "تنزيل الصفحة (index.html)",
     save_lib: "حفظ في المكتبة",
@@ -2106,10 +2108,12 @@ var I18N_BOARD = {
     in_found:  { one:"{n} opportunity read.", other:"{n} opportunities read." },
     in_added:  { one:"{n} opportunity imported into Draft.", other:"{n} opportunities imported into Draft." },
 
-    /* the batch upload gate: what will host, what is warned, and what the approval did */
-    bt_summary: { one:"{n} page ready to host.", other:"{n} pages ready to host." },
+    /* the batch upload gate: what will save, what is hosted, and what the approval did */
+    bt_summary: { one:"{n} template ready to save.", other:"{n} templates ready to save." },
     bt_warned:  { one:"{n} row warned.", other:"{n} rows warned." },
-    bt_done:    { one:"{n} page hosted.", other:"{n} pages hosted." },
+    bt_done:    { one:"{n} template saved.", other:"{n} templates saved." },
+    bt_hosted:  { one:"{n} page hosted.", other:"{n} pages hosted." },
+    bt_incomplete: { one:"{n} saved without text yet.", other:"{n} saved without text yet." },
     bt_stored:  { one:"{n} email text stored.", other:"{n} email texts stored." },
     bt_failed:  { one:"{n} failed.", other:"{n} failed." },
 
@@ -2403,20 +2407,28 @@ var I18N_BOARD = {
       other:"استُوردت {n} فرصة إلى المسودة."
     },
 
-    /* بوابة رفع الدفعة: ما سيُستضاف، وما عليه تنبيه، وما فعله الاعتماد. بصيغ فاعلة بلا مبني للمجهول */
+    /* بوابة رفع الدفعة: ما سيُحفظ، وما استُضيف، وما فعله الاعتماد. بصيغ فاعلة بلا مبني للمجهول */
     bt_summary: {
-      one:"صفحة واحدة جاهزة للاستضافة.", two:"صفحتان جاهزتان للاستضافة.",
-      few:"{n} صفحات جاهزة للاستضافة.", many:"{n} صفحة جاهزة للاستضافة.",
-      other:"{n} صفحة جاهزة للاستضافة."
+      one:"قالب واحد جاهز للحفظ.", two:"قالبان جاهزان للحفظ.",
+      few:"{n} قوالب جاهزة للحفظ.", many:"{n} قالبًا جاهزًا للحفظ.",
+      other:"{n} قالب جاهز للحفظ."
     },
     bt_warned: {
       one:"تنبيه على صف واحد.", two:"تنبيه على صفين.",
       few:"تنبيه على {n} صفوف.", many:"تنبيه على {n} صفًا.", other:"تنبيه على {n} صف."
     },
     bt_done: {
+      one:"حُفظ قالب واحد.", two:"حُفظ قالبان.",
+      few:"حُفظت {n} قوالب.", many:"حُفظ {n} قالبًا.", other:"حُفظ {n} قالب."
+    },
+    bt_hosted: {
       one:"صفحة واحدة الآن على الاستضافة.", two:"صفحتان الآن على الاستضافة.",
       few:"{n} صفحات الآن على الاستضافة.", many:"{n} صفحة الآن على الاستضافة.",
       other:"{n} صفحة الآن على الاستضافة."
+    },
+    bt_incomplete: {
+      one:"حُفظ واحد بلا نص بعد.", two:"حُفظ اثنان بلا نص بعد.",
+      few:"حُفظت {n} بلا نص بعد.", many:"حُفظ {n} بلا نص بعد.", other:"حُفظ {n} بلا نص بعد."
     },
     bt_stored: {
       one:"حفظ نص بريد واحد.", two:"حفظ نصّي بريد.",
