@@ -230,6 +230,45 @@ select{cursor:pointer}
 .act-err{border-block-end-color:var(--state-bad);background:#1c1418} .act-err .act-ic{color:var(--state-bad)}
 [dir="rtl"] .act-status{letter-spacing:normal}
 .btn.is-running{opacity:.75;cursor:progress}
+/* The activation crowning moment. The full brand gradient is spent here and only here: a rose, teal
+   and gold ring that sweeps around once on appear, then settles to a calm static gradient. It lives in
+   the always-visible runner layer (z-index 300), pinned to the top, non-blocking, no scrim. The card
+   persists until dismissed. prefers-reduced-motion gets the static gradient with no sweep. */
+@property --ac-ang{syntax:"<angle>";inherits:false;initial-value:0deg}
+.act-status.act-card{padding:0;background:transparent;border:0;box-shadow:none;display:none}
+.act-status.act-card.show{display:block}
+.act-card .act-card-in{position:relative;max-width:540px;margin-inline:auto;padding:16px 18px;
+  border-radius:0 0 16px 16px;background:#16161d;box-shadow:0 12px 34px rgba(0,0,0,.55);overflow:hidden}
+.act-card .act-card-in::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:2px;
+  background:conic-gradient(from var(--ac-ang,0deg),#C98B8B,#5CB5A8,#D4A574,#C98B8B);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.act-card.sweep .act-card-in::before{animation:ac-sweep .9s ease-out 1 both}
+@keyframes ac-sweep{from{--ac-ang:0deg}to{--ac-ang:360deg}}
+.act-card .act-card-h{font-size:var(--fs-md);font-weight:var(--w-head);color:var(--ink);padding-inline-end:20px}
+.act-card .act-card-url{display:block;margin:6px 0 12px;font-size:12.5px;font-weight:700;color:var(--teal);
+  overflow-wrap:anywhere;text-decoration:none}
+.act-card .act-card-acts{display:flex;gap:8px;flex-wrap:wrap}
+.act-card .act-x{position:absolute;inset-block-start:8px;inset-inline-end:10px;background:transparent;
+  border:0;color:var(--ink-3);font-size:20px;line-height:1;cursor:pointer;padding:0 4px}
+/* The permanent home in Overview: the same ring, one gentle sweep the first time the record shows the
+   activated state, then static. */
+.ov-live{position:relative;border-radius:12px;padding:2px;display:inline-block;max-width:100%}
+.ov-live::before{content:"";position:absolute;inset:0;border-radius:inherit;
+  background:conic-gradient(from var(--ac-ang,0deg),#C98B8B,#5CB5A8,#D4A574,#C98B8B);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;padding:2px;pointer-events:none}
+.ov-live.sweep::before{animation:ac-sweep .9s ease-out 1 both}
+.ov-live .ov-live-in{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  border-radius:10px;background:var(--panel);padding:9px 11px}
+.ov-live-tag{font-size:11px;font-weight:var(--w-head);color:var(--ink-2);background:var(--panel-2);
+  border-radius:999px;padding:2px 9px}
+.ov-live-url{font-size:12.5px;font-weight:700;color:var(--teal);text-decoration:none;overflow-wrap:anywhere}
+.ov-live-acts{display:inline-flex;gap:6px;margin-inline-start:auto}
+@media (prefers-reduced-motion:reduce){
+  .act-card.sweep .act-card-in::before{animation:none}
+  .ov-live.sweep::before{animation:none}
+}
 .toast.show{opacity:1;transform:none;pointer-events:auto}
 /* An undo you have to catch is not an undo, so the toast that carries one is a control and
    accepts a pointer. The plain toast stays inert so it never blocks what is under it. */
