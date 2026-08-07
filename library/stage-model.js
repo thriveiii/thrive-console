@@ -21,7 +21,11 @@
      rather than taking a lane of its own: a lane would need a colour, and IDENTITY §11 G3
      asks what that colour would mean. "Not pursuing this" is an absence, not a state of the
      pipeline, so it belongs with the other finished work. */
-  var CLOSED = ["won","lost","dropped"];
+  /* bounced and failed are delivery outcomes reconciled from the relay's real bounce signal. They are
+     terminal like won and lost, so they sit off the five lanes rather than in Sent, where a
+     non-delivery used to hide. Whether they earn a dedicated lane, a card chip, or this tray is a
+     product-voice call raised in the PR; the tray is the least disruptive honest home. */
+  var CLOSED = ["won","lost","dropped","bounced","failed"];
 
   /* Follow-up threshold already lives in the console's needsFollowup at 3 days.
      Stall is a separate, longer signal: a record that has stopped moving.     */
@@ -175,7 +179,7 @@
 
   function build(opps, ctx){
     ctx = ctx || {};
-    var lanes = {}, closed = { won: [], lost: [], dropped: [] }, archived = 0;
+    var lanes = {}, closed = { won: [], lost: [], dropped: [], bounced: [], failed: [] }, archived = 0;
     LANES.forEach(function(k){ lanes[k] = []; });
 
     (opps || []).forEach(function(o){
@@ -239,7 +243,9 @@
         replied: lanes.replied.length,
         won: closed.won.length,
         lost: closed.lost.length,
-        dropped: closed.dropped.length
+        dropped: closed.dropped.length,
+        bounced: closed.bounced.length,
+        failed: closed.failed.length
       }
     };
   }

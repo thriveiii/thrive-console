@@ -335,10 +335,19 @@ function hitKey(e){ return (e.type||"open")+"|"+(e.slug||"")+"|"+(e.ts||"")+"|"+
 function legacyLocalHits(){ return getHits().filter(e=>e && e.self===undefined); }
 function usingCollected(){ return hitsState()==="live"; }
 function allHits(opts){
-  const src = usingCollected() ? getRemoteHits() : getHits();
+  const inclSelf = !!(opts && opts.includeSelf);
+  const collecting = usingCollected();
+  /* One durable, deduplicated source: the union of what the relay has collected and what this device
+     holds, keyed by hitKey, so an open seen in either place never disappears when a sync round returns
+     fewer events or has not run yet. That volatile remote-or-local switch was the open flicker, a card
+     reading Opened then Sent across refreshes because outreachOpens saw the open on one read and not the
+     next. The sender's own opens and self views are never counted, and while collection is live the old
+     untagged local demo hits stay out. */
   const seen={}, out=[];
-  src.forEach(e=>{
-    if(!e || (!(opts&&opts.includeSelf) && e.self)) return;
+  getRemoteHits().concat(getHits()).forEach(e=>{
+    if(!e) return;
+    if(!inclSelf && e.self) return;                 // never the sender's own opens or self views
+    if(collecting && e.self===undefined) return;    // legacy untagged local hits are excluded while collecting
     const k=hitKey(e); if(seen[k]) return; seen[k]=1; out.push(e);
   });
   return out;
@@ -563,7 +572,10 @@ function debounce(fn, ms){ let h; return function(){ const a=arguments, c=this; 
    actually be in: draft and live are derived, never declared, and they were invisible for as
    long as every untouched record defaulted to "sent". */
 const STAGES=["sent","opened","replied","won","lost"];
-const PIPE_STAGES=["draft","live"].concat(STAGES);
+/* The pipeline the library filters by. bounced and failed are derived delivery outcomes, not
+   declarable stages (they are never in the stage picker), but they are countable states an
+   opportunity can be in, so they appear here between the send outcomes and the closed ones. */
+const PIPE_STAGES=["draft","live","sent","opened","bounced","failed","replied","won","lost"];
 /* Accepts a plain date (2026-07-01) and a full timestamp alike. It used to append a time to
    whatever it was given, so any ISO timestamp parsed as NaN and silently aged nothing: a
    ledger entry could be a month old and still read as today. */
@@ -581,11 +593,30 @@ function isLive(o){ return !o._local || !!o.published; }
      1. What you declared stands. Replied, won and lost are decisions, not derivations.
      2. With no send, a record is a live page or a draft. It is never "sent".
      3. With a send, it is opened if somebody read it after that send, otherwise sent. */
+/* The real delivery outcome, reconciled from the relay's bounce signal. The relay's inbox scan records
+   a mailer-daemon notice as an inbound `auto` record carrying bounce:"hard" or "soft" (relay
+   thrive-relay.gs), attributed to the opportunity. So a non-delivery is already in the ledger; it was
+   simply never read back. A hard bounce is a permanent failure to deliver (Bounced); a soft bounce is a
+   temporary one the send could not confirm (Failed). A real reply proves delivery and outranks a stale
+   bounce, which is why the send/open block checks replied first. */
+function bounceFor(o){
+  const slug=(typeof o==="string")? o : ((o&&o.slug)||""); if(!slug) return "";
+  let hard=false, soft=false;
+  inboundFor(slug).forEach(function(r){
+    if(r && r.kind==="auto" && r.bounce){ if(r.bounce==="hard") hard=true; else soft=true; }
+  });
+  return hard? "hard" : (soft? "soft" : "");
+}
 function effStage(o, opensOverride, sendOverride){
   const declared=o.stage||"";
   if(declared && declared!=="sent") return declared;
   const s=(sendOverride===undefined)? sendsFor(o) : sendOverride;
   if(!s || !s.count) return isLive(o) ? "live" : "draft";
+  // A delivery outcome outranks sent and opened: a message that bounced never reached the inbox, so it
+  // was never read, and it must never sit in the Sent lane wearing a successful send.
+  const bounce=bounceFor(o);
+  if(bounce==="hard") return "bounced";
+  if(bounce==="soft") return "failed";
   const op=(opensOverride===undefined)? outreachOpens(o) : (opensOverride||0);
   return op>0 ? "opened" : "sent";
 }
@@ -617,6 +648,11 @@ function causalStatus(o){
   if(declared==="replied") return { status:"replied", event:"record_reply" };
   const s=sendsFor(o);
   if(!s || !s.count) return isLive(o) ? { status:"live", event:"publish" } : { status:"draft", event:"local" };
+  /* A delivery outcome is read from the relay's bounce signal, before sent or opened: a bounced or
+     failed message never reached the inbox, so it is not a send and cannot have been opened. */
+  const bounce=bounceFor(o);
+  if(bounce==="hard") return { status:"bounced", event:"bounce" };
+  if(bounce==="soft") return { status:"failed", event:"bounce" };
   return outreachOpens(o)>0 ? { status:"opened", event:"open" } : { status:"sent", event:"send" };
 }
 
@@ -3452,6 +3488,18 @@ async function initCompose(slugArg){
       toast(t("sup_blocked")+" "+t("sup_r_"+(ThriveStore.reasonFor(to)||"unknown")));
       return;
     }
+    /* Double-send guard. There is no batch email path (approveBatch activates pages, it does not send),
+       and this button disables itself while a send is in flight, so a same-tick double submit is already
+       blocked. This closes the remaining window: an identical message to the same address for the same
+       opportunity within the last minute is an accidental resubmission (a second tap after a slow relay),
+       and it is refused by name rather than sent twice. Resend's own retries are server side and never
+       reach here, so two bounce rows from a retry are benign, not a double send. */
+    if(getMailLog().some(m=> m && m.status==="sent" && m.opp===oppOf()
+        && String(m.to||"").toLowerCase()===to.toLowerCase()
+        && String(m.subject||"")===resolveTokens(el("esubject").value.trim())
+        && (Date.now()-tsMs(m.ts)) < 60000)){
+      toast(t("cmp_dupe_block")); return;
+    }
     /* An unresolved token blocks the send. "Hi {name}" reaching a prospect is
        the failure this whole section exists to prevent, and detecting it after
        the fact is detecting it too late. */
@@ -4534,6 +4582,12 @@ async function initHome(){
     });
     Object.keys(byOpp).forEach(k=>{
       const r=byOpp[k]; r.opens=outOpens(k);
+      /* Last opened reads from the same source as the Opens count: the after-send open times. Before,
+         this column took the last of any page view or send, so a page viewed before the send showed a
+         Last opened time while Opens read 0. Now the number and the timestamp always agree. */
+      const fs=sendsFor(k).first;
+      const ot=fs ? (openTimes()[k]||[]).filter(x=>x>=tsMs(fs)) : [];
+      r.lastOpen = ot.length ? new Date(Math.max.apply(null, ot)).toISOString() : "";
       const p=pageBySlug[k]; if(!p) return;
       r.views=p.opens; r.uniq=p.vids.size; r.dwellMs=p.dwellMs; r.dwellN=p.dwellN;
       if(p.lastTs>r.last) r.last=p.lastTs;
@@ -4577,7 +4631,7 @@ async function initHome(){
           '<td'+gc("sent",r)+'>'+num(r.sent)+'</td><td'+gc("views",r)+'>'+num(r.views)+'</td><td'+gc("opens",r)+'>'+num(r.opens)+'</td><td'+gc("uniq",r)+'>'+num(r.uniq)+'</td>'+
           '<td'+gc("dwell",r)+'>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):'<span class="zero">–</span>')+'</td>'+
           '<td'+gc("replies",r)+'>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
-          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">–</span>')+'</td></tr>').join("")+
+          '<td class="mono">'+(r.lastOpen?esc(fmtWhen(r.lastOpen)):'<span class="zero">–</span>')+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_no_campaigns")+'</div>';
 
@@ -5039,11 +5093,14 @@ async function initBoard(){
       else goTo("compose");
     }));
 
-    const closed=b.closed.won.concat(b.closed.lost);
+    const bounced=b.closed.bounced||[], failed=b.closed.failed||[];
+    const closed=b.closed.won.concat(b.closed.lost, bounced, failed);
     el("trayCount").textContent=closed.length;
     el("trayList").innerHTML = closed.length
       ? b.closed.won.map(o=>'<span class="tray-item won">'+esc(o.business||o.slug)+'</span>').join("")+
-        b.closed.lost.map(o=>'<span class="tray-item lost">'+esc(o.business||o.slug)+'</span>').join("")
+        b.closed.lost.map(o=>'<span class="tray-item lost">'+esc(o.business||o.slug)+'</span>').join("")+
+        bounced.map(o=>'<span class="tray-item bounced" title="'+esc(t("stage_bounced"))+'">'+esc(o.business||o.slug)+'</span>').join("")+
+        failed.map(o=>'<span class="tray-item failed" title="'+esc(t("stage_failed"))+'">'+esc(o.business||o.slug)+'</span>').join("")
       : '<div class="lane-empty">'+ic("archive",18)+'<p>'+esc(t("tray_empty"))+'</p></div>';
 
     const empty=b.summary.total===0 && closed.length===0;
@@ -6185,6 +6242,8 @@ function initModal(){
   function stageName(st){
     if(st==="won") return t("tray_won");
     if(st==="lost") return t("tray_lost");
+    if(st==="bounced") return t("stage_bounced");
+    if(st==="failed") return t("stage_failed");
     return t("lane_"+st);
   }
 
