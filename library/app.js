@@ -3039,29 +3039,33 @@ async function initCompose(slugArg){
     if(m && m[1]) return m[1];
     return "";
   }
-  el("eCopy").addEventListener("click", async ()=>{
-    // Copying for Gmail is a send to a party, so it waits on the same proof as any other send.
-    if(!(await ensureLive())) return;
+  // Copying for Gmail is a send to a party, so it waits on the same proof as any other send, and it
+  // runs through the shared runner: an in-progress state, a double-tap guard, and a visible outcome.
+  el("eCopy").addEventListener("click", ()=> runAction("eCopy", { doneMsg:t("cmp_copied"), run: async ()=>{
+    await checkLive(); renderPreSend();
+    if(slug && !liveState.ok) throw new Error(liveState.reason);   // the gate, re-checked at the moment of the send
+    const html=brandWrap(htmlOut(), isBranded()), text=plainText();
     try{
-      const html=brandWrap(htmlOut(), isBranded()), text=plainText();
       if(navigator.clipboard && window.ClipboardItem){
         await navigator.clipboard.write([new ClipboardItem({
           "text/html": new Blob([html],{type:"text/html"}),
           "text/plain": new Blob([text],{type:"text/plain"}) })]);
       } else { await navigator.clipboard.writeText(text); }
-      const to=el("eto").value.trim(), subject=el("esubject").value.trim(), m=tplMeta();
-      logActivity("email_copy", oppOf(), (to?to+" · ":"")+subject);
-      logMail({ opp:oppOf(), to:to, toName:recName(), subject:subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"gmail-copy", status:"copied", chapter:sendChapter(oppOf()) });
-      clearComposeDraft();                                  // copied to Gmail to send, so the working draft is done
-      toast(t("cmp_copied"));
-    }catch(e){ toast(t("cmp_copy_err")); }
-  });
-  el("eMail").addEventListener("click", async ()=>{
-    if(!(await ensureLive())) return;
+    }catch(e){ throw new Error(t("cmp_copy_err")); }
+    const to=el("eto").value.trim(), subject=el("esubject").value.trim(), m=tplMeta();
+    logActivity("email_copy", oppOf(), (to?to+" · ":"")+subject);
+    logMail({ opp:oppOf(), to:to, toName:recName(), subject:subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"gmail-copy", status:"copied", chapter:sendChapter(oppOf()) });
+    clearComposeDraft();                                  // copied to Gmail to send, so the working draft is done
+    return t("cmp_copied");
+  }}));
+  el("eMail").addEventListener("click", ()=> runAction("eMail", { doneMsg:t("cmp_mail_open"), run: async ()=>{
+    await checkLive(); renderPreSend();
+    if(slug && !liveState.ok) throw new Error(liveState.reason);   // the same gate before the mail app opens
     const to=bareAddress(el("eto").value), subject=el("esubject").value.trim();
     // The mailto scheme is added only here, in the action's target, never in the field value.
     location.href="mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(plainText());
-  });
+    return t("cmp_mail_open");
+  }}));
   // live Resend free-tier meter under the Send button
   const meter=el("quotaMeter");
   function renderQuota(){
@@ -3197,12 +3201,56 @@ async function initCompose(slugArg){
     ].filter(Boolean);
   }
   function renderPreSend(){
-    const host=el("preSend"); if(!host) return;
-    const rows=preSendChecks();
-    host.hidden=false;
-    host.innerHTML='<ul class="ps-list">'+rows.map(r=>
-      '<li class="'+(r.pending?"wait":(r.ok?"ok":"no"))+'">'+ic(r.pending?"clock":(r.ok?"check":"alert"))+esc(t(r.k))+
-      (r.detail? ' <span class="mono-iso">'+esc(r.detail)+'</span>':'')+'</li>').join("")+'</ul>';
+    const host=el("preSend");
+    if(host){
+      const rows=preSendChecks();
+      host.hidden=false;
+      host.innerHTML='<ul class="ps-list">'+rows.map(r=>
+        '<li class="'+(r.pending?"wait":(r.ok?"ok":"no"))+'">'+ic(r.pending?"clock":(r.ok?"check":"alert"))+esc(t(r.k))+
+        (r.detail? ' <span class="mono-iso">'+esc(r.detail)+'</span>':'')+'</li>').join("")+'</ul>';
+    }
+    syncSendState();   // the Send buttons follow the same gate, so the look matches the truth at a glance
+  }
+  /* The honest Send state. A send to a party is only allowed once the page is proven live, so while
+     that is unknown or false the send buttons are visibly disabled, not lit, and one short line names
+     the reason and the single action that unblocks it. This shows the gate; it does not change it. The
+     buttons remain gated by the at-send re-check as well, so nothing here can let a message out. */
+  const SEND_BTNS=["eSend","eCopy","eMail"];
+  function ensureSendGate(){
+    let g=el("sendGate");
+    if(!g){
+      const bar=el("eSend") && el("eSend").parentNode;
+      if(!bar || !bar.parentNode) return null;
+      g=document.createElement("div"); g.id="sendGate"; g.className="send-gate";
+      g.setAttribute("role","status"); g.hidden=true;
+      bar.parentNode.insertBefore(g, bar);
+    }
+    return g;
+  }
+  function syncSendState(){
+    const gated = !!slug;                                   // a message tied to no page is never gated
+    const ok = !gated || liveState.ok===true;
+    const checking = gated && liveState.ok===null;
+    SEND_BTNS.forEach(id=>{ const b=el(id); if(!b) return;
+      if(b.dataset.running==="1") return;                   // a run in flight owns the button
+      b.disabled = !ok;
+      b.classList.toggle("is-blocked", !ok);
+    });
+    const g=ensureSendGate(); if(!g) return;
+    if(ok){ g.hidden=true; g.innerHTML=""; return; }
+    const notLive = !oppObj || !isLive(oppObj);
+    const msg = checking ? t("cmp_send_gate_check") : (notLive ? t("cmp_send_gate_draft") : liveState.reason);
+    let action="";
+    if(!checking){
+      action = notLive
+        ? '<a class="btn sm" href="'+esc(viewHref("editor","slug="+encodeURIComponent(slug)))+'">'+esc(t("lc_publish"))+'</a>'
+        : '<button type="button" class="btn sm" id="sendRecheck">'+esc(t("cmp_recheck"))+'</button>';
+    }
+    g.hidden=false;
+    g.innerHTML='<span class="send-gate-ic">'+ic(checking?"clock":"alert")+'</span>'+
+      '<span class="send-gate-msg">'+esc(msg)+'</span>'+action;
+    const rc=el("sendRecheck");
+    if(rc) rc.addEventListener("click", ()=> runAction("sendRecheck", { run: async ()=>{ await checkLive(); renderPreSend(); return liveState.ok? t("ps_live_ok") : liveState.reason; } }));
   }
 
   /* ---- draft integrity: continuous save to the durable, synced record ------

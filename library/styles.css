@@ -128,6 +128,10 @@ select{cursor:pointer}
 .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:10px;font-weight:800;font-size:13.5px;border:0;cursor:pointer;text-decoration:none;font-family:inherit;color:#15121b;background:var(--grad);box-shadow:0 8px 24px rgba(150,133,202,.28);transition:transform .2s}
 .btn:hover{transform:translateY(-1px)}
 .btn:active{transform:translateY(0) scale(.98)}
+/* A blocked or in-flight button says so at a glance: dimmed, no hover lift, and the cursor refuses.
+   A send that is not allowed is never lit-but-inert. */
+.btn:disabled,.btn.is-blocked{opacity:.45;cursor:not-allowed;box-shadow:none}
+.btn:disabled:hover,.btn.is-blocked:hover{transform:none;border-color:var(--hair);color:inherit}
 .btn.ghost{background:transparent;color:var(--ink-2);border:1px solid var(--hair);box-shadow:none}
 .btn.ghost:hover{border-color:var(--purple);color:var(--ink)}
 .btn.ghost.danger:hover{border-color:var(--pink);color:var(--pink)}
@@ -1824,6 +1828,16 @@ body.modal-open{
 .ps-list li.wait{ color:var(--ink-4) }
 .ps-list li.wait .ic{ color:var(--ink-4) }
 [dir="rtl"] .ps-list li{ letter-spacing:normal }
+/* The one honest line under the Send buttons when a send is not allowed: the reason, and the single
+   action that unblocks it. It sits inside its own box, wraps cleanly, and centers its row. */
+.send-gate{ display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap;
+  margin-block:var(--s-2); padding:9px 12px; border-radius:var(--r-md);
+  background:var(--ops-rose-fill); border:1px solid var(--ops-rose-bd);
+  color:var(--ink-2); font-size:var(--fs-sm) }
+.send-gate .send-gate-ic{ flex:none; display:inline-flex; color:var(--ops-rose) }
+.send-gate .send-gate-msg{ flex:1 1 auto; min-width:0; line-height:var(--lh-base); overflow-wrap:anywhere }
+.send-gate .btn.sm{ flex:none }
+[dir="rtl"] .send-gate{ letter-spacing:normal }
 
 /* --- back, and work that survives a dismissal -------------------------------
    Losing a draft by tapping outside the window was the most common frustration
