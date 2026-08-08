@@ -1903,17 +1903,17 @@ async function initEditor(slugArg){
 
   /* The match report and the warn-before-write gate. Every reason names itself; a warned row is
      never guessed past. The reasons reuse the intake warning labels where they already exist. */
-  const B_REASON={ no_page:"in_w_no_page", no_manifest_entry:"in_w_no_manifest_entry",
+  const B_REASON={ no_page:"btr_page_pending", no_manifest_entry:"in_w_no_manifest_entry",
     no_text:"btr_no_text", duplicate_slug:"btr_dupe", exists_would_overwrite:"btr_exists",
     missing_business:"in_w_no_business", no_channel:"in_w_no_channel" };
   const reasonLabel=x=> t(B_REASON[x]||x);
-  // Hostable: a real page and a manifest entry, not a duplicate, and not already live. This is the
-  // matched set plus the "no text" and "no channel" pages Thyab is allowed to host as they are.
-  function hostable(r){
-    return r.hasPage && r.hasManifest
-      && r.reasons.indexOf("duplicate_slug")<0
-      && r.reasons.indexOf("exists_would_overwrite")<0;
-  }
+  // Storable: every parsed template is persisted as its own draft opportunity, text and all. The only
+  // thing that ever stopped a row from being written was the absence of a name to file it under, and
+  // toRecord always supplies one (business, else the slug), so every report row is storable.
+  function storable(r){ return true; }
+  // Hostable: on top of being stored, a row that carries a real page also gets that page published.
+  // A missing page no longer drops the row; it only means "stored now, page hosted later".
+  function hostable(r){ return r.hasPage; }
   async function runBatch(files){
     dz.innerHTML=esc(t("in_reading"));
     let out=null;
@@ -1933,10 +1933,15 @@ async function initEditor(slugArg){
     if(!batch){ batchPanel.hidden=true; batchPanel.innerHTML=""; return; }
     const rep=batch.report;
     if(!rep.rows.length){ batchPanel.hidden=true; batchPanel.innerHTML=""; toast(t("in_none")); return; }
+    // Count what the write will actually persist: every storable row is saved, the paged ones are
+    // also hosted, and the text-less ones are named as incomplete. The confirmed count is the saved
+    // count, so the report cannot promise more than the write delivers.
+    const canSave=rep.rows.filter(storable).length;
     const canHost=rep.rows.filter(hostable).length;
-    const skip=rep.rows.length-canHost;
-    let summary=boardText(getLang(),"bt_summary",canHost);
-    if(skip>0) summary+=" "+boardText(getLang(),"bt_warned",skip);
+    const incomplete=rep.rows.filter(r=>r.reasons.indexOf("no_text")>=0).length;
+    let summary=boardText(getLang(),"bt_summary",canSave);
+    if(canHost>0) summary+=" "+boardText(getLang(),"bt_hosted",canHost);
+    if(incomplete>0) summary+=" "+boardText(getLang(),"bt_incomplete",incomplete);
     const head='<tr><th>'+esc(t("bt_slug"))+'</th><th>'+esc(t("bt_html"))+'</th><th>'+esc(t("bt_mfst"))+
       '</th><th>'+esc(t("bt_subj"))+'</th><th>'+esc(t("bt_body"))+'</th><th>'+esc(t("bt_send"))+'</th><th>'+esc(t("bt_verdict"))+'</th></tr>';
     const rows=rep.rows.map(r=>{
@@ -1954,39 +1959,60 @@ async function initEditor(slugArg){
       '<div class="bt-wrap"><table class="bt">'+head+rows+'</table></div>'+
       '<p class="hint">'+esc(summary)+'</p>'+
       '<div class="bar bar-actions">'+
-        '<button class="btn" id="batchApprove" data-icon="send"'+(canHost?'':' disabled')+'>'+esc(t("bt_approve"))+'</button>'+
+        '<button class="btn" id="batchApprove" data-icon="send"'+(canSave?'':' disabled')+'>'+esc(t("bt_approve"))+'</button>'+
         '<button class="btn ghost" id="batchDiscard">'+esc(t("in_cancel"))+'</button>'+
       '</div>';
     batchPanel.hidden=false;
     if(typeof applyIcons==="function") applyIcons(batchPanel);
     el("batchDiscard").addEventListener("click",()=>{ batch=null; renderBatch(); });
-    const ab=el("batchApprove"); if(ab && canHost) ab.addEventListener("click", ()=> runAction("batchApprove", { working:t("publishing"), run: approveBatch }));
+    const ab=el("batchApprove"); if(ab && canSave) ab.addEventListener("click", ()=> runAction("batchApprove", { working:t("publishing"), run: approveBatch }));
   }
   async function approveBatch(){
     if(!batch) throw new Error(t("bt_nothing"));
-    if(!ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
-    const rows=batch.report.rows.filter(hostable);
+    const rows=batch.report.rows.filter(storable);
     if(!rows.length) throw new Error(t("bt_nothing"));
-    let hosted=0, stored=0, failed=0;
+    // GitHub is needed only for the pages that get hosted. A text-only batch (no page in the
+    // package) saves its drafts locally without it, rather than being blocked at the door.
+    const needGh=rows.some(hostable);
+    if(needGh && !ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
+    // Idempotent slug map, mirroring the board intake. A slug already in the library updates that
+    // opportunity in place; a duplicate that appears only inside this one batch gets a numeric suffix
+    // so two siblings never overwrite each other. Re-importing the same batch is a no-op on identity.
+    const existing={};
+    try{ (await mergedOpps()).forEach(o=>{ if(o&&o.slug) existing[o.slug]=true; }); }catch(_){}
+    const seen={}; Object.keys(existing).forEach(k=>seen[k]=1);
+    let saved=0, hosted=0, incomplete=0, failed=0;
     for(let k=0;k<rows.length;k++){
-      const e=rows[k].entry;
+      const r=rows[k], e=r.entry;
       try{
         const rec=ThriveIntake.toRecord(e, { today:today(), note_text:batch.notes, batch:batch.batch });
-        // Host the finished page as it is. publishOpp adds or merges the manifest entry
-        // additively and idempotently; hostable already excluded any slug already live.
-        await publishOpp(Object.assign({}, rec, { html:(e.file&&e.file.html)||"" }));
-        hosted++;
-        // Store the matched email text (subject, body, send-to) additively on the opportunity,
-        // through saveDraft then logActivity, ready for the later send.
-        rec.published=true;
+        let s=rec.slug;
+        if(seen[s] && !existing[s]){ let j=2; while(seen[s+"-"+j]) j++; s=s+"-"+j; }
+        rec.slug=s; seen[s]=1;
+        const html=(e.file&&e.file.html)||"";
+        const willHost=hostable(r);
+        // Re-import updates in place: for a slug already in the library, overlay the parsed content
+        // (business, text, subject, html) but never reset its lifecycle, so an already sent or
+        // activated opportunity is not knocked back to an untouched draft.
+        if(existing[s]){ delete rec.published; delete rec.stage; delete rec.sent_on; }
+        if(willHost){
+          // Publish the real page and its manifest entry, additively and idempotently.
+          await publishOpp(Object.assign({}, rec, { slug:s, published:false, stage:(rec.stage||""), html:html }));
+          rec.published=true; hosted++;
+        }
+        // Persist the whole record, text included, so no opportunity is ever created empty. saveDraft
+        // merges by slug, so the write is the single source that the confirmation counted.
         saveDraft(rec);
-        logActivity("upload", rec.slug, rec.business||"");
-        if(rec.outreach_text || rec.outreach_subject){ logActivity("in_import", rec.slug, t("bt_text_stored")); stored++; }
-      }catch(err){ failed++; logActivity("publish_half", (e.slug_hint||""), String((err&&err.message)||err)); }
+        saved++;
+        if(!e.subject && !e.body) incomplete++;      // stored, but named as text-less rather than hidden
+        logActivity("in_import", s, (rec.business||"")+(willHost?" · hosted":""));
+        if(rec.outreach_text || rec.outreach_subject) logActivity("in_import", s, t("bt_text_stored"));
+      }catch(err){ failed++; logActivity("publish_half", (e.slug_hint||e.business||""), String((err&&err.message)||err)); }
     }
-    logActivity("in_batch", "", hosted+" hosted, "+stored+" texts stored, "+failed+" failed");
-    let msg=boardText(getLang(),"bt_done",hosted);
-    if(stored) msg+=" "+boardText(getLang(),"bt_stored",stored);
+    logActivity("in_batch", "", saved+" saved, "+hosted+" hosted, "+incomplete+" without text, "+failed+" failed");
+    let msg=boardText(getLang(),"bt_done",saved);
+    if(hosted) msg+=" "+boardText(getLang(),"bt_hosted",hosted);
+    if(incomplete) msg+=" "+boardText(getLang(),"bt_incomplete",incomplete);
     if(failed) msg+=" "+boardText(getLang(),"bt_failed",failed);
     batch=null; batchPanel.hidden=true; batchPanel.innerHTML="";
     try{ scheduleSyncPush(); }catch(_){}
