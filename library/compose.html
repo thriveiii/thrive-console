@@ -65,6 +65,10 @@
 
     <div class="field"><label id="ebodyL" data-i18n="cmp_message">Message</label>
       <div class="etoolbar">
+        <!-- Undo and redo for the message text, by icon and by Cmd+Z / Cmd+Shift+Z / Cmd+Y. Greyed
+             when there is nothing to undo or redo, so an enabled tap always changes the text. -->
+        <button type="button" class="etb-hist" id="cmpUndo" data-icon="undo" data-i18n-aria="cmp_undo" disabled></button>
+        <button type="button" class="etb-hist ed-redo" id="cmpRedo" data-icon="undo" data-i18n-aria="cmp_redo" disabled></button>
         <!-- title alone is not an accessible name, and a bare bullet is not a label
              at all: it was the second instance of the [.] defect and verify found it.
              WO-013 §4.1. -->
