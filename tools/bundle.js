@@ -48,6 +48,7 @@ const gate = read(path.join(LIB, "gate.js"));
 const model = read(path.join(LIB, "stage-model.js"));
 const life = read(path.join(LIB, "lifecycle.js"));
 const intake = read(path.join(LIB, "intake.js"));
+const supabase = read(path.join(LIB, "supabase.js"));
 const numbers = read(path.join(LIB, "numbers.js"));
 const inbound = read(path.join(LIB, "inbound.js"));
 const kinds = read(path.join(LIB, "kinds.js"));
@@ -70,6 +71,7 @@ const FP = {
   "fonts.css": fphash(fontsCss), "styles.css": fphash(stylesCss),
   "icons.js": fphash(icons), "i18n.js": fphash(i18n), "gate.js": fphash(gate),
   "stage-model.js": fphash(model), "lifecycle.js": fphash(life), "intake.js": fphash(intake),
+  "supabase.js": fphash(supabase),
   "numbers.js": fphash(numbers), "inbound.js": fphash(inbound), "kinds.js": fphash(kinds),
   "store.js": fphash(store), "drafts.js": fphash(drafts), "flows.js": fphash(flows), "app.js": fphash(app)
 };
@@ -176,6 +178,7 @@ const body = inline
     '\n<script>\n' + gate + '\n</script>' +
     '\n<script>\n' + model + '\n</script>\n<script>\n' + life + '\n</script>'+
     '\n<script>\n' + intake + '\n</script>'+
+    '\n<script>\n' + supabase + '\n</script>'+
     '\n<script>\n' + numbers + '\n</script>'+
     '\n<script>\n' + inbound + '\n</script>'+
     '\n<script>\n' + kinds + '\n</script>'+
@@ -185,7 +188,8 @@ const body = inline
     '\n<script>\n' + app + '\n</script>'
   : '<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>\n<script src="' + fp("gate.js") + '"></script>' +
     '\n<script src="' + fp("stage-model.js") + '"></script>\n<script src="' + fp("lifecycle.js") + '"></script>' +
-    '\n<script src="' + fp("intake.js") + '"></script>\n<script src="' + fp("numbers.js") + '"></script>'+
+    '\n<script src="' + fp("intake.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>'+
+    '\n<script src="' + fp("numbers.js") + '"></script>'+
     '\n<script src="' + fp("inbound.js") + '"></script>\n<script src="' + fp("kinds.js") + '"></script>'+
     '\n<script src="' + fp("store.js") + '"></script>\n<script src="' + fp("drafts.js") + '"></script>'+
     '\n<script src="' + fp("flows.js") + '"></script>\n<script src="' + fp("app.js") + '"></script>';
