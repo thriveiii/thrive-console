@@ -95,6 +95,22 @@
     <div class="gh-result" id="syStatus" hidden></div>
   </section>
 
+  <!-- Supabase storage (Stage 1: connection only, inert). The console's own thrive-console project,
+       tables prefixed console_. Never any other project. Entered here the same way as the relay URL. -->
+  <section class="panel settings-panel">
+    <h3 class="block-h" data-icon="archive" data-i18n="sb_h">Storage (Supabase)</h3>
+    <p class="sub" data-i18n="sb_sub"></p>
+    <div class="field"><label for="sb_url" data-i18n="sb_url_l">Project URL</label>
+      <input id="sb_url" class="input" type="url" autocomplete="off" data-i18n-ph="sb_url_ph"></div>
+    <div class="field"><label for="sb_key" data-i18n="sb_key_l">Anon key</label>
+      <input id="sb_key" class="input" type="text" autocomplete="off" spellcheck="false" data-i18n-ph="sb_key_ph"></div>
+    <div class="bar">
+      <button class="btn" id="sbSave" type="button" data-i18n="gh_save">Save</button>
+      <button class="btn ghost" id="sbTest" type="button" data-i18n="sb_test">Test connection</button>
+    </div>
+    <div class="gh-result" id="sbStatus" hidden></div>
+  </section>
+
   <section class="panel settings-panel">
     <h3 class="block-h" data-icon="clock" data-i18n="set_quota_h">Sending limits (Resend free tier)</h3>
     <p class="sub" data-i18n="set_quota_sub"></p>

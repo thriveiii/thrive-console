@@ -4064,6 +4064,27 @@ function initSettings(){
       if(ok) sySummary(); else syShow("✕ "+t("sy_fail")+(syncErrHint()?": "+syncErrHint():""),"warn");
     });
   }
+  /* Supabase storage (Stage 1: connection only, inert). Entered here the same way as the relay URL and
+     the send endpoint. Saved to the operator's own device; nothing in the read or write path uses it
+     yet, so this is shippable and does nothing until Stage 2 wires the dual-write. A failed test shows
+     the real error, never a false ok. */
+  if(el("sb_url") && typeof window.ThriveSupa==="object"){
+    const S=window.ThriveSupa, u=el("sb_url"), k=el("sb_key"), sb=el("sbStatus");
+    const scfg=S.cfg(); u.value=scfg.url||""; k.value=scfg.anon||"";
+    function sbShow(msg, cls){ if(!sb) return; sb.hidden=false; sb.textContent=msg; sb.className="gh-result "+(cls||""); }
+    if(el("sbSave")) el("sbSave").addEventListener("click", ()=>{
+      S.setCfg(u.value, k.value);
+      logActivity("settings","","supabase");
+      sbShow(S.ready()? t("sb_saved") : t("sb_cleared"), S.ready()?"ok":"");
+    });
+    if(el("sbTest")) el("sbTest").addEventListener("click", async ()=>{
+      S.setCfg(u.value, k.value);
+      if(!S.ready()){ sbShow(t("sb_need"),"warn"); return; }
+      sbShow(t("testing"),"");
+      const r=await S.probe();
+      sbShow(r.ok? "✓ "+t("sb_ok") : "✕ "+t("sb_fail")+(r.reason? ": "+r.reason : ""), r.ok?"ok":"warn");
+    });
+  }
   if(el("q_daily")){
     const cfg=quotaCfg(); el("q_daily").value=cfg.daily; el("q_monthly").value=cfg.monthly;
     const ro=el("quotaReadout");
