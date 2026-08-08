@@ -190,9 +190,11 @@
     };
   }
 
-  /* Both are required by US law for commercial email, and both are already true
-     of Thrive: the Alexandria address exists. */
-  var POSTAL = "Thrive Digital Solutions, Alexandria, Egypt";
+  /* The registered legal address, the single source of truth for every piece of outgoing mail. A valid
+     physical postal address and a one line opt out are both required by US law for commercial email.
+     This one constant is read by BOTH the HTML footer and the plain-text alternative below, so the
+     address is written once and reused, and no country is ever inferred from a city name anywhere. */
+  var POSTAL = "Thrive Digital Solutions, VA, USA";
   function footerHtml(lang) {
     var opt = (lang === "ar")
       ? "لا ترغب برسائل أخرى؟ ردّ بكلمة إيقاف وسنتوقف."
@@ -252,7 +254,10 @@
     if (h["List-Unsubscribe-Post"] !== "List-Unsubscribe=One-Click") f.push("RFC 8058 one click");
     if (h["Reply-To"].indexOf("hi+wise-butterfly@") !== 0) f.push("the reply-to tag, got " + h["Reply-To"]);
 
-    if (footerHtml("en").indexOf("Alexandria") < 0) f.push("the physical address must be in the footer");
+    if (footerHtml("en").indexOf("VA, USA") < 0) f.push("the correct registered address must be in the footer");
+    if (footerHtml("en").indexOf("Egypt") >= 0) f.push("the footer must never say Egypt");
+    if (footerText("en").indexOf("VA, USA") < 0) f.push("the plain-text alternative must carry the same address");
+    if (footerText("en").indexOf("Egypt") >= 0) f.push("the plain-text alternative must never say Egypt");
     if (footerHtml("en").indexOf("STOP") < 0) f.push("and a one line opt out");
     if (footerText("ar").indexOf("إيقاف") < 0) f.push("and both in Arabic too");
 
