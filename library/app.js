@@ -1361,6 +1361,61 @@ function saveDraft(rec){
   if(i>=0) a[i]={...a[i], ...rec}; else a.push(rec); setDrafts(a);
 }
 function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDrafts().filter(x=>x.slug!==slug)); }
+
+/* ---------- one import writer ----------
+   The board intake and the editor batch import both land here, so a fix on one covers both and they
+   cannot drift. Each item is {entry, host}: host true means also publish the page (the editor path);
+   the board never hosts. Every import LANDS on the active board, where the confirmation says it went:
+   an imported record clears the archived flag, so replacing or re-importing an archived opportunity
+   surfaces it in Draft rather than staying silently archived. A slug already in the library updates
+   in place and keeps its send and activation lifecycle (a sent opportunity is not knocked back to a
+   draft); a duplicate that appears only inside this one batch gets a numeric suffix so siblings never
+   overwrite each other. Returns an honest tally: only what actually landed, named by kind. */
+async function writeImport(items, ctx){
+  ctx=ctx||{};
+  const existing=ctx.existing||{};
+  const seen={}; Object.keys(existing).forEach(k=>seen[k]=1);
+  const tally={ imported:0, updated:0, hosted:0, incomplete:0, failed:0, slugs:[] };
+  for(let i=0;i<items.length;i++){
+    const it=items[i]||{}, e=it.entry; if(!e) continue;
+    try{
+      const rec=ThriveIntake.toRecord(e, { today:today(), note_text:ctx.notes, batch:ctx.batch });
+      let s=rec.slug;
+      const isUpdate=!!existing[s];
+      if(seen[s] && !existing[s]){ let k=2; while(seen[s+"-"+k]) k++; s=s+"-"+k; }
+      rec.slug=s; seen[s]=1;
+      const html=(e.file&&e.file.html)||"";
+      // Re-import updates in place without knocking a sent or activated opportunity back to a draft.
+      if(isUpdate){ delete rec.published; delete rec.stage; delete rec.sent_on; }
+      // The one flag an import always clears, new or updated: nothing imported may stay archived, or
+      // the confirmation would say Draft while the record sits out of sight in the archive.
+      rec.archived=false;
+      if(it.host){
+        await publishOpp(Object.assign({}, rec, { slug:s, published:false, stage:(rec.stage||""), html:html }));
+        rec.published=true; tally.hosted++;
+      }
+      saveDraft(rec);                                   // the single write both surfaces share
+      if(isUpdate) tally.updated++; else tally.imported++;
+      if(!e.subject && !e.body) tally.incomplete++;     // stored, but named text-less rather than hidden
+      tally.slugs.push(s);
+      logActivity("in_import", s, (rec.business||"")+(it.host?" · hosted":""));
+      if(rec.outreach_text || rec.outreach_subject) logActivity("in_import", s, t("bt_text_stored"));
+    }catch(err){ tally.failed++; logActivity("publish_half", (e.slug_hint||e.business||""), String((err&&err.message)||err)); }
+  }
+  return tally;
+}
+/* One confirmation, built from the tally, so both surfaces report the same honest counts: only what
+   landed, and new, updated, hosted, incomplete, skipped and failed named distinctly. */
+function importResultMsg(tally, skipped){
+  tally=tally||{}; const parts=[];
+  parts.push(boardText(getLang(),"imp_new", tally.imported||0));
+  if(tally.updated) parts.push(boardText(getLang(),"imp_updated", tally.updated));
+  if(tally.hosted) parts.push(boardText(getLang(),"bt_hosted", tally.hosted));
+  if(tally.incomplete) parts.push(boardText(getLang(),"bt_incomplete", tally.incomplete));
+  if(skipped) parts.push(boardText(getLang(),"imp_skipped", skipped));
+  if(tally.failed) parts.push(boardText(getLang(),"bt_failed", tally.failed));
+  return parts.join(" ");
+}
 /* Carried forward from phase 1. A delete is the move a person most regrets, and it was the one
    without an undo. The whole record is kept in the closure until the toast expires, so undoing
    restores what was there rather than a reconstruction of it, and the tombstone is lifted so
@@ -2023,40 +2078,13 @@ async function initEditor(slugArg){
     // so two siblings never overwrite each other. Re-importing the same batch is a no-op on identity.
     const existing={};
     try{ (await mergedOpps()).forEach(o=>{ if(o&&o.slug) existing[o.slug]=true; }); }catch(_){}
-    const seen={}; Object.keys(existing).forEach(k=>seen[k]=1);
-    let saved=0, hosted=0, incomplete=0, failed=0;
-    for(let k=0;k<rows.length;k++){
-      const r=rows[k], e=r.entry;
-      try{
-        const rec=ThriveIntake.toRecord(e, { today:today(), note_text:batch.notes, batch:batch.batch });
-        let s=rec.slug;
-        if(seen[s] && !existing[s]){ let j=2; while(seen[s+"-"+j]) j++; s=s+"-"+j; }
-        rec.slug=s; seen[s]=1;
-        const html=(e.file&&e.file.html)||"";
-        const willHost=hostable(r);
-        // Re-import updates in place: for a slug already in the library, overlay the parsed content
-        // (business, text, subject, html) but never reset its lifecycle, so an already sent or
-        // activated opportunity is not knocked back to an untouched draft.
-        if(existing[s]){ delete rec.published; delete rec.stage; delete rec.sent_on; }
-        if(willHost){
-          // Publish the real page and its manifest entry, additively and idempotently.
-          await publishOpp(Object.assign({}, rec, { slug:s, published:false, stage:(rec.stage||""), html:html }));
-          rec.published=true; hosted++;
-        }
-        // Persist the whole record, text included, so no opportunity is ever created empty. saveDraft
-        // merges by slug, so the write is the single source that the confirmation counted.
-        saveDraft(rec);
-        saved++;
-        if(!e.subject && !e.body) incomplete++;      // stored, but named as text-less rather than hidden
-        logActivity("in_import", s, (rec.business||"")+(willHost?" · hosted":""));
-        if(rec.outreach_text || rec.outreach_subject) logActivity("in_import", s, t("bt_text_stored"));
-      }catch(err){ failed++; logActivity("publish_half", (e.slug_hint||e.business||""), String((err&&err.message)||err)); }
-    }
-    logActivity("in_batch", "", saved+" saved, "+hosted+" hosted, "+incomplete+" without text, "+failed+" failed");
-    let msg=boardText(getLang(),"bt_done",saved);
-    if(hosted) msg+=" "+boardText(getLang(),"bt_hosted",hosted);
-    if(incomplete) msg+=" "+boardText(getLang(),"bt_incomplete",incomplete);
-    if(failed) msg+=" "+boardText(getLang(),"bt_failed",failed);
+    // One writer: the same shared import that the board intake uses. Paged rows are hosted; every row
+    // is persisted and lands on the active board, and the confirmation counts only what landed.
+    const tally=await writeImport(rows.map(r=>({ entry:r.entry, host:hostable(r) })),
+      { existing:existing, notes:batch.notes, batch:batch.batch });
+    logActivity("in_batch", "", tally.imported+" imported, "+tally.updated+" updated, "+tally.hosted+
+      " hosted, "+tally.incomplete+" without text, "+tally.failed+" failed");
+    const msg=importResultMsg(tally, 0);
     batch=null; batchPanel.hidden=true; batchPanel.innerHTML="";
     try{ scheduleSyncPush(); }catch(_){}
     if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
@@ -6135,25 +6163,19 @@ function initIntake(){
 
   function reset(){ found=null; choice={}; out.innerHTML=""; input.value=""; }
 
-  function add(){
+  async function add(){
     const picked=[];
     out.querySelectorAll(".in-pick").forEach(c=>{ if(c.checked) picked.push(found.entries[+c.getAttribute("data-i")]); });
     if(!picked.length){ reset(); return; }
-    const seen={};
-    Object.keys(existing).forEach(k=>seen[k]=1);
-    let n=0;
-    picked.forEach(e=>{
-      const rec=ThriveIntake.toRecord(e, { today:today(), note_text:found.notes, batch:found.batch });
-      let s=rec.slug;
-      if(seen[s] && !existing[s]){ let k=2; while(seen[s+"-"+k]) k++; s=s+"-"+k; }
-      rec.slug=s; seen[s]=1;
-      saveDraft(rec);
-      logActivity("in_import", rec.slug, (rec.business||"")+" · "+(found.batch.title||""));
-      n++;
-    });
-    logActivity("in_batch", "", n+" imported, "+((found.orphanPages||[]).length)+" pages unmatched, "+
-      ((found.orphanEntries||[]).length)+" entries unmatched");
-    toast(boardText(getLang(),"in_added",n));
+    // One writer: the same shared import the editor batch uses. The board never hosts a page (host:false),
+    // so every picked opportunity lands as a Draft, and a replaced duplicate is un-archived and surfaces
+    // there. The confirmation counts only what landed; skipped is the reviewed set that was not imported.
+    const tally=await writeImport(picked.map(e=>({ entry:e, host:false })),
+      { existing:existing, notes:found.notes, batch:found.batch });
+    const skipped=Math.max(0, found.entries.length - picked.length);
+    logActivity("in_batch", "", tally.imported+" imported, "+tally.updated+" updated, "+skipped+" skipped, "+
+      ((found.orphanPages||[]).length)+" pages unmatched, "+((found.orphanEntries||[]).length)+" entries unmatched");
+    toast(importResultMsg(tally, skipped));
     reset();
     try{ scheduleSyncPush(); }catch(e){}
     if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
