@@ -3546,6 +3546,14 @@ async function initCompose(slugArg){
     if(box && box.dataset.dirty==="1") return box.value;
     return toPlainText(resolveTokens(htmlOut()), sigBox?sigBox.value:"");
   }
+  /* The finished body the console hands to the relay, footer included. This is the ONE place the footer
+     is attached, from the single POSTAL source (#79), so every send path carries the same correct footer
+     and none can omit or diverge. The relay is a courier: it sends exactly this html and text and
+     composes no footer or address of its own. Every send below builds its payload through sendBody. */
+  function sendBody(){
+    const lang = docLoc()==="AR" ? "ar" : "en";
+    return { html: composedHtml()+ThriveStore.footerHtml(lang), text: composedText()+ThriveStore.footerText(lang) };
+  }
 
   const plainBox=el("plainBox");
   if(plainBox) plainBox.addEventListener("input", ()=>{ plainBox.dataset.dirty="1"; });
@@ -3777,10 +3785,11 @@ async function initCompose(slugArg){
     if(!ep){ toast(t("cmp_no_ep")); return; }
     selfBtn.disabled=true;
     try{
+      const sb=sendBody();   // same finished body as a real send, footer included, so the proof copy shows exactly what a client sees
       const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
         body:JSON.stringify({ from:FROM_EMAIL, fromName:getFromName(), to:FROM_EMAIL,
           subject:"["+t("cmp_self_tag")+"] "+resolveTokens(el("esubject").value.trim()),
-          html:composedHtml(), text:composedText() }) }, 30000);
+          html:sb.html, text:sb.text }) }, 30000);
       const txt=await r.text();
       let j=null; try{ j=JSON.parse(txt); }catch(_){}
       if(j && j.ok===false) throw new Error(j.error||"send failed");
@@ -3832,15 +3841,16 @@ async function initCompose(slugArg){
        the fact is detecting it too late. */
     const left=unresolvedTokens(resolveTokens(htmlOut()+" "+el("esubject").value));
     if(left.length){ toast(t("ps_tokens_block")+" "+left.join(", ")); renderPreSend(); return; }
-    const loc=docLoc();
+    /* The physical address and the one line opt out are required by US law for commercial email, and
+       both are already true of Thrive. The footer is attached by sendBody, the one composer, from the
+       single POSTAL source, so this send carries the exact footer the self-send proof copy showed.
+       List-Unsubscribe is not required at this volume and costs nothing, and it converts a spam
+       complaint into an unsubscribe. The relay sends this body verbatim and adds nothing. */
+    const sb=sendBody();
     const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:to,
       subject:resolveTokens(el("esubject").value.trim()),
-      /* The physical address and the one line opt out are required by US law for
-         commercial email, and both are already true of Thrive. List-Unsubscribe
-         is not required at this volume and costs nothing, and it converts a spam
-         complaint into an unsubscribe. */
-      html:composedHtml()+ThriveStore.footerHtml(loc==="AR"?"ar":"en"),
-      text:composedText()+ThriveStore.footerText(loc==="AR"?"ar":"en"),
+      html:sb.html,
+      text:sb.text,
       headers:ThriveStore.outboundHeaders(slug||""),
       slug:slug||"" };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
