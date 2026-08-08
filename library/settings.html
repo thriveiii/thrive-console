@@ -116,6 +116,14 @@
       <button class="btn ghost" id="sbVerify" type="button" data-i18n="sb_verify_btn">Verify the two stores agree</button>
     </div>
     <div class="quota-readout" id="sbVerifyOut"></div>
+    <!-- Stage 3: switch reads to Supabase (refused unless the two stores agree), or revert to this
+         device instantly. Writes stay dual either way. -->
+    <div class="in-count" id="sbReadSrc"></div>
+    <div class="bar">
+      <button class="btn ghost" id="sbReadOn" type="button" data-i18n="sb_read_on">Read from Supabase</button>
+      <button class="btn ghost" id="sbReadOff" type="button" data-i18n="sb_read_off">Read from this device</button>
+    </div>
+    <div class="gh-result" id="sbReadStatus" hidden></div>
   </section>
 
   <section class="panel settings-panel">
