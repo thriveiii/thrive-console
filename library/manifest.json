@@ -83,6 +83,15 @@
       "location": "Occoquan, VA",
       "phone": "",
       "status": "sent"
+    },
+    {
+      "slug": "music-love-academy",
+      "business": "Music Love Academy",
+      "template": "custom",
+      "sent_on": "2026-08-08",
+      "location": "Fairfax, VA",
+      "phone": "",
+      "status": "sent"
     }
   ]
 }
