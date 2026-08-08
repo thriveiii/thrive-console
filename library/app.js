@@ -1700,29 +1700,72 @@ async function initDashboard(){
   render();
 }
 
-/* ---------- editor undo/redo ----------
-   Native undo is dead in the editor because the opportunity window rebuilds the editor view from a
-   boot snapshot on every entry (thriveViewReset sets el.innerHTML), and initEditor re-hydrates each
-   field with `.value =`. A recreated node has an empty native undo stack, and a programmatic value
-   assignment clears whatever stack a fresh page had. So the history cannot live in the DOM. It lives
-   here, in memory, keyed by the editing slug and the field id, so it survives every re-render and the
-   auto-save. Depth is capped so memory stays bounded. This changes nothing that is saved; it only lets
-   the field step back and forward. */
+/* ---------- outreach composer undo/redo ----------
+   Native undo is dead in the composer for the same reason it was in the editor: the outreach window
+   rebuilds its view from a boot snapshot on every entry (thriveViewReset sets el.innerHTML), and the
+   composer re-hydrates the message body with `.innerHTML =` and the closing block and plain-text
+   alternative with `.value =` on restore. A recreated node has an empty native undo stack, and a
+   programmatic assignment clears whatever stack a fresh page had. So the history cannot live in the
+   DOM. It lives here, in memory, keyed by the editing slug and the field id, so it survives every
+   re-render and the auto-save. Depth is capped so memory stays bounded. This changes nothing that is
+   saved; it only lets the field step back and forward.
+
+   Two field shapes are handled by one store. The message body #ebody is contenteditable, so its
+   snapshot is innerHTML plus a caret offset counted in characters over the text; the closing block
+   #sigBox and the plain-text alternative #plainBox are textareas, so their snapshot is value plus the
+   selection range. The type is read from the live node, never assumed. */
 var ThriveEditHistory = (function(){
   var CAP = 100;                 // per-field snapshots kept; older ones fall off the bottom
   var COALESCE = 600;            // ms: a burst of typing in one field collapses to one undo step
-  var store = {};                // fieldId -> { stack:[{v,s,e}], idx, ts }
+  var store = {};                // fieldId -> { stack:[{v,...}], idx, ts }
   var slug = null;               // the document these histories belong to
   var lastId = "";               // the field the icons act on (survives re-render: an id, not a node)
   var applying = false;          // true while we set a value ourselves, so it is not recorded as an edit
-  function snap(f){ return { v: f.value, s: (f.selectionStart==null?f.value.length:f.selectionStart), e: (f.selectionEnd==null?f.value.length:f.selectionEnd) }; }
+  function isCE(f){ return !!(f && f.isContentEditable); }
+  function curV(f){ return isCE(f) ? f.innerHTML : f.value; }
+  // Caret position as a character count over the field's text, so it survives an innerHTML rebuild.
+  function caretOffset(root){
+    try{
+      var sel = window.getSelection && window.getSelection();
+      if(!sel || !sel.rangeCount) return null;
+      var r = sel.getRangeAt(0);
+      if(!root.contains(r.startContainer)) return null;
+      var pre = r.cloneRange(); pre.selectNodeContents(root); pre.setEnd(r.startContainer, r.startOffset);
+      return pre.toString().length;
+    }catch(e){ return null; }
+  }
+  function restoreCaret(root, off){
+    if(off == null) return;
+    try{
+      var sel = window.getSelection && window.getSelection(); if(!sel) return;
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+      var node, count = 0, target = null, toff = 0;
+      while((node = walker.nextNode())){
+        var len = node.nodeValue.length;
+        if(count + len >= off){ target = node; toff = off - count; break; }
+        count += len;
+      }
+      var r = document.createRange();
+      if(target){ r.setStart(target, Math.max(0, Math.min(toff, target.nodeValue.length))); }
+      else { r.selectNodeContents(root); r.collapse(false); }
+      r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+    }catch(e){}
+  }
+  function snap(f){
+    if(isCE(f)) return { v: f.innerHTML, c: caretOffset(f) };
+    return { v: f.value, s: (f.selectionStart==null?f.value.length:f.selectionStart), e: (f.selectionEnd==null?f.value.length:f.selectionEnd) };
+  }
   function reset(s){ if(s!==slug){ store = {}; slug = s; lastId = ""; } }   // a new document starts fresh
   function seed(f){ if(!store[f.id]) store[f.id] = { stack:[snap(f)], idx:0, ts:0 }; }
   function ensure(f){ seed(f); return store[f.id]; }
   function record(f){
     if(applying) return;
     var h = ensure(f), now = nowMs(), top = h.stack[h.idx];
-    if(top && top.v === f.value){ top.s = f.selectionStart; top.e = f.selectionEnd; return; }   // caret move only
+    if(top && top.v === curV(f)){                 // caret move only: refresh the caret, add no step
+      if(isCE(f)) top.c = caretOffset(f); else { top.s = f.selectionStart; top.e = f.selectionEnd; }
+      return;
+    }
     if(h.ts && (now - h.ts) < COALESCE && h.idx === h.stack.length - 1){
       h.stack[h.idx] = snap(f);                 // same burst: evolve the current step, do not add one
     } else {
@@ -1735,9 +1778,9 @@ var ThriveEditHistory = (function(){
   }
   function apply(f, s){
     applying = true;
-    f.value = s.v;
-    try{ f.setSelectionRange(s.s, s.e); }catch(e){}
-    try{ f.dispatchEvent(new Event("input", { bubbles:true })); }catch(e){}   // let the preview and slug follow
+    if(isCE(f)){ f.innerHTML = s.v; restoreCaret(f, s.c); }
+    else { f.value = s.v; try{ f.setSelectionRange(s.s, s.e); }catch(e){} }
+    try{ f.dispatchEvent(new Event("input", { bubbles:true })); }catch(e){}   // let the preview, links and save follow
     applying = false;
   }
   function canUndo(id){ var h = store[id]; return !!(h && h.idx > 0); }
@@ -2149,37 +2192,9 @@ async function initEditor(slugArg){
   });
   if(edMore) edMore();                                   // now the form is loaded, count it again
 
-  /* Undo and redo for the editor text fields. The history is keyed by the editing slug, so entering
-     the same document again (a re-render) keeps its steps, while a different document starts fresh.
-     Each field is seeded with its loaded value as the base step. */
-  const H=ThriveEditHistory;
-  const HIST_FIELDS=["f_biz","f_slug","f_location","f_phone","f_quoteby","f_want","f_quote","f_proof1","f_proof2","f_proof3"];
-  const edUndoBtn=el("edUndo"), edRedoBtn=el("edRedo");
-  function updateHist(){
-    const id=H.last();
-    if(edUndoBtn) edUndoBtn.disabled=!H.canUndo(id);
-    if(edRedoBtn) edRedoBtn.disabled=!H.canRedo(id);
-  }
-  H.reset(editSlug||"");
-  HIST_FIELDS.forEach(id=>{
-    const f=el(id); if(!f) return;
-    H.seed(f);
-    f.addEventListener("input", ()=>{ H.record(f); H.setLast(id); updateHist(); });
-    f.addEventListener("focus", ()=>{ H.setLast(id); updateHist(); });
-    // The shortcuts, on the field itself so a focused field owns them: Cmd/Ctrl+Z undo, +Shift+Z or +Y redo.
-    f.addEventListener("keydown", e=>{
-      const meta=e.metaKey||e.ctrlKey; if(!meta) return;
-      const k=(e.key||"").toLowerCase();
-      if(k==="z" && !e.shiftKey){ e.preventDefault(); H.setLast(id); if(H.undo(f)) updateHist(); }
-      else if((k==="z" && e.shiftKey) || k==="y"){ e.preventDefault(); H.setLast(id); if(H.redo(f)) updateHist(); }
-    });
-  });
-  function actOn(fn){ const f=el(H.last()); if(!f) return; if(fn(f)) updateHist(); }
-  if(edUndoBtn){ edUndoBtn.addEventListener("mousedown", e=>e.preventDefault());   // keep the field focused
-    edUndoBtn.addEventListener("click", ()=> actOn(f=>H.undo(f))); }
-  if(edRedoBtn){ edRedoBtn.addEventListener("mousedown", e=>e.preventDefault());
-    edRedoBtn.addEventListener("click", ()=> actOn(f=>H.redo(f))); }
-  updateHist();
+  /* Undo and redo do not live on this page editor. They belong on the outreach message text (the
+     composer in the Outreach tab), where they are wired in initCompose. An earlier concern placed
+     them here by reading the request too broadly; this scopes them to the message text and only there. */
 
   refresh();
 }
@@ -2783,6 +2798,7 @@ function activeChapterStage(o){
 async function initCompose(slugArg){
   const el=id=>document.getElementById(id);
   const body=el("ebody");
+  let recordBody=()=>{};                 // reassigned once the undo history is wired, below
   const params=viewParams();
   const slug=(slugArg!==undefined&&slugArg!==null&&slugArg!=="")?slugArg:params.get("slug");
   const oppUrl = slug ? liveUrl(slug) : "";
@@ -2863,7 +2879,7 @@ async function initCompose(slugArg){
       else body.appendChild(a);
     }
     linkBar.hidden=true; editingAnchor=null; savedRange=null;
-    refreshLinks();
+    refreshLinks(); recordBody();                        // a link inserted or edited is an undo step
   }
   // "Links in this message" manager: every link is visible, editable, removable.
   function refreshLinks(){
@@ -2885,7 +2901,7 @@ async function initCompose(slugArg){
     }));
     linksBox.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
       const a=anchors[+b.getAttribute("data-del")]; if(!a||!a.parentNode) return;
-      const p=a.parentNode; while(a.firstChild) p.insertBefore(a.firstChild,a); p.removeChild(a); refreshLinks();
+      const p=a.parentNode; while(a.firstChild) p.insertBefore(a.firstChild,a); p.removeChild(a); refreshLinks(); recordBody();
     }));
     renderOppStatus();
   }
@@ -3045,9 +3061,9 @@ async function initCompose(slugArg){
     body.innerHTML = mergeFieldsHtml(tp.html, oppObj, recipientName(), monthVal());
     // Mark the template's own links so the manager can tell them apart from links you add.
     body.querySelectorAll("a").forEach(a=>{ if(!a.getAttribute("data-origin")) a.setAttribute("data-origin","template"); });
-    refreshLinks();
+    refreshLinks(); recordBody();                        // applying a template is a single undo step
   }
-  function clearCompose(){ subjectDirty=false; el("esubject").value=""; body.innerHTML=""; if(monthWrap) monthWrap.hidden=true; refreshLinks(); }
+  function clearCompose(){ subjectDirty=false; el("esubject").value=""; body.innerHTML=""; if(monthWrap) monthWrap.hidden=true; refreshLinks(); recordBody(); }
   if(tplSel){
     const plainOpt=document.createElement("option"); plainOpt.value=""; plainOpt.textContent=t("cmp_no_tpl"); plainOpt.setAttribute("data-i18n","cmp_no_tpl"); tplSel.appendChild(plainOpt);
     /* The drop-down obeys the same rule as the chips. Two controls offering different sets is
@@ -3465,6 +3481,43 @@ async function initCompose(slugArg){
   if(prevWrap) prevWrap.addEventListener("toggle", ()=>{ if(prevWrap.open) refreshPreview(); });
   if(restoreCompose()) toast(t("draft_restored"));
   refreshPreview();
+
+  /* Undo and redo for the outreach message text, and only there. The history is keyed by the slug, so
+     reopening the same message keeps its steps while a different one starts fresh, and it survives the
+     auto-save re-render because it lives in memory, not in the rebuilt node. Seeded here, after the
+     body and its attached text are loaded, so the base step is what the writer opens to. */
+  const H=ThriveEditHistory;
+  const HIST_FIELDS=["ebody","sigBox","plainBox"];     // message body (contenteditable), closing block, plain-text alternative
+  const cmpUndoBtn=el("cmpUndo"), cmpRedoBtn=el("cmpRedo");
+  function updateHist(){
+    const id=H.last();
+    if(cmpUndoBtn) cmpUndoBtn.disabled=!H.canUndo(id);
+    if(cmpRedoBtn) cmpRedoBtn.disabled=!H.canRedo(id);
+  }
+  H.reset(slug||"");
+  HIST_FIELDS.forEach(id=>{
+    const f=el(id); if(!f) return;
+    H.seed(f);
+    f.addEventListener("input", ()=>{ H.record(f); H.setLast(id); updateHist(); });
+    f.addEventListener("focus", ()=>{ H.setLast(id); updateHist(); });
+    // The shortcuts, on the field itself so a focused field owns them: Cmd/Ctrl+Z undo, +Shift+Z or +Y redo.
+    f.addEventListener("keydown", e=>{
+      const meta=e.metaKey||e.ctrlKey; if(!meta) return;
+      const k=(e.key||"").toLowerCase();
+      if(k==="z" && !e.shiftKey){ e.preventDefault(); H.setLast(id); if(H.undo(f)) updateHist(); }
+      else if((k==="z" && e.shiftKey) || k==="y"){ e.preventDefault(); H.setLast(id); if(H.redo(f)) updateHist(); }
+    });
+  });
+  // The body also changes without a keystroke: applying a template, inserting or removing a link. Those
+  // are real message edits, so they are recorded too, and the icons then step through them.
+  recordBody=function(){ if(H.record){ H.record(body); H.setLast("ebody"); updateHist(); } };
+  function actOn(fn){ const f=el(H.last()); if(!f) return; if(fn(f)) updateHist(); }
+  if(cmpUndoBtn){ cmpUndoBtn.addEventListener("mousedown", e=>e.preventDefault());   // keep the field focused
+    cmpUndoBtn.addEventListener("click", ()=> actOn(f=>H.undo(f))); }
+  if(cmpRedoBtn){ cmpRedoBtn.addEventListener("mousedown", e=>e.preventDefault());
+    cmpRedoBtn.addEventListener("click", ()=> actOn(f=>H.redo(f))); }
+  H.setLast("ebody"); updateHist();
+
   // Confirm the live page when the composer opens, so a draft or a dead link is visible before a
   // click. The send actions re-check regardless: the gate is the send-time confirmation.
   checkLive().then(renderPreSend);
