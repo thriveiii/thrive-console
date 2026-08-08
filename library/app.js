@@ -308,7 +308,7 @@ const T_EDITABLE="editable-template", T_OFFER="ready-offer", T_SNIPPET="text-sni
 
 const TPLSTORE = "thrive_templates_v1";
 function getCustomTemplates(){ try{ return JSON.parse(localStorage.getItem(TPLSTORE)||"[]"); }catch(e){ return []; } }
-function setCustomTemplates(a){ return lsSet(TPLSTORE, JSON.stringify(a)); }
+function setCustomTemplates(a){ const ok=lsSet(TPLSTORE, JSON.stringify(a)); try{ supaMirrorTemplates(a, "page"); }catch(_){} return ok; }
 function getCustomTemplate(id){ return getCustomTemplates().find(x=>x.id===id); }
 function saveCustomTemplate(rec){ rec.up=Date.now(); const a=getCustomTemplates(); const i=a.findIndex(x=>x.id===rec.id);
   if(i<0 && !rec.type) rec.type=T_EDITABLE;   // a page template is an editable template, typed at creation
@@ -416,7 +416,7 @@ async function fetchRemoteHits(){
   }catch(e){ __hitsState="stale"; __hitsErr=String(e.message||e); return false; }
 }
 function getEndpoint(){ try{ return localStorage.getItem(ENDPT)||""; }catch(e){ return ""; } }
-function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.removeItem(ENDPT); }catch(e){} }
+function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.removeItem(ENDPT); }catch(e){} try{ supaMirrorSetting("endpoint", u||""); }catch(_){} }
 /* perf: memoise the opens-per-slug map (avoids re-parsing hits for every card each render) */
 let __opensCache=null, __opensTs=0;
 function opensMap(){
@@ -1359,8 +1359,134 @@ function saveDraft(rec){
   rec.up=Date.now();                                     // freshness stamp for cross-device merge
   const a=getDrafts(); const i=a.findIndex(x=>x.slug===rec.slug);
   if(i>=0) a[i]={...a[i], ...rec}; else a.push(rec); setDrafts(a);
+  // Stage 2 dual-write: mirror the merged record to Supabase, fire-and-forget. Never fails this save.
+  try{ supaMirrorOpp(getDraft(rec.slug)); }catch(_){}
 }
-function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDrafts().filter(x=>x.slug!==slug)); }
+function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDrafts().filter(x=>x.slug!==slug)); try{ supaDeleteOpp(slug); }catch(_){} }
+
+/* ---------- Supabase dual-write mirror (Stage 2) ----------
+   Every write that lands in the current store (localStorage plus the relay) is also mirrored to the
+   matching console_ row in Supabase, through the Stage 1 client. This is REVERSIBLE and SAFE: reads
+   still come from the current store (Stage 3 switches that), a Supabase failure NEVER fails the user's
+   action (it is fire-and-forget, caught, recorded, and shown as a divergence, never a false success and
+   never swallowed), and when Supabase is unconfigured every mirror is a no-op. Isolation holds: every
+   call goes through the client's console_ allow-list guard. A page's HTML is its own row (console_pages),
+   never packed into the opportunity row. */
+var SUPA_DIVERGE="console_sb_diverge";
+function supaOn(){ return typeof window!=="undefined" && window.ThriveSupa && window.ThriveSupa.ready(); }
+function supaDiverges(){ try{ return JSON.parse(localStorage.getItem(SUPA_DIVERGE)||"[]"); }catch(e){ return []; } }
+function supaRecordDiverge(kind, key, msg){
+  try{ var a=supaDiverges(); a.push({ kind:kind, key:key, msg:String(msg||"").slice(0,200), ts:new Date().toISOString() });
+    localStorage.setItem(SUPA_DIVERGE, JSON.stringify(a.slice(-50))); }catch(e){}
+  try{ logActivity("supa_diverge", kind+":"+key, String(msg||"").slice(0,120)); }catch(e){}
+}
+function supaClearDiverge(){ try{ localStorage.removeItem(SUPA_DIVERGE); }catch(e){} }
+/* An opportunity becomes one console_opps row. The whole record travels in the data jsonb (forward
+   compatible), minus the page html, which becomes its own console_pages row. */
+function supaRowFromOpp(d){
+  if(!d) return null;
+  var data=Object.assign({}, d); delete data.html;
+  return { slug:d.slug, business:d.business||"", stage:d.stage||"",
+    published:!!d.published, archived:!!d.archived,
+    outreach_subject:d.outreach_subject||"", outreach_text:d.outreach_text||"",
+    channel:d.channel||null, data:data, up:d.up||Date.now() };
+}
+function supaMirrorOpp(d){
+  if(!supaOn() || !d || !d.slug) return;
+  var S=window.ThriveSupa;
+  try{ S.upsertOpp(supaRowFromOpp(d)).catch(function(e){ supaRecordDiverge("opp", d.slug, e&&e.message); }); }
+  catch(e){ supaRecordDiverge("opp", d.slug, e&&e.message); }
+  if(d.html){
+    try{ S.upsertPage(d.slug, d.html).catch(function(e){ supaRecordDiverge("page", d.slug, e&&e.message); }); }
+    catch(e){ supaRecordDiverge("page", d.slug, e&&e.message); }
+  }
+}
+function supaDeleteOpp(slug){
+  if(!supaOn() || !slug) return;
+  var S=window.ThriveSupa, q="slug=eq."+encodeURIComponent(slug);
+  try{ S.del("console_opps", q).catch(function(e){ supaRecordDiverge("opp_del", slug, e&&e.message); }); }catch(e){}
+  try{ S.del("console_pages", q).catch(function(e){ supaRecordDiverge("page_del", slug, e&&e.message); }); }catch(e){}
+}
+/* Templates. console_templates carries the core columns; a page template's or snippet's type-specific
+   extras (type, template_ref) have no column in the Stage 1 schema and are not mirrored in Stage 2. That
+   is raised in the PR: an additive data jsonb column can carry them in a later stage if Stage 3 needs
+   them. The current store remains the source of truth, so nothing is lost. */
+function supaMirrorTemplates(list, kind){
+  if(!supaOn() || !list || !list.length) return;
+  var rows=list.map(function(rec){ return { id:rec.id, kind:kind, name:rec.name||"", subject:rec.subject||"",
+    html:rec.html||"", lang:rec.lang||"", up:rec.up||Date.now() }; });
+  try{ window.ThriveSupa.upsert("console_templates", rows).catch(function(e){ supaRecordDiverge("template", kind, e&&e.message); }); }
+  catch(e){ supaRecordDiverge("template", kind, e&&e.message); }
+}
+function supaMailRow(rec){
+  return { id:rec.mid||rec.id||"", opp:rec.opp||"", status:rec.status||"", to_addr:rec.to||"",
+    subject:rec.subject||"", ts:rec.ts||new Date().toISOString(), data:rec, up:rec.up||Date.now() };
+}
+function supaMirrorMail(rec){
+  if(!supaOn() || !rec) return;
+  var row=supaMailRow(rec);
+  try{ window.ThriveSupa.upsert("console_mail", row).catch(function(e){ supaRecordDiverge("mail", row.id, e&&e.message); }); }
+  catch(e){ supaRecordDiverge("mail", row.id, e&&e.message); }
+}
+/* Settings travel as key/value rows. Secrets are deliberately NOT mirrored: the GitHub token, the sync
+   session key, and the vault key never leave for an anon-readable table. Only non-secret settings (the
+   endpoint URLs, the sending caps, the from name, the closing block) are mirrored. */
+function supaMirrorSetting(key, value){
+  if(!supaOn() || !key) return;
+  var row={ key:key, value:(value===undefined?null:value) };
+  try{ window.ThriveSupa.upsert("console_settings", row).catch(function(e){ supaRecordDiverge("setting", key, e&&e.message); }); }
+  catch(e){ supaRecordDiverge("setting", key, e&&e.message); }
+}
+/* One-time, idempotent backfill: copy the current store's existing opportunities, pages, templates,
+   mail ledger and non-secret settings into Supabase, so it holds the full picture, not only new writes.
+   Upsert by key, so running it again changes nothing. It reads the current store and never writes to it. */
+async function supaBackfill(){
+  if(!supaOn()) throw new Error(t("sb_need"));
+  var S=window.ThriveSupa, res={ opps:0, pages:0, templates:0, mail:0, settings:0, failed:0 };
+  var drafts=getDrafts();
+  for(var i=0;i<drafts.length;i++){
+    var d=drafts[i];
+    try{ await S.upsertOpp(supaRowFromOpp(d)); res.opps++; }
+    catch(e){ res.failed++; supaRecordDiverge("opp", d.slug, e&&e.message); }
+    if(d.html){ try{ await S.upsertPage(d.slug, d.html); res.pages++; }
+      catch(e){ res.failed++; supaRecordDiverge("page", d.slug, e&&e.message); } }
+  }
+  var tpls=getEmailTemplates().map(function(r){ return { id:r.id, kind:"email", name:r.name||"", subject:r.subject||"", html:r.html||"", lang:r.lang||"", up:r.up||Date.now() }; })
+    .concat(getCustomTemplates().map(function(r){ return { id:r.id, kind:"page", name:r.name||"", subject:r.subject||"", html:r.html||"", lang:r.lang||"", up:r.up||Date.now() }; }));
+  if(tpls.length){ try{ await S.upsert("console_templates", tpls); res.templates=tpls.length; }catch(e){ res.failed++; supaRecordDiverge("template", "backfill", e&&e.message); } }
+  var mail=getMailLog().map(supaMailRow);
+  if(mail.length){ try{ await S.upsert("console_mail", mail); res.mail=mail.length; }catch(e){ res.failed++; supaRecordDiverge("mail", "backfill", e&&e.message); } }
+  var settings=supaSettingsRows();
+  if(settings.length){ try{ await S.upsert("console_settings", settings); res.settings=settings.length; }catch(e){ res.failed++; supaRecordDiverge("setting", "backfill", e&&e.message); } }
+  return res;
+}
+/* The non-secret settings that travel, read from the current store. */
+function supaSettingsRows(){
+  var rows=[];
+  try{ rows.push({ key:"endpoint", value:getEndpoint()||"" }); }catch(e){}
+  try{ rows.push({ key:"email_ep", value:getEmailEndpoint()||"" }); }catch(e){}
+  try{ rows.push({ key:"sync_ep", value:(typeof getSyncEndpoint==="function"?getSyncEndpoint():"")||"" }); }catch(e){}
+  try{ rows.push({ key:"quota", value:quotaCfg() }); }catch(e){}
+  try{ rows.push({ key:"from_name", value:(typeof getFromName==="function"?getFromName():"")||"" }); }catch(e){}
+  try{ rows.push({ key:"signatures", value:(typeof allSignatures==="function"?allSignatures():null) }); }catch(e){}
+  return rows;
+}
+/* Verify agreement: the current store's opportunity and page slugs against what Supabase holds. Green
+   when every one in the old store is present in Supabase; any missing on the Supabase side is named. */
+async function supaVerify(){
+  if(!supaOn()) throw new Error(t("sb_need"));
+  var S=window.ThriveSupa;
+  var oldOpps=getDrafts().map(function(d){ return d.slug; });
+  var oldPages=getDrafts().filter(function(d){ return !!d.html; }).map(function(d){ return d.slug; });
+  var newOpps=await S.listCol("console_opps","slug");
+  var newPages=await S.listCol("console_pages","slug");
+  function missing(a, b){ var have={}; (b||[]).forEach(function(x){ have[x]=1; }); return a.filter(function(x){ return !have[x]; }); }
+  var mo=missing(oldOpps,newOpps), mp=missing(oldPages,newPages);
+  return { ok:(mo.length===0 && mp.length===0),
+    opps:{ old:oldOpps.length, sup:(newOpps||[]).length, missing:mo },
+    pages:{ old:oldPages.length, sup:(newPages||[]).length, missing:mp },
+    diverge: supaDiverges().length };
+}
 
 /* ---------- one import writer ----------
    The board intake and the editor batch import both land here, so a fix on one covers both and they
@@ -2414,9 +2540,9 @@ const EMAIL_EP = "thrive_email_ep";
 const FROM_EMAIL = "hi@thriveiii.com";
 const FROM_NAME_KEY = "thrive_from_name";
 function getEmailEndpoint(){ try{ return localStorage.getItem(EMAIL_EP)||""; }catch(e){ return ""; } }
-function setEmailEndpoint(u){ try{ u?localStorage.setItem(EMAIL_EP,u):localStorage.removeItem(EMAIL_EP); }catch(e){} }
+function setEmailEndpoint(u){ try{ u?localStorage.setItem(EMAIL_EP,u):localStorage.removeItem(EMAIL_EP); }catch(e){} try{ supaMirrorSetting("email_ep", u||""); }catch(_){} }
 function getFromName(){ try{ return (localStorage.getItem(FROM_NAME_KEY)||"Thrive"); }catch(e){ return "Thrive"; } }
-function setFromName(v){ try{ v?localStorage.setItem(FROM_NAME_KEY, v):localStorage.removeItem(FROM_NAME_KEY); }catch(e){} }
+function setFromName(v){ try{ v?localStorage.setItem(FROM_NAME_KEY, v):localStorage.removeItem(FROM_NAME_KEY); }catch(e){} try{ supaMirrorSetting("from_name", v||""); }catch(_){} }
 
 /* ---- Resend free-tier guard: a local, rolling-window send counter (no third party) ----
    Resend's free plan allows 100 emails/day and 3,000/month. We keep a compact list of the
@@ -2428,7 +2554,7 @@ const QUOTA = "thrive_quota_v1";               // array of send timestamps (ms)
 const QUOTA_CFG = "thrive_quota_cfg_v1";       // { daily, monthly }
 const DAY_MS=86400000, MONTH_MS=30*86400000;
 function quotaCfg(){ try{ const c=JSON.parse(localStorage.getItem(QUOTA_CFG)||"{}"); return { daily:(c.daily>0?c.daily:100), monthly:(c.monthly>0?c.monthly:3000) }; }catch(e){ return { daily:100, monthly:3000 }; } }
-function setQuotaCfg(c){ try{ localStorage.setItem(QUOTA_CFG, JSON.stringify({ daily:Math.max(1,parseInt(c.daily,10)||100), monthly:Math.max(1,parseInt(c.monthly,10)||3000) })); }catch(e){} }
+function setQuotaCfg(c){ try{ localStorage.setItem(QUOTA_CFG, JSON.stringify({ daily:Math.max(1,parseInt(c.daily,10)||100), monthly:Math.max(1,parseInt(c.monthly,10)||3000) })); }catch(e){} try{ supaMirrorSetting("quota", quotaCfg()); }catch(_){} }
 function getSendStamps(){ try{ const a=JSON.parse(localStorage.getItem(QUOTA)||"[]"); return Array.isArray(a)?a.filter(n=>typeof n==="number"):[]; }catch(e){ return []; } }
 function recordSend(){ const now=Date.now(); const a=getSendStamps().filter(t=> now-t < MONTH_MS+DAY_MS); a.push(now); lsSet(QUOTA, JSON.stringify(a)); }
 // Current usage + remaining headroom against the configured caps.
@@ -2632,7 +2758,7 @@ function getEmailTemplates(){
   }
   return a;
 }
-function setEmailTemplates(a){ return lsSet(ETPL, JSON.stringify(a)); }
+function setEmailTemplates(a){ const ok=lsSet(ETPL, JSON.stringify(a)); try{ supaMirrorTemplates(a, "email"); }catch(_){} return ok; }
 function saveEmailTemplate(rec){ rec.up=Date.now(); const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id);
   if(i<0 && !rec.type) rec.type=T_SNIPPET;   // a message template is a text snippet, typed at creation
   if(i>=0)a[i]={...a[i],...rec}; else a.push(rec); return setEmailTemplates(a); }
@@ -2709,6 +2835,7 @@ function logMail(rec){
   if(r.templateId===undefined) r.templateId="";
   if(r.templateName===undefined) r.templateName="";
   a.push(r); setMailLog(a);   // invalidates the send index: a send changes a lane immediately
+  try{ supaMirrorMail(r); }catch(_){}   // Stage 2 dual-write, fire-and-forget
   return r;
 }
 // Roll the flat mail log up into thread objects, newest activity first.
@@ -4084,6 +4211,34 @@ function initSettings(){
       const r=await S.probe();
       sbShow(r.ok? "✓ "+t("sb_ok") : "✕ "+t("sb_fail")+(r.reason? ": "+r.reason : ""), r.ok?"ok":"warn");
     });
+    const vout=el("sbVerifyOut");
+    function verifyLine(v){
+      if(!vout) return;
+      const line=(lbl, o)=>{
+        const ok=o.missing.length===0;
+        return '<div class="'+(ok?"ok-line":"warn-line")+'">'+(ok?"✓ ":"✕ ")+esc(lbl)+": "+
+          esc(t("sb_v_old"))+" "+o.old+" · "+esc(t("sb_v_sup"))+" "+o.sup+
+          (o.missing.length? " · "+esc(t("sb_v_missing"))+" "+esc(o.missing.slice(0,6).join(", ")) : "")+'</div>';
+      };
+      vout.innerHTML=line(t("sb_v_opps"), v.opps)+line(t("sb_v_pages"), v.pages)+
+        (v.diverge? '<div class="warn-line" data-icon="alert">'+esc(v.diverge+" "+t("sb_v_diverge"))+'</div>' : '')+
+        '<div class="'+(v.ok&&!v.diverge?"ok-line":"warn-line")+'">'+(v.ok&&!v.diverge? "✓ "+esc(t("sb_v_agree")) : "✕ "+esc(t("sb_v_disagree")))+'</div>';
+    }
+    if(el("sbVerify")) el("sbVerify").addEventListener("click", async ()=>{
+      S.setCfg(u.value, k.value);
+      if(!S.ready()){ if(vout) vout.innerHTML='<div class="warn-line">'+esc(t("sb_need"))+'</div>'; return; }
+      if(vout) vout.innerHTML='<div>'+esc(t("testing"))+'</div>';
+      try{ verifyLine(await supaVerify()); }
+      catch(e){ if(vout) vout.innerHTML='<div class="warn-line">✕ '+esc(t("sb_fail"))+": "+esc((e&&e.message)||"")+'</div>'; }
+    });
+    if(el("sbBackfill")) el("sbBackfill").addEventListener("click", ()=> runAction("sbBackfill", { working:t("sb_backfilling"), run: async ()=>{
+      S.setCfg(u.value, k.value);
+      if(!S.ready()) throw new Error(t("sb_need"));
+      const r=await supaBackfill();
+      try{ verifyLine(await supaVerify()); }catch(_){}
+      return t("sb_backfill_done").replace("{o}", r.opps).replace("{p}", r.pages).replace("{t}", r.templates)+
+        (r.failed? " · "+r.failed+" "+t("sb_v_diverge") : "");
+    }}));
   }
   if(el("q_daily")){
     const cfg=quotaCfg(); el("q_daily").value=cfg.daily; el("q_monthly").value=cfg.monthly;

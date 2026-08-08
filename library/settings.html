@@ -109,6 +109,13 @@
       <button class="btn ghost" id="sbTest" type="button" data-i18n="sb_test">Test connection</button>
     </div>
     <div class="gh-result" id="sbStatus" hidden></div>
+    <!-- Stage 2: every write also mirrors to Supabase; reads still come from the current store. Backfill
+         copies what already exists; Verify shows the two stores agree. -->
+    <div class="bar">
+      <button class="btn ghost" id="sbBackfill" type="button" data-i18n="sb_backfill">Backfill existing into Supabase</button>
+      <button class="btn ghost" id="sbVerify" type="button" data-i18n="sb_verify_btn">Verify the two stores agree</button>
+    </div>
+    <div class="quota-readout" id="sbVerifyOut"></div>
   </section>
 
   <section class="panel settings-panel">
