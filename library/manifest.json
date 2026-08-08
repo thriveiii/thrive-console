@@ -1,7 +1,7 @@
 {
   "site": "console.thriveiii.com",
   "base_path": "/opp/",
-  "updated": "2026-08-07",
+  "updated": "2026-08-08",
   "opportunities": [
     {
       "slug": "ludic-lillian",
@@ -61,7 +61,7 @@
       "slug": "vsd-photography",
       "business": "VSD Photography",
       "template": "custom",
-      "sent_on": "2026-08-07",
+      "sent_on": "",
       "location": "Alexandria, VA",
       "phone": "",
       "status": "sent"
