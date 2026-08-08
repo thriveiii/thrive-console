@@ -2107,6 +2107,9 @@ var I18N_BOARD = {
 
     in_found:  { one:"{n} opportunity read.", other:"{n} opportunities read." },
     in_added:  { one:"{n} opportunity imported into Draft.", other:"{n} opportunities imported into Draft." },
+    imp_new:     { one:"{n} imported into Draft.", other:"{n} imported into Draft." },
+    imp_updated: { one:"{n} updated.", other:"{n} updated." },
+    imp_skipped: { one:"{n} skipped.", other:"{n} skipped." },
 
     /* the batch upload gate: what will save, what is hosted, and what the approval did */
     bt_summary: { one:"{n} template ready to save.", other:"{n} templates ready to save." },
@@ -2405,6 +2408,19 @@ var I18N_BOARD = {
       one:"استُوردت فرصة واحدة إلى المسودة.", two:"استُوردت فرصتان إلى المسودة.",
       few:"استُوردت {n} فرص إلى المسودة.", many:"استُوردت {n} فرصة إلى المسودة.",
       other:"استُوردت {n} فرصة إلى المسودة."
+    },
+    imp_new: {
+      one:"استُوردت فرصة واحدة إلى المسودة.", two:"استُوردت فرصتان إلى المسودة.",
+      few:"استُوردت {n} فرص إلى المسودة.", many:"استُوردت {n} فرصة إلى المسودة.",
+      other:"استُوردت {n} فرصة إلى المسودة."
+    },
+    imp_updated: {
+      one:"حُدّثت فرصة واحدة.", two:"حُدّثت فرصتان.",
+      few:"حُدّثت {n} فرص.", many:"حُدّث {n} فرصة.", other:"حُدّثت {n} فرصة."
+    },
+    imp_skipped: {
+      one:"تُخطّيت فرصة واحدة.", two:"تُخطّيت فرصتان.",
+      few:"تُخطّيت {n} فرص.", many:"تُخطّي {n} فرصة.", other:"تُخطّيت {n} فرصة."
     },
 
     /* بوابة رفع الدفعة: ما سيُحفظ، وما استُضيف، وما فعله الاعتماد. بصيغ فاعلة بلا مبني للمجهول */
