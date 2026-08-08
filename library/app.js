@@ -700,7 +700,7 @@ async function renderOppHtml(rec){
 /* ---------- backup / restore (everything, minus the GitHub token) ---------- */
 function exportBackup(){
   return { _type:"thrive-console-backup", v:2, exported:new Date().toISOString(),
-    opps:getDrafts(), templates:getCustomTemplates(), activity:getActivity(),
+    opps:getDraftsLocal(), templates:getCustomTemplates(), activity:getActivity(),
     hits:getHits(), endpoint:getEndpoint(),
     mail:getMailLog(), emailTemplates:getEmailTemplates(), fromName:getFromName() };
 }
@@ -855,7 +855,7 @@ function buildSnapshot(htmlBudget){
      read it from there. */
   let budget=htmlBudget;
   const left=[];
-  const opps=getDrafts()
+  const opps=getDraftsLocal()
     .slice()
     .sort((a,b)=> (b.up||0)-(a.up||0))                   // newest first: the ones you are working on
     .map(d=>{
@@ -910,10 +910,10 @@ function syncMergeApply(remote){
     }
     // drafts: per-slug, newest `up` wins; a winner without html never erases local html
     if(Array.isArray(remote.opps)){
-      setDrafts(mergeKeyed(getDrafts(), remote.opps, "slug", "opp", allTombs,
+      setDrafts(mergeKeyed(getDraftsLocal(), remote.opps, "slug", "opp", allTombs,
         (r,l)=> Object.assign({}, r, (!r.html && l.html)?{html:l.html}:{})));
     } else if(remote.tombs){
-      setDrafts(mergeKeyed(getDrafts(), [], "slug", "opp", allTombs));
+      setDrafts(mergeKeyed(getDraftsLocal(), [], "slug", "opp", allTombs));
     }
     /* Page templates: the same rule, and the same care with html. A record that arrives without
        its page never wipes a page this device is holding. */
@@ -1352,17 +1352,33 @@ async function loadManifest(){
        return {site:j.site||SITE, list:(j.opportunities||[])}; }
   catch(e){ return {site:SITE, list:[]}; }
 }
-function getDrafts(){ try{ return JSON.parse(localStorage.getItem(STORE)||"[]"); }catch(e){ return []; } }
+/* The current store, read straight from localStorage. This is the WRITE target and the fallback: every
+   write merges against it and saves to it, and a read falls back to it when Supabase reads are off or
+   degraded. Stage 4 retires it; here it stays the safety net. */
+function getDraftsLocal(){ try{ return JSON.parse(localStorage.getItem(STORE)||"[]"); }catch(e){ return []; } }
+/* The READ accessor (Stage 3). When reads are switched to Supabase and the cache is hydrated and not
+   degraded, opportunities and their pages come from the stable Supabase rows (a full localStorage no
+   longer breaks what is shown and the cards stop flickering). Otherwise it falls back to the current
+   store, so a Supabase hiccup is never a blank or a false-empty board. Writes never call this. */
+function getDrafts(){
+  if(supaReadFlagOn() && supaOn()){
+    supaEnsureHydrated();
+    if(__supa.hydrated && !__supa.degraded && __supa.opps) return __supa.opps.map(function(d){ return Object.assign({}, d); });
+  }
+  return getDraftsLocal();
+}
 function setDrafts(a){ return lsSet(STORE, JSON.stringify(a)); }
 function getDraft(slug){ return getDrafts().find(x=>x.slug===slug); }
 function saveDraft(rec){
   rec.up=Date.now();                                     // freshness stamp for cross-device merge
-  const a=getDrafts(); const i=a.findIndex(x=>x.slug===rec.slug);
-  if(i>=0) a[i]={...a[i], ...rec}; else a.push(rec); setDrafts(a);
+  const a=getDraftsLocal(); const i=a.findIndex(x=>x.slug===rec.slug);   // merge against the current store, always
+  const merged = (i>=0) ? {...a[i], ...rec} : rec;
+  if(i>=0) a[i]=merged; else a.push(merged); setDrafts(a);
+  try{ supaCachePut(merged); }catch(_){}                 // keep the read cache consistent after a write
   // Stage 2 dual-write: mirror the merged record to Supabase, fire-and-forget. Never fails this save.
-  try{ supaMirrorOpp(getDraft(rec.slug)); }catch(_){}
+  try{ supaMirrorOpp(merged); }catch(_){}
 }
-function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDrafts().filter(x=>x.slug!==slug)); try{ supaDeleteOpp(slug); }catch(_){} }
+function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDraftsLocal().filter(x=>x.slug!==slug)); try{ supaCacheDrop(slug); }catch(_){} try{ supaDeleteOpp(slug); }catch(_){} }
 
 /* ---------- Supabase dual-write mirror (Stage 2) ----------
    Every write that lands in the current store (localStorage plus the relay) is also mirrored to the
@@ -1443,7 +1459,7 @@ function supaMirrorSetting(key, value){
 async function supaBackfill(){
   if(!supaOn()) throw new Error(t("sb_need"));
   var S=window.ThriveSupa, res={ opps:0, pages:0, templates:0, mail:0, settings:0, failed:0 };
-  var drafts=getDrafts();
+  var drafts=getDraftsLocal();
   for(var i=0;i<drafts.length;i++){
     var d=drafts[i];
     try{ await S.upsertOpp(supaRowFromOpp(d)); res.opps++; }
@@ -1476,8 +1492,8 @@ function supaSettingsRows(){
 async function supaVerify(){
   if(!supaOn()) throw new Error(t("sb_need"));
   var S=window.ThriveSupa;
-  var oldOpps=getDrafts().map(function(d){ return d.slug; });
-  var oldPages=getDrafts().filter(function(d){ return !!d.html; }).map(function(d){ return d.slug; });
+  var oldOpps=getDraftsLocal().map(function(d){ return d.slug; });
+  var oldPages=getDraftsLocal().filter(function(d){ return !!d.html; }).map(function(d){ return d.slug; });
   var newOpps=await S.listCol("console_opps","slug");
   var newPages=await S.listCol("console_pages","slug");
   function missing(a, b){ var have={}; (b||[]).forEach(function(x){ have[x]=1; }); return a.filter(function(x){ return !have[x]; }); }
@@ -1486,6 +1502,83 @@ async function supaVerify(){
     opps:{ old:oldOpps.length, sup:(newOpps||[]).length, missing:mo },
     pages:{ old:oldPages.length, sup:(newPages||[]).length, missing:mp },
     diverge: supaDiverges().length };
+}
+
+/* ---------- Supabase read cache (Stage 3) ----------
+   Reads switch to the complete, stable Supabase rows so a full localStorage no longer breaks the board
+   and the cards stop flickering. The switch is behind one flag (console_sb_read), guarded three ways:
+   it hydrates a read-through in-memory cache from Supabase (an opportunity's whole record travels in
+   the data jsonb, its page html joined from console_pages); a hydrate failure marks the read degraded
+   and getDrafts falls back to the current store (never a blank or a false empty); and turning the flag
+   ON is refused if the Stage 2 verification shows the two stores diverge. Writes are unchanged (still
+   dual, still merged against the current store), and each write also updates this cache so a read right
+   after a write is consistent. Flip the flag off and reads are back to the current store instantly, at
+   Stage 2, with no data change. Templates are NOT switched here: the Stage 1 console_templates row has
+   no column for a snippet's type or template_ref, so reading templates back would be lossy; that waits
+   for an additive column, raised in the PR. */
+var READ_FLAG="console_sb_read";
+var __supa={ opps:null, hydrated:false, degraded:false, ts:0 };
+var __supaHydrating=false;
+function supaReadFlagOn(){ try{ return localStorage.getItem(READ_FLAG)==="1"; }catch(e){ return false; } }
+function supaReadOn(){ return supaReadFlagOn() && supaOn() && __supa.hydrated && !__supa.degraded && !!__supa.opps; }
+function supaReadDegraded(){ return supaReadFlagOn() && supaOn() && __supa.degraded; }
+function supaReadStatus(){
+  return { flag:supaReadFlagOn(), configured:supaOn(), hydrated:__supa.hydrated, degraded:__supa.degraded,
+    count:(__supa.opps? __supa.opps.length : 0),
+    source: supaReadOn() ? "supabase" : "local" };
+}
+/* Join an opportunity row and its page html back into the record shape the console reads. */
+function supaOppFromRow(r, pageBy){
+  var d=Object.assign({}, (r&&r.data)||{});
+  if(r&&r.slug) d.slug=r.slug;
+  if(pageBy && r && pageBy[r.slug]!=null) d.html=pageBy[r.slug];
+  return d;
+}
+async function supaHydrate(){
+  if(!supaOn()){ __supa.hydrated=false; return false; }
+  try{
+    var S=window.ThriveSupa;
+    var opps=await S.rest("console_opps", { query:"select=slug,data" });
+    var pages=await S.rest("console_pages", { query:"select=slug,html" });
+    var pageBy={}; (pages||[]).forEach(function(p){ pageBy[p.slug]=p.html; });
+    __supa.opps=(opps||[]).map(function(r){ return supaOppFromRow(r, pageBy); });
+    __supa.hydrated=true; __supa.degraded=false; __supa.ts=Date.now();
+    return true;
+  }catch(e){
+    __supa.degraded=true; __supa.hydrated=false; __supa.opps=null;
+    supaRecordDiverge("read", "hydrate", e&&e.message);
+    try{ logActivity("supa_read_degraded", "", String((e&&e.message)||"").slice(0,120)); }catch(_){}
+    return false;
+  }
+}
+/* Fire the hydrate once, lazily, the first time a read wants Supabase. Until it lands, reads fall back
+   to the current store, so nothing waits on the network. When it lands, the views refresh. */
+function supaEnsureHydrated(){
+  if(__supa.hydrated || __supa.degraded || __supaHydrating) return;
+  if(!supaReadFlagOn() || !supaOn()) return;
+  __supaHydrating=true;
+  supaHydrate().then(function(){ __supaHydrating=false;
+    try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(e){}
+  }).catch(function(){ __supaHydrating=false; });
+}
+function supaCachePut(d){
+  if(!__supa.opps || !d || !d.slug) return;
+  var i=__supa.opps.findIndex(function(x){ return x.slug===d.slug; });
+  if(i>=0) __supa.opps[i]=Object.assign({}, d); else __supa.opps.push(Object.assign({}, d));
+}
+function supaCacheDrop(slug){ if(__supa.opps) __supa.opps=__supa.opps.filter(function(x){ return x.slug!==slug; }); }
+/* Turn the read switch on or off. Off is instant (back to Stage 2). On is refused unless Supabase is
+   configured and the two stores agree, so reads never land on a half-empty Supabase; the divergence is
+   named back to the caller. */
+async function supaSetRead(on){
+  if(!on){ try{ localStorage.setItem(READ_FLAG, "0"); }catch(e){} __supa.hydrated=false; __supa.degraded=false; return { ok:true, on:false }; }
+  if(!supaOn()) return { ok:false, reason:"unconfigured" };
+  var v; try{ v=await supaVerify(); }catch(e){ return { ok:false, reason:(e&&e.message)||"verify failed" }; }
+  if(!v.ok){ return { ok:false, reason:"diverge", verify:v }; }
+  try{ localStorage.setItem(READ_FLAG, "1"); }catch(e){}
+  __supa.degraded=false;
+  await supaHydrate();
+  return { ok:__supa.hydrated, on:true, degraded:__supa.degraded };
 }
 
 /* ---------- one import writer ----------
@@ -1574,7 +1667,7 @@ function removeDraftUndoable(slug, label){
    Every write is through saveDraft then logActivity (I2), never a direct write. */
 function migrateRetiredStatuses(){
   var changed=false;
-  getDrafts().forEach(function(d){
+  getDraftsLocal().forEach(function(d){
     if(!d || d.archived) return;
     if(ThriveLifecycle.norm(d.stage)==="lost"){
       saveDraft({ slug:d.slug, archived:true, outcome_was:"lost",
@@ -4117,7 +4210,7 @@ function initSettings(){
          never allowed a quiet one. */
       const held=unmirrored();
       c.innerHTML='<b>'+sent+'</b> '+t("sy_c_sent")+' · <b>'+getThreads().length+'</b> '+t("sy_c_threads")+
-        ' · <b>'+getSendStamps().length+'</b> '+t("sy_c_stamps")+' · <b>'+getDrafts().length+'</b> '+t("sy_c_opps")+
+        ' · <b>'+getSendStamps().length+'</b> '+t("sy_c_stamps")+' · <b>'+getDraftsLocal().length+'</b> '+t("sy_c_opps")+
         ' · <b>'+getEmailTemplates().length+'</b> '+t("sy_c_msgtpl")+
         ' · <b>'+getCustomTemplates().length+'</b> '+t("sy_c_pagetpl")+
         ' · <b>'+Object.keys(tombs()).length+'</b> '+t("sy_c_removed")+
@@ -4239,6 +4332,36 @@ function initSettings(){
       return t("sb_backfill_done").replace("{o}", r.opps).replace("{p}", r.pages).replace("{t}", r.templates)+
         (r.failed? " · "+r.failed+" "+t("sb_v_diverge") : "");
     }}));
+    // Stage 3 read switch. On is refused unless the two stores agree; off reverts to this device at once.
+    const rstat=el("sbReadStatus");
+    function readShow(msg, cls){ if(!rstat) return; rstat.hidden=false; rstat.textContent=msg; rstat.className="gh-result "+(cls||""); }
+    function readSrc(){
+      const src=el("sbReadSrc"); if(!src) return;
+      const st=supaReadStatus();
+      const where = st.source==="supabase" ? t("sb_read_src_supa") : t("sb_read_src_local");
+      src.innerHTML='<b>'+esc(where)+'</b><span>'+esc(t("sb_read_src_l"))+(st.degraded? " · "+esc(t("sb_read_degraded")) : "")+'</span>';
+    }
+    readSrc();
+    if(el("sbReadOn")) el("sbReadOn").addEventListener("click", async ()=>{
+      S.setCfg(u.value, k.value);
+      if(!S.ready()){ readShow(t("sb_need"),"warn"); return; }
+      readShow(t("testing"),"");
+      const r=await supaSetRead(true);
+      if(r.ok){ readShow("✓ "+t("sb_read_switched"),"ok"); }
+      else if(r.reason==="diverge"){
+        const miss=(r.verify&&r.verify.opps&&r.verify.opps.missing||[]).concat(r.verify&&r.verify.pages&&r.verify.pages.missing||[]).slice(0,6);
+        readShow("✕ "+t("sb_read_refused")+(miss.length? ": "+miss.join(", ") : ""),"warn");
+        try{ verifyLine(r.verify); }catch(_){}
+      } else { readShow("✕ "+t("sb_fail")+(r.reason? ": "+r.reason : ""),"warn"); }
+      readSrc();
+      try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){}
+    });
+    if(el("sbReadOff")) el("sbReadOff").addEventListener("click", async ()=>{
+      await supaSetRead(false);
+      readShow("✓ "+t("sb_read_reverted"),"ok");
+      readSrc();
+      try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){}
+    });
   }
   if(el("q_daily")){
     const cfg=quotaCfg(); el("q_daily").value=cfg.daily; el("q_monthly").value=cfg.monthly;
