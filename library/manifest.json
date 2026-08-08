@@ -74,6 +74,15 @@
       "location": "Arlington, VA",
       "phone": "",
       "status": "sent"
+    },
+    {
+      "slug": "cozy-calico-books",
+      "business": "Cozy Calico Books",
+      "template": "custom",
+      "sent_on": "2026-08-08",
+      "location": "Occoquan, VA",
+      "phone": "",
+      "status": "sent"
     }
   ]
 }
