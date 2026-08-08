@@ -619,6 +619,13 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <button class="btn ghost" id="sbTest" type="button" data-i18n="sb_test">Test connection</button>
     </div>
     <div class="gh-result" id="sbStatus" hidden></div>
+    <!-- Stage 2: every write also mirrors to Supabase; reads still come from the current store. Backfill
+         copies what already exists; Verify shows the two stores agree. -->
+    <div class="bar">
+      <button class="btn ghost" id="sbBackfill" type="button" data-i18n="sb_backfill">Backfill existing into Supabase</button>
+      <button class="btn ghost" id="sbVerify" type="button" data-i18n="sb_verify_btn">Verify the two stores agree</button>
+    </div>
+    <div class="quota-readout" id="sbVerifyOut"></div>
   </section>
 
   <section class="panel settings-panel">
@@ -703,19 +710,19 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 </div>
 
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=405747aacf"></script>
+<script src="i18n.js?v=bd69cdacce"></script>
 <script src="gate.js?v=d3da6c583e"></script>
 <script src="stage-model.js?v=f89936985f"></script>
 <script src="lifecycle.js?v=16f886007a"></script>
 <script src="intake.js?v=946abe743b"></script>
-<script src="supabase.js?v=a7526079af"></script>
+<script src="supabase.js?v=11c52c649f"></script>
 <script src="numbers.js?v=2fa1ded9ee"></script>
 <script src="inbound.js?v=54868a3081"></script>
 <script src="kinds.js?v=6ab99c4e8b"></script>
 <script src="store.js?v=de7cbabaa3"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=7c988a78be"></script>
+<script src="app.js?v=a7421db92f"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

@@ -99,6 +99,24 @@
   }
   function listOpps() { return rest("console_opps", { query: "select=*" }); }
 
+  /* Stage 2 generic helpers, still behind the same console_ guard. upsert merges by primary key so a
+     re-write updates in place (idempotent); del removes a row; listCol reads one column for the
+     verification count and the missing-name comparison. rows may be one object or an array. */
+  function upsert(table, rows) {
+    return rest(table, {
+      method: "POST",
+      headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: Array.isArray(rows) ? rows : [rows]
+    });
+  }
+  function del(table, query) {
+    return rest(table, { method: "DELETE", query: query, headers: { "Prefer": "return=minimal" } });
+  }
+  function listCol(table, col) {
+    return rest(table, { query: "select=" + encodeURIComponent(col) })
+      .then(function (rows) { return (rows || []).map(function (r) { return r[col]; }); });
+  }
+
   /* A cheap read that proves the connection AND that the console_ tables exist. It returns a real
      reason on failure and never a false ok. */
   async function probe() {
@@ -112,6 +130,7 @@
   global.ThriveSupa = {
     cfg: cfg, setCfg: setCfg, ready: ready, rest: rest, probe: probe,
     upsertPage: upsertPage, getPage: getPage, upsertOpp: upsertOpp, listOpps: listOpps,
+    upsert: upsert, del: del, listCol: listCol,
     tables: function () { return Object.keys(TABLES); },
     URL_KEY: URL_KEY, ANON_KEY: ANON_KEY
   };
