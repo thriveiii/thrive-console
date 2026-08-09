@@ -40,7 +40,8 @@
   /* The only tables this console will ever touch, every one console_ prefixed. The client refuses any
      name not on this list, so any other project's tables and the pre-existing opp_ / jood_ experiment
      tables in this same project are unreachable by construction, not just by convention. */
-  var TABLES = { console_opps: 1, console_pages: 1, console_templates: 1, console_mail: 1, console_settings: 1 };
+  var TABLES = { console_opps: 1, console_pages: 1, console_templates: 1, console_mail: 1,
+                 console_inbound: 1, console_hits: 1, console_settings: 1 };
   function guardTable(t) {
     if (String(t).indexOf("console_") !== 0 || !TABLES[t]) {
       throw new Error("supabase: table not allowed (console_ only): " + t);
