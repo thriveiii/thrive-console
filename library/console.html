@@ -619,6 +619,23 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <button class="btn ghost" id="sbTest" type="button" data-i18n="sb_test">Test connection</button>
     </div>
     <div class="gh-result" id="sbStatus" hidden></div>
+    <!-- Path A: Supabase Auth, one operator. The sign-in is a real session (a refreshable, revocable JWT),
+         not a passcode. Signed in, every data call carries the session token instead of the anon key, so
+         once the permissive anon policy is removed the console still reads and writes, signed in. -->
+    <div class="sb-auth">
+      <div class="in-count" id="sbAuthState"></div>
+      <div class="grid2">
+        <div class="field"><label for="sb_email" data-i18n="sb_email_l">Operator email</label>
+          <input id="sb_email" class="input" type="email" autocomplete="username" spellcheck="false" data-i18n-ph="sb_email_ph"></div>
+        <div class="field"><label for="sb_pass" data-i18n="sb_pass_l">Password</label>
+          <input id="sb_pass" class="input" type="password" autocomplete="current-password" data-i18n-ph="sb_pass_ph"></div>
+      </div>
+      <div class="bar">
+        <button class="btn" id="sbSignIn" type="button" data-i18n="sb_signin">Sign in</button>
+        <button class="btn ghost" id="sbSignOut" type="button" data-i18n="sb_signout">Sign out</button>
+      </div>
+      <div class="gh-result" id="sbAuthStatus" hidden></div>
+    </div>
     <!-- Stage 2: every write also mirrors to Supabase; reads still come from the current store. Backfill
          copies what already exists; Verify shows the two stores agree. -->
     <div class="bar">
@@ -718,19 +735,19 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 </div>
 
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=dbe97b79b9"></script>
+<script src="i18n.js?v=d06281ffd8"></script>
 <script src="gate.js?v=d3da6c583e"></script>
 <script src="stage-model.js?v=f89936985f"></script>
 <script src="lifecycle.js?v=16f886007a"></script>
 <script src="intake.js?v=946abe743b"></script>
-<script src="supabase.js?v=4676b29266"></script>
+<script src="supabase.js?v=ac1f34b64d"></script>
 <script src="numbers.js?v=2fa1ded9ee"></script>
 <script src="inbound.js?v=54868a3081"></script>
 <script src="kinds.js?v=6ab99c4e8b"></script>
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=078860e359"></script>
+<script src="app.js?v=fc1156e5df"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

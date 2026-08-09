@@ -49,8 +49,58 @@
     return t;
   }
 
-  /* One REST call to the operator's own PostgREST endpoint. A non-2xx answer throws with the real
-     message and status, so a failed write is a real error the caller must handle, never a false ok. */
+  /* ---- Auth (Path A: Supabase Auth, single operator) --------------------------------------------
+     The client is a fetch wrapper, not supabase-js, so the session is managed here explicitly. On
+     sign-in the access token and refresh token are stored; every data call then carries the session
+     JWT as the bearer instead of the anon key, and RLS scopes to the authenticated session. Until the
+     operator removes the permissive `to anon` policy (the run-once step-5 SQL, after a device-green
+     signed-in test), the anon key remains the working fallback, so nothing breaks in the meantime. The
+     apikey header stays the anon key always, which Supabase requires even with a JWT. No secret is used
+     as an access control; the token is a real session, refreshable and revocable. */
+  var SESSION_KEY = "console_sb_session";
+  function session() { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (e) { return null; } }
+  function setSession(s) { try { s ? localStorage.setItem(SESSION_KEY, JSON.stringify(s)) : localStorage.removeItem(SESSION_KEY); } catch (e) {} }
+  function signedIn() { var s = session(); return !!(s && s.access_token); }
+  function authEmail() { var s = session(); return (s && s.email) || ""; }
+  function bearer() { var s = session(); var c = cfg(); return (s && s.access_token) ? s.access_token : c.anon; }
+  async function signIn(email, password) {
+    var c = cfg(); if (!c.url || !c.anon) throw new Error("supabase not configured");
+    var res = await fetch(c.url + "/auth/v1/token?grant_type=password", {
+      method: "POST", headers: { "apikey": c.anon, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email, password: password })
+    });
+    var data = null; try { data = await res.json(); } catch (e) {}
+    if (!res.ok || !data || !data.access_token) {
+      throw new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + res.status));
+    }
+    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email });
+    return { ok: true, email: email };
+  }
+  async function signOut() {
+    var c = cfg(), s = session();
+    try { if (s && s.access_token) await fetch(c.url + "/auth/v1/logout", { method: "POST", headers: { "apikey": c.anon, "Authorization": "Bearer " + s.access_token } }); } catch (e) {}
+    setSession(null); return true;
+  }
+  async function refresh() {
+    var c = cfg(), s = session(); if (!s || !s.refresh_token) return false;
+    try {
+      var res = await fetch(c.url + "/auth/v1/token?grant_type=refresh_token", {
+        method: "POST", headers: { "apikey": c.anon, "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: s.refresh_token })
+      });
+      var data = null; try { data = await res.json(); } catch (e) {}
+      if (res.ok && data && data.access_token) {
+        setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: s.email });
+        return true;
+      }
+    } catch (e) {}
+    setSession(null); return false;
+  }
+
+  /* One REST call to the operator's own PostgREST endpoint. It carries the session JWT when signed in,
+     else the anon key. A 401 with a refresh token in hand refreshes once and retries; a persistent 401
+     is surfaced as err.authRequired so the read layer can show an honest "sign in", never a blank. A
+     non-2xx answer otherwise throws with the real message and status, never a false ok. */
   async function rest(table, opts) {
     opts = opts || {};
     var c = cfg();
@@ -59,7 +109,7 @@
     var url = c.url + "/rest/v1/" + table + (opts.query ? ("?" + opts.query) : "");
     var headers = Object.assign({
       "apikey": c.anon,
-      "Authorization": "Bearer " + c.anon,
+      "Authorization": "Bearer " + bearer(),
       "Content-Type": "application/json"
     }, opts.headers || {});
     var res = await fetch(url, {
@@ -67,11 +117,16 @@
       headers: headers,
       body: opts.body != null ? JSON.stringify(opts.body) : undefined
     });
+    if ((res.status === 401 || res.status === 403) && !opts._retried && session() && session().refresh_token) {
+      if (await refresh()) return rest(table, Object.assign({}, opts, { _retried: true }));
+    }
     var text = await res.text();
     var data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
     if (!res.ok) {
       var err = new Error((data && data.message) || ("HTTP " + res.status));
-      err.status = res.status; err.body = data; throw err;
+      err.status = res.status; err.body = data;
+      if (res.status === 401 || res.status === 403) err.authRequired = true;
+      throw err;
     }
     return data;
   }
@@ -132,6 +187,8 @@
     cfg: cfg, setCfg: setCfg, ready: ready, rest: rest, probe: probe,
     upsertPage: upsertPage, getPage: getPage, upsertOpp: upsertOpp, listOpps: listOpps,
     upsert: upsert, del: del, listCol: listCol,
+    signIn: signIn, signOut: signOut, session: session, signedIn: signedIn,
+    authEmail: authEmail, refresh: refresh,
     tables: function () { return Object.keys(TABLES); },
     URL_KEY: URL_KEY, ANON_KEY: ANON_KEY
   };
