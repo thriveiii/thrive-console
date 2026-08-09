@@ -612,9 +612,24 @@ function bounceFor(o){
   });
   return hard? "hard" : (soft? "soft" : "");
 }
+/* One reply derivation, shared by effStage and causalStatus, so there is literally one function that
+   answers "has a reply", not two copies that can disagree. A reply exists for an opportunity when a real
+   inbound reply is attributed to it (kind not "auto", which is a bounce notice), or a hand recorded reply
+   sits in the ledger (direction "in", or status "replied"). Derived from the records themselves, at read
+   time, from whatever store holds them, so a migrated, backfilled or Supabase-read reply counts with no
+   stored stamp. */
+function hasReply(o){
+  const slug=(typeof o==="string")? o : ((o&&o.slug)||"");
+  if(!slug) return false;
+  if(inboundFor(slug).some(function(r){ return r && r.kind!=="auto"; })) return true;
+  return getMailLog().some(function(m){ return m && m.opp===slug && (m.direction==="in" || m.status==="replied"); });
+}
 function effStage(o, opensOverride, sendOverride){
   const declared=o.stage||"";
   if(declared && declared!=="sent") return declared;
+  // Replied is derived from the reply records, before the send gate, so it is read wherever the inbound
+  // rows live and does not depend on a stored stamp. Replied wins over Opened and Sent (checked next).
+  if(hasReply(o)) return "replied";
   const s=(sendOverride===undefined)? sendsFor(o) : sendOverride;
   if(!s || !s.count) return isLive(o) ? "live" : "draft";
   // A delivery outcome outranks sent and opened: a message that bounced never reached the inbox, so it
@@ -649,7 +664,7 @@ function causalStatus(o){
      directly, and a hand recorded reply is backed by its record_reply in the log.
      Checking the send count first would drop a replied card with no ledger send
      down to "live", which is the exact opinion-over-evidence this phase removes. */
-  if(inboundFor(o.slug).some(r=>r && r.kind!=="auto")) return { status:"replied", event:"inbound" };
+  if(hasReply(o)) return { status:"replied", event:"inbound" };   // the one shared reply derivation
   if(declared==="replied") return { status:"replied", event:"record_reply" };
   const s=sendsFor(o);
   if(!s || !s.count) return isLive(o) ? { status:"live", event:"publish" } : { status:"draft", event:"local" };
@@ -1020,25 +1035,14 @@ async function pullInbound(ep, auth){
   if(merged.length===before.length && JSON.stringify(merged)===JSON.stringify(before)) return 0;
   setInbound(merged);
   try{ if(j.scan) __inboxScan=j.scan; }catch(e){}
-  await applyInboundMoves(merged);
+  /* The pull-time "replied" stamp is retired. The board derives Replied from the inbound records
+     themselves (effStage -> hasReply), so a reply lands wherever the rows live, migrated or backfilled
+     or read back from Supabase, with no second stored representation to drift. The reply rows written
+     above by setInbound are the one source. */
   return merged.length-before.length;
 }
 let __inboxScan=null;
 function inboxScanInfo(){ return __inboxScan; }
-
-async function applyInboundMoves(records){
-  const want=ThriveInbound.repliedSlugs(records);
-  if(!want.length) return;
-  const all=await mergedOpps();
-  for(const w of want){
-    const o=all.find(x=>x.slug===w.slug);
-    if(!o) continue;
-    if(ThriveLifecycle.stageOf(o)==="replied") continue;
-    if(!ThriveLifecycle.can("record_reply", o)) continue;   // won, lost, archived: leave it alone
-    const day=ThriveInbound.dayOf(w.ts)||today();
-    await runMove("record_reply", w.slug, { replied_on:day, silent:true });
-  }
-}
 
 async function doSyncRound(ep, auth){
   const g=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
