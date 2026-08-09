@@ -2232,7 +2232,10 @@ var I18N_BOARD = {
     dw_open_page:   "Open page",
 
     board_empty_h:  "No opportunities yet.",
-    board_empty_p:  "Build the first page, and it will appear in Draft."
+    board_empty_p:  "Build the first page, and it will appear in Draft.",
+    board_auth_h:   "Sign in to see your board.",
+    board_auth_p:   "Your board reads from Supabase, which needs a sign-in. This is not an empty board; your work is safe. Sign in to load it.",
+    board_auth_cta: "Go to sign-in"
   },
 
   ar: {
@@ -2577,7 +2580,10 @@ var I18N_BOARD = {
     dw_open_page: "فتح الصفحة",
 
     board_empty_h: "لا توجد فرص بعد.",
-    board_empty_p: "ابنِ الصفحة الأولى، وستظهر في «مسودة»."
+    board_empty_p: "ابنِ الصفحة الأولى، وستظهر في «مسودة».",
+    board_auth_h: "سجّل الدخول لعرض لوحتك.",
+    board_auth_p: "تقرأ لوحتك من Supabase، وهو يحتاج تسجيل الدخول. هذه ليست لوحة فارغة، وعملك محفوظ. سجّل الدخول لتحميله.",
+    board_auth_cta: "إلى تسجيل الدخول"
   }
 };
 

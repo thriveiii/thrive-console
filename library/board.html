@@ -143,6 +143,16 @@
     </div>
   </section>
 
+  <!-- Signed-out read state. The Supabase store is the source of truth and it is scoped to a session,
+       so a signed-out read is asked to sign in, never shown as an empty board. This is not the empty
+       state and not the degrade banner: it appears only when reads come from Supabase with no session. -->
+  <div class="empty" id="boardAuth" hidden>
+    <span class="empty-ic" data-icon="lock" data-icon-size="32" aria-hidden="true"></span>
+    <h3 class="block-h" data-i18n="board_auth_h">Sign in to see your board.</h3>
+    <p class="sub" data-i18n="board_auth_p"></p>
+    <a class="btn" href="console.html#settings" data-icon="check" data-i18n="board_auth_cta">Go to sign-in</a>
+  </div>
+
   <!-- Empty state. A designed state, not a missing one. IDENTITY §9.3 -->
   <div class="empty" id="boardEmpty" hidden>
     <span class="empty-ic" data-icon="spark" data-icon-size="32" aria-hidden="true"></span>
