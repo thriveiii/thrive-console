@@ -109,6 +109,23 @@
       <button class="btn ghost" id="sbTest" type="button" data-i18n="sb_test">Test connection</button>
     </div>
     <div class="gh-result" id="sbStatus" hidden></div>
+    <!-- Path A: Supabase Auth, one operator. The sign-in is a real session (a refreshable, revocable JWT),
+         not a passcode. Signed in, every data call carries the session token instead of the anon key, so
+         once the permissive anon policy is removed the console still reads and writes, signed in. -->
+    <div class="sb-auth">
+      <div class="in-count" id="sbAuthState"></div>
+      <div class="grid2">
+        <div class="field"><label for="sb_email" data-i18n="sb_email_l">Operator email</label>
+          <input id="sb_email" class="input" type="email" autocomplete="username" spellcheck="false" data-i18n-ph="sb_email_ph"></div>
+        <div class="field"><label for="sb_pass" data-i18n="sb_pass_l">Password</label>
+          <input id="sb_pass" class="input" type="password" autocomplete="current-password" data-i18n-ph="sb_pass_ph"></div>
+      </div>
+      <div class="bar">
+        <button class="btn" id="sbSignIn" type="button" data-i18n="sb_signin">Sign in</button>
+        <button class="btn ghost" id="sbSignOut" type="button" data-i18n="sb_signout">Sign out</button>
+      </div>
+      <div class="gh-result" id="sbAuthStatus" hidden></div>
+    </div>
     <!-- Stage 2: every write also mirrors to Supabase; reads still come from the current store. Backfill
          copies what already exists; Verify shows the two stores agree. -->
     <div class="bar">

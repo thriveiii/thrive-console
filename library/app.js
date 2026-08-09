@@ -1573,7 +1573,7 @@ async function supaVerify(){
    no column for a snippet's type or template_ref, so reading templates back would be lossy; that waits
    for an additive column, raised in the PR. */
 var READ_FLAG="console_sb_read";
-var __supa={ opps:null, mail:null, inbound:null, hits:null, hydrated:false, degraded:false, ts:0 };
+var __supa={ opps:null, mail:null, inbound:null, hits:null, hydrated:false, degraded:false, authRequired:false, ts:0 };
 var __supaHydrating=false;
 function supaReadFlagOn(){ try{ return localStorage.getItem(READ_FLAG)==="1"; }catch(e){ return false; } }
 function supaReadOn(){ return supaReadFlagOn() && supaOn() && __supa.hydrated && !__supa.degraded && !!__supa.opps; }
@@ -1581,8 +1581,10 @@ function supaReadOn(){ return supaReadFlagOn() && supaOn() && __supa.hydrated &&
 // replies and the opens each fall back to the current store when their slice is not present.
 function supaReadable(){ return supaReadFlagOn() && supaOn() && __supa.hydrated && !__supa.degraded; }
 function supaReadDegraded(){ return supaReadFlagOn() && supaOn() && __supa.degraded; }
+function supaSignedIn(){ try{ return !!(window.ThriveSupa && window.ThriveSupa.signedIn && window.ThriveSupa.signedIn()); }catch(e){ return false; } }
 function supaReadStatus(){
   return { flag:supaReadFlagOn(), configured:supaOn(), hydrated:__supa.hydrated, degraded:__supa.degraded,
+    authRequired:__supa.authRequired, signedIn:supaSignedIn(),
     count:(__supa.opps? __supa.opps.length : 0),
     source: supaReadOn() ? "supabase" : "local" };
 }
@@ -1609,15 +1611,18 @@ async function supaHydrate(){
     __supa.inbound=(inbound||[]).map(function(r){ return r.data||{}; });
     var hits=await S.rest("console_hits", { query:"select=data" });
     __supa.hits=(hits||[]).map(function(r){ return r.data||{}; });
-    __supa.hydrated=true; __supa.degraded=false; __supa.ts=Date.now();
+    __supa.hydrated=true; __supa.degraded=false; __supa.authRequired=false; __supa.ts=Date.now();
     // The send and open indexes are memoized off the old store; rebuild them from the migrated rows.
     try{ invalidateSends(); }catch(_){}
     try{ invalidateHits(); }catch(_){}
     return true;
   }catch(e){
+    // A denial the operator can fix by signing in (a 401/403 once the anon door is closed) is marked
+    // apart from a network degrade, so the read layer prompts an honest sign-in and never a blank board.
+    __supa.authRequired = !!(e && e.authRequired);
     __supa.degraded=true; __supa.hydrated=false; __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null;
     supaRecordDiverge("read", "hydrate", e&&e.message);
-    try{ logActivity("supa_read_degraded", "", String((e&&e.message)||"").slice(0,120)); }catch(_){}
+    try{ logActivity(__supa.authRequired ? "supa_auth_required" : "supa_read_degraded", "", String((e&&e.message)||"").slice(0,120)); }catch(_){}
     return false;
   }
 }
@@ -4388,6 +4393,38 @@ function initSettings(){
       const r=await S.probe();
       sbShow(r.ok? "✓ "+t("sb_ok") : "✕ "+t("sb_fail")+(r.reason? ": "+r.reason : ""), r.ok?"ok":"warn");
     });
+    // Path A sign-in. A real Supabase session (a refreshable, revocable JWT), not a passcode. Signed in,
+    // every data call carries the token instead of the anon key, so the console keeps working once the
+    // permissive anon policy is removed. The anon key stays the fallback until that removal, device-gated.
+    if(typeof S.signedIn==="function"){
+      const em=el("sb_email"), pw=el("sb_pass"), ast=el("sbAuthState"), aout=el("sbAuthStatus");
+      function authShow(msg, cls){ if(!aout) return; aout.hidden=false; aout.textContent=msg; aout.className="gh-result "+(cls||""); }
+      function authState(){
+        if(!ast) return;
+        const on=S.signedIn(), who=on? (S.authEmail&&S.authEmail()||"") : "";
+        ast.innerHTML= on
+          ? '<b>'+esc(t("sb_auth_in"))+'</b><span>'+esc(who)+'</span>'
+          : '<b>'+esc(t("sb_auth_out"))+'</b><span>'+esc(t("sb_auth_out_l"))+'</span>';
+      }
+      authState();
+      if(el("sbSignIn")) el("sbSignIn").addEventListener("click", ()=> runAction("sbSignIn", { working:t("sb_signing_in"), run: async ()=>{
+        S.setCfg(u.value, k.value);
+        if(!S.ready()) throw new Error(t("sb_need"));
+        const mail=(em&&em.value||"").trim(), pass=(pw&&pw.value||"");
+        if(!mail || !pass) throw new Error(t("sb_auth_need"));
+        await S.signIn(mail, pass);
+        if(pw) pw.value="";
+        logActivity("settings","","supa_signin");
+        authState(); authShow("✓ "+t("sb_auth_ok"),"ok");
+        try{ if(supaReadFlagOn && supaReadFlagOn()){ await supaHydrate(); if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); } }catch(_){}
+        return t("sb_auth_ok");
+      }}));
+      if(el("sbSignOut")) el("sbSignOut").addEventListener("click", async ()=>{
+        try{ await S.signOut(); }catch(_){}
+        logActivity("settings","","supa_signout");
+        authState(); authShow(t("sb_auth_signed_out"),"");
+      });
+    }
     const vout=el("sbVerifyOut");
     function verifyLine(v){
       if(!vout) return;
@@ -4424,7 +4461,10 @@ function initSettings(){
       const src=el("sbReadSrc"); if(!src) return;
       const st=supaReadStatus();
       const where = st.source==="supabase" ? t("sb_read_src_supa") : t("sb_read_src_local");
-      src.innerHTML='<b>'+esc(where)+'</b><span>'+esc(t("sb_read_src_l"))+(st.degraded? " · "+esc(t("sb_read_degraded")) : "")+'</span>';
+      // An auth denial names itself as "sign in", apart from a plain network degrade. Reads fall back to
+      // this device meanwhile, so the board is never blank; the message says why and what to do.
+      const tail = st.authRequired ? " · "+esc(t("sb_read_auth")) : (st.degraded? " · "+esc(t("sb_read_degraded")) : "");
+      src.innerHTML='<b>'+esc(where)+'</b><span>'+esc(t("sb_read_src_l"))+tail+'</span>';
     }
     readSrc();
     if(el("sbReadOn")) el("sbReadOn").addEventListener("click", async ()=>{
