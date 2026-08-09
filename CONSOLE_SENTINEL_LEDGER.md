@@ -14,7 +14,7 @@ filled in by the NEXT cycle and drives the protocol version bump.
 
 ### Findings (ranked)
 
-**CRITICAL** — none confirmed in the repo. (Isolation clean; no secret in client/repo; no unsafe render sink found.) The one Critical-class risk, a live relay still writing "Egypt", is device-gated; see below.
+**CRITICAL**: none confirmed in the repo. (Isolation clean; no secret in client/repo; no unsafe render sink found.) The one Critical-class risk, a live relay still writing "Egypt", is device-gated; see below.
 
 **HIGH · L2/L3 · Board Replied does not derive from the reply records [BLOCKER]**
 - Evidence: `library/app.js:615-627` effStage has no inbound branch (returns declared/live/draft/bounced/failed/opened/sent only). `library/stage-model.js:83` stageOf returns effStage; `:141` laneOf routes to "replied" only when stage==="replied". `library/app.js:641-661` causalStatus DOES derive "replied" from inboundFor, but the board uses effStage, not causalStatus. The only path to Replied is a stored declared stage: `library/app.js:1029-1041` applyInboundMoves runs `record_reply` at pull time, and `library/lifecycle.js:224` setStage("replied") stores it on the opportunity.
@@ -100,7 +100,7 @@ from any file. The close, at the SQL-coverage level, is clean.
 
 ### Findings (ranked)
 
-**CRITICAL** — none. The close is a real close, not a false one: the coverage matrix is one to one, and
+**CRITICAL**: none. The close is a real close, not a false one: the coverage matrix is one to one, and
 after step 5 the anon role genuinely loses access to every console_ row. No Lotus, no secret, no unsafe
 new sink.
 
