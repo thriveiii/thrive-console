@@ -518,15 +518,21 @@ function sendMail_(d) {
   if (!key) throw new Error('RESEND_KEY not set');
   if (!d.to) throw new Error('missing "to"');
 
+  /* COURIER, not a composer. This relay sends the html and text exactly as the console composed them and
+     writes NO copy of its own: no footer, no address, no signature. The console is the single composer
+     and the single footer source (POSTAL, from the console), so a wrong footer cannot originate here. Do
+     not add a footer or an address string to this payload; that would recreate the second-composer bug
+     (an "Alexandria, Egypt" footer that shipped from an older relay while the console's footer was
+     already correct). Everything the recipient reads comes in through d.html and d.text. */
   var replyTo = d.slug ? (TAG_LOCAL + '+' + d.slug + '@' + TAG_DOMAIN) : (TAG_LOCAL + '@' + TAG_DOMAIN);
   var payload = {
     from: d.from || ('Thrive <' + TAG_LOCAL + '@' + TAG_DOMAIN + '>'),
     to: [d.to],
     subject: d.subject || '',
-    html: d.html || '',
+    html: d.html || '',       // sent verbatim, footer included by the console
     reply_to: replyTo
   };
-  if (d.text) payload.text = d.text;
+  if (d.text) payload.text = d.text;  // sent verbatim, footer included by the console
   if (d.headers) payload.headers = d.headers;
 
   var res = UrlFetchApp.fetch('https://api.resend.com/emails', {
