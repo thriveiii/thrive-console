@@ -61,4 +61,117 @@ filled in by the NEXT cycle and drives the protocol version bump.
 - L7: three-width render and Arabic joined-letters/guillemets on the international-schools card, in WebKit.
 
 ### What later broke on the device that this sweep missed
-- (to be filled by Sweep 2)
+- Filled by Sweep 2: nothing broke on the device yet (the close is not run). But Sweep 1 carried no
+  standing check that an access-REMOVAL SQL covers every table it must, and no check that a read-denial
+  surfaces honestly rather than blanking the board. Sweep 2 added both (L5a, L5b) and found that #83's
+  honest-denial keys on a 401/403, which a Postgres RLS read-denial does not raise (it returns an empty
+  200). Caught in the repo before the device, which is the sweep working as intended.
+
+---
+
+## 2026-08-09 · Sweep 2 · protocol v1, bumped to v2 after
+
+- git HEAD read: `5c9cefe` (branch `supabase-auth-path-a`, = origin/main `cba0c0e` which includes #82,
+  plus the #83 auth code and the three SQL files under review). Ledger and protocol committed on the
+  `console-sentinel` branch as in Sweep 1.
+- Focus: pre-flight the anon-door close before Thyab runs the step-5 remove-anon SQL, and regress #82
+  (reply derivation) and #83 (Supabase Auth). Read-only; no fix PR; the remove-anon SQL was NOT executed
+  or simulated against any database, only read.
+- Zero-Lotus grep: `grep -rniE 'lotus' library/ relay/ docs/` excluding the isolation test = 0. Isolation holds.
+- Proofs re-run green in the repo sandbox: `reply_derivation_test` (#82, 9 checks) and `supabase_auth_test`
+  (#83, 15 checks).
+
+### Section 1 coverage matrix (the gate for the close), 7 of 7 tables one to one
+
+| console_ table    | anon-created                | authenticated-added         | anon-dropped               | verdict |
+|-------------------|-----------------------------|-----------------------------|----------------------------|---------|
+| console_opps      | supabase-stage1.sql:88,95   | supabase-auth-policies.sql:32,40 | supabase-auth-remove-anon.sql:23,26 | pass |
+| console_pages     | supabase-stage1.sql:88,95   | supabase-auth-policies.sql:32,40 | supabase-auth-remove-anon.sql:23,26 | pass |
+| console_templates | supabase-stage1.sql:88,95   | supabase-auth-policies.sql:32,40 | supabase-auth-remove-anon.sql:23,26 | pass |
+| console_mail      | supabase-stage1.sql:88,95   | supabase-auth-policies.sql:32,40 | supabase-auth-remove-anon.sql:23,26 | pass |
+| console_settings  | supabase-stage1.sql:88,95   | supabase-auth-policies.sql:33,40 | supabase-auth-remove-anon.sql:24,26 | pass |
+| console_inbound   | supabase-mail-migrate.sql:38,45 | supabase-auth-policies.sql:33,40 | supabase-auth-remove-anon.sql:24,26 | pass |
+| console_hits      | supabase-mail-migrate.sql:38,45 | supabase-auth-policies.sql:33,40 | supabase-auth-remove-anon.sql:24,26 | pass |
+
+No table with an anon policy is left undropped (no silent open door after step 5). No table is dropped
+without an authenticated policy (no operator lockout after step 5). The client allow-list
+(`library/supabase.js:43-44`) and the schema CREATE TABLEs are exactly these 7; no orphan table is missing
+from any file. The close, at the SQL-coverage level, is clean.
+
+### Findings (ranked)
+
+**CRITICAL** — none. The close is a real close, not a false one: the coverage matrix is one to one, and
+after step 5 the anon role genuinely loses access to every console_ row. No Lotus, no secret, no unsafe
+new sink.
+
+**HIGH · L5b · After the close, a signed-out read blanks the board instead of asking for sign-in**
+- Evidence: #83 surfaces denial only on a thrown 401/403. `library/supabase.js:128` sets `err.authRequired`
+  on 401/403; `library/app.js:1622` maps that to `__supa.authRequired`. But a Postgres RLS SELECT for a
+  role with no permitting policy returns an empty `200`, not a 401 (the anon key is a VALID JWT with
+  role anon, so it authenticates fine and is merely under-privileged). So post-step-5, with reads switched
+  to Supabase (`console_sb_read="1"`) and no session, `supaHydrate` (`library/app.js:1598`) succeeds with
+  empty arrays: `__supa.hydrated=true`, `degraded=false`, `authRequired=false`, `__supa.opps=[]`.
+  `getDrafts` (`library/app.js:1376-1381`) then takes the Supabase branch and returns `[]`: a blank board,
+  no sign-in prompt. That is the exact "blank board that looks like no data" the #83 brief section 6
+  forbids. Writes still surface honestly (an INSERT as anon returns 403 → authRequired), so the gap is
+  reads only.
+- Reproduction: reasoned from PostgREST/Supabase RLS semantics (SELECT with no policy = empty 200). The
+  repo test cannot show it because it mocks denial as 401 (see the Medium below). Live status-code
+  confirmation is device-gated, but the semantics are standard and well documented.
+- Proposed fix (one concern, future brief): when reads are switched to Supabase and the operator is not
+  signed in, treat the state as authRequired proactively (gate on `signedIn()` before trusting a possibly
+  RLS-filtered empty read), or probe a known-non-empty table and treat empty-while-signed-out as denial.
+  Never render a Supabase empty as the board when signed out post-close.
+- Blocker: no, but it must land before or with step 5, or the first Safari-data-clear reads as data loss.
+
+**MEDIUM · L5 · The scoped policy trusts the whole `authenticated` role, not the one operator**
+- Evidence: `docs/supabase-auth-policies.sql:40` grants `to authenticated using (true) with check (true)`.
+  With a single account this equals Thyab, but if project sign-ups are enabled, ANY authenticated user gets
+  full CRUD on all console data after step 5. The door closes on anon but opens to "any signed-in user."
+- Reproduction: policy text; no `auth.uid()` predicate. The sign-up setting is a Supabase dashboard config,
+  device/console-gated.
+- Proposed fix (one concern): tighten to `using (auth.uid() = '<thyab-uid>')` (the brief already floated
+  this), and confirm sign-ups are disabled in the project so `authenticated` cannot be self-minted.
+- Blocker: no.
+
+**MEDIUM · sweep-fidelity · The auth test mocks read-denial as a 401, a path the live read will not take**
+- Evidence: `tools/supabase_auth_test.py` forces `denyRest` to return a 401 on `/rest/v1/`, and asserts
+  `authRequired` is set. Real RLS read-denial is an empty 200 (see the High). So the "a persistent 401 sets
+  authRequired ... the board falls back, never blank" check passes for a denial shape reads will not
+  actually produce post-close. The test is not wrong about the 401 path (writes and expired-JWT do 401);
+  it just does not cover the empty-200 read path that is the real signed-out-after-close case.
+- Proposed fix (with the High): add a case where a Supabase read returns an empty 200 while signed out and
+  assert the board does NOT render it as empty (once the fix defines that behavior).
+- Blocker: no.
+
+### Regression pass (evidence, not findings)
+
+- #82 reply derivation, confirmed and reproduced. `hasReply(o)` (`library/app.js:621`) is the one shared
+  helper; `effStage` derives "replied" from it (`library/app.js:632`) and `causalStatus` uses the same
+  helper (`library/app.js:667`); the pull-time stamp (`applyInboundMoves`) is gone (grep = 0 in app.js).
+  Sandbox: an opp with a reply yields `effStage="replied"` and `laneOf="replied"`; the Replied count equals
+  the opportunities that actually have a reply; no double-derivation.
+- #83 auth path, confirmed. `bearer()` (`library/supabase.js:65`) returns the session JWT when signed in,
+  the anon key only with no session; `rest()` uses `bearer()` for every data call (`:112`), so no data call
+  forces the anon key while a session exists. `apikey` stays the anon key by design (`:111`); it is the
+  project publishable key used for gateway routing and does not itself grant rows, so it is not an access
+  path once anon policies are dropped, access comes from the role in the Authorization JWT. The passcode
+  Lock and its GitHub-token vault (`library/gate.js`) are untouched by #83 (diff does not include gate.js;
+  `library/app.js:1486-1487` confirms the token, sync key and vault key are deliberately NOT mirrored to
+  any anon-readable table).
+- L7 auth/read path: no new silent action-path swallow. Every `catch` in `library/supabase.js` is a
+  documented default or best-effort (the JSON-parse guards at `:72`/`:91` still throw via the
+  `!data.access_token` check; `refresh` failing clears the session so the next `rest()` surfaces
+  authRequired). The Settings sign-in routes through `runAction` (honest surfacing).
+- L5 secrets: the auth change adds no hardcoded secret; the password is user-entered and cleared after
+  sign-in; the stored session is the operator's own JWT, not an embedded key; no service-role key anywhere.
+
+### Device-gated (only the iPad or live Supabase settle)
+- The exact status code a live Supabase returns for a signed-out read after step 5 (the High predicts an
+  empty 200, not a 401). Confirm on the device before running the removal, and confirm the denial surfaces.
+- Session persistence across an iPad Safari reopen and a Safari-data-clear (which is the trigger for the
+  blank-board High).
+- Whether project sign-ups are disabled (the Medium): a dashboard setting, not visible in the repo.
+
+### What later broke on the device that this sweep missed
+- (to be filled by Sweep 3)
