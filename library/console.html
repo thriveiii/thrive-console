@@ -148,6 +148,16 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     </div>
   </section>
 
+  <!-- Signed-out read state. The Supabase store is the source of truth and it is scoped to a session,
+       so a signed-out read is asked to sign in, never shown as an empty board. This is not the empty
+       state and not the degrade banner: it appears only when reads come from Supabase with no session. -->
+  <div class="empty" id="boardAuth" hidden>
+    <span class="empty-ic" data-icon="lock" data-icon-size="32" aria-hidden="true"></span>
+    <h3 class="block-h" data-i18n="board_auth_h">Sign in to see your board.</h3>
+    <p class="sub" data-i18n="board_auth_p"></p>
+    <a class="btn" href="console.html#settings" data-icon="check" data-i18n="board_auth_cta">Go to sign-in</a>
+  </div>
+
   <!-- Empty state. A designed state, not a missing one. IDENTITY §9.3 -->
   <div class="empty" id="boardEmpty" hidden>
     <span class="empty-ic" data-icon="spark" data-icon-size="32" aria-hidden="true"></span>
@@ -735,7 +745,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 </div>
 
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=d06281ffd8"></script>
+<script src="i18n.js?v=247f895ae8"></script>
 <script src="gate.js?v=d3da6c583e"></script>
 <script src="stage-model.js?v=f89936985f"></script>
 <script src="lifecycle.js?v=16f886007a"></script>
@@ -747,7 +757,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=fc1156e5df"></script>
+<script src="app.js?v=6f6f22076c"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with
