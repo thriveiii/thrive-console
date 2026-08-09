@@ -174,4 +174,100 @@ new sink.
 - Whether project sign-ups are disabled (the Medium): a dashboard setting, not visible in the repo.
 
 ### What later broke on the device that this sweep missed
-- (to be filled by Sweep 3)
+- Filled by Sweep 3: the anon close ran on the device (remove-anon 06:03, auth-policies 07:37), and in the
+  window between them a signed-in read was RLS-denied to empty for every table. That is the L5b class
+  Sweep 2 named, so it was foreseen. What Sweep 2 did NOT foresee: the cutover would also expose that the
+  card mail-state layer (console_mail / inbound / hits) can be present-in-schema but empty-in-rows in
+  Supabase while opps are full, and the board reads Supabase-only, so every card fell to "no email yet".
+  Sweep 2's matrix checked policy coverage table by table; it did not check DATA presence table by table
+  for the layers the cards derive from. Sweep 3 adds that (L1a).
+
+---
+
+## 2026-08-09 · Sweep 3 · protocol v2, bumped to v3 after
+
+- Code read: the card-state read path on `origin/main` (`cba0c0e`, the Stage 3 + mail-migrate code from
+  #81), reasoned on the working tree, which matches for these functions. Ledger committed on the
+  `console-sentinel` branch as before. Read-only: no fix PR, no data write, no live row count run.
+- Zero-Lotus grep: `grep -rniE 'lotus' library/ relay/ docs/` excluding the isolation test = 0. Isolation holds.
+- Symptom: every opportunity in Ready with "no email yet"; opps intact, each card's Sent/Opened/Replied
+  not surfacing, reading from Supabase signed in.
+
+### Headline: the exact break location
+
+Not a code line that loses state. The card state on a signed-in Supabase read is exactly the contents of
+`console_mail` / `console_inbound` / `console_hits`. `sendIndex` (`library/app.js:478`) finds zero sends
+because `getMailLog` (`library/app.js:2998`) returns an empty `__supa.mail`, which `supaHydrate`
+(`library/app.js:1623-1624`, `select=data` on `console_mail`) read back as zero rows. `effStage`
+(`library/app.js:632-641`) then returns "live" for every card, which renders `tok_noemail`
+(`library/app.js:5489`). This is a GENUINE EMPTY console_mail (a data gap), not a missing read and not a
+linkage mismatch.
+
+### Findings (ranked)
+
+**HIGH (data, device-gated) · the mail-state tables are empty or short in Supabase while opps are full.**
+- Ruled out, with evidence, the two code suspects the brief named:
+  - Missing Supabase read: REFUTED. `supaHydrate` reads all three mail tables
+    (`library/app.js:1623` mail, `:1625` inbound, `:1627` hits), not opps and pages only.
+  - Linkage mismatch: REFUTED. The write puts the whole record in the `data` jsonb and a top-level `opp`
+    (`supaMailRow` `library/app.js:1450-1452`, `data:rec`); the read takes `r.data`
+    (`library/app.js:1624`); the derivation matches on `x.opp` (`sendIndex` `library/app.js:479-482`).
+    Same key both sides, slug throughout. `console_mail` has a `data jsonb` column
+    (`docs/supabase-stage1.sql:66`), so `select=data` does not error.
+  - Corollary from the sequential awaits: opps rendering PROVES the mail read did not throw
+    (a throw nulls opps too, `library/app.js:1619-1623`), so the mail read succeeded and returned few or
+    zero rows. By elimination this is the brief's option 3: a genuine empty console_mail.
+- Reproduced in the repo sandbox (mocked Supabase, signed in, `console_sb_read=1`):
+  - Case A, `console_opps` present but `console_mail`/inbound/hits empty: `getMailLog().length===0`,
+    `effStage==="live"`, `laneOf==="live"`, the card reads "no email yet". The exact symptom.
+  - Case B, the same opp with one sent row, one inbound reply and one hit present in Supabase:
+    `getMailLog().length===1`, `getInbound().length===1`, `effStage==="replied"`. State returns.
+  - So the code reads and links the mail layer correctly when it is present; the live symptom is the
+    absence of rows in `console_mail` (and inbound and hits), a data gap.
+- Prescription: see below.
+
+**MEDIUM (mechanism, by design) · an empty Supabase slice shadows the device for every card layer.**
+- Evidence: `getMailLog` (`library/app.js:2998`), `getInbound` (`library/app.js:1005`) and the opens
+  source (`library/app.js:351`) each return the Supabase slice whenever `supaReadable()` is true, and an
+  empty array is truthy, so an empty (but successful) Supabase read is returned in place of the device
+  store that still holds the records. This is what turned "mail not yet in Supabase" into a total,
+  silent state blackout rather than a fallback. It is consistent with the Stage 3 design (Supabase is
+  authoritative once reads switch, and merging the device back would reintroduce the dual-source
+  divergence that design avoids), so it is a design tension to be aware of, not a clear bug to patch. The
+  honest cure for the visible symptom is to make Supabase actually hold the rows (re-backfill), not to
+  silently merge stores.
+
+**LOW (process) · the anon close bypassed the in-app cutover guard.**
+- Evidence: `supaVerify` (`library/app.js:1547-1558`) already checks `console_mail`, `console_inbound`
+  and `console_hits` present-key by present-key, and `supaSetRead(true)` refuses the read switch on any
+  divergence. But that guard runs only for the in-app "Read from Supabase" switch; the anon-door close
+  was run as SQL in the editor, which does not consult it. Note also `supaVerify` compares only against
+  the DEVICE's own rows, so it passes vacuously if the device's mail log was empty at switch time. So the
+  guard exists but did not gate this cutover.
+
+### The prescription (one concern)
+
+- This is a DATA RECOVERY, not a code fix: re-run "Backfill existing into Supabase" (Settings, Storage)
+  from the device that still holds the mail ledger, so `console_mail` / `console_inbound` / `console_hits`
+  are populated; the cards then derive Sent/Opened/Replied from them on the next signed-in read. The
+  backfill as written already covers all three with the correct keys and linkage (`library/app.js:1512`
+  mail, `:1514` inbound, `:1518-1521` hits, each via the same `supa*Row` shape the reader expects), so it
+  needs no code fix first.
+- Device-gated and viable ONLY if that device still holds `thrive_mail_v1` / `thrive_inbound_v1` /
+  `thrive_hits_v1`. Confirm first with Thyab's own row counts in the SQL editor
+  (`select count(*) from console_mail;` and the same for inbound and hits) against the device's counts.
+  If the device no longer holds the records (a Safari data clear, or the backfill never ran while mail
+  existed), the mail history for these cards is not recoverable from Supabase and would have to be
+  rebuilt from Gmail and the relay, a separate and larger effort. Raise, do not decide.
+- One raise for a later brief, not this one: the Medium mechanism means any future incomplete cutover of
+  a card layer blanks it silently. Worth deciding whether a signed-in board should surface "reading from
+  Supabase, mail layer empty" when opps are present but mail is zero, rather than showing every card as
+  "no email yet" with no hint. Named, not decided.
+
+### Device-gated (only the iPad or live Supabase settle)
+- The row counts of `console_mail` / `console_inbound` / `console_hits` in Supabase (the confirmation of
+  the data gap) and whether the device still holds the source records (the confirmation the re-backfill
+  is viable). Both are Thyab's to run; the sweep reasons from the shapes only.
+
+### What later broke on the device that this sweep missed
+- (to be filled by Sweep 4)

@@ -1,4 +1,4 @@
-# Console Sentinel · Protocol v2
+# Console Sentinel · Protocol v3
 
 A standing, read-only, self-improving audit of the Thrive Console. It reads the live code and the two
 stores, reproduces every finding in the repo with `file:line`, ranks by severity, and returns one report.
@@ -23,6 +23,17 @@ concern each.
 - L1 Data integrity and store agreement: write paths per record type; per-table agreement (Supabase count
   vs device count vs named divergence); orphans (page/mail/reply/thread with no parent); the console_
   write guard active.
+- L1a Cutover data-presence, table by table for every card-dependent layer (new in v3, standing). A store
+  cutover to Supabase-only reads (the read switch, or the anon-door close that forces it) must be verified
+  for DATA presence, not just policy coverage and not just opportunities. The cards derive Sent, Opened
+  and Replied from console_mail, console_inbound and console_hits, so every one of those must hold its rows
+  in Supabase before reads switch, or the board shows full opportunities with empty state (every card
+  "no email yet"). Check, per table, that the Supabase row count matches the device's, using supaVerify
+  (it already compares all five tables) BEFORE the switch; never run the close as raw SQL without that
+  green verify, because the SQL path bypasses the in-app guard, and supaVerify passes vacuously if the
+  device layer is itself empty, so confirm the device actually holds the rows too. An empty Supabase slice
+  is returned in place of the device once reads switch (an empty array is truthy), so a short layer is a
+  silent blackout, not a fallback.
 - L2 Reply and threading pipeline: trace a real reply from inbound to a derived Replied state; name the
   broken link; confirm the ledger has one writer.
 - L3 State derivation and the card model: state derived from records, never a stored duplicate that can
@@ -69,3 +80,9 @@ why. A green run that missed a device break is itself a finding against the swee
   pre-flighting the anon-door close (#83): Sweep 1 named the permissive-anon exposure but did not carry a
   standing check that the removal SQL covers every table it must, nor that the read-denial actually
   surfaces rather than blanking the board. Both are now checked every run whenever a removal SQL exists.
+- v3 (2026-08-09): added L1a cutover data-presence, table by table for every card-dependent layer. Earned
+  by Sweep 3: after the device cutover, the board showed full opportunities with every card "no email yet"
+  because console_mail / inbound / hits held few or no rows in Supabase while console_opps was full, and
+  reads are Supabase-only. v2's matrix checked policy coverage table by table; it did not check that the
+  DATA the cards derive from is actually present table by table before reads switch. Now checked every run
+  whenever a cutover or an anon-door close is in play.
