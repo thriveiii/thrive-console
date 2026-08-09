@@ -37,6 +37,9 @@ ck("a persistent 401/403 is marked authRequired for an honest denial",
    "err.authRequired = true" in sup)
 ck("signIn/signOut/session are exported on ThriveSupa",
    "signIn: signIn" in sup and "signOut: signOut" in sup and "signedIn: signedIn" in sup)
+app_src = open(os.path.join(ROOT, "library/app.js")).read()
+ck("supaHydrate has the signed-out empty read guard (empty 200 is not trusted as an empty board)",
+   "if(supaReadFlagOn() && !supaSignedIn() && __supa.opps.length===0){" in app_src)
 
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 socketserver.TCPServer.allow_reuse_address = True
@@ -51,7 +54,7 @@ from playwright.sync_api import sync_playwright
 FAKE = r"""
 () => {
   window.__real_fetch = window.fetch.bind(window);
-  window.__auth = { denyRest:false, refreshOk:false, refreshCount:0, lastAuth:null, lastKey:null, calls:[] };
+  window.__auth = { denyRest:false, closed:false, rows:[], refreshOk:false, refreshCount:0, lastAuth:null, lastKey:null, calls:[] };
   window.fetch = async (url, opts) => {
     const method = (opts&&opts.method)||'GET';
     const headers = (opts&&opts.headers)||{};
@@ -74,10 +77,18 @@ FAKE = r"""
     if (typeof url==='string' && url.indexOf('/rest/v1/')>=0) {
       window.__auth.lastAuth = headers['Authorization']||'';
       window.__auth.lastKey = headers['apikey']||'';
-      window.__auth.calls.push({auth:headers['Authorization']||'', key:headers['apikey']||''});
+      window.__auth.calls.push({auth:headers['Authorization']||'', key:headers['apikey']||'', method});
+      // A session token is Bearer jwt-...; the anon key is Bearer anon-key. authed = a real session.
+      const authed = (headers['Authorization']||'').indexOf('Bearer jwt-')===0;
+      if (window.__auth.closed && !authed) {
+        // The real shape after the anon door closes: the anon key is a VALID JWT (role anon), so a SELECT
+        // returns an empty 200 (RLS filters every row), not a 401; a write is refused with a 403.
+        if (method==='GET') return new Response('[]', {status:200, headers:{'Content-Type':'application/json'}});
+        return new Response(JSON.stringify({message:'permission denied'}), {status:403, headers:{'Content-Type':'application/json'}});
+      }
       if (window.__auth.denyRest)
-        return new Response(JSON.stringify({message:'permission denied'}), {status:401, headers:{'Content-Type':'application/json'}});
-      return new Response('[]', {status:200, headers:{'Content-Type':'application/json'}});
+        return new Response(JSON.stringify({message:'jwt expired'}), {status:401, headers:{'Content-Type':'application/json'}});
+      return new Response(JSON.stringify(window.__auth.rows||[]), {status:200, headers:{'Content-Type':'application/json'}});
     }
     return window.__real_fetch(url, opts);
   };
@@ -145,19 +156,60 @@ with sync_playwright() as p:
        return { inn:window.ThriveSupa.signedIn(), auth:window.__auth.lastAuth }; }""")
     ck("sign-out reverts to the anon key", r3["inn"] == False and r3["auth"] == "Bearer anon-key", r3)
 
-    # 7. A persistent 401 with no session (the door closed, not signed in) marks authRequired, and the
-    #    board falls back to this device: an honest denial, never a blank board.
-    denied = pg.evaluate("""async ()=>{
-       localStorage.setItem('thrive_opps_v1', JSON.stringify([{slug:'local-a', business:'Local A', published:true}]));
+    # 7. THE GAP FIX. After the close, a signed-out READ is an empty 200 (RLS filters the rows), NOT a 401.
+    #    The old code trusted that as an empty board. The guard now marks it authRequired so the UI asks
+    #    for a sign-in. The device is emptied too (the Safari-data-clear shape), so there is nothing to
+    #    fall back to: the only honest state is the prompt, never a blank board.
+    signedout_empty = pg.evaluate("""async ()=>{
+       await window.ThriveSupa.signOut();
+       localStorage.setItem('thrive_opps_v1','[]');       // this device cleared too: no fallback data
        localStorage.setItem('console_sb_read','1');
-       window.__auth.denyRest=true;
+       window.__auth.closed=true; window.__auth.denyRest=false; window.__auth.rows=[];
        await window.supaHydrate();
        const st=window.supaReadStatus();
-       const drafts=window.getDrafts();
-       return { authRequired:st.authRequired, degraded:st.degraded, source:st.source, draftCount:drafts.length }; }""")
-    ck("a persistent 401 sets authRequired", denied["authRequired"] == True, denied)
-    ck("the denial is distinct from a plain degrade but still degrades reads", denied["degraded"] == True, denied)
-    ck("the board falls back to this device, never blank", denied["draftCount"] >= 1 and denied["source"] == "local", denied)
+       return { authRequired:st.authRequired, degraded:st.degraded, signedIn:st.signedIn }; }""")
+    ck("a signed-out empty read (RLS empty 200) sets authRequired, not a trusted empty board", signedout_empty["authRequired"] == True, signedout_empty)
+    ck("the empty-200 denial is signed out and degrades off Supabase", signedout_empty["signedIn"] == False and signedout_empty["degraded"] == True, signedout_empty)
+
+    # The board shows the sign-in prompt, never a blank empty board, even with nothing on this device.
+    dom = pg.evaluate("""async ()=>{
+       if(window.goTo) window.goTo('board'); else location.hash='#board';
+       await new Promise(r=>setTimeout(r,400));
+       if(typeof window.thriveBoardRefresh==='function') await window.thriveBoardRefresh();
+       await new Promise(r=>setTimeout(r,200));
+       const a=document.getElementById('boardAuth'), e=document.getElementById('boardEmpty'), lanes=document.getElementById('boardLanes');
+       return { authShown: !!(a && !a.hidden), emptyShown: !!(e && !e.hidden), lanesShown: !!(lanes && !lanes.hidden) }; }""")
+    ck("the board shows the sign-in prompt, never a blank empty board", dom["authShown"] == True and dom["emptyShown"] == False, dom)
+    ck("the lanes are hidden behind the prompt", dom["lanesShown"] == False, dom)
+
+    # 8. Signed in with a genuinely empty dataset is a normal empty board, no false prompt.
+    signedin_empty = pg.evaluate("""async ()=>{
+       await window.ThriveSupa.signIn('op@x.com','right');
+       window.__auth.rows=[];                              // signed in, legitimately empty
+       await window.supaHydrate();
+       const st=window.supaReadStatus();
+       return { authRequired:st.authRequired, hydrated:st.hydrated, signedIn:st.signedIn }; }""")
+    ck("a signed-in empty dataset does not prompt (a normal empty board)", signedin_empty["authRequired"] == False and signedin_empty["hydrated"] == True, signedin_empty)
+
+    # 9. A network degrade (fetch throws) falls back to this device, no sign-in nag: authRequired stays off.
+    degrade = pg.evaluate("""async ()=>{
+       await window.ThriveSupa.signOut();
+       const real=window.fetch;
+       window.fetch=async(u,o)=>{ if(typeof u==='string'&&u.indexOf('/rest/v1/')>=0) throw new TypeError('network down'); return real(u,o); };
+       await window.supaHydrate();
+       window.fetch=real;
+       const st=window.supaReadStatus();
+       return { authRequired:st.authRequired, degraded:st.degraded }; }""")
+    ck("a network degrade does not nag a sign-in (authRequired false)", degrade["authRequired"] == False, degrade)
+    ck("a network degrade still degrades to this device", degrade["degraded"] == True, degrade)
+
+    # 10. The write path is unchanged: a signed-out write after the close fails honestly with authRequired.
+    write403 = pg.evaluate("""async ()=>{
+       window.__auth.closed=true;
+       try{ await window.ThriveSupa.upsert('console_opps', {slug:'x', data:{slug:'x'}}); return {threw:false}; }
+       catch(e){ return {threw:true, status:e&&e.status, authRequired:!!(e&&e.authRequired)}; } }""")
+    ck("a signed-out write after the close fails honestly with authRequired (403)",
+       write403["threw"] == True and write403["authRequired"] == True and write403["status"] == 403, write403)
 
     b.close()
 

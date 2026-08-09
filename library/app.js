@@ -1583,8 +1583,11 @@ function supaReadable(){ return supaReadFlagOn() && supaOn() && __supa.hydrated 
 function supaReadDegraded(){ return supaReadFlagOn() && supaOn() && __supa.degraded; }
 function supaSignedIn(){ try{ return !!(window.ThriveSupa && window.ThriveSupa.signedIn && window.ThriveSupa.signedIn()); }catch(e){ return false; } }
 function supaReadStatus(){
+  // authRequired is a Supabase-read concern only: it is reported true only while reads are switched to
+  // Supabase and it is configured, so a device-only board never shows a sign-in prompt.
+  var authReq = __supa.authRequired && supaReadFlagOn() && supaOn();
   return { flag:supaReadFlagOn(), configured:supaOn(), hydrated:__supa.hydrated, degraded:__supa.degraded,
-    authRequired:__supa.authRequired, signedIn:supaSignedIn(),
+    authRequired:authReq, signedIn:supaSignedIn(),
     count:(__supa.opps? __supa.opps.length : 0),
     source: supaReadOn() ? "supabase" : "local" };
 }
@@ -1603,6 +1606,18 @@ async function supaHydrate(){
     var pages=await S.rest("console_pages", { query:"select=slug,html" });
     var pageBy={}; (pages||[]).forEach(function(p){ pageBy[p.slug]=p.html; });
     __supa.opps=(opps||[]).map(function(r){ return supaOppFromRow(r, pageBy); });
+    // The signed-out empty read guard. Once the anon door is closed, a signed-out read is a 200 with no
+    // rows, not a 401: the anon key is a valid JWT with role anon, so it authenticates and RLS simply
+    // filters every row away. An empty read while signed out is therefore indistinguishable from an RLS
+    // denial, so it is not trusted as an empty board. It is marked authRequired (degrade to this device,
+    // ask for a sign-in) instead of rendered as no data. A signed-in empty read is a legitimately empty
+    // board and passes through; before the close a signed-out read still returns rows and passes through.
+    if(supaReadFlagOn() && !supaSignedIn() && __supa.opps.length===0){
+      __supa.authRequired=true; __supa.degraded=true; __supa.hydrated=false;
+      __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null;
+      try{ logActivity("supa_auth_required", "", "signed-out empty read"); }catch(_){}
+      return false;
+    }
     // The ledger, replies and opens the states derive from. Each row carries its whole record in the
     // data jsonb, so the shape read back is exactly the shape the console wrote.
     var mail=await S.rest("console_mail", { query:"select=data" });
@@ -5634,13 +5649,25 @@ async function initBoard(){
         failed.map(o=>'<span class="tray-item failed" title="'+esc(t("stage_failed"))+'">'+esc(o.business||o.slug)+'</span>').join("")
       : '<div class="lane-empty">'+ic("archive",18)+'<p>'+esc(t("tray_empty"))+'</p></div>';
 
-    const empty=b.summary.total===0 && closed.length===0;
+    // A signed-out read from Supabase (an empty 200 after the anon door closes, or a 401/403) is a call
+    // to sign in, not an empty board. The prompt replaces the whole board so a locked store never reads
+    // as data loss, even when this device was cleared and has nothing to fall back to. A degrade (relay
+    // or network) is not this: it keeps falling back to the device, so authRequired is the only trigger.
+    const authReq = supaReadStatus().authRequired;
+    if(authReq){
+      // The header band must not say "a quiet board" over a locked store. It names the state instead.
+      el("boardVerdict").innerHTML='<span class="vtext">'+esc(t("board_auth_h"))+'</span>';
+      el("boardVerdictSub").innerHTML='';
+      if(el("boardBadge")) el("boardBadge").innerHTML=ic("lock",20);
+    }
+    const empty=b.summary.total===0 && closed.length===0 && !authReq;
+    if(el("boardAuth")) el("boardAuth").hidden=!authReq;
     el("boardEmpty").hidden=!empty;
-    el("boardLanes").hidden=empty;
-    if(el("boardTabs")) el("boardTabs").hidden=empty;
-    if(el("boardPipeline")) el("boardPipeline").hidden=empty;   // all zeros is noise on an empty board
-    el("boardChips").hidden=empty;
-    el("boardTray").hidden=empty;
+    el("boardLanes").hidden=empty||authReq;
+    if(el("boardTabs")) el("boardTabs").hidden=empty||authReq;
+    if(el("boardPipeline")) el("boardPipeline").hidden=empty||authReq;   // all zeros is noise on an empty board
+    el("boardChips").hidden=empty||authReq;
+    el("boardTray").hidden=empty||authReq;
 
     // A token opens the whole opportunity: what it is, its text, its page, its outreach, and
     // what has happened to it.
