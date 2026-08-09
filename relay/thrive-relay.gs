@@ -371,6 +371,11 @@ function attributeMessage_(msg, mail, known) {
     subject: subject,
     ts: msg.getDate().toISOString(),
     snippet: String(msg.getPlainBody() || '').replace(/\s+/g, ' ').slice(0, SNIPPET_MAX),
+    // The threading headers, stored so the console can match a reply by header (its strongest tier)
+    // against the Message-ID it recorded at send time. Absent before this relay version, which is why
+    // the console also matches by sender and subject.
+    inReplyTo: headerOf_(raw, 'In-Reply-To'),
+    references: headerOf_(raw, 'References'),
     kind: 'reply',
     rule: 'none',
     opp: ''
@@ -409,6 +414,8 @@ function attributeMessage_(msg, mail, known) {
       if (!mm || mm.direction === 'in') continue;
       if (mm.mid) byId[String(mm.mid).replace(/^<|>$/g, '')] = mm;
       if (mm.messageId) byId[String(mm.messageId).replace(/^<|>$/g, '')] = mm;
+      if (mm.msgid) byId[String(mm.msgid).replace(/^<|>$/g, '')] = mm;   // the wire Message-ID the console records
+      if (mm.id) byId[String(mm.id).replace(/^<|>$/g, '')] = mm;         // the provider id, a fallback token
     }
     for (var b = ids.length - 1; b >= 0; b--) {
       var hit = byId[ids[b]];

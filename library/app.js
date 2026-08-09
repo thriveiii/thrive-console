@@ -1009,6 +1009,128 @@ function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
    most likely to be worth money, because it is the one nobody is expecting. */
 function inboundUnmatched(){ return getInbound().filter(r=> r && r.kind!=="auto" && !r.opp); }
 
+/* ---------- reply matching (P1) ----------
+   The relay's tag/thread/sender rules miss a human reply that lands on the From line from a different
+   address than the one we sent to, because the strongest tier (In-Reply-To) was dead: the recorded id
+   was a local id, never the wire Message-ID a reply actually references. This is the console-side matcher.
+   It runs over the held rows against the send ledger the console holds, records the tier that matched,
+   and never guesses. Header threading for new replies is durable once the relay is redeployed to record
+   the wire Message-ID and to store each reply's In-Reply-To/References (docs/RELAY.md); the held replies
+   recover here by sender and subject. */
+
+// The message ids a reply threads onto: In-Reply-To first, then References. Present only once the relay
+// stores these headers on the inbound row; the held rows predate that, so they fall through to sender.
+function inReplyIds(r){
+  var raw=String((r&&(r.inReplyTo||r.in_reply_to))||"")+" "+String((r&&r.references)||"");
+  var out=[], re=/<([^<>\s]+)>/g, m;
+  while((m=re.exec(raw))) out.push(m[1]);
+  return out;
+}
+
+// Noise is classified before display, so a genuine human reply is never buried under DMARC reports,
+// platform notices and no-reply mail. Conservative on purpose: a real person on gmail is never noise,
+// and anything uncertain stays in the visible human list, which is the safe failure (seen, not hidden).
+function inboundIsNoise(r){
+  if(!r) return true;
+  if(r.kind==="auto") return true;                                  // the relay already flags mailer-daemon and auto-submitted
+  var from=String(r.from||"").toLowerCase();
+  if(/(^|[.+_-])(no-?reply|noreply|do-?not-?reply|donotreply|mailer-daemon|postmaster|bounces?|dmarc|abuse)@/.test(from)) return true;
+  var host=(from.split("@")[1]||"");
+  if(/(^|\.)(bounce|mailer|reply|em|news|notify)\./.test(host)) return true;   // notify.example.com, bounce.example.com
+  if(/(mailchimp|sendgrid|amazonses|instagram|facebookmail|digitalocean|linkedin|dmarcian|mandrillapp)\./.test(host)) return true;
+  var subj=String(r.subject||"").toLowerCase();
+  if(/report domain:|dmarc aggregate report|aggregate report for|delivery status notification|undeliverable|unsubscribe from this/.test(subj)) return true;
+  return false;
+}
+
+// The send ledger rows a reply could answer: outbound only, carrying an opportunity.
+function outboundSends(){
+  return getMailLog().filter(function(m){ return m && m.opp && m.direction!=="in" &&
+    (!m.status || m.status==="sent" || m.status==="copied" || m.status==="replied"); });
+}
+// Match one reply to an opportunity. Tiers, most reliable first, and the matched tier is recorded on the
+// row, never guessed. Subject is the weakest tier and is used only to disambiguate among sender matches
+// (a subject can never attribute on its own). Returns { opp, tier } with opp "" when nothing matches.
+function matchReply(r, sends){
+  sends=sends||outboundSends();
+  if(!r) return { opp:"", tier:"" };
+  // tier header: In-Reply-To / References against a recorded wire Message-ID.
+  var ids=inReplyIds(r);
+  if(ids.length){
+    for(var i=0;i<sends.length;i++){
+      var wid=String(sends[i].msgid||sends[i].messageId||"").replace(/^<|>$/g,"").trim();
+      if(wid && ids.indexOf(wid)>=0) return { opp:sends[i].opp, tier:"header" };
+    }
+  }
+  // tier sender: the reply's sender address against the opportunity's recorded recipient. Newest wins.
+  var from=String(r.from||"").trim().toLowerCase();
+  var hits=[];
+  if(from) for(var j=0;j<sends.length;j++){ if(String(sends[j].to||"").trim().toLowerCase()===from) hits.push(sends[j]); }
+  if(hits.length){
+    // tier subject: the weakest tier, used only to disambiguate when the same address was written to for
+    // MORE THAN ONE opportunity. With a single opportunity behind the address, sender alone attributes and
+    // the recorded tier is sender; subject is never a downgrade of a clean sender match.
+    var opps={}; for(var h=0;h<hits.length;h++) opps[hits[h].opp]=1;
+    if(Object.keys(opps).length>1){
+      var root=subjRoot(r.subject||"");
+      if(root){
+        var subjHit=null;
+        for(var k=0;k<hits.length;k++){ if(subjRoot(hits[k].subject||"")===root){ if(!subjHit||String(hits[k].ts)>String(subjHit.ts)) subjHit=hits[k]; } }
+        if(subjHit) return { opp:subjHit.opp, tier:"subject" };
+      }
+    }
+    var best=hits[0];
+    for(var l=1;l<hits.length;l++){ if(String(hits[l].ts)>String(best.ts)) best=hits[l]; }
+    return { opp:best.opp, tier:"sender" };
+  }
+  return { opp:"", tier:"" };
+}
+// Re-match every held (unmatched, non-noise) reply through the console matcher. Idempotent: it only
+// stamps opp and match_tier on existing rows, never creates a thread row, so a second run changes nothing.
+// Reads the authoritative store (Supabase when reads are switched, else the device) and writes back to
+// both, so a matched reply lands wherever the rows live and the card flips to Replied by the derivation.
+function rematchHeld(){
+  var sends=outboundSends();
+  var rows=getInbound();
+  var matched=0, byTier={ header:0, sender:0, subject:0 };
+  var next=rows.map(function(r){
+    if(!r || r.opp || r.kind==="auto" || inboundIsNoise(r)) return r;
+    var mm=matchReply(r, sends);
+    if(!mm.opp) return r;
+    matched++; byTier[mm.tier]=(byTier[mm.tier]||0)+1;
+    var chapter=r.chapter;
+    if(chapter==null){ try{ chapter=activeChapter(mm.opp); }catch(e){ chapter=1; } }
+    return Object.assign({}, r, { opp:mm.opp, match_tier:mm.tier, chapter:chapter });
+  });
+  if(matched){
+    setInbound(next);
+    try{ if(__supa.inbound) __supa.inbound=next.slice(); }catch(_){}
+    try{ invalidateSends(); }catch(_){}
+    try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){}
+    try{ logActivity("rematch","", matched+" matched"); }catch(_){}
+  }
+  var held=next.filter(function(r){ return r && r.kind!=="auto" && !r.opp && !inboundIsNoise(r); }).length;
+  var noise=next.filter(function(r){ return r && !r.opp && inboundIsNoise(r); }).length;
+  return { matched:matched, byTier:byTier, held:held, noise:noise };
+}
+// Attach one held reply to an opportunity by hand (the picker records this as tier manual, teaching
+// nothing silently). Idempotent by the reply's own key.
+function attachReply(gid, slug){
+  if(!gid || !slug) return false;
+  var rows=getInbound(), touched=false;
+  var next=rows.map(function(r){
+    if(r && inboundKey(r)===String(gid)){ touched=true; return Object.assign({}, r, { opp:slug, match_tier:"manual" }); }
+    return r;
+  });
+  if(!touched) return false;
+  setInbound(next);
+  try{ if(__supa.inbound) __supa.inbound=next.slice(); }catch(_){}
+  try{ invalidateSends(); }catch(_){}
+  try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){}
+  try{ logActivity("attach", slug, String(gid)); }catch(_){}
+  return true;
+}
+
 /* Pull, merge, then move. Idempotent at every step: the merge is keyed on the
    Gmail message id, and the move is refused by the lifecycle if the card is
    already there, so a second sync in the same minute changes nothing. */
@@ -3007,6 +3129,9 @@ function threadKey(to, opp, subject){
   return person+"|"+root;
 }
 function newMid(){ try{ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }catch(e){ return "m"+(getMailLog().length+1); } }
+// A wire Message-ID for an outbound send, in RFC822 angle-bracket form on the console's own domain, so a
+// reply's In-Reply-To carries it back and the header tier can thread on it. Recorded on the mail row.
+function newMessageId(){ try{ return "<c"+Date.now().toString(36)+Math.random().toString(36).slice(2,10)+"@thriveiii.com>"; }catch(e){ return "<c"+(getMailLog().length+1)+"@thriveiii.com>"; } }
 // Central ledger writer: stamps a unique message id, resolves the thread, and fixes direction.
 function logMail(rec){
   const a=getMailLogLocal();
@@ -3941,11 +4066,15 @@ async function initCompose(slugArg){
        List-Unsubscribe is not required at this volume and costs nothing, and it converts a spam
        complaint into an unsubscribe. The relay sends this body verbatim and adds nothing. */
     const sb=sendBody();
+    // A stable Message-ID the reply's In-Reply-To will carry back, recorded on the row so the reply
+    // threads by header (the strongest tier). Passed through the relay to Resend; whether Resend keeps it
+    // verbatim is a device gate, so sender and subject stay the reliable tiers underneath it.
+    const msgid=newMessageId();
     const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:to,
       subject:resolveTokens(el("esubject").value.trim()),
       html:sb.html,
       text:sb.text,
-      headers:ThriveStore.outboundHeaders(slug||""),
+      headers:Object.assign({}, ThriveStore.outboundHeaders(slug||""), { "Message-ID": msgid }),
       slug:slug||"" };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
@@ -3962,7 +4091,7 @@ async function initCompose(slugArg){
       const m=tplMeta();
       recordSend(); renderQuota();
       logActivity("email", slug||"", to+" · "+payload.subject);
-      logMail({ opp:oppOf(), to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id, chapter:sendChapter(oppOf()) });
+      logMail({ opp:oppOf(), to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id, msgid:msgid, chapter:sendChapter(oppOf()) });
       clearComposeDraft();                                  // the message went out, so the working draft is done
       toast(t("cmp_sent"));
     }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
@@ -5971,19 +6100,43 @@ function renderRepliesPanel(){
   const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
     {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
 
+  // Noise is separated from human mail before either is shown, so a real reply never sits under a pile
+  // of DMARC and platform notices. Human unmatched stays named and visible; noise collapses.
+  const humanUn=unmatched.filter(r=>!inboundIsNoise(r));
+  const noiseUn=unmatched.filter(r=>inboundIsNoise(r));
+
   let h='<p class="st-line"><b>'+esc(t("rp_have"))+'</b> <span class="n">'+real.length+'</span> '+
-        esc(t("rp_of_which"))+' <span class="n">'+unmatched.length+'</span> '+esc(t("rp_unmatched_n"))+'</p>';
+        esc(t("rp_of_which"))+' <span class="n">'+humanUn.length+'</span> '+esc(t("rp_unmatched_n"))+
+        (noiseUn.length? ' · <span class="n">'+noiseUn.length+'</span> '+esc(t("rp_noise_n")) : '')+'</p>';
   h+= scan
     ? '<p class="st-line">'+esc(t("rp_last_scan"))+' '+ltr(when(scan.ts))+
       ' · <span class="n">'+(scan.ms||0)+'</span> ms</p>'
     : '<p class="st-line st-miss">'+esc(t("rp_never_scanned"))+'</p>';
 
-  /* Named, never counted. A reply nobody could attribute is the one most likely
-     to matter, because it is the one nobody is expecting. */
-  if(unmatched.length){
-    h+='<p class="st-line"><b class="st-miss">'+esc(t("rp_unmatched_h"))+'</b></p><ul class="st-keys">'+
-      unmatched.slice(0,10).map(r=>'<li><span class="mono-iso">'+ltr(esc(r.from))+'</span>'+
-        '<span>'+esc((r.subject||"").slice(0,60))+'</span></li>').join("")+'</ul>';
+  // The held recovery: re-match every held reply through the console matcher, right here, without waiting
+  // for the relay. One tap, idempotent.
+  h+='<div class="bar"><button class="btn sm" id="rpRematch" type="button">'+esc(t("rp_rematch_btn"))+'</button></div>';
+
+  /* Named, never counted. A reply nobody could attribute is the one most likely to matter, because it is
+     the one nobody is expecting. Each carries a one-tap picker that records a manual match, teaching
+     nothing silently. */
+  if(humanUn.length){
+    const opps=getDraftsLocal().filter(o=>o&&o.slug).slice()
+      .sort((a,b)=>String(a.business||a.slug).localeCompare(String(b.business||b.slug)));
+    const optHtml='<option value="">'+esc(t("rp_attach_pick"))+'</option>'+
+      opps.map(o=>'<option value="'+esc(o.slug)+'">'+esc(o.business||o.slug)+'</option>').join("");
+    h+='<p class="st-line"><b class="st-miss">'+esc(t("rp_unmatched_h"))+'</b></p><ul class="rp-held">'+
+      humanUn.slice(0,20).map(r=>{ const gid=inboundKey(r);
+        return '<li class="rp-held-row"><div class="rp-held-who"><span class="mono-iso">'+ltr(esc(r.from))+'</span>'+
+          '<span class="rp-held-subj">'+esc((r.subject||"").slice(0,60))+'</span></div>'+
+          '<div class="rp-attach"><select class="input sm rp-attach-sel">'+optHtml+'</select>'+
+          '<button class="btn ghost sm rp-attach-btn" type="button" data-gid="'+esc(gid)+'">'+esc(t("rp_attach_btn"))+'</button></div></li>';
+      }).join("")+'</ul>';
+  }
+  if(noiseUn.length){
+    h+='<details class="rp-noise"><summary>'+esc(t("rp_noise_h"))+' <span class="n">'+noiseUn.length+'</span></summary><ul class="st-keys">'+
+      noiseUn.slice(0,20).map(r=>'<li><span class="mono-iso">'+ltr(esc(r.from))+'</span>'+
+        '<span>'+esc((r.subject||"").slice(0,60))+'</span></li>').join("")+'</ul></details>';
   }
 
   h+='<div class="bar">'+
@@ -5992,6 +6145,26 @@ function renderRepliesPanel(){
      '<button class="btn ghost sm" id="rpRepair" type="button">'+esc(t("rp_repair_btn"))+'</button>'+
      '</div><div id="rpOut" class="st-line"></div>';
   host.innerHTML=h;
+
+  // Console-side re-match, with an honest in-progress and result line, never silent.
+  const rm=document.getElementById("rpRematch");
+  if(rm) rm.addEventListener("click", ()=>{
+    const o0=document.getElementById("rpOut"); if(o0) o0.textContent=t("rp_working");
+    let res=null;
+    try{ res=rematchHeld(); }
+    catch(e){ const o=document.getElementById("rpOut"); if(o) o.textContent="✕ "+t("rp_rematch_err")+" "+((e&&e.message)||""); return; }
+    const o=document.getElementById("rpOut");
+    if(o) o.textContent=t("rp_rematch_done").replace("{m}", res.matched).replace("{u}", res.held);
+    renderRepliesPanel();
+  });
+  // The manual attach picker, one per held human reply.
+  host.querySelectorAll(".rp-attach-btn").forEach(btn=>btn.addEventListener("click", ()=>{
+    const gid=btn.getAttribute("data-gid");
+    const sel=btn.parentNode.querySelector(".rp-attach-sel");
+    const slug=sel && sel.value;
+    if(!slug){ const o=document.getElementById("rpOut"); if(o) o.textContent=t("rp_attach_need"); return; }
+    if(attachReply(gid, slug)){ renderRepliesPanel(); }
+  }));
 
   const out=()=>document.getElementById("rpOut");
   const busy=k=>{ const o=out(); if(o) o.textContent=t(k); };
