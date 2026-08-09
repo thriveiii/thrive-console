@@ -318,12 +318,14 @@ function removeCustomTemplate(id){ markRemoved("tpl", id); setCustomTemplates(ge
 /* ---------- analytics (beacon hits stored same-origin) ---------- */
 const HITS = "thrive_hits_v1";
 const ENDPT = "thrive_endpoint";
-function getHits(){ try{ return JSON.parse(localStorage.getItem(HITS)||"[]"); }catch(e){ return []; } }
+function getHitsLocal(){ try{ return JSON.parse(localStorage.getItem(HITS)||"[]"); }catch(e){ return []; } }
+function getHits(){ return getHitsLocal(); }
 /* Real analytics come from the relay (a prospect's open only ever exists in THEIR browser
    otherwise). We keep them in their own bucket and merge on read, de-duplicated. */
 const RHITS="thrive_hits_remote_v1";
-function getRemoteHits(){ try{ return JSON.parse(localStorage.getItem(RHITS)||"[]"); }catch(e){ return []; } }
-function setRemoteHits(a){ try{ localStorage.setItem(RHITS, JSON.stringify(a.slice(-2000))); }catch(e){} }
+function getRemoteHitsLocal(){ try{ return JSON.parse(localStorage.getItem(RHITS)||"[]"); }catch(e){ return []; } }
+function getRemoteHits(){ return getRemoteHitsLocal(); }
+function setRemoteHits(a){ try{ localStorage.setItem(RHITS, JSON.stringify(a.slice(-2000))); }catch(e){} try{ supaMirrorHits(a); }catch(_){} }
 function hitKey(e){ return (e.type||"open")+"|"+(e.slug||"")+"|"+(e.ts||"")+"|"+(e.vid||""); }
 /* Which page events count.
 
@@ -344,7 +346,10 @@ function allHits(opts){
      next. The sender's own opens and self views are never counted, and while collection is live the old
      untagged local demo hits stay out. */
   const seen={}, out=[];
-  getRemoteHits().concat(getHits()).forEach(e=>{
+  // Reading from Supabase (Stage 3+): opens come from the migrated console_hits rows so a card's Opened
+  // survives a truncated or retired local store. Otherwise the durable local union, exactly as before.
+  const src = (supaReadable() && __supa.hits) ? __supa.hits : getRemoteHitsLocal().concat(getHitsLocal());
+  src.forEach(e=>{
     if(!e) return;
     if(!inclSelf && e.self) return;                 // never the sender's own opens or self views
     if(collecting && e.self===undefined) return;    // legacy untagged local hits are excluded while collecting
@@ -702,7 +707,7 @@ function exportBackup(){
   return { _type:"thrive-console-backup", v:2, exported:new Date().toISOString(),
     opps:getDraftsLocal(), templates:getCustomTemplates(), activity:getActivity(),
     hits:getHits(), endpoint:getEndpoint(),
-    mail:getMailLog(), emailTemplates:getEmailTemplates(), fromName:getFromName() };
+    mail:getMailLogLocal(), emailTemplates:getEmailTemplates(), fromName:getFromName() };
 }
 function importBackup(obj){
   if(!obj || obj._type!=="thrive-console-backup") throw new Error("Not a Thrive backup file");
@@ -883,7 +888,7 @@ function buildSnapshot(htmlBudget){
   // holding an old URL could push it back over a freshly verified one, which is how two devices
   // ended up calling two different deployments. The published truth is library/sync.json.
   return { v:2, updated:Date.now(), scalarsUp:scalarsUp(),
-    opps, mail:getMailLog(), quota:getSendStamps(), activity:getActivity(),
+    opps, mail:getMailLogLocal(), quota:getSendStamps(), activity:getActivity(),
     etpl:getEmailTemplates(), tpl:tpl, seed:etplSeeded(), tombs:tombs(),
     fromName:getFromName(), quotaCfg:quotaCfg(),
     vault:sealedVault() };
@@ -931,7 +936,7 @@ function syncMergeApply(remote){
     }
     if(Array.isArray(remote.mail)){                       // ledger: union by message id
       const seen={}, all=[];
-      getMailLog().concat(remote.mail).forEach(m=>{ const k=m.mid||JSON.stringify(m); if(!seen[k]){ seen[k]=1; all.push(m); } });
+      getMailLogLocal().concat(remote.mail).forEach(m=>{ const k=m.mid||JSON.stringify(m); if(!seen[k]){ seen[k]=1; all.push(m); } });
       all.sort((a,b)=> (a.ts<b.ts?-1:1)); setMailLog(all);
     }
     if(Array.isArray(remote.quota)){                      // send stamps: union (counter = union of devices)
@@ -978,8 +983,12 @@ function classifySyncError(msg){
    activity entry, because a card that arrived in `replied` by a different route
    is a card whose history has a hole in it. */
 const INBOUND="thrive_inbound_v1";
-function getInbound(){ try{ return JSON.parse(localStorage.getItem(INBOUND)||"[]"); }catch(e){ return []; } }
-function setInbound(a){ lsSet(INBOUND, JSON.stringify((a||[]).slice(-800))); }
+function getInboundLocal(){ try{ return JSON.parse(localStorage.getItem(INBOUND)||"[]"); }catch(e){ return []; } }
+/* The READ accessor for replies: the migrated console_inbound rows when reads are switched to Supabase
+   (so a reply, the international-schools one included, survives a truncated or retired local store),
+   else the current store. Writers use getInboundLocal. */
+function getInbound(){ if(supaReadable() && __supa.inbound) return __supa.inbound.slice(); return getInboundLocal(); }
+function setInbound(a){ lsSet(INBOUND, JSON.stringify((a||[]).slice(-800))); try{ supaMirrorInbound(a); }catch(_){} }
 function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
 /* Named on screen rather than counted: a reply nobody could attribute is the one
    most likely to be worth money, because it is the one nobody is expecting. */
@@ -1000,7 +1009,7 @@ async function pullInbound(ep, auth){
      is where that is fixed. */
   if(!j || !j.ok || !Array.isArray(j.records)) return 0;
 
-  const before=getInbound();
+  const before=getInboundLocal();   // merge the pull against the current store, not the read cache
   const merged=ThriveInbound.mergeInbound(before, j.records);
   /* WO-015 Phase D: attribute each reply to the chapter that was live when it
      arrived. The relay knows the slug from the reply-to tag but not the chapter,
@@ -1444,6 +1453,32 @@ function supaMirrorMail(rec){
   try{ window.ThriveSupa.upsert("console_mail", row).catch(function(e){ supaRecordDiverge("mail", row.id, e&&e.message); }); }
   catch(e){ supaRecordDiverge("mail", row.id, e&&e.message); }
 }
+/* A reply (inbound) becomes one console_inbound row, keyed on the Gmail message id (the same key the
+   inbound merge dedupes on), the whole record in the data jsonb. This is the store that was missed in
+   Stage 2, so a migrated reply, the international-schools one included, reappears once it is read back. */
+function inboundKey(r){ return String((r&&(r.gid||r.messageId||r.mid||r.id))||""); }
+function supaInboundRow(r){
+  return { id:inboundKey(r)||("in_"+(r&&r.ts||"")), opp:(r&&r.opp)||"", kind:(r&&r.kind)||"",
+    bounce:(r&&r.bounce)||"", ts:(r&&r.ts)||"", data:r, up:(r&&r.up)||Date.now() };
+}
+function supaMirrorInbound(list){
+  if(!supaOn() || !list || !list.length) return;
+  var rows=list.map(supaInboundRow);
+  try{ window.ThriveSupa.upsert("console_inbound", rows).catch(function(e){ supaRecordDiverge("inbound", "batch", e&&e.message); }); }
+  catch(e){ supaRecordDiverge("inbound", "batch", e&&e.message); }
+}
+/* An open (hit) becomes one console_hits row, keyed on hitKey (type|slug|ts|vid), the same key allHits
+   dedupes on, so a re-mirror or a re-backfill updates in place and never doubles an open. */
+function supaHitRow(e){
+  return { id:hitKey(e), slug:(e&&e.slug)||"", type:(e&&e.type)||"open", ts:(e&&e.ts)||"",
+    self:!!(e&&e.self), data:e };
+}
+function supaMirrorHits(list){
+  if(!supaOn() || !list || !list.length) return;
+  var rows=list.map(supaHitRow);
+  try{ window.ThriveSupa.upsert("console_hits", rows).catch(function(e){ supaRecordDiverge("hits", "batch", e&&e.message); }); }
+  catch(e){ supaRecordDiverge("hits", "batch", e&&e.message); }
+}
 /* Settings travel as key/value rows. Secrets are deliberately NOT mirrored: the GitHub token, the sync
    session key, and the vault key never leave for an anon-readable table. Only non-secret settings (the
    endpoint URLs, the sending caps, the from name, the closing block) are mirrored. */
@@ -1458,7 +1493,7 @@ function supaMirrorSetting(key, value){
    Upsert by key, so running it again changes nothing. It reads the current store and never writes to it. */
 async function supaBackfill(){
   if(!supaOn()) throw new Error(t("sb_need"));
-  var S=window.ThriveSupa, res={ opps:0, pages:0, templates:0, mail:0, settings:0, failed:0 };
+  var S=window.ThriveSupa, res={ opps:0, pages:0, templates:0, mail:0, inbound:0, hits:0, settings:0, failed:0 };
   var drafts=getDraftsLocal();
   for(var i=0;i<drafts.length;i++){
     var d=drafts[i];
@@ -1470,8 +1505,16 @@ async function supaBackfill(){
   var tpls=getEmailTemplates().map(function(r){ return { id:r.id, kind:"email", name:r.name||"", subject:r.subject||"", html:r.html||"", lang:r.lang||"", up:r.up||Date.now() }; })
     .concat(getCustomTemplates().map(function(r){ return { id:r.id, kind:"page", name:r.name||"", subject:r.subject||"", html:r.html||"", lang:r.lang||"", up:r.up||Date.now() }; }));
   if(tpls.length){ try{ await S.upsert("console_templates", tpls); res.templates=tpls.length; }catch(e){ res.failed++; supaRecordDiverge("template", "backfill", e&&e.message); } }
-  var mail=getMailLog().map(supaMailRow);
+  var mail=getMailLogLocal().map(supaMailRow);
   if(mail.length){ try{ await S.upsert("console_mail", mail); res.mail=mail.length; }catch(e){ res.failed++; supaRecordDiverge("mail", "backfill", e&&e.message); } }
+  var inbound=getInboundLocal().map(supaInboundRow);
+  if(inbound.length){ try{ await S.upsert("console_inbound", inbound); res.inbound=inbound.length; }catch(e){ res.failed++; supaRecordDiverge("inbound", "backfill", e&&e.message); } }
+  // Opens: the durable union the console already trusts (remote collected plus local), deduped by
+  // hitKey, so a re-run does not double an open.
+  var hseen={}, hits=[];
+  getRemoteHitsLocal().concat(getHitsLocal()).forEach(function(e){ if(!e) return; var k=hitKey(e); if(hseen[k]) return; hseen[k]=1; hits.push(e); });
+  hits=hits.map(supaHitRow);
+  if(hits.length){ try{ await S.upsert("console_hits", hits); res.hits=hits.length; }catch(e){ res.failed++; supaRecordDiverge("hits", "backfill", e&&e.message); } }
   var settings=supaSettingsRows();
   if(settings.length){ try{ await S.upsert("console_settings", settings); res.settings=settings.length; }catch(e){ res.failed++; supaRecordDiverge("setting", "backfill", e&&e.message); } }
   return res;
@@ -1492,16 +1535,25 @@ function supaSettingsRows(){
 async function supaVerify(){
   if(!supaOn()) throw new Error(t("sb_need"));
   var S=window.ThriveSupa;
+  function missing(a, b){ var have={}; (b||[]).forEach(function(x){ have[x]=1; }); return a.filter(function(x){ return !have[x]; }); }
+  // Every store that feeds a state or a reply, checked per table: each key in the current store must be
+  // present in Supabase. A table that is short names the keys it is missing.
   var oldOpps=getDraftsLocal().map(function(d){ return d.slug; });
   var oldPages=getDraftsLocal().filter(function(d){ return !!d.html; }).map(function(d){ return d.slug; });
+  var oldMail=getMailLogLocal().map(function(m){ return supaMailRow(m).id; });
+  var oldInbound=getInboundLocal().map(function(r){ return supaInboundRow(r).id; });
+  var hseen={}, oldHits=[];
+  getRemoteHitsLocal().concat(getHitsLocal()).forEach(function(e){ if(!e) return; var k=hitKey(e); if(hseen[k]) return; hseen[k]=1; oldHits.push(k); });
   var newOpps=await S.listCol("console_opps","slug");
   var newPages=await S.listCol("console_pages","slug");
-  function missing(a, b){ var have={}; (b||[]).forEach(function(x){ have[x]=1; }); return a.filter(function(x){ return !have[x]; }); }
-  var mo=missing(oldOpps,newOpps), mp=missing(oldPages,newPages);
-  return { ok:(mo.length===0 && mp.length===0),
-    opps:{ old:oldOpps.length, sup:(newOpps||[]).length, missing:mo },
-    pages:{ old:oldPages.length, sup:(newPages||[]).length, missing:mp },
-    diverge: supaDiverges().length };
+  var newMail=await S.listCol("console_mail","id");
+  var newInbound=await S.listCol("console_inbound","id");
+  var newHits=await S.listCol("console_hits","id");
+  function tab(old, sup){ var m=missing(old, sup); return { old:old.length, sup:(sup||[]).length, missing:m }; }
+  var opps=tab(oldOpps,newOpps), pages=tab(oldPages,newPages), mail=tab(oldMail,newMail),
+      inbound=tab(oldInbound,newInbound), hits=tab(oldHits,newHits);
+  var ok = !opps.missing.length && !pages.missing.length && !mail.missing.length && !inbound.missing.length && !hits.missing.length;
+  return { ok:ok, opps:opps, pages:pages, mail:mail, inbound:inbound, hits:hits, diverge: supaDiverges().length };
 }
 
 /* ---------- Supabase read cache (Stage 3) ----------
@@ -1517,10 +1569,13 @@ async function supaVerify(){
    no column for a snippet's type or template_ref, so reading templates back would be lossy; that waits
    for an additive column, raised in the PR. */
 var READ_FLAG="console_sb_read";
-var __supa={ opps:null, hydrated:false, degraded:false, ts:0 };
+var __supa={ opps:null, mail:null, inbound:null, hits:null, hydrated:false, degraded:false, ts:0 };
 var __supaHydrating=false;
 function supaReadFlagOn(){ try{ return localStorage.getItem(READ_FLAG)==="1"; }catch(e){ return false; } }
 function supaReadOn(){ return supaReadFlagOn() && supaOn() && __supa.hydrated && !__supa.degraded && !!__supa.opps; }
+// Reads are switched (and the cache usable) whenever a successful hydrate is in hand. The ledger, the
+// replies and the opens each fall back to the current store when their slice is not present.
+function supaReadable(){ return supaReadFlagOn() && supaOn() && __supa.hydrated && !__supa.degraded; }
 function supaReadDegraded(){ return supaReadFlagOn() && supaOn() && __supa.degraded; }
 function supaReadStatus(){
   return { flag:supaReadFlagOn(), configured:supaOn(), hydrated:__supa.hydrated, degraded:__supa.degraded,
@@ -1542,10 +1597,21 @@ async function supaHydrate(){
     var pages=await S.rest("console_pages", { query:"select=slug,html" });
     var pageBy={}; (pages||[]).forEach(function(p){ pageBy[p.slug]=p.html; });
     __supa.opps=(opps||[]).map(function(r){ return supaOppFromRow(r, pageBy); });
+    // The ledger, replies and opens the states derive from. Each row carries its whole record in the
+    // data jsonb, so the shape read back is exactly the shape the console wrote.
+    var mail=await S.rest("console_mail", { query:"select=data" });
+    __supa.mail=(mail||[]).map(function(r){ return r.data||{}; });
+    var inbound=await S.rest("console_inbound", { query:"select=data" });
+    __supa.inbound=(inbound||[]).map(function(r){ return r.data||{}; });
+    var hits=await S.rest("console_hits", { query:"select=data" });
+    __supa.hits=(hits||[]).map(function(r){ return r.data||{}; });
     __supa.hydrated=true; __supa.degraded=false; __supa.ts=Date.now();
+    // The send and open indexes are memoized off the old store; rebuild them from the migrated rows.
+    try{ invalidateSends(); }catch(_){}
+    try{ invalidateHits(); }catch(_){}
     return true;
   }catch(e){
-    __supa.degraded=true; __supa.hydrated=false; __supa.opps=null;
+    __supa.degraded=true; __supa.hydrated=false; __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null;
     supaRecordDiverge("read", "hydrate", e&&e.message);
     try{ logActivity("supa_read_degraded", "", String((e&&e.message)||"").slice(0,120)); }catch(_){}
     return false;
@@ -2523,7 +2589,7 @@ function initActivity(){
         const id=sel.getAttribute("data-th"), opp=sel.value;
         const th=getThreads().find(x=>x.id===id); if(!th) return;
         const ids={}; th.msgs.forEach(m=>{ if(m.mid) ids[m.mid]=1; });
-        const all=getMailLog().map(m=> (m.mid && ids[m.mid])? Object.assign({}, m, {opp:opp}) : m);
+        const all=getMailLogLocal().map(m=> (m.mid && ids[m.mid])? Object.assign({}, m, {opp:opp}) : m);
         setMailLog(all);
         logActivity("reassign", opp||"(none)", th.to+" · "+th.msgs.length+" messages");
         toast(t("act_reassigned")); render();
@@ -2621,7 +2687,7 @@ function initActivity(){
     toast(t("clear_backed_up"));
   });
   el("logExport").addEventListener("click",()=>{
-    download("thrive-activity.json", JSON.stringify({ activity:getActivity(), mail:getMailLog() },null,2), "application/json");
+    download("thrive-activity.json", JSON.stringify({ activity:getActivity(), mail:getMailLogLocal() },null,2), "application/json");
   });
   onThrive("lang","activity",()=>{ renderChips(); render(); });
   onThrive("sync","activity",render);
@@ -2901,7 +2967,11 @@ function tplUsesMonth(tp){ return !!tp && /\{\{MONTH\}\}/.test((tp.subject||"")+
 
 /* mail log: every send/copy/reply, per recipient (campaign documentation) */
 const MAILLOG = "thrive_mail_v1";
-function getMailLog(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)||"[]"); }catch(e){ return []; } }
+function getMailLogLocal(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)||"[]"); }catch(e){ return []; } }
+/* The READ accessor for the ledger: the migrated console_mail rows when reads are switched to Supabase,
+   so Sent, Opened and Replied derive from the complete rows rather than a truncated local store and no
+   card falls back to Ready. Writers (logMail, the sync merge, reassign) use getMailLogLocal. */
+function getMailLog(){ if(supaReadable() && __supa.mail) return __supa.mail.slice(); return getMailLogLocal(); }
 function setMailLog(a){ const ok=lsSet(MAILLOG, JSON.stringify(a.slice(-800))); invalidateSends(); return ok; }
 // Normalise a subject into a stable conversation root (strip Re:/Fwd:/رد: prefixes).
 function subjRoot(s){ return (s||"").replace(/^\s*(re|fwd|fw|رد|إعادة\s*توجيه)\s*:\s*/i,"").replace(/^\s*(re|fwd|fw|رد)\s*:\s*/i,"").trim().toLowerCase().slice(0,80); }
@@ -2915,7 +2985,7 @@ function threadKey(to, opp, subject){
 function newMid(){ try{ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }catch(e){ return "m"+(getMailLog().length+1); } }
 // Central ledger writer: stamps a unique message id, resolves the thread, and fixes direction.
 function logMail(rec){
-  const a=getMailLog();
+  const a=getMailLogLocal();
   const r=Object.assign({ ts:new Date().toISOString(), actor:ACTOR }, rec);
   if(!r.mid) r.mid=newMid();
   if(!r.actor) r.actor=ACTOR;
@@ -4324,6 +4394,7 @@ function initSettings(){
           (o.missing.length? " · "+esc(t("sb_v_missing"))+" "+esc(o.missing.slice(0,6).join(", ")) : "")+'</div>';
       };
       vout.innerHTML=line(t("sb_v_opps"), v.opps)+line(t("sb_v_pages"), v.pages)+
+        (v.mail? line(t("sb_v_mail"), v.mail) : "")+(v.inbound? line(t("sb_v_inbound"), v.inbound) : "")+(v.hits? line(t("sb_v_hits"), v.hits) : "")+
         (v.diverge? '<div class="warn-line" data-icon="alert">'+esc(v.diverge+" "+t("sb_v_diverge"))+'</div>' : '')+
         '<div class="'+(v.ok&&!v.diverge?"ok-line":"warn-line")+'">'+(v.ok&&!v.diverge? "✓ "+esc(t("sb_v_agree")) : "✕ "+esc(t("sb_v_disagree")))+'</div>';
     }
