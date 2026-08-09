@@ -1048,70 +1048,86 @@ function outboundSends(){
   return getMailLog().filter(function(m){ return m && m.opp && m.direction!=="in" &&
     (!m.status || m.status==="sent" || m.status==="copied" || m.status==="replied"); });
 }
-// Match one reply to an opportunity. Tiers, most reliable first, and the matched tier is recorded on the
-// row, never guessed. Subject is the weakest tier and is used only to disambiguate among sender matches
-// (a subject can never attribute on its own). Returns { opp, tier } with opp "" when nothing matches.
+// Match one reply to an opportunity. Identity is decided by the channel and by evidence of a prior send,
+// never by who owns the address: this matcher knows nothing of operator or Auth accounts, so an operator
+// address that answered a real send is a prospect reply, and an operator address that answered nothing is
+// not. Tiers, most reliable first; the matched tier AND the identifier it matched on are recorded, and an
+// unresolved tier-2 collision is flagged ambiguous rather than presented as certain. Returns
+// { opp, tier, id, ambiguous } with opp "" when nothing matches.
 function matchReply(r, sends){
   sends=sends||outboundSends();
-  if(!r) return { opp:"", tier:"" };
-  // tier header: In-Reply-To / References against a recorded wire Message-ID.
+  if(!r) return { opp:"", tier:"", id:"", ambiguous:false };
+  // tier header: In-Reply-To / References against a recorded wire Message-ID. The strongest tier: it names
+  // one specific send, so it resolves even two opportunities sent to the same address.
   var ids=inReplyIds(r);
   if(ids.length){
     for(var i=0;i<sends.length;i++){
       var wid=String(sends[i].msgid||sends[i].messageId||"").replace(/^<|>$/g,"").trim();
-      if(wid && ids.indexOf(wid)>=0) return { opp:sends[i].opp, tier:"header" };
+      if(wid && ids.indexOf(wid)>=0) return { opp:sends[i].opp, tier:"header", id:wid, ambiguous:false };
     }
   }
-  // tier sender: the reply's sender address against the opportunity's recorded recipient. Newest wins.
+  // tier sender: the reply's sender address against an opportunity's recorded recipient. A match needs a
+  // real send record, so an address alone never attributes.
   var from=String(r.from||"").trim().toLowerCase();
   var hits=[];
   if(from) for(var j=0;j<sends.length;j++){ if(String(sends[j].to||"").trim().toLowerCase()===from) hits.push(sends[j]); }
   if(hits.length){
-    // tier subject: the weakest tier, used only to disambiguate when the same address was written to for
-    // MORE THAN ONE opportunity. With a single opportunity behind the address, sender alone attributes and
-    // the recorded tier is sender; subject is never a downgrade of a clean sender match.
     var opps={}; for(var h=0;h<hits.length;h++) opps[hits[h].opp]=1;
     if(Object.keys(opps).length>1){
+      // The same address was written to for more than one opportunity. tier subject disambiguates only if
+      // it lands on exactly one opportunity; otherwise the newest send wins BUT the row is flagged
+      // ambiguous, so a guess is never presented as certain (the attach picker can correct it).
       var root=subjRoot(r.subject||"");
       if(root){
-        var subjHit=null;
-        for(var k=0;k<hits.length;k++){ if(subjRoot(hits[k].subject||"")===root){ if(!subjHit||String(hits[k].ts)>String(subjHit.ts)) subjHit=hits[k]; } }
-        if(subjHit) return { opp:subjHit.opp, tier:"subject" };
+        var subjHits=[]; for(var k=0;k<hits.length;k++){ if(subjRoot(hits[k].subject||"")===root) subjHits.push(hits[k]); }
+        var subjOpps={}; for(var s=0;s<subjHits.length;s++) subjOpps[subjHits[s].opp]=1;
+        if(subjHits.length && Object.keys(subjOpps).length===1){
+          var sh=subjHits[0]; for(var s2=1;s2<subjHits.length;s2++){ if(String(subjHits[s2].ts)>String(sh.ts)) sh=subjHits[s2]; }
+          return { opp:sh.opp, tier:"subject", id:root, ambiguous:false };
+        }
       }
+      var b2=hits[0]; for(var l2=1;l2<hits.length;l2++){ if(String(hits[l2].ts)>String(b2.ts)) b2=hits[l2]; }
+      return { opp:b2.opp, tier:"sender", id:from, ambiguous:true };
     }
     var best=hits[0];
     for(var l=1;l<hits.length;l++){ if(String(hits[l].ts)>String(best.ts)) best=hits[l]; }
-    return { opp:best.opp, tier:"sender" };
+    return { opp:best.opp, tier:"sender", id:from, ambiguous:false };
   }
-  return { opp:"", tier:"" };
+  return { opp:"", tier:"", id:"", ambiguous:false };
 }
-// Re-match every held (unmatched, non-noise) reply through the console matcher. Idempotent: it only
-// stamps opp and match_tier on existing rows, never creates a thread row, so a second run changes nothing.
-// Reads the authoritative store (Supabase when reads are switched, else the device) and writes back to
-// both, so a matched reply lands wherever the rows live and the card flips to Replied by the derivation.
+// Re-match every held reply through the console matcher. The tiers run FIRST, before the noise
+// classifier, so a genuine reply from a no-reply-looking address is never discarded; noise only decides
+// how an UNMATCHED row is displayed, never whether it may match. Idempotent: it stamps the match reason
+// (tier, the identifier it matched on, auto vs manual, and any ambiguity) on existing rows and creates no
+// thread row, so a second run changes nothing. Reads the authoritative store (Supabase when reads are
+// switched, else the device) and writes back to both, so the card flips to Replied by the derivation.
 function rematchHeld(){
   var sends=outboundSends();
   var rows=getInbound();
-  var matched=0, byTier={ header:0, sender:0, subject:0 };
+  var matched=0, byTier={ header:0, sender:0, subject:0 }, ambiguous=0;
   var next=rows.map(function(r){
-    if(!r || r.opp || r.kind==="auto" || inboundIsNoise(r)) return r;
+    // Already attributed, or machinery (a mailer-daemon bounce is not a prospect reply). Noise is NOT a
+    // gate here: it is judged only at display, after the tiers had their chance.
+    if(!r || r.opp || r.kind==="auto") return r;
     var mm=matchReply(r, sends);
     if(!mm.opp) return r;
-    matched++; byTier[mm.tier]=(byTier[mm.tier]||0)+1;
+    matched++; byTier[mm.tier]=(byTier[mm.tier]||0)+1; if(mm.ambiguous) ambiguous++;
     var chapter=r.chapter;
     if(chapter==null){ try{ chapter=activeChapter(mm.opp); }catch(e){ chapter=1; } }
-    return Object.assign({}, r, { opp:mm.opp, match_tier:mm.tier, chapter:chapter });
+    var stamped=Object.assign({}, r, { opp:mm.opp, match_tier:mm.tier, match_id:mm.id, match_mode:"auto", chapter:chapter });
+    if(mm.ambiguous) stamped.match_ambiguous=true;
+    return stamped;
   });
   if(matched){
     setInbound(next);
     try{ if(__supa.inbound) __supa.inbound=next.slice(); }catch(_){}
     try{ invalidateSends(); }catch(_){}
     try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){}
-    try{ logActivity("rematch","", matched+" matched"); }catch(_){}
+    try{ logActivity("rematch","", matched+" matched"+(ambiguous? (", "+ambiguous+" ambiguous") : "")); }catch(_){}
   }
   var held=next.filter(function(r){ return r && r.kind!=="auto" && !r.opp && !inboundIsNoise(r); }).length;
-  var noise=next.filter(function(r){ return r && !r.opp && inboundIsNoise(r); }).length;
-  return { matched:matched, byTier:byTier, held:held, noise:noise };
+  var noise=next.filter(function(r){ return r && r.kind!=="auto" && !r.opp && inboundIsNoise(r); }).length;
+  return { matched:matched, byTier:byTier, ambiguous:ambiguous, held:held, noise:noise };
 }
 // Attach one held reply to an opportunity by hand (the picker records this as tier manual, teaching
 // nothing silently). Idempotent by the reply's own key.
@@ -1119,7 +1135,8 @@ function attachReply(gid, slug){
   if(!gid || !slug) return false;
   var rows=getInbound(), touched=false;
   var next=rows.map(function(r){
-    if(r && inboundKey(r)===String(gid)){ touched=true; return Object.assign({}, r, { opp:slug, match_tier:"manual" }); }
+    if(r && inboundKey(r)===String(gid)){ touched=true;
+      return Object.assign({}, r, { opp:slug, match_tier:"manual", match_mode:"manual", match_id:String(r.from||""), match_ambiguous:false }); }
     return r;
   });
   if(!touched) return false;
@@ -3213,7 +3230,8 @@ function buildThread(slug){
     }else{
       out.push({ kind:"reply", ts:r.ts, source:"inbox", from:(r.name||r.from||""),
                  fromAddr:r.from||"", subject:r.subject||"", snippet:(r.snippet||"").slice(0,600),
-                 rule:r.rule||"none", chapter:r.chapter||1, gmail:(typeof ThriveInbound!=="undefined"&&ThriveInbound.gmailLink)?ThriveInbound.gmailLink(r):"" });
+                 rule:r.rule||"none", tier:r.match_tier||"", ambiguous:!!r.match_ambiguous,
+                 chapter:r.chapter||1, gmail:(typeof ThriveInbound!=="undefined"&&ThriveInbound.gmailLink)?ThriveInbound.gmailLink(r):"" });
     }
   });
 
@@ -7352,6 +7370,8 @@ function initModal(){
         (r.snippet? '<p class="rp-snip">'+esc(r.snippet)+'</p>':'')+
         '<div class="rp-foot">'+
           (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>':'')+
+          // An unresolved tier-2 collision is marked, never shown as certain: the operator can correct it.
+          (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>':'')+
           (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+
                  ic("link")+esc(t("rp_open_gmail"))+'</a>' : '')+
         '</div></div></li>';

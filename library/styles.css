@@ -1224,6 +1224,7 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .rp-attach .rp-attach-sel{ max-width:15rem }
 .rp-noise{ margin:var(--s-2) 0 0 }
 .rp-noise>summary{ cursor:pointer; color:var(--ink-4); font-size:var(--fs-micro) }
+.rp-ambig{ font-size:var(--fs-micro); color:var(--warn, #b26a00) }
 #boardBand:not([hidden]){ margin-block-end:var(--s-4) }
 #boardBand .mw-band{ margin:0; align-items:center }
 #boardBand .btn{ margin-inline-start:auto; flex:0 0 auto }
