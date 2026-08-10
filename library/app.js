@@ -1358,9 +1358,13 @@ function inboundIsNoise(r){
   var from=String(r.from||"").toLowerCase();
   // Local parts that never belong to a person answering an outreach page. Kept to automated words only:
   // info/support/team/hello stay OUT, since a prospect may genuinely reply from one of those.
-  if(/(^|[.+_-])(no-?reply|noreply|do-?not-?reply|donotreply|no_reply|mailer-daemon|postmaster|bounces?|dmarc|abuse|notifications?|notify|alerts?|newsletter|digest|automated|mailer|system|updates?)@/.test(from)) return true;
+  if(/(^|[.+_-])(no-?reply|noreply|do-?not-?reply|donotreply|no_reply|no-?return|noreturn|no_return|mailer-daemon|postmaster|bounces?|dmarc|abuse|notifications?|notify|alerts?|newsletter|digest|automated|mailer|system|updates?)@/.test(from)) return true;
   var host=(from.split("@")[1]||"");
   if(/(^|\.)(bounce|mailer|reply|em|news|notify|notifications?|alerts?|updates?|mail|email|marketing)\./.test(host)) return true;   // notify.example.com, mail.example.com
+  // A named email-marketing / bulk platform whose whole mail is machinery, matched by the exact sending
+  // domain (not by a local part), so a prospect who happens to write from support@ their own company is
+  // untouched. sender.net is an ESP; the eVA leads sender is caught above by its noreturn@ local part.
+  if(/(^|\.)sender\.net$/.test(host)) return true;
   // Known platform and email-service-provider sending domains: their mail is machinery, never a prospect.
   // Consumer and corporate mail hosts (gmail, outlook, yahoo, a company domain) are deliberately NOT here.
   if(/(mailchimp|sendgrid|amazonses|mailgun|postmarkapp|sparkpostmail|sendinblue|mandrillapp|hubspot|intercom|zendesk|atlassian|slack|stripe|paypal|instagram|facebookmail|facebook|digitalocean|linkedin|twitter|github|notion|dmarcian)\./.test(host)) return true;
