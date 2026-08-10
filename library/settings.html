@@ -31,141 +31,176 @@
   <div class="page-h"><h1 class="title" data-i18n="set_title">Settings</h1><span class="pill" id="ghStatus"></span></div>
   <p class="sub" data-i18n="set_sub"></p>
 
-  <section class="panel settings-panel" id="connPanel">
-    <h3 class="block-h" data-icon="check" data-i18n="conn_h">Connection health</h3>
-    <p class="sub" data-i18n="conn_sub"></p>
-    <ol class="conn-list" id="connList"></ol>
-    <div class="bar">
-      <button class="btn" id="connFix" data-i18n="conn_fix">Repair and publish</button>
-      <button class="btn ghost" id="connRun" data-i18n="conn_run">Run the checks</button>
-      <button class="btn ghost" id="connKey" data-i18n="conn_copy_key">Copy the sync key</button>
+  <!-- WO-022: Settings reorganized into five sections, one card each, in a fixed order. Structure,
+       spacing and order only; every control keeps its id, wiring and copy. No behaviour changed. -->
+
+  <!-- (1) Access: how you get into the console. The passcode is the first gate and the operator
+       sign-in is the second, both in the unlock flow; there is no access control to set here. -->
+  <section class="panel set-group">
+    <h2 class="set-group-h" data-icon="lock" data-i18n="setg_access_h">Access</h2>
+    <p class="sub" data-i18n="setg_access_sub"></p>
+    <div class="set-block">
+      <!-- Operator sign-in moved to the unlock flow (gate two), so there is one sign-in surface, not
+           two. The gate asks for the operator email and password after the passcode. -->
+      <p class="sub" data-i18n="sb_auth_moved"></p>
     </div>
-    <p class="hint" data-i18n="conn_key_hint"></p>
-    <div class="gh-result" id="connNote" hidden></div>
   </section>
 
-  <section class="panel settings-panel">
-    <h3 class="block-h" data-icon="import" data-i18n="set_gh_h">GitHub activation</h3>
-    <p class="sub" data-i18n="set_gh_sub"></p>
-    <div class="grid3">
-      <div class="field"><label for="gh_owner" data-i18n="gh_owner_l">Owner</label><input id="gh_owner" class="input" autocomplete="off"></div>
-      <div class="field"><label for="gh_repo" data-i18n="gh_repo_l">Repository</label><input id="gh_repo" class="input" autocomplete="off"></div>
-      <div class="field"><label for="gh_branch" data-i18n="gh_branch_l">Branch</label><input id="gh_branch" class="input" autocomplete="off"></div>
+  <!-- (2) Connections: where the console reaches GitHub, the relay and Supabase. -->
+  <section class="panel set-group">
+    <h2 class="set-group-h" data-icon="channel" data-i18n="setg_conn_h">Connections</h2>
+    <p class="sub" data-i18n="setg_conn_sub"></p>
+
+    <div class="set-block" id="connPanel">
+      <h3 class="block-h" data-icon="check" data-i18n="conn_h">Connection health</h3>
+      <p class="sub" data-i18n="conn_sub"></p>
+      <ol class="conn-list" id="connList"></ol>
+      <div class="bar">
+        <button class="btn" id="connFix" data-i18n="conn_fix">Repair and publish</button>
+        <button class="btn ghost" id="connRun" data-i18n="conn_run">Run the checks</button>
+        <button class="btn ghost" id="connKey" data-i18n="conn_copy_key">Copy the sync key</button>
+      </div>
+      <p class="hint" data-i18n="conn_key_hint"></p>
+      <div class="gh-result" id="connNote" hidden></div>
     </div>
-    <div class="field"><label for="gh_token" data-i18n="gh_token_l">Access token</label>
-      <input id="gh_token" class="input" type="password" autocomplete="off" spellcheck="false">
-      <div class="hint" data-i18n="gh_token_hint"></div></div>
-    <div class="bar">
-      <button class="btn" id="ghSave" data-i18n="gh_save">Save</button>
-      <button class="btn ghost" id="ghTest" data-i18n="gh_test">Test connection</button>
+
+    <div class="set-block">
+      <h3 class="block-h" data-icon="import" data-i18n="set_gh_h">GitHub activation</h3>
+      <p class="sub" data-i18n="set_gh_sub"></p>
+      <div class="grid3">
+        <div class="field"><label for="gh_owner" data-i18n="gh_owner_l">Owner</label><input id="gh_owner" class="input" autocomplete="off"></div>
+        <div class="field"><label for="gh_repo" data-i18n="gh_repo_l">Repository</label><input id="gh_repo" class="input" autocomplete="off"></div>
+        <div class="field"><label for="gh_branch" data-i18n="gh_branch_l">Branch</label><input id="gh_branch" class="input" autocomplete="off"></div>
+      </div>
+      <div class="field"><label for="gh_token" data-i18n="gh_token_l">Access token</label>
+        <input id="gh_token" class="input" type="password" autocomplete="off" spellcheck="false">
+        <div class="hint" data-i18n="gh_token_hint"></div></div>
+      <div class="bar">
+        <button class="btn" id="ghSave" data-i18n="gh_save">Save</button>
+        <button class="btn ghost" id="ghTest" data-i18n="gh_test">Test connection</button>
+      </div>
+      <div class="gh-result" id="ghResult" hidden></div>
     </div>
-    <div class="gh-result" id="ghResult" hidden></div>
-  </section>
 
-  <section class="panel settings-panel">
-    <h3 class="block-h" data-icon="spark" data-i18n="set_ep_h">Analytics endpoint</h3>
-    <p class="sub" data-i18n="set_ep_sub"></p>
-    <div class="field"><input id="ep2" class="input" type="url" data-i18n-ph="ins_endpoint_ph"></div>
-    <button class="btn ghost" id="epSave2" data-i18n="ep_save">Save endpoint</button>
-  </section>
-
-  <section class="panel settings-panel">
-    <h3 class="block-h" data-icon="mail" data-i18n="set_email_h">Email sending</h3>
-    <p class="sub" data-i18n="set_email_sub"></p>
-    <div class="grid2">
-      <div class="field"><label for="em_name" data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
-      <div class="field"><label for="em_from" data-i18n="set_from_email">Sender address</label><input id="em_from" class="input" value="hi@thriveiii.com" readonly></div>
+    <div class="set-block">
+      <h3 class="block-h" data-icon="spark" data-i18n="set_ep_h">Analytics endpoint</h3>
+      <p class="sub" data-i18n="set_ep_sub"></p>
+      <div class="field"><input id="ep2" class="input" type="url" data-i18n-ph="ins_endpoint_ph"></div>
+      <div class="bar"><button class="btn" id="epSave2" data-i18n="ep_save">Save endpoint</button></div>
     </div>
-    <div class="field"><label for="em_ep" data-i18n="set_email_ep_l">Send endpoint</label><input id="em_ep" class="input" type="url" data-i18n-ph="set_email_ph"></div>
-    <button class="btn" id="emSave" data-i18n="gh_save">Save</button>
-  </section>
 
-  <section class="panel settings-panel">
-    <h3 class="block-h" data-icon="channel" data-i18n="set_sync_h">Live sync across devices</h3>
-    <p class="sub" data-i18n="set_sync_sub"></p>
-    <div class="field"><label for="sy_ep" data-i18n="sy_ep_l">Sync endpoint (the same relay /exec URL)</label>
-      <input id="sy_ep" class="input" type="url" autocomplete="off"></div>
-    <div class="bar">
-      <button class="btn" id="syEnable" data-i18n="sy_enable">Save &amp; publish to all devices</button>
-      <button class="btn ghost" id="syVerify" data-i18n="sy_verify">Check this URL</button>
-      <button class="btn ghost" id="syNow" data-i18n="sy_now">Sync now</button>
-      <button class="btn ghost" id="syPush" data-i18n="sy_push">Force push from this device</button>
+    <div class="set-block">
+      <h3 class="block-h" data-icon="channel" data-i18n="set_sync_h">Live sync across devices</h3>
+      <p class="sub" data-i18n="set_sync_sub"></p>
+      <div class="field"><label for="sy_ep" data-i18n="sy_ep_l">Sync endpoint (the same relay /exec URL)</label>
+        <input id="sy_ep" class="input" type="url" autocomplete="off"></div>
+      <div class="bar">
+        <button class="btn" id="syEnable" data-i18n="sy_enable">Save &amp; publish to all devices</button>
+        <button class="btn ghost" id="syVerify" data-i18n="sy_verify">Check this URL</button>
+        <button class="btn ghost" id="syNow" data-i18n="sy_now">Sync now</button>
+        <button class="btn ghost" id="syPush" data-i18n="sy_push">Force push from this device</button>
+      </div>
+      <div class="quota-readout" id="syCounts"></div>
+      <div class="gh-result" id="syStatus" hidden></div>
     </div>
-    <div class="quota-readout" id="syCounts"></div>
-    <div class="gh-result" id="syStatus" hidden></div>
   </section>
 
-  <!-- Supabase storage. The console's own thrive-console project, tables prefixed console_, never any
-       other project. The connection (project URL + anon public key) is BAKED into the build now
-       (library/config.js), so there is nothing to enter: a fresh or cleared device already has it and
-       the first open is a sign-in. The manual Project URL / anon key fields and Save/Test are retired. -->
-  <section class="panel settings-panel">
-    <h3 class="block-h" data-icon="archive" data-i18n="sb_h">Storage (Supabase)</h3>
-    <p class="sub" data-i18n="sb_sub"></p>
-    <div class="in-count" id="sbConnLine" data-i18n="sb_connected">Connected to your console tables.</div>
-    <!-- Operator sign-in moved to the unlock flow (gate two), so there is one sign-in surface, not two.
-         The gate asks for the operator email and password after the passcode. -->
-    <p class="sub" data-i18n="sb_auth_moved"></p>
-    <!-- Stage 4: when signed in, Supabase is the source. Reads come from it; writes are queued and
-         pushed to it durably; this device is a cache. Migrate is a one-time push for a device that
-         still holds records made before the queue. The read toggle governs a signed-out device only. -->
-    <p class="sub" data-i18n="sb_stage4_note"></p>
-    <div class="bar">
-      <button class="btn ghost" id="sbBackfill" type="button" data-i18n="sb_backfill">Migrate this device to Supabase (one time)</button>
-      <button class="btn ghost" id="sbVerify" type="button" data-i18n="sb_verify_btn">Verify the two stores agree</button>
+  <!-- (3) Mail: how outreach goes out, and the limits that keep the address healthy. -->
+  <section class="panel set-group">
+    <h2 class="set-group-h" data-icon="mail" data-i18n="setg_mail_h">Mail</h2>
+    <p class="sub" data-i18n="setg_mail_sub"></p>
+
+    <div class="set-block">
+      <h3 class="block-h" data-icon="mail" data-i18n="set_email_h">Email sending</h3>
+      <p class="sub" data-i18n="set_email_sub"></p>
+      <div class="grid2">
+        <div class="field"><label for="em_name" data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
+        <div class="field"><label for="em_from" data-i18n="set_from_email">Sender address</label><input id="em_from" class="input" value="hi@thriveiii.com" readonly></div>
+      </div>
+      <div class="field"><label for="em_ep" data-i18n="set_email_ep_l">Send endpoint</label><input id="em_ep" class="input" type="url" data-i18n-ph="set_email_ph"></div>
+      <div class="bar"><button class="btn" id="emSave" data-i18n="gh_save">Save</button></div>
     </div>
-    <div class="quota-readout" id="sbVerifyOut"></div>
-    <div class="in-count" id="sbReadSrc"></div>
-    <div class="bar">
-      <button class="btn ghost" id="sbReadOn" type="button" data-i18n="sb_read_on">Read from Supabase</button>
-      <button class="btn ghost" id="sbReadOff" type="button" data-i18n="sb_read_off">Read from this device</button>
+
+    <div class="set-block">
+      <h3 class="block-h" data-icon="clock" data-i18n="set_quota_h">Sending limits (Resend free tier)</h3>
+      <p class="sub" data-i18n="set_quota_sub"></p>
+      <div class="quota-readout" id="quotaReadout"></div>
+      <div class="grid2">
+        <div class="field"><label for="q_daily" data-i18n="set_quota_daily">Daily cap</label><input id="q_daily" class="input" type="number" min="1" inputmode="numeric"></div>
+        <div class="field"><label for="q_monthly" data-i18n="set_quota_monthly">Monthly cap</label><input id="q_monthly" class="input" type="number" min="1" inputmode="numeric"></div>
+      </div>
+      <div class="bar"><button class="btn" id="qSave" data-i18n="gh_save">Save</button></div>
     </div>
-    <div class="gh-result" id="sbReadStatus" hidden></div>
-  </section>
 
-  <section class="panel settings-panel">
-    <h3 class="block-h" data-icon="clock" data-i18n="set_quota_h">Sending limits (Resend free tier)</h3>
-    <p class="sub" data-i18n="set_quota_sub"></p>
-    <div class="quota-readout" id="quotaReadout"></div>
-    <div class="grid2">
-      <div class="field"><label for="q_daily" data-i18n="set_quota_daily">Daily cap</label><input id="q_daily" class="input" type="number" min="1" inputmode="numeric"></div>
-      <div class="field"><label for="q_monthly" data-i18n="set_quota_monthly">Monthly cap</label><input id="q_monthly" class="input" type="number" min="1" inputmode="numeric"></div>
+    <!-- The one place a slow leak is caught while it is still slow. Outreach goes out from the address
+         clients reply to and invoices come from, so a reputation hit does not only cost the next
+         campaign. §10.5. -->
+    <div class="set-block">
+      <h3 class="block-h" data-icon="alert" data-i18n="rep_h">Sending reputation</h3>
+      <p class="sub" data-i18n="rep_sub"></p>
+      <div id="repPanel"></div>
     </div>
-    <button class="btn" id="qSave" data-i18n="gh_save">Save</button>
   </section>
 
-  <section class="panel settings-panel">
-    <h3 class="block-h" data-icon="archive" data-i18n="st_h">Storage on this device</h3>
-    <p class="sub" data-i18n="st_sub"></p>
-    <div id="stMeter"></div>
+  <!-- (4) Replies: what the relay sees in the inbox. The relay watches the inbox; this is where you
+       see that it is watching and what it could not attribute. -->
+  <section class="panel set-group">
+    <h2 class="set-group-h" data-icon="mail" data-i18n="setg_replies_h">Replies</h2>
+    <p class="sub" data-i18n="setg_replies_sub"></p>
+    <div class="set-block">
+      <h3 class="block-h" data-icon="mail" data-i18n="rp_h">Replies</h3>
+      <p class="sub" data-i18n="rp_sub"></p>
+      <div id="rpPanel"></div>
+    </div>
   </section>
 
-  <!-- Replies. The relay watches the inbox; this panel is where you see that it is
-       watching, what it could not attribute, and how much room the shared store has
-       left. The store measurement lives here because a full store is the reason a
-       reply would fail to arrive, and the two questions belong on one screen. -->
-  <section class="panel settings-panel">
-    <h3 class="block-h" data-icon="mail" data-i18n="rp_h">Replies</h3>
-    <p class="sub" data-i18n="rp_sub"></p>
-    <div id="rpPanel"></div>
-  </section>
+  <!-- (5) Data: where records live, and how to move, check and back them up. Supabase is where the
+       records live and where the read source, migrate and verify controls belong; the whole Supabase
+       card is kept intact here rather than split across two sections (its connection is also reported
+       in the Connection health checklist above). The device store and the backup follow it. -->
+  <section class="panel set-group">
+    <h2 class="set-group-h" data-icon="archive" data-i18n="setg_data_h">Data</h2>
+    <p class="sub" data-i18n="setg_data_sub"></p>
 
-  <!-- The one place a slow leak is caught while it is still slow. Outreach goes
-       out from the address clients reply to and invoices come from, so a
-       reputation hit does not only cost the next campaign. §10.5. -->
-  <section class="panel settings-panel">
-    <h3 class="block-h" data-icon="alert" data-i18n="rep_h">Sending reputation</h3>
-    <p class="sub" data-i18n="rep_sub"></p>
-    <div id="repPanel"></div>
-  </section>
+    <!-- Supabase storage. The console's own thrive-console project, tables prefixed console_, never any
+         other project. The connection (project URL + anon public key) is BAKED into the build now
+         (library/config.js), so there is nothing to enter: a fresh or cleared device already has it and
+         the first open is a sign-in. The manual Project URL / anon key fields and Save/Test are retired. -->
+    <div class="set-block">
+      <h3 class="block-h" data-icon="archive" data-i18n="sb_h">Storage (Supabase)</h3>
+      <p class="sub" data-i18n="sb_sub"></p>
+      <div class="in-count" id="sbConnLine" data-i18n="sb_connected">Connected to your console tables.</div>
+      <!-- Stage 4: when signed in, Supabase is the source. Reads come from it; writes are queued and
+           pushed to it durably; this device is a cache. Migrate is a one-time push for a device that
+           still holds records made before the queue. The read toggle governs a signed-out device only. -->
+      <p class="sub" data-i18n="sb_stage4_note"></p>
+      <div class="bar">
+        <button class="btn ghost" id="sbBackfill" type="button" data-i18n="sb_backfill">Migrate this device to Supabase (one time)</button>
+        <button class="btn ghost" id="sbVerify" type="button" data-i18n="sb_verify_btn">Verify the two stores agree</button>
+      </div>
+      <div class="quota-readout" id="sbVerifyOut"></div>
+      <div class="in-count" id="sbReadSrc"></div>
+      <div class="bar">
+        <button class="btn ghost" id="sbReadOn" type="button" data-i18n="sb_read_on">Read from Supabase</button>
+        <button class="btn ghost" id="sbReadOff" type="button" data-i18n="sb_read_off">Read from this device</button>
+      </div>
+      <div class="gh-result" id="sbReadStatus" hidden></div>
+    </div>
 
-  <section class="panel">
-    <h3 class="block-h" data-icon="archive" data-i18n="set_backup_h">Backup &amp; restore</h3>
-    <p class="sub" data-i18n="set_backup_sub"></p>
-    <div class="bar">
-      <button class="btn" id="bkExport" data-icon="archive" data-i18n="bk_export">Export backup</button>
-      <label class="btn ghost" for="bkFile" data-icon="import" data-i18n="bk_import">Restore from file</label>
-      <input id="bkFile" type="file" accept="application/json,.json" hidden>
+    <div class="set-block">
+      <h3 class="block-h" data-icon="archive" data-i18n="st_h">Storage on this device</h3>
+      <p class="sub" data-i18n="st_sub"></p>
+      <div id="stMeter"></div>
+    </div>
+
+    <div class="set-block">
+      <h3 class="block-h" data-icon="archive" data-i18n="set_backup_h">Backup &amp; restore</h3>
+      <p class="sub" data-i18n="set_backup_sub"></p>
+      <div class="bar">
+        <button class="btn" id="bkExport" data-icon="archive" data-i18n="bk_export">Export backup</button>
+        <label class="btn ghost" for="bkFile" data-icon="import" data-i18n="bk_import">Restore from file</label>
+        <input id="bkFile" type="file" accept="application/json,.json" hidden>
+      </div>
     </div>
   </section>
 </main>
