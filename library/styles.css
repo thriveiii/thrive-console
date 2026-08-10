@@ -1763,13 +1763,24 @@ body.modal-open{
 .rp-top{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s-2) }
 .rp-who{ font-weight:600 }
 .rp-when,.rp-from{ font-size:12px; color:var(--ink-4) }
-.rp-subj{ margin-block-start:var(--s-2); color:var(--ink-2) }
+.rp-subj{ margin-block-start:var(--s-2); color:var(--ink-2); unicode-bidi:isolate }
+.rp-who{ unicode-bidi:isolate }
 /* The snippet is 300 characters by design: the full body stays in Gmail, so
-   private correspondence never enters a blob that syncs to every device. */
+   private correspondence never enters a blob that syncs to every device.
+   dir="auto" in the markup plus unicode-bidi:isolate here gives each message its own reading
+   direction, so an Arabic reply reads right-to-left and never interleaves with a neighbour. */
 .rp-snip{
   margin:var(--s-2) 0 0; color:var(--ink-3); font-size:14px; line-height:1.6;
-  white-space:pre-wrap; overflow-wrap:anywhere;
+  white-space:pre-wrap; overflow-wrap:anywhere; unicode-bidi:isolate;
 }
+/* The reply composer: answer the prospect in this thread, dark and aligned, mirrored in RTL. */
+.th-reply-box{ margin-block-start:var(--s-4); padding-block-start:var(--s-3); border-block-start:1px solid var(--hair);
+  display:flex; flex-direction:column; gap:var(--s-2) }
+.th-reply-to{ font-size:var(--fs-micro); color:var(--ink-4) }
+.th-reply-text{ min-height:6em; resize:vertical; line-height:1.6 }
+.th-reply-bar{ display:flex; align-items:center; justify-content:space-between; gap:var(--s-2); flex-wrap:wrap }
+.th-reply-from{ font-size:var(--fs-micro); color:var(--ink-4) }
+.th-reply-out{ font-size:var(--fs-micro); color:var(--ink-3); min-height:1.2em }
 .rp-foot{
   display:flex; align-items:center; justify-content:space-between;
   gap:var(--s-2); margin-block-start:var(--s-3); flex-wrap:wrap;

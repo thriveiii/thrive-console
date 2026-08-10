@@ -3681,6 +3681,136 @@ function activeChapter(slug){
   getMailLog().forEach(m=>{ if(m && m.opp===slug && (m.chapter||1)>ch) ch=m.chapter||1; });
   return ch;
 }
+
+/* ---------- WO-020: a real reply editor and durable, correctly-rendered threads ----------
+   The thread could be read but not answered, and an Arabic reply bidi-reordered into tangled lines
+   because its text carried no direction of its own. threadListHtml renders each message isolated in
+   its own reading direction (dir="auto", unicode-bidi:isolate), so Arabic reads right-to-left with
+   joined letters and English left-to-right, side by side, never interleaved; every reply body is
+   escaped at render, so a hostile body is inert. replyTarget resolves who a reply answers and what it
+   threads onto, scoped to this slug's own ledger and inbox so one prospect's thread never crosses into
+   another's. sendThreadReply answers from hi@thriveiii.com through the relay, carrying In-Reply-To and
+   References plus a fresh Message-ID, and logs the outbound so it appears in the thread in order. */
+
+// Who a thread reply goes to, in which language, and what message it threads onto. A spawned child
+// answers its one named recipient; a single opportunity answers the address that actually replied,
+// else its recorded recipient. Everything is read from THIS slug only: no cross-thread leak by design.
+function replyTarget(slug){
+  slug=String(slug||""); const o=getDraft(slug)||{};
+  let addr="", name="", lang=(getLang()==="ar"?"ar":"en"), subject="", inReplyTo="", refs=[];
+  const replies=inboundFor(slug).filter(r=>r && r.kind!=="auto")
+    .sort((a,b)=> String(a.ts)<String(b.ts)?1:-1);
+  if(replies.length){
+    const r0=replies[0];
+    addr=String(r0.from||"").trim(); name=String(r0.name||"").trim(); subject=r0.subject||"";
+    const rid=String(r0.messageId||r0.mid||"").trim(); if(rid) inReplyTo=rid.replace(/^<|>$/g,"");
+    (inReplyIds(r0)||[]).forEach(x=>refs.push(String(x).replace(/^<|>$/g,"")));
+  }
+  if(o.spawned_from && o.spawned_from.addr){ addr=String(o.spawned_from.addr).trim(); if(!name) name=String(o.spawned_from.name||"").trim(); }
+  if(!addr){ const recs=campaignRecipients(o); if(recs && recs.length){ addr=String(recs[0].addr||"").trim(); if(!name) name=String(recs[0].name||"").trim(); } }
+  const rec=(campaignRecipients(o)||[]).find(x=> String(x.addr||"").trim().toLowerCase()===addr.toLowerCase());
+  if(rec && rec.lang){ lang=(rec.lang==="ar"?"ar":"en"); }
+  else if(/[؀-ۿ]/.test(subject)) lang="ar";
+  if(!inReplyTo){
+    const sends=getMailLog().filter(m=> m && m.opp===slug && m.direction!=="in" && m.msgid)
+      .sort((a,b)=> String(a.ts)<String(b.ts)?1:-1);
+    if(sends.length) inReplyTo=String(sends[0].msgid||"").replace(/^<|>$/g,"");
+  }
+  return { addr:addr, name:name, lang:lang, subject:subject, inReplyTo:inReplyTo, refs:refs };
+}
+
+// A greeting and a closing in the RECIPIENT's language (not the UI language), so the operator writes
+// the middle. Message content, so it is composed here rather than through the UI dictionary.
+function replyGreeting(tgt){
+  const ar=(tgt && tgt.lang==="ar"); const nm=(tgt && tgt.name)? (" "+String(tgt.name).trim()) : "";
+  const hi = ar ? ("مرحبًا"+nm+"،") : ("Hi"+nm+",");
+  const bye = ar ? "تحياتي،\nفريق ثرايف" : "Best,\nThrive Digital Solutions";
+  return hi+"\n\n\n"+bye;
+}
+
+// The thread as HTML: each message escaped and isolated in its own direction. Pure and testable.
+function threadListHtml(slug){
+  const entries=buildThread(slug);
+  const when=ts=> fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"");
+  const label=a=>{ const k="act_"+a; const v=t(k); return v===k? a : v; };
+  if(!entries.length) return '<div class="mw-empty">'+ic("clock")+'<p>'+esc(t("mw_hist_empty"))+'</p></div>';
+  function line(icn, what, detail, ts){
+    return '<li class="th-line"><span class="th-icn">'+ic(icn)+'</span>'+
+      '<span class="th-what">'+esc(what)+'</span>'+
+      (detail? '<span class="th-detail" dir="auto">'+detail+'</span>':'')+
+      '<span class="th-when">'+ltr(when(ts))+'</span></li>';
+  }
+  function replyCard(r){
+    return '<li class="th-reply"'+(r.id? ' data-rid="'+esc(r.id)+'"' : '')+'><div class="rp-card">'+
+      '<div class="rp-top"><span class="rp-who" dir="auto">'+esc(r.from||t("th_someone"))+'</span>'+
+      '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
+      (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
+      (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>':'')+
+      (r.snippet? '<p class="rp-snip" dir="auto">'+esc(r.snippet)+'</p>':'')+
+      '<div class="rp-foot">'+
+        (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>':'')+
+        (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>':'')+
+        (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+ic("link")+esc(t("rp_open_gmail"))+'</a>':'')+
+      '</div></div></li>';
+  }
+  let html='<ol class="th-list">', lastCh=0;
+  entries.forEach(e=>{
+    const ch=e.chapter||1;
+    if(lastCh && ch>lastCh) html+='<li class="th-chapter"><span>'+esc(t("th_chapter_"+(ch===2?"offer":"more")))+'</span></li>';
+    if(ch>lastCh) lastCh=ch;
+    if(e.kind==="sent") html+=line("mail", t("th_sent"), (e.subject? '<span dir="auto">'+esc(e.subject)+'</span>':"")+(e.channel? ' <span class="th-chan">'+esc(e.channel)+'</span>':''), e.ts);
+    else if(e.kind==="open") html+=line("globe", t("th_opened"), "", e.ts);
+    else if(e.kind==="reply") html+=replyCard(e);
+    else if(e.kind==="auto") html+=line("alert", t(e.bounce==="hard"?"rp_bounce_hard":e.bounce==="soft"?"rp_bounce_soft":"rp_auto"), "", e.ts);
+    else if(e.kind==="act") html+=line("clock", label(e.action), e.detail? '<span dir="auto">'+esc(e.detail)+'</span>':"", e.ts);
+  });
+  return html+'</ol>';
+}
+
+// The reply composer for a thread: a textarea prefilled with a greeting and closing in the recipient's
+// language, and a Send that answers from hi@thriveiii.com. Empty when there is no address to answer.
+function replyComposerHtml(slug){
+  const tgt=replyTarget(slug);
+  if(!tgt.addr) return '';
+  return '<form class="th-reply-box" autocomplete="off" data-slug="'+esc(slug)+'">'+
+    '<div class="th-reply-to">'+esc(t("th_reply_to"))+' <span class="mono-iso">'+ltr(esc(tgt.addr))+'</span></div>'+
+    '<textarea class="input th-reply-text" dir="auto" rows="5" placeholder="'+esc(t("th_reply_ph"))+'">'+esc(replyGreeting(tgt))+'</textarea>'+
+    '<div class="th-reply-bar"><span class="th-reply-from">'+esc(t("th_reply_from"))+' <span class="mono-iso">'+ltr("hi@thriveiii.com")+'</span></span>'+
+    '<button class="btn sm th-reply-send" type="submit">'+esc(t("th_reply_send"))+'</button></div>'+
+    '<div class="th-reply-out" role="status"></div></form>';
+}
+
+// Send a reply into the thread through the relay. From hi@thriveiii.com, threaded by In-Reply-To /
+// References and a fresh Message-ID, logged as an outbound send so buildThread shows it in order.
+// Never touches another slug's ledger. Self-test sends only for the device gate; sends no outreach.
+async function sendThreadReply(slug, bodyText){
+  slug=String(slug||"");
+  const ep=getEmailEndpoint(); if(!ep) throw new Error(t("th_reply_no_ep"));
+  const tgt=replyTarget(slug); if(!tgt.addr) throw new Error(t("th_reply_no_addr"));
+  const body=String(bodyText||"").trim(); if(!body) throw new Error(t("th_reply_empty"));
+  const baseSubj=String(tgt.subject||"").trim();
+  const subject=/^\s*(re|رد)\s*:/i.test(baseSubj) ? baseSubj : ("Re: "+(baseSubj||t("th_reply_subj_fallback")));
+  const msgid=newMessageId();                                   // "<c...@thriveiii.com>"
+  const html='<div dir="'+(tgt.lang==="ar"?"rtl":"ltr")+'" style="font-family:Arial,Helvetica,sans-serif;white-space:pre-wrap">'+
+             esc(body).replace(/\n/g,"<br>")+'</div>';
+  const headers=Object.assign({}, ThriveStore.outboundHeaders(slug), { "Message-ID": msgid });
+  if(tgt.inReplyTo){
+    headers["In-Reply-To"]="<"+tgt.inReplyTo+">";
+    const chain=(tgt.refs||[]).concat([tgt.inReplyTo]).filter(function(v,i,a){ return v && a.indexOf(v)===i; });
+    headers["References"]=chain.map(x=>"<"+x+">").join(" ");
+  }
+  const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:tgt.addr,
+    subject:subject, html:html, text:body, headers:headers, slug:slug };
+  const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
+  const txt=await r.text(); if(!r.ok) throw new Error(r.status+" "+String(txt).slice(0,140));
+  let parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
+  if(parsed && parsed.ok===false) throw new Error(parsed.error||"send failed");
+  const id=(parsed && parsed.id)||"";
+  logActivity("email", slug, tgt.addr+" · "+subject);
+  logMail({ opp:slug, to:tgt.addr, toName:tgt.name, subject:subject, preview:body.slice(0,600),
+    provider:"endpoint", status:"sent", id:id, msgid:msgid, chapter:activeChapter(slug) });
+  return { ok:true, to:tgt.addr, msgid:msgid, subject:subject };
+}
 /* WO-015 §6: the lane reflects the furthest state of the ACTIVE chapter. For the
    only chapter that exists today, chapter one, this is exactly effStage, so the
    board does not move a single card: effStage stays the single authority (I3) for
@@ -7790,59 +7920,25 @@ function initModal(){
   function renderHistory(o){
     const box=el("modalHistory"); if(!box) return;
     const slug=(o&&o.slug)||current;
-    const entries=buildThread(slug);
-    const when=ts=>fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"");
-    const label=a=>{ const k="act_"+a; const v=t(k); return v===k? a : v; };
+    // The thread (each message escaped and direction-isolated) then the reply composer beneath it.
+    box.innerHTML=threadListHtml(slug)+replyComposerHtml(slug);
 
-    if(!entries.length){ box.innerHTML='<div class="mw-empty">'+ic("clock")+
-      '<p>'+esc(t("mw_hist_empty"))+'</p></div>'; return; }
-
-    function line(icn, what, detail, ts){
-      return '<li class="th-line"><span class="th-icn">'+ic(icn)+'</span>'+
-        '<span class="th-what">'+esc(what)+'</span>'+
-        (detail? '<span class="th-detail">'+detail+'</span>':'')+
-        '<span class="th-when">'+ltr(when(ts))+'</span></li>';
-    }
-    function replyCard(r){
-      return '<li class="th-reply"'+(r.id? ' data-rid="'+esc(r.id)+'"' : '')+'><div class="rp-card">'+
-        '<div class="rp-top"><span class="rp-who">'+esc(r.from||t("th_someone"))+'</span>'+
-        '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
-        (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
-        (r.subject? '<div class="rp-subj">'+esc(r.subject)+'</div>':'')+
-        (r.snippet? '<p class="rp-snip">'+esc(r.snippet)+'</p>':'')+
-        '<div class="rp-foot">'+
-          (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>':'')+
-          // An unresolved tier-2 collision is marked, never shown as certain: the operator can correct it.
-          (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>':'')+
-          (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+
-                 ic("link")+esc(t("rp_open_gmail"))+'</a>' : '')+
-        '</div></div></li>';
-    }
-    let html='<ol class="th-list">', lastCh=0;
-    entries.forEach(e=>{
-      /* The chapter divider marks where the offer began (Phase C). It appears the
-         moment an entry carries a higher chapter than the one before it, so a
-         thread that never converted shows no divider at all. */
-      const ch=e.chapter||1;
-      if(lastCh && ch>lastCh){
-        html+='<li class="th-chapter"><span>'+esc(t("th_chapter_"+(ch===2?"offer":"more")))+'</span></li>';
-      }
-      if(ch>lastCh) lastCh=ch;
-      if(e.kind==="sent"){
-        html+=line("mail", t("th_sent"),
-          (e.subject? esc(e.subject) : "")+(e.channel? ' <span class="th-chan">'+esc(e.channel)+'</span>':''), e.ts);
-      }else if(e.kind==="open"){
-        html+=line("globe", t("th_opened"), "", e.ts);
-      }else if(e.kind==="reply"){
-        html+=replyCard(e);
-      }else if(e.kind==="auto"){
-        html+=line("alert", t(e.bounce==="hard"?"rp_bounce_hard":e.bounce==="soft"?"rp_bounce_soft":"rp_auto"), "", e.ts);
-      }else if(e.kind==="act"){
-        html+=line("clock", label(e.action), e.detail? esc(e.detail):"", e.ts);
+    const rbox=box.querySelector(".th-reply-box");
+    if(rbox) rbox.addEventListener("submit", async (ev)=>{
+      ev.preventDefault();
+      const ta=rbox.querySelector(".th-reply-text"), btn=rbox.querySelector(".th-reply-send"), out=rbox.querySelector(".th-reply-out");
+      const body=(ta && ta.value || "").trim();
+      if(!body){ if(out) out.textContent=t("th_reply_empty"); return; }
+      btn.disabled=true; const old=btn.textContent; btn.textContent=t("th_reply_sending"); if(out) out.textContent="";
+      try{
+        await sendThreadReply(slug, body);
+        if(out) out.textContent="✓ "+t("th_reply_sent");
+        renderHistory(o);                                   // the sent reply now appears in the thread, in order
+      }catch(e){
+        if(out) out.textContent="✕ "+t("th_reply_err")+": "+((e&&e.message)||"");
+        btn.disabled=false; btn.textContent=old;
       }
     });
-    html+='</ol>';
-    box.innerHTML=html;
   }
 
   /* ---- tabs -------------------------------------------------------------- */
