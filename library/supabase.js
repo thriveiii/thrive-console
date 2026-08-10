@@ -62,6 +62,7 @@
   function setSession(s) { try { s ? localStorage.setItem(SESSION_KEY, JSON.stringify(s)) : localStorage.removeItem(SESSION_KEY); } catch (e) {} }
   function signedIn() { var s = session(); return !!(s && s.access_token); }
   function authEmail() { var s = session(); return (s && s.email) || ""; }
+  function authUid() { var s = session(); return (s && s.uid) || ""; }   // the operator's Supabase user id, for per-operator prefs
   function bearer() { var s = session(); var c = cfg(); return (s && s.access_token) ? s.access_token : c.anon; }
   async function signIn(email, password) {
     var c = cfg(); if (!c.url || !c.anon) throw new Error("supabase not configured");
@@ -73,7 +74,7 @@
     if (!res.ok || !data || !data.access_token) {
       throw new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + res.status));
     }
-    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email });
+    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
     return { ok: true, email: email };
   }
   async function signOut() {
@@ -90,7 +91,7 @@
       });
       var data = null; try { data = await res.json(); } catch (e) {}
       if (res.ok && data && data.access_token) {
-        setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: s.email });
+        setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: s.email, uid: s.uid || (data.user && data.user.id) || "" });
         return true;
       }
     } catch (e) {}
@@ -188,7 +189,7 @@
     upsertPage: upsertPage, getPage: getPage, upsertOpp: upsertOpp, listOpps: listOpps,
     upsert: upsert, del: del, listCol: listCol,
     signIn: signIn, signOut: signOut, session: session, signedIn: signedIn,
-    authEmail: authEmail, refresh: refresh,
+    authEmail: authEmail, authUid: authUid, refresh: refresh,
     tables: function () { return Object.keys(TABLES); },
     URL_KEY: URL_KEY, ANON_KEY: ANON_KEY
   };

@@ -222,6 +222,8 @@
       if (ok) {
         opClearFails();
         if (typeof window.logActivity === "function") { try { window.logActivity("operator_login", "", "signed in"); } catch (ex) {} }
+        // Signing in lands on the board (the working surface), not wherever the hash last pointed (Settings).
+        try { location.hash = "board"; } catch (ex) {}
         finish();
       } else {
         opRecordFail();

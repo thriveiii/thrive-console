@@ -808,6 +808,57 @@ function cardNewActivity(slug){
   }
   return n;
 }
+// The most recent new item on a card since it was last opened, so the badge can land ON it: a reply opens
+// the thread scrolled to that reply, an open opens the overview scrolled to the opens summary. Reply wins a
+// tie because it is the higher call to action.
+function cardNewTarget(slug){
+  var since=cardSeen()[slug]||"", newest=null;
+  function consider(t){ if(!newest || t.ts>newest.ts) newest=t; }
+  function scanReplies(s){ inboundFor(s).forEach(function(r){ if(r && r.kind!=="auto" && String(r.ts||"")>since) consider({ kind:"reply", tab:"history", id:inboundKey(r), ts:String(r.ts) }); }); }
+  scanReplies(slug);
+  var self=getDraft(slug);
+  if(self && self.spawned_from && self.spawned_from.parent){
+    var pa=String(self.spawned_from.addr||"").trim().toLowerCase();
+    inboundFor(self.spawned_from.parent).forEach(function(r){ if(r && r.kind!=="auto" && String(r.from||"").trim().toLowerCase()===pa && String(r.ts||"")>since) consider({ kind:"reply", tab:"history", id:inboundKey(r), ts:String(r.ts) }); });
+  }
+  var lastOpen="";
+  allHits().forEach(function(e){ if(e && e.slug===slug && (!e.type||e.type==="open") && String(e.ts||"")>since && String(e.ts)>lastOpen) lastOpen=String(e.ts); });
+  if(lastOpen && (!newest || lastOpen>newest.ts)) consider({ kind:"open", tab:"overview", id:"", ts:lastOpen });
+  return newest;
+}
+
+/* ---------- per-operator memory (P1.6) ----------
+   Each operator carries their own UI preferences, keyed to their Supabase user id, so the console
+   calibrates per person: language, and the board's own view state (the tray, the active lane). This is
+   view state, NOT access: equal rights on data still holds (P2). No new column or table is needed, the
+   prefs ride the existing console_settings (key/value jsonb) as one row per operator, key op_prefs:<uid>.
+   The console reads only the signed-in operator's own row, so one operator's view never leaks to another. */
+var __opPrefs=null, __opApplying=false, __opSaveTimer=null;
+function opPrefsKey(){ try{ var u=window.ThriveSupa && window.ThriveSupa.authUid && window.ThriveSupa.authUid(); return u ? ("op_prefs:"+u) : ""; }catch(e){ return ""; } }
+async function opPrefsLoad(){
+  var key=opPrefsKey(); if(!key || !supaOn()) return;
+  try{
+    var rows=await window.ThriveSupa.rest("console_settings", { query:"key=eq."+encodeURIComponent(key)+"&select=value" });
+    __opPrefs=(rows && rows[0] && rows[0].value) || {};
+  }catch(e){ __opPrefs=__opPrefs||{}; return; }
+  __opApplying=true;                                       // applying must not write back and loop
+  try{
+    if(__opPrefs.lang==="ar" || __opPrefs.lang==="en"){ try{ localStorage.setItem("thrive_lang", __opPrefs.lang); }catch(_){} if(typeof setLang==="function") try{ setLang(__opPrefs.lang); }catch(_){} }
+    if(__opPrefs.board && typeof __opPrefs.board==="object"){ try{ localStorage.setItem("thrive_board_v1", JSON.stringify(__opPrefs.board)); }catch(_){} }
+  }catch(e){}
+  __opApplying=false;
+  try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){}
+}
+function opPrefRemember(k, v){
+  if(__opApplying) return;
+  var key=opPrefsKey(); if(!key || !supaOn()) return;     // only a signed-in operator has a memory
+  __opPrefs=__opPrefs||{}; __opPrefs[k]=v;
+  if(__opSaveTimer) clearTimeout(__opSaveTimer);
+  __opSaveTimer=setTimeout(function(){ try{ window.ThriveSupa.upsert("console_settings", { key:key, value:__opPrefs }).catch(function(){}); }catch(e){} }, 400);
+}
+// Read on sign-in; write on change. Language is the clearest per-person setting; the board view state
+// (thrive_board_v1) rides along. Both already exist in the UI; no new setting is invented here. The
+// onThrive registrations live below, after __hooks is declared (registerOpPrefHooks).
 
 /* The living surface: a group card's recipients panel and its aggregate header, both read from the one
    campaignStats / recipientState derivation, so the card and Insights can never disagree. */
@@ -824,7 +875,9 @@ function recipientsPanelHtml(o){
     var st=recipientState(o.slug, r.addr);
     var chip='<span class="rc-chip rc-'+esc(st.chip)+'">'+esc(t("rc_"+st.chip))+'</span>';
     var open=(st.chip==="replied" && st.child)? ' <button class="btn ghost sm rc-open" type="button" data-child="'+esc(st.child)+'">'+esc(t("rc_open_child"))+'</button>' : '';
-    var last=st.last? '<span class="rc-last">'+esc(ltr(fmtWhenShort(st.last)))+'</span>' : '';
+    // ltr() already returns an escaped, isolated span; wrapping it in esc() again printed the tag as
+    // literal text (the "<span class=mono-iso>7/31/26, 5:02 PM</span>" symptom). Insert it as markup.
+    var last=st.last? '<span class="rc-last">'+ltr(fmtWhenShort(st.last))+'</span>' : '';
     return '<li class="rc-row"><span class="rc-name">'+esc(r.name||t("rc_no_name"))+'</span>'+
       '<span class="rc-addr mono-iso">'+ltr(esc(r.addr))+'</span>'+chip+open+last+'</li>';
   }).join("");
@@ -967,6 +1020,10 @@ function fireThrive(kind){
 window.onThriveSync  = function(){ fireThrive("sync"); };
 window.onLangApplied = function(){ fireThrive("lang"); renderOperatorChip(); };
 window.onGateUnlocked= function(){ fireThrive("unlock"); renderOperatorChip(); };
+// Per-operator memory hooks, registered here now that __hooks exists: read prefs on sign-in, remember the
+// language on change. (Defined earlier as hoisted functions; only the registration must follow __hooks.)
+onThrive("unlock","opprefs", function(){ opPrefsLoad(); });
+onThrive("lang","opprefs", function(){ try{ opPrefRemember("lang", getLang()); }catch(_){} });
 
 /* The header carries the signed-in operator email and a one-tap sign-out, and nothing else about who they
    are: no role, no title, every operator equal. Sign-out returns to the operator sign-in step (gate two),
@@ -1249,6 +1306,10 @@ function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
 /* Named on screen rather than counted: a reply nobody could attribute is the one
    most likely to be worth money, because it is the one nobody is expecting. */
 function inboundUnmatched(){ return getInbound().filter(r=> r && r.kind!=="auto" && !r.opp); }
+// The ONE derivation of the unmatched-human set, read by both the board badge and the inbox header, so the
+// number cannot drift. Automated mail (kind auto, plus the no-reply and platform senders inboundIsNoise
+// catches) is excluded here and folded into the collapsed noise group, never counted as human.
+function unmatchedHuman(){ return inboundUnmatched().filter(function(r){ return !inboundIsNoise(r); }); }
 
 /* ---------- reply matching (P1) ----------
    The relay's tag/thread/sender rules miss a human reply that lands on the From line from a different
@@ -1275,12 +1336,16 @@ function inboundIsNoise(r){
   if(!r) return true;
   if(r.kind==="auto") return true;                                  // the relay already flags mailer-daemon and auto-submitted
   var from=String(r.from||"").toLowerCase();
-  if(/(^|[.+_-])(no-?reply|noreply|do-?not-?reply|donotreply|mailer-daemon|postmaster|bounces?|dmarc|abuse)@/.test(from)) return true;
+  // Local parts that never belong to a person answering an outreach page. Kept to automated words only:
+  // info/support/team/hello stay OUT, since a prospect may genuinely reply from one of those.
+  if(/(^|[.+_-])(no-?reply|noreply|do-?not-?reply|donotreply|no_reply|mailer-daemon|postmaster|bounces?|dmarc|abuse|notifications?|notify|alerts?|newsletter|digest|automated|mailer|system|updates?)@/.test(from)) return true;
   var host=(from.split("@")[1]||"");
-  if(/(^|\.)(bounce|mailer|reply|em|news|notify)\./.test(host)) return true;   // notify.example.com, bounce.example.com
-  if(/(mailchimp|sendgrid|amazonses|instagram|facebookmail|digitalocean|linkedin|dmarcian|mandrillapp)\./.test(host)) return true;
+  if(/(^|\.)(bounce|mailer|reply|em|news|notify|notifications?|alerts?|updates?|mail|email|marketing)\./.test(host)) return true;   // notify.example.com, mail.example.com
+  // Known platform and email-service-provider sending domains: their mail is machinery, never a prospect.
+  // Consumer and corporate mail hosts (gmail, outlook, yahoo, a company domain) are deliberately NOT here.
+  if(/(mailchimp|sendgrid|amazonses|mailgun|postmarkapp|sparkpostmail|sendinblue|mandrillapp|hubspot|intercom|zendesk|atlassian|slack|stripe|paypal|instagram|facebookmail|facebook|digitalocean|linkedin|twitter|github|notion|dmarcian)\./.test(host)) return true;
   var subj=String(r.subject||"").toLowerCase();
-  if(/report domain:|dmarc aggregate report|aggregate report for|delivery status notification|undeliverable|unsubscribe from this/.test(subj)) return true;
+  if(/report domain:|dmarc aggregate report|aggregate report for|delivery status notification|undeliverable|unsubscribe from this|out of office|automatic reply|auto-?reply|read receipt|verify your|confirm your|password reset|new sign-?in|new login|security alert|weekly digest|daily digest/.test(subj)) return true;
   return false;
 }
 
@@ -3473,7 +3538,7 @@ function buildThread(slug){
     if(r.kind==="auto"){
       out.push({ kind:"auto", ts:r.ts, bounce:r.bounce||"", from:r.from||"" });
     }else{
-      out.push({ kind:"reply", ts:r.ts, source:"inbox", from:(r.name||r.from||""),
+      out.push({ kind:"reply", ts:r.ts, source:"inbox", id:inboundKey(r), from:(r.name||r.from||""),
                  fromAddr:r.from||"", subject:r.subject||"", snippet:(r.snippet||"").slice(0,600),
                  rule:r.rule||"none", tier:r.match_tier||"", ambiguous:!!r.match_ambiguous,
                  chapter:r.chapter||1, gmail:(typeof ThriveInbound!=="undefined"&&ThriveInbound.gmailLink)?ThriveInbound.gmailLink(r):"" });
@@ -6058,8 +6123,14 @@ async function initBoard(){
       const name=(tk.querySelector(".tok-name")||{}).textContent||slug;
       // In the shell the work opens in one centred window. On a single page there is no
       // window, and an honest page change beats a panel that is not there.
-      if(window.thriveModal) window.thriveModal.open(slug, "overview", name);
-      else goTo("compose","slug="+encodeURIComponent(slug));
+      // A card with new activity opens ON that update (the badge leads to what it announced); opening also
+      // marks it seen, clearing the badge. A quiet card opens the overview as before.
+      if(window.thriveModal){
+        var tgt=null; try{ if(cardNewActivity(slug)>0) tgt=cardNewTarget(slug); }catch(_){}
+        if(tgt){ window.thriveModal.open(slug, tgt.tab, name, { kind:tgt.kind, id:tgt.id }); }
+        else window.thriveModal.open(slug, "overview", name);
+        try{ markCardSeen(slug); paintCardBadges(); }catch(_){}
+      } else goTo("compose","slug="+encodeURIComponent(slug));
     }));
     try{ paintCardBadges(); refreshInboxBadge(); }catch(_){}   // quiet badges, repainted every render
   }
@@ -6084,14 +6155,14 @@ async function initBoard(){
   }
   function refreshInboxBadge(){
     var badge=document.getElementById("boardInboxBadge"); if(!badge) return;
-    var n=0; try{ n=inboundUnmatched().filter(function(r){ return !inboundIsNoise(r); }).length; }catch(e){}
+    var n=0; try{ n=unmatchedHuman().length; }catch(e){}    // human only; automated is folded into noise
     if(n>0){ badge.textContent=String(n); badge.hidden=false; } else { badge.hidden=true; }
   }
 
   // The tray is a posture, not a decision, so it stays on this device and never syncs.
   const BOARD_PREF="thrive_board_v1";
   function pref(){ try{ return JSON.parse(localStorage.getItem(BOARD_PREF)||"{}"); }catch(e){ return {}; } }
-  function setPref(p){ try{ localStorage.setItem(BOARD_PREF, JSON.stringify(p)); }catch(e){} }
+  function setPref(p){ try{ localStorage.setItem(BOARD_PREF, JSON.stringify(p)); }catch(e){} try{ opPrefRemember("board", p); }catch(e){} }
   const tray=el("trayToggle"), trayBody=el("trayBody");
   function applyTray(open){
     tray.setAttribute("aria-expanded", open?"true":"false");
@@ -6392,7 +6463,7 @@ function renderInboxInto(host, after){
   const all=getInbound();
   const real=all.filter(r=>r && r.kind!=="auto");
   const unmatched=inboundUnmatched();
-  const humanUn=unmatched.filter(r=>!inboundIsNoise(r));
+  const humanUn=unmatchedHuman();                          // the same derivation the header badge uses
   const noiseUn=unmatched.filter(r=>inboundIsNoise(r));
   const done=()=>{ renderInboxInto(host, after); try{ if(typeof after==="function") after(); }catch(_){} };
 
@@ -7650,7 +7721,7 @@ function initModal(){
         '<span class="th-when">'+ltr(when(ts))+'</span></li>';
     }
     function replyCard(r){
-      return '<li class="th-reply"><div class="rp-card">'+
+      return '<li class="th-reply"'+(r.id? ' data-rid="'+esc(r.id)+'"' : '')+'><div class="rp-card">'+
         '<div class="rp-top"><span class="rp-who">'+esc(r.from||t("th_someone"))+'</span>'+
         '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
         (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
@@ -7821,7 +7892,23 @@ function initModal(){
     return Array.prototype.filter.call(f, n=>n.offsetParent!==null);
   }
 
-  async function open(slug, tab, title){
+  // A badge opens the card ON the thing it announced: scroll to the new reply (or the opens summary) and
+  // flash it, so a badge always leads to its update, never a silent Overview.
+  function highlightTarget(hl){
+    if(!hl) return;
+    setTimeout(function(){
+      var target=null;
+      if(hl.kind==="reply" && hl.id){
+        var rows=modal.querySelectorAll("[data-rid]");
+        for(var i=0;i<rows.length;i++){ if(rows[i].getAttribute("data-rid")===hl.id){ target=rows[i]; break; } }
+      } else if(hl.kind==="open"){ target=modal.querySelector(".cg-agg") || modal.querySelector(".mw-state"); }
+      if(!target) return;
+      try{ target.scrollIntoView({ block:"center", behavior:"smooth" }); }catch(e){}
+      target.classList.add("th-flash");
+      setTimeout(function(){ target.classList.remove("th-flash"); }, 2200);
+    }, 380);
+  }
+  async function open(slug, tab, title, highlight){
     /* A flow not in the registry does not open. WO-013 §7. The registry is the
        only place a multi-step interaction is declared, and declaring one without
        a back, a close and a completion fails the build. */
@@ -7846,6 +7933,7 @@ function initModal(){
     __histDepth=0; pushStep(current, tab);
     markBaseline();
     showDraftBand();
+    highlightTarget(highlight);
     const list=focusables();
     if(list.length) try{ list[0].focus(); }catch(e){}
   }
