@@ -1216,14 +1216,24 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .st-keys li{ display:flex; gap:var(--s-2); font-size:var(--fs-micro); color:var(--ink-4) }
 .st-keys .mono-iso{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis }
 /* Held human replies, each named with a one-tap attach picker. Wraps on narrow widths, aligned on one axis. */
-.rp-held{ list-style:none; margin:var(--s-2) 0 0; padding:0; display:flex; flex-direction:column; gap:var(--s-3) }
-.rp-held-row{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--s-2) }
+/* The replies inbox rows: each held reply on its own line, its who/subject on the start, its attach
+   control on the end, aligned and never touching. Every control the same height, one gap value. */
+.rp-held{ list-style:none; margin:var(--s-3) 0 0; padding:0; display:flex; flex-direction:column; gap:var(--s-3) }
+.rp-held-row{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--s-3);
+  padding:var(--s-2) 0; border-block-end:1px solid var(--line) }
+.rp-held-row:last-child{ border-block-end:0 }
 .rp-held-who{ display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 12rem }
 .rp-held-subj{ font-size:var(--fs-micro); color:var(--ink-4); overflow:hidden; text-overflow:ellipsis }
-.rp-attach{ display:flex; align-items:center; gap:var(--s-2) }
-.rp-attach .rp-attach-sel{ max-width:15rem }
-.rp-noise{ margin:var(--s-2) 0 0 }
-.rp-noise>summary{ cursor:pointer; color:var(--ink-4); font-size:var(--fs-micro) }
+.rp-attach{ display:flex; align-items:center; gap:var(--s-2); flex:0 0 auto }
+.rp-attach .rp-attach-sel{ max-width:15rem; height:2.2em }
+.rp-attach .rp-attach-btn{ white-space:nowrap }
+.rp-noise{ margin:var(--s-3) 0 0; padding-block-start:var(--s-2); border-block-start:1px solid var(--line) }
+.rp-noise>summary{ cursor:pointer; color:var(--ink-4); font-size:var(--fs-micro); padding:var(--s-1) 0 }
+.board-inbox .bar{ margin-block:var(--s-3) 0 }
+/* The badge highlight: a card opened from its badge flashes the exact new item it announced, then calms. */
+.th-flash{ animation:th-flash 2.1s ease-out 1 }
+@keyframes th-flash{ 0%,18%{ box-shadow:0 0 0 3px var(--rose, #b46a7a) inset; background:color-mix(in srgb, var(--rose, #b46a7a) 12%, transparent) } 100%{ box-shadow:none; background:transparent } }
+@media (prefers-reduced-motion: reduce){ .th-flash{ animation:none; outline:2px solid var(--rose, #b46a7a) } }
 .rp-ambig{ font-size:var(--fs-micro); color:var(--warn, #b26a00) }
 /* The signed-in operator email and one-tap sign-out in the header. Only the email, no role. */
 .op-chip{ display:inline-flex; align-items:center; gap:var(--s-2); min-width:0 }
