@@ -485,6 +485,23 @@ html[dir="rtl"] .elink-url{text-align:start}
 .upload-panel{margin-bottom:24px}
 .settings-panel{margin-bottom:20px;max-width:820px}
 .settings-panel .bar{margin-top:8px;gap:10px}
+/* WO-022: Settings in five sections, one card each. Structure and spacing only, no behaviour change.
+   A section is one .set-group card holding labelled .set-block sub-blocks, hairline separated. Every
+   button row is a real flex row: one gap, one baseline, never touching, one gradient (the primary). */
+.set-group{margin-bottom:22px;max-width:820px}
+.set-group-h{display:flex;align-items:center;gap:.5em;font-size:19px;font-weight:800;color:var(--ink);margin:0 0 4px}
+.set-group > .sub{margin:0 0 20px}
+.set-block{margin-top:24px}
+.set-block:first-of-type{margin-top:6px}
+.set-block + .set-block{border-top:1px solid var(--hair);padding-top:22px}
+.set-block .block-h{margin:0 0 8px}
+.set-block > .sub{margin:0 0 14px}
+.set-group .bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px}
+/* One height per row: line-height:1 so a label control matches a button (a label otherwise inherits
+   the body line-height and runs taller), and a transparent 1px border on the primary so it matches the
+   ghost's bordered box. No explicit height, so the mobile 44px touch target is left untouched. */
+.set-group .bar .btn{line-height:1}
+.set-group .bar .btn:not(.ghost){border:1px solid transparent}
 .gh-result{margin-top:12px;font-size:13px;font-weight:700;padding:10px 14px;border-radius:10px;border:1px solid var(--hair);color:var(--ink-2);word-break:break-word}
 .gh-result.ok{color:#7ee0b8;border-color:rgba(126,224,184,.4);background:rgba(126,224,184,.08)}
 .gh-result.warn{color:#F6CF5B;border-color:rgba(246,207,91,.35);background:rgba(246,207,91,.08)}
