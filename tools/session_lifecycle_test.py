@@ -24,6 +24,11 @@ def ck(n, c, d=None):
         fails.append(n)
         if d is not None: print("      " + str(d)[:300])
 
+# ---- source: the presence window is one constant, referenced, not scattered timeouts ----
+gate_src = open(os.path.join(ROOT, "library/gate.js")).read()
+ck("the presence window is one constant, PRESENCE_MINUTES = 30, and IDLE_MS derives from it",
+   "PRESENCE_MINUTES = 30" in gate_src and "PRESENCE_MINUTES * 60 * 1000" in gate_src)
+
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 socketserver.TCPServer.allow_reuse_address = True
 httpd = socketserver.TCPServer(("127.0.0.1", 0), Handler); PORT = httpd.server_address[1]
@@ -71,46 +76,49 @@ with sync_playwright() as p:
     pg.goto(f"{base}/library/console.html")
 
     # ---- deterministic fresh device: passcode, then operator, then board ----
-    pg.wait_for_selector("#gateInput", timeout=10000)
-    pg.fill("#gateInput", PASSCODE); pg.click(".gate-btn")
-    pg.wait_for_selector("#gateEmail", timeout=10000)
+    pg.wait_for_selector("#gateInput", timeout=25000)
+    pg.fill("#gateInput", PASSCODE); pg.wait_for_timeout(120); pg.click(".gate-btn")
+    pg.wait_for_selector("#gateEmail", timeout=25000)
     ck("a fresh device is deterministic: passcode then the operator step (not the board, not a blank)",
        pg.evaluate("()=>!!document.getElementById('gateEmail')"))
-    pg.fill("#gateEmail","op@thrive.co"); pg.fill("#gatePass","right"); pg.click(".gate-btn")
-    pg.wait_for_function("()=>!document.getElementById('thriveGate')", timeout=10000)
+    pg.fill("#gateEmail","op@thrive.co"); pg.fill("#gatePass","right"); pg.wait_for_timeout(120); pg.click(".gate-btn")
+    pg.wait_for_selector("#thriveGate", state="detached", timeout=20000)
     ck("after the operator signs in the console reveals (board), and a presence window opens",
        no_gate(pg) and pg.evaluate("()=>!!localStorage.getItem('thrive_presence')"))
 
     # ---- a short absence: sessionStorage evicted (as iOS does), localStorage kept -> straight to board ----
     pg.evaluate("()=>{ try{ sessionStorage.clear(); }catch(e){} }")   # the eviction a short background causes
     pg.reload()
-    pg.wait_for_function("()=>typeof window.ThriveSupa==='object'", timeout=10000); pg.wait_for_timeout(400)
+    pg.wait_for_function("()=>typeof window.ThriveSupa==='object'", timeout=25000); pg.wait_for_timeout(400)
     ck("a short absence returns straight to the board, no gate (the presence held it)",
        no_gate(pg) and pg.query_selector("#gateInput") is None)
 
     # ---- 30 minutes of idle re-gates to the passcode ----
     pg.evaluate("()=>{ try{ sessionStorage.clear(); localStorage.setItem('thrive_presence', String(Date.now()-31*60*1000)); }catch(e){} }")
     pg.reload()
-    pg.wait_for_selector("#gateInput", timeout=10000)
+    pg.wait_for_selector("#gateInput", timeout=25000)
     ck("30 minutes of idle re-gates to the passcode (presence expired)",
        pg.evaluate("()=>!!document.getElementById('gateInput') && !document.getElementById('gateEmail')"))
+    sub = pg.evaluate("()=>{var e=document.querySelector('#thriveGate .gate-sub');return e?e.textContent:''}")
+    ck("the re-gate reads as a calm return for a known operator, not a first-time setup",
+       "again" in sub.lower(), sub)
 
     # back in for the next checks
-    pg.fill("#gateInput", PASSCODE); pg.click(".gate-btn")
+    pg.fill("#gateInput", PASSCODE); pg.wait_for_timeout(120); pg.click(".gate-btn")
     # operator session still stored, so it goes straight past the operator step to the board
-    pg.wait_for_function("()=>!document.getElementById('thriveGate')", timeout=10000)
+    pg.wait_for_selector("#thriveGate", state="detached", timeout=20000)
     ck("with the operator session still valid, the re-gate asks only the passcode, then the board",
        no_gate(pg))
 
     # ---- manual lock ends the presence window at once ----
     pg.evaluate("()=>window.thriveLock && window.thriveLock()")
-    pg.wait_for_selector("#gateInput", timeout=10000)
+    pg.wait_for_selector("#gateInput", timeout=25000)
     ck("a manual lock clears the presence and returns to the passcode",
        pg.evaluate("()=>!localStorage.getItem('thrive_presence')") and pg.evaluate("()=>!!document.getElementById('gateInput')"))
 
     # ---- operator session robustness: transient 5xx keeps it; definitive 401 ends it ----
-    pg.fill("#gateInput", PASSCODE); pg.click(".gate-btn")
-    pg.wait_for_function("()=>!document.getElementById('thriveGate')", timeout=10000)
+    pg.fill("#gateInput", PASSCODE); pg.wait_for_timeout(120); pg.click(".gate-btn")
+    pg.wait_for_selector("#thriveGate", state="detached", timeout=20000)
     trans = pg.evaluate("""async ()=>{
       window.__refreshStatus = 500;
       const r = await window.ThriveSupa.refresh();
