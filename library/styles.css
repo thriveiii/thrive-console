@@ -221,7 +221,16 @@ select{cursor:pointer}
 .etoolbar .etb-hist:disabled{opacity:.4;cursor:not-allowed}
 .etoolbar .etb-hist:disabled:hover{border-color:var(--hair);color:var(--ink-2)}
 .preview{position:sticky;top:76px}
-.preview .bar{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+/* WO-023 button geometry: one row model for every button bar in the console. A .bar is a flex row,
+   vertically centered, wrapping, with ONE gap token (--s-3) used everywhere, so no two controls touch
+   and none is cramped. Buttons in a row share one height: line-height:1 so a label control matches a
+   button (a label otherwise inherits the body line-height and runs taller), and a transparent 1px
+   border on the primary so its box matches the ghost's bordered box. No explicit height, so the mobile
+   44px touch target is untouched. */
+.bar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s-3)}
+.bar .btn{line-height:1}
+.bar .btn:not(.ghost){border:1px solid transparent}
+.preview .bar{margin-bottom:10px}
 .urlpill{flex:1 1 auto;min-width:0;font-size:12.5px;font-weight:700;color:var(--teal);background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:9px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .frame{width:100%;height:70vh;min-height:460px;border:1px solid var(--hair);border-radius:14px;background:#0a0a0c}
 .dz{border:1.5px dashed var(--hair);border-radius:12px;padding:26px;text-align:center;color:var(--ink-3);font-size:13px;cursor:pointer;transition:.2s}
@@ -479,12 +488,12 @@ html[dir="rtl"] .elink-url{text-align:start}
 .qr-label{font-weight:800;color:var(--ink);margin-bottom:12px;font-size:16px}
 .qr-img canvas{width:100%;max-width:260px;height:auto;border-radius:10px;display:block;margin:0 auto;background:#fff}
 .qr-url{direction:ltr;font-size:12px;color:var(--teal);word-break:break-all;margin:12px 0 4px}
-.qr-card .bar{display:flex;gap:10px;justify-content:center;margin-top:12px}
+.qr-card .bar{justify-content:center;margin-top:12px}
 
 /* upload panel + template management + settings */
 .upload-panel{margin-bottom:24px}
 .settings-panel{margin-bottom:20px;max-width:820px}
-.settings-panel .bar{margin-top:8px;gap:10px}
+.settings-panel .bar{margin-top:var(--s-2)}
 /* WO-022: Settings in five sections, one card each. Structure and spacing only, no behaviour change.
    A section is one .set-group card holding labelled .set-block sub-blocks, hairline separated. Every
    button row is a real flex row: one gap, one baseline, never touching, one gradient (the primary). */
@@ -496,12 +505,7 @@ html[dir="rtl"] .elink-url{text-align:start}
 .set-block + .set-block{border-top:1px solid var(--hair);padding-top:22px}
 .set-block .block-h{margin:0 0 8px}
 .set-block > .sub{margin:0 0 14px}
-.set-group .bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px}
-/* One height per row: line-height:1 so a label control matches a button (a label otherwise inherits
-   the body line-height and runs taller), and a transparent 1px border on the primary so it matches the
-   ghost's bordered box. No explicit height, so the mobile 44px touch target is left untouched. */
-.set-group .bar .btn{line-height:1}
-.set-group .bar .btn:not(.ghost){border:1px solid transparent}
+.set-group .bar{margin-top:14px}   /* the flex row, one gap token and equal heights come from .bar above */
 .gh-result{margin-top:12px;font-size:13px;font-weight:700;padding:10px 14px;border-radius:10px;border:1px solid var(--hair);color:var(--ink-2);word-break:break-word}
 .gh-result.ok{color:#7ee0b8;border-color:rgba(126,224,184,.4);background:rgba(126,224,184,.08)}
 .gh-result.warn{color:#F6CF5B;border-color:rgba(246,207,91,.35);background:rgba(246,207,91,.08)}
@@ -516,7 +520,10 @@ html[dir="rtl"] .elink-url{text-align:start}
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:6px 0 20px}
 @media(max-width:820px){ .tiles{grid-template-columns:repeat(2,1fr)} }
 @media(max-width:430px){ .tiles{grid-template-columns:1fr} }
-.tile{background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:16px 18px}
+/* WO-023: one aligned unit per tile. Icon, number and label stack on one axis and hug the reading
+   edge (flex-start mirrors by direction: left in English, right in Arabic), never icon-centered while
+   the number and label sit to the side. */
+.tile{background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;align-items:flex-start}
 /* "15 / 3000" wrapped onto two lines while its neighbours stayed on one, which made a row of
    tiles look broken over one long number. */
 .tile-v{font-size:26px;font-weight:800;color:var(--ink);line-height:1.1;white-space:nowrap}
@@ -735,7 +742,7 @@ html[dir="rtl"] .eopp-thumb{transform-origin:top right}
 html[dir="rtl"] .tile-v,html[dir="rtl"] .quota-meter,html[dir="rtl"] .quota-readout,
 html[dir="rtl"] .th-counts,html[dir="rtl"] .logtable td.mono,html[dir="rtl"] .msg-time,
 html[dir="rtl"] .th-last{direction:ltr}
-html[dir="rtl"] .tile-v{text-align:center}
+html[dir="rtl"] .tile-v{text-align:start}
 html[dir="rtl"] .logtable td.mono,html[dir="rtl"] .th-last,html[dir="rtl"] .msg-time{text-align:start}
 /* numeric cells in tables stay LTR so counts never flip */
 html[dir="rtl"] .logtable td b,html[dir="rtl"] .logtable td .ok-n{unicode-bidi:isolate;direction:ltr}
@@ -756,7 +763,7 @@ html[dir="rtl"] #sy_ep,html[dir="rtl"] #em_ep,html[dir="rtl"] #ep2,html[dir="rtl
    one grey block. Scoped to #tilesPages so the Outreach tiles above are untouched. The accent is on
    the icon chip and a top edge; the number stays white for readability. */
 #tilesPages .tile{ border-block-start:2px solid var(--tile-acc,var(--hair)) }
-#tilesPages .tile-ic{ display:flex; width:34px; height:34px; margin:0 auto 8px; align-items:center;
+#tilesPages .tile-ic{ display:flex; width:34px; height:34px; margin:0 0 8px; align-items:center;
   justify-content:center; border-radius:10px; color:var(--tile-acc); background:var(--tile-acc-fill) }
 #tilesPages .tile.acc-teal{   --tile-acc:#71BFCC; --tile-acc-fill:rgba(113,191,204,.14) }
 #tilesPages .tile.acc-purple{ --tile-acc:#9685CA; --tile-acc-fill:rgba(150,133,202,.14) }
