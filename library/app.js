@@ -1061,8 +1061,7 @@ function renderOperatorChip(){
       chip=document.createElement("span"); chip.id="opChip"; chip.className="op-chip";
       chip.innerHTML='<span class="op-email mono-iso" id="opEmail"></span>'+
         '<button class="langbtn" id="opSignOut" type="button">'+esc(t("op_sign_out"))+'</button>';
-      var lock=document.getElementById("lockbtn");
-      if(lock && lock.parentNode===nav) nav.insertBefore(chip, lock); else nav.appendChild(chip);
+      nav.appendChild(chip);   // the Lock control is gone; sign-out is the only manual auth action here
       var so=chip.querySelector("#opSignOut");
       if(so) so.addEventListener("click", function(){ if(window.thriveSignOut) window.thriveSignOut(); });
     }

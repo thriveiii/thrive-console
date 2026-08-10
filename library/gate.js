@@ -65,34 +65,43 @@
       return b.toString(16).padStart(2, "0");
     }).join("");
   }
-  /* Presence: the 30-minute window that keeps the operator inside across a short absence.
-     The passcode unlock is a per-session flag (sessionStorage), and iOS Safari evicts a backgrounded
-     tab's sessionStorage readily, so before this the operator was ejected to the passcode on every
-     short absence. Presence records the last time the console was active, in localStorage (which
-     survives eviction), and the device counts as passcode-unlocked while that is under 30 minutes old.
-     A return inside the window goes straight to the board; after 30 minutes of idle the device re-gates.
-     The passcode itself is never stored, only this timestamp and the already-stored derived keys, so
-     the protection is exactly a 30-minute idle presence, the rule the review asked for. */
+  /* Graduated presence (supersedes the single 30-minute passcode presence of #95/#97). ONE last-active
+     stamp in localStorage (which survives WebKit's eviction of a backgrounded tab's sessionStorage), read
+     against TWO thresholds so the way back in is always the same, ordered walk out and never a moody swap:
+       - inside 30 minutes idle: the board, no gate;
+       - 30 to 45 minutes idle: the operator session is dropped, back to the lobby (the operator email
+         step); the passcode presence is kept, so the passcode is not re-asked;
+       - past 45 minutes idle: the passcode presence is dropped too, back to Gate 1 (the passcode).
+     The passcode itself is never stored, only this timestamp and the already-derived device keys. */
   var PRESENCE = "thrive_presence";
-  var PRESENCE_MINUTES = 30;                    // the one presence-window constant; change here, nowhere else
-  var IDLE_MS = PRESENCE_MINUTES * 60 * 1000;   // derived: minutes of idle before the device re-gates
+  var OPERATOR_IDLE_MIN = 30;                        // idle minutes before the operator session drops to the lobby
+  var PASSCODE_IDLE_MIN = 45;                        // idle minutes before the passcode presence drops too (full exit)
+  var OPERATOR_IDLE_MS = OPERATOR_IDLE_MIN * 60 * 1000;
+  var PASSCODE_IDLE_MS = PASSCODE_IDLE_MIN * 60 * 1000;
   function markPresent() { try { localStorage.setItem(PRESENCE, String(Date.now())); } catch (e) {} }
-  function present() {
-    try { var at = parseInt(localStorage.getItem(PRESENCE) || "0", 10); return !!at && (Date.now() - at) < IDLE_MS; }
-    catch (e) { return false; }
+  function idleMs() {
+    try { var at = parseInt(localStorage.getItem(PRESENCE) || "0", 10); return at ? (Date.now() - at) : Infinity; }
+    catch (e) { return Infinity; }
   }
+  function passcodePresent() { return idleMs() < PASSCODE_IDLE_MS; }   // within 45 minutes: the passcode holds
+  function operatorPresent() { return idleMs() < OPERATOR_IDLE_MS; }   // within 30 minutes: the operator holds
   function clearPresence() { try { localStorage.removeItem(PRESENCE); } catch (e) {} }
-  // A device that has unlocked or signed in before is a returning operator, so a re-gate after the
-  // presence window reads as a calm return rather than a first-time setup. Evidence that survives the
-  // window: the derived sync credential, or a stored operator session.
+  // Drop the operator session locally (session() reads localStorage fresh, so this is enough for the gate
+  // to ask for the operator again). The passcode presence is untouched.
+  function clearOperatorSession() { try { localStorage.removeItem("console_sb_session"); } catch (e) {} }
+  // A device that has unlocked or signed in before is a returning operator, so a re-gate reads as a calm
+  // return rather than a first-time setup. Evidence that survives a drop: the derived sync credential.
   function returning() {
     try { return !!(localStorage.getItem(SYNC_KEY) || localStorage.getItem("console_sb_session")); }
     catch (e) { return false; }
   }
-  // The device is passcode-unlocked when this session unlocked it OR a fresh presence still holds.
-  function authed() {
-    try { if (sessionStorage.getItem(KEY) === HASH) return true; } catch (e) {}
-    return present();
+  // The one place the gate decides where the operator lands, in one fixed order, from the stamp plus
+  // whether an operator session exists. Never two booleans racing: exactly one target.
+  function gateTarget() {
+    if (!passcodePresent()) return "passcode";        // 45+ minutes idle, or a fresh / cleared device
+    if (!operatorPresent()) return "lobby";           // 30 to 45 minutes idle: the operator session lapsed
+    if (needsOperator()) return "lobby";              // no operator session yet (fresh, or after sign-out)
+    return "board";                                   // within 30 minutes and signed in
   }
 
   /* escalating lockout: after 5 wrong tries, 30s, doubling each further failure (cap 15 min) */
@@ -145,17 +154,23 @@
     markPresent();
     wirePresence();
   }
-  // Re-show the gate over the live console (state preserved) when the presence window has lapsed. Used
-  // when a tab that stayed alive is foregrounded after more than 30 minutes idle.
+  // Re-show the gate over the live console (state preserved) when idle has crossed a threshold. Graduated:
+  // 30 to 45 minutes drops to the lobby (operator step), past 45 minutes drops to the passcode.
   function relock() {
     if (document.getElementById("thriveGate")) return;   // already gated
-    try { sessionStorage.removeItem(KEY); } catch (e) {}  // this session must re-enter the passcode
-    clearPresence();
+    var target = gateTarget();
+    if (target === "board") { markPresent(); return; }   // still fresh: nothing to re-gate
+    if (target === "passcode") {                          // full exit: clear both layers
+      try { sessionStorage.removeItem(KEY); } catch (e) {}
+      clearPresence(); clearOperatorSession();
+    } else {                                              // lobby: drop the operator session, keep the passcode
+      clearOperatorSession();
+    }
     document.documentElement.classList.add("gate-locked");
     document.body.style.overflow = "hidden";
-    buildGate();
+    buildGate(target);
   }
-  // Keep the presence fresh while the console is in use, and re-gate a returning tab past the window.
+  // Keep the presence fresh while the console is in use, and re-gate a returning tab past a threshold.
   function wirePresence() {
     if (__presenceWired) return; __presenceWired = true;
     var last = 0;
@@ -166,19 +181,21 @@
     document.addEventListener("visibilitychange", function () {
       if (document.visibilityState !== "visible") return;
       if (document.getElementById("thriveGate")) return;   // the gate is already showing
-      if (present()) markPresent();                        // within the window: extend it
-      else relock();                                       // idle past 30 minutes: re-gate
+      if (gateTarget() === "board") markPresent();          // within 30 minutes: extend the window
+      else relock();                                        // 30+ minutes: graduated re-gate (lobby or passcode)
     });
   }
 
-  function buildGate() {
+  // Build the gate at a fixed target: "passcode" is Gate 1, "lobby" is the operator email step. The order
+  // is always passcode then lobby then board; the target is decided once, by gateTarget(), never by a race.
+  function buildGate(target) {
+    target = target || gateTarget();
     document.body.style.overflow = "hidden";
     var wrap = document.createElement("div");
     wrap.id = "thriveGate";
     wrap.setAttribute("dir", lang() === "ar" ? "rtl" : "ltr");
     document.body.appendChild(wrap);
-    // Passcode first (unless the device is already unlocked), then the operator sign-in, then the console.
-    if (authed()) showOperatorStep(wrap); else showPasscodeStep(wrap);
+    if (target === "passcode") showPasscodeStep(wrap); else showOperatorStep(wrap);
   }
 
   // After the passcode, hand off: sign in as an operator where the data is scoped, else reveal at once.
@@ -266,11 +283,14 @@
     var S = supa();
     if (!S) { finish(); return; }                       // no Supabase on this page, nothing to sign in to
     var s = STR[lang()];
+    // A returning operator dropped to the lobby by idle (or by sign-out) reads a calm return, not a
+    // first-time "signed device" setup line.
+    var subCopy = (returning() && s.resub) ? s.resub : s.op_sub;
     wrap.innerHTML =
       '<form class="gate-card" autocomplete="off">' +
       '  <img class="gate-logo" src="../assets/thrive-logo.png" alt="Thrive">' +
       '  <h1 class="gate-title">' + s.title + "</h1>" +
-      '  <p class="gate-sub">' + s.op_sub + "</p>" +
+      '  <p class="gate-sub">' + subCopy + "</p>" +
       '  <input class="gate-input" id="gateEmail" type="email" autocomplete="username" spellcheck="false" ' +
       '         placeholder="' + s.op_email + '" aria-label="' + s.op_email + '">' +
       '  <input class="gate-input" id="gatePass" type="password" autocomplete="current-password" ' +
@@ -319,11 +339,15 @@
   }
 
   function start() {
-    // Already unlocked AND signed in (or no Supabase to sign into): reveal. Unlocked but not signed in:
-    // straight to the operator step, never a blank board. Not unlocked: the passcode step.
-    if (authed() && !needsOperator()) { reveal(); return; }
+    // One fixed order, decided once: board, else the lobby (operator step), else the passcode. The
+    // graduated drops are enforced here so the session state always matches the step that is shown, and
+    // the two gates can never disagree. Never a blank board (#84): a target is always chosen.
+    var target = gateTarget();
+    if (target === "board") { reveal(); return; }
+    if (target === "passcode") { try { sessionStorage.removeItem(KEY); } catch (e) {} clearOperatorSession(); }
+    else if (!operatorPresent()) { clearOperatorSession(); }   // lobby via a 30 to 45 minute idle drop
     document.documentElement.classList.add("gate-locked");
-    buildGate();
+    buildGate(target);
   }
 
   if (document.readyState === "loading") {
@@ -332,15 +356,9 @@
     start();
   }
 
-  // expose a manual lock (used by a "Lock" button in the console). This is the full lock: it clears the
-  // passcode session so the next entry starts at the passcode again.
-  window.thriveLock = function () {
-    try { sessionStorage.removeItem(KEY); sessionStorage.removeItem(SYNC_KEY); sessionStorage.removeItem(VAULT_KEY); } catch (e) {}
-    clearPresence();   // a manual lock ends the presence window at once
-    location.reload();
-  };
-  // Operator sign-out: ends the Supabase session only. The passcode (the device gate) stays, so the reload
-  // lands on the operator sign-in step, not the passcode, and never on a blank board.
+  // Operator sign-out is the ONLY manual auth action besides sign-in (the Lock control is removed). It ends
+  // the Supabase session and keeps the passcode presence, so the reload lands on the lobby (the operator
+  // email step), never the passcode and never a blank board.
   window.thriveSignOut = async function () {
     var S = supa();
     try { if (S && S.signOut) await S.signOut(); } catch (e) {}
