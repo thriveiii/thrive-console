@@ -26,7 +26,8 @@
           op_sub: "Signed device. Sign in as an operator to continue.",
           op_email: "Operator email", op_pass: "Password", op_go: "Sign in",
           op_err: "Could not sign in.", op_wait: "Too many attempts. Try again in ",
-          op_busy: "Signing in", build: "Build" },
+          op_busy: "Signing in", build: "Build",
+          resub: "Welcome back. Sign in again to continue." },
     ar: { title: "كونسول ثرايف", sub: "مساحة خاصة. أدخل رمز الدخول للمتابعة.",
           ph: "رمز الدخول", go: "فتح", err: "رمز غير صحيح. حاول مجددًا.",
           wait: "محاولات كثيرة. حاول مجددًا بعد ",
@@ -34,7 +35,8 @@
           op_sub: "الجهاز موثوق. سجّل الدخول كمشغّل للمتابعة.",
           op_email: "بريد المشغّل", op_pass: "كلمة المرور", op_go: "تسجيل الدخول",
           op_err: "تعذّر تسجيل الدخول.", op_wait: "محاولات كثيرة. حاول مجددًا بعد ",
-          op_busy: "جارٍ تسجيل الدخول", build: "الإصدار" }
+          op_busy: "جارٍ تسجيل الدخول", build: "الإصدار",
+          resub: "مرحبًا بعودتك. سجّل الدخول من جديد." }
   };
   /* The build marker (bundle.js stamps meta[name=thrive-build]). Printed on the gate so a deploy
      is verifiable at a glance, on the device, before sign-in: the mark on the device is compared
@@ -72,13 +74,21 @@
      The passcode itself is never stored, only this timestamp and the already-stored derived keys, so
      the protection is exactly a 30-minute idle presence, the rule the review asked for. */
   var PRESENCE = "thrive_presence";
-  var IDLE_MS = 30 * 60 * 1000;   // 30 minutes of idle before the device re-gates
+  var PRESENCE_MINUTES = 30;                    // the one presence-window constant; change here, nowhere else
+  var IDLE_MS = PRESENCE_MINUTES * 60 * 1000;   // derived: minutes of idle before the device re-gates
   function markPresent() { try { localStorage.setItem(PRESENCE, String(Date.now())); } catch (e) {} }
   function present() {
     try { var at = parseInt(localStorage.getItem(PRESENCE) || "0", 10); return !!at && (Date.now() - at) < IDLE_MS; }
     catch (e) { return false; }
   }
   function clearPresence() { try { localStorage.removeItem(PRESENCE); } catch (e) {} }
+  // A device that has unlocked or signed in before is a returning operator, so a re-gate after the
+  // presence window reads as a calm return rather than a first-time setup. Evidence that survives the
+  // window: the derived sync credential, or a stored operator session.
+  function returning() {
+    try { return !!(localStorage.getItem(SYNC_KEY) || localStorage.getItem("console_sb_session")); }
+    catch (e) { return false; }
+  }
   // The device is passcode-unlocked when this session unlocked it OR a fresh presence still holds.
   function authed() {
     try { if (sessionStorage.getItem(KEY) === HASH) return true; } catch (e) {}
@@ -182,11 +192,13 @@
 
   function showPasscodeStep(wrap) {
     var s = STR[lang()];
+    // A returning operator whose window lapsed gets the calm re-entry copy, not the first-time setup line.
+    var subCopy = (returning() && s.resub) ? s.resub : s.sub;
     wrap.innerHTML =
       '<form class="gate-card" autocomplete="off">' +
       '  <img class="gate-logo" src="../assets/thrive-logo.png" alt="Thrive">' +
       '  <h1 class="gate-title">' + s.title + "</h1>" +
-      '  <p class="gate-sub">' + s.sub + "</p>" +
+      '  <p class="gate-sub">' + subCopy + "</p>" +
       '  <input class="gate-input" id="gateInput" type="password" inputmode="text" ' +
       '         autocomplete="current-password" placeholder="' + s.ph + '" aria-label="' + s.ph + '">' +
       '  <button class="gate-btn" type="submit">' + s.go + "</button>" +
