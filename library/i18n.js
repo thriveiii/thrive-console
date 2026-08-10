@@ -161,7 +161,6 @@ const I18N = {
     nav_editor: "Editor",
     nav_templates: "Page and message templates",
     nav_activity: "Activity",
-    lock_btn: "Lock",
     brand: "Thrive Digital Solutions",
 
     lib_title: "Opportunity Library",
@@ -1218,7 +1217,6 @@ const I18N = {
     nav_editor: "المحرر",
     nav_templates: "قوالب الصفحات والرسائل",
     nav_activity: "السجل",
-    lock_btn: "إقفال",
     brand: "ثرايف للحلول الرقمية",
 
     lib_title: "مكتبة الفرص",

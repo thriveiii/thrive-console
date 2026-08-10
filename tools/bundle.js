@@ -242,7 +242,6 @@ ${head}
   <nav class="nav">
     ${nav}
     <button id="langbtn" class="langbtn">العربية</button>
-    <button id="lockbtn" class="langbtn" onclick="window.thriveLock&&window.thriveLock()" data-i18n="lock_btn">Lock</button>
   </nav>
 </header>
 
