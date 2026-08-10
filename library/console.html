@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="05c20ca1">
+<meta name="thrive-build" content="30355ed8">
 <title>Thrive Console</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <script>(function(){var d=document.documentElement;
@@ -633,20 +633,14 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <div class="gh-result" id="syStatus" hidden></div>
   </section>
 
-  <!-- Supabase storage (Stage 1: connection only, inert). The console's own thrive-console project,
-       tables prefixed console_. Never any other project. Entered here the same way as the relay URL. -->
+  <!-- Supabase storage. The console's own thrive-console project, tables prefixed console_, never any
+       other project. The connection (project URL + anon public key) is BAKED into the build now
+       (library/config.js), so there is nothing to enter: a fresh or cleared device already has it and
+       the first open is a sign-in. The manual Project URL / anon key fields and Save/Test are retired. -->
   <section class="panel settings-panel">
     <h3 class="block-h" data-icon="archive" data-i18n="sb_h">Storage (Supabase)</h3>
     <p class="sub" data-i18n="sb_sub"></p>
-    <div class="field"><label for="sb_url" data-i18n="sb_url_l">Project URL</label>
-      <input id="sb_url" class="input" type="url" autocomplete="off" data-i18n-ph="sb_url_ph"></div>
-    <div class="field"><label for="sb_key" data-i18n="sb_key_l">Anon key</label>
-      <input id="sb_key" class="input" type="text" autocomplete="off" spellcheck="false" data-i18n-ph="sb_key_ph"></div>
-    <div class="bar">
-      <button class="btn" id="sbSave" type="button" data-i18n="gh_save">Save</button>
-      <button class="btn ghost" id="sbTest" type="button" data-i18n="sb_test">Test connection</button>
-    </div>
-    <div class="gh-result" id="sbStatus" hidden></div>
+    <div class="in-count" id="sbConnLine" data-i18n="sb_connected">Connected to your console tables.</div>
     <!-- Operator sign-in moved to the unlock flow (gate two), so there is one sign-in surface, not two.
          The gate asks for the operator email and password after the passcode. -->
     <p class="sub" data-i18n="sb_auth_moved"></p>
@@ -748,9 +742,9 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   </div>
 </div>
 
-<script src="config.js?v=faa63d7fa3"></script>
+<script src="config.js?v=806f4221bf"></script>
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=5f12ebe271"></script>
+<script src="i18n.js?v=8e39f3038e"></script>
 <script src="gate.js?v=e38f0a438c"></script>
 <script src="stage-model.js?v=f89936985f"></script>
 <script src="lifecycle.js?v=16f886007a"></script>
@@ -762,7 +756,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=35f36bdf2f"></script>
+<script src="app.js?v=feb785b6de"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

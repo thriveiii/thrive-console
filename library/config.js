@@ -18,6 +18,7 @@
   "use strict";
   var C = global.THRIVE_CONFIG = global.THRIVE_CONFIG || {};
   // The thrive-console project's PUBLIC values. Project URL, then the anon (publishable) key.
-  C.supaUrl  = "";   // https://<ref>.supabase.co
-  C.supaAnon = "";   // anon public (publishable) key
+  // The key is the anon/publishable key (its JWT payload is role:anon), never the service_role key.
+  C.supaUrl  = "https://ssqhwdzgegzqcjfcclmr.supabase.co";
+  C.supaAnon = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
 })(typeof window !== "undefined" ? window : this);
