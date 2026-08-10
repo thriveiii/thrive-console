@@ -626,7 +626,12 @@ function hasReply(o){
 }
 function effStage(o, opensOverride, sendOverride){
   const declared=o.stage||"";
-  if(declared && declared!=="sent") return declared;
+  if(declared && declared!=="sent" && declared!=="replied") return declared;
+  // A group campaign aggregates its recipients and NEVER enters Replied: a recipient's reply spawns an
+  // individual child that carries the Replied state, so the campaign stays at its best non-reply state.
+  // This is checked before the reply derivation, so a reply attributed to the campaign cannot move it.
+  if(isGroupOpp(o)) return groupLane(o, opensOverride, sendOverride);
+  if(declared==="replied") return "replied";
   // Replied is derived from the reply records, before the send gate, so it is read wherever the inbound
   // rows live and does not depend on a stored stamp. Replied wins over Opened and Sent (checked next).
   if(hasReply(o)) return "replied";
@@ -639,6 +644,145 @@ function effStage(o, opensOverride, sendOverride){
   if(bounce==="soft") return "failed";
   const op=(opensOverride===undefined)? outreachOpens(o) : (opensOverride||0);
   return op>0 ? "opened" : "sent";
+}
+
+/* ---------- the living card: recipient-level state (P1.5) ----------
+   A campaign is one opportunity with many recipients. Each recipient's state derives from the records at
+   read time, never stored (the Session 4 law, one level down). Sent, Replied and Bounced derive per
+   recipient; Opened is a page signal with no recipient binding (the outreach link is shared, and a hit is
+   keyed by page and visitor, not recipient), so it is reported at the campaign aggregate, not per
+   recipient, until a per-recipient tracked link exists. That link is a later concern, raised in the PR. */
+
+// The recipient roster of an opportunity: the recipients a group send recorded on it, else the distinct
+// addresses its sends went to. Each is { addr, name, lang }. A single-recipient opportunity has one; a
+// campaign has many; that count is the only thing that makes a card a group.
+function campaignRecipients(o){
+  var rec=(typeof o==="string")? getDraft(o) : o;
+  var slug=(typeof o==="string")? o : ((o&&o.slug)||"");
+  var by={};
+  function put(a, name, lang){ a=String(a||"").trim().toLowerCase(); if(!a) return;
+    if(!by[a]) by[a]={ addr:a, name:name||"", lang:lang||"" };
+    if(name && !by[a].name) by[a].name=name; if(lang && !by[a].lang) by[a].lang=lang; }
+  if(rec && Array.isArray(rec.recipients)) rec.recipients.forEach(function(r){ if(r) put(r.addr, r.name, r.lang); });
+  getMailLog().forEach(function(m){ if(m && m.opp===slug && m.direction!=="in" && m.to) put(m.to, m.toName||m.greeting, m.lang); });
+  return Object.keys(by).map(function(a){ return by[a]; });
+}
+function isGroupOpp(o){ return campaignRecipients(o).length>1; }
+
+// The best non-reply state across a campaign's recipients: any open puts it in Opened, else Sent; with no
+// send it is live or draft. Never replied, never bounced at the group level, those are per recipient.
+function groupLane(o, opensOverride, sendOverride){
+  var s=(sendOverride===undefined)? sendsFor(o) : sendOverride;
+  if(!s || !s.count) return isLive(o) ? "live" : "draft";
+  var op=(opensOverride===undefined)? outreachOpens(o) : (opensOverride||0);
+  return op>0 ? "opened" : "sent";
+}
+
+// One child opportunity per replying recipient per campaign, addressed by a deterministic slug so the same
+// recipient never spawns twice.
+function childSlugFor(parentSlug, addr){
+  var a=String(addr||"").trim().toLowerCase(), h=0;
+  for(var i=0;i<a.length;i++){ h=((h<<5)-h+a.charCodeAt(i))|0; }
+  return String(parentSlug||"")+"--r-"+(h>>>0).toString(36);
+}
+function childForRecipient(parentSlug, addr){
+  var target=childSlugFor(parentSlug, addr);
+  return getDrafts().find(function(o){ return o && o.slug===target && o.spawned_from; }) || null;
+}
+
+// One recipient's state, derived: sent (a send went out), replied (a reply from this address is attributed,
+// on the spawned child or still on the parent), bounced (a bounce names this address). Opened is not per
+// recipient. The chip is the strongest state reached: replied, else bounced, else sent.
+function recipientState(slug, addr){
+  var a=String(addr||"").trim().toLowerCase();
+  var sends=getMailLog().filter(function(m){ return m && m.opp===slug && m.direction!=="in" && String(m.to||"").trim().toLowerCase()===a; });
+  var last=""; sends.forEach(function(m){ if(String(m.ts||"")>last) last=String(m.ts||""); });
+  var child=childForRecipient(slug, a), childSlug=child? child.slug : "";
+  var replied=false, replyTs="";
+  function scan(list){ list.forEach(function(r){ if(r && r.kind!=="auto" && String(r.from||"").trim().toLowerCase()===a){ replied=true; if(String(r.ts||"")>replyTs) replyTs=String(r.ts||""); } }); }
+  if(childSlug) scan(inboundFor(childSlug));
+  scan(inboundFor(slug));                                  // a reply not yet spawned still counts
+  var bounced=false;
+  inboundFor(slug).forEach(function(r){ if(r && r.kind==="auto" && r.bounce && String((r.snippet||"")+" "+(r.subject||"")).toLowerCase().indexOf(a)>=0) bounced=true; });
+  if(replyTs>last) last=replyTs;
+  return { addr:a, sent:sends.length>0, replied:replied, child:childSlug, bounced:bounced, last:last,
+           chip:(replied? "replied" : (bounced? "bounced" : "sent")) };
+}
+
+// The one derivation of a campaign's numbers, read by BOTH the card header and Insights, so the two can
+// never disagree (the dual-source bug in a new costume). Replies count distinct replying recipients, not
+// rows, so a person who wrote twice is one reply.
+function campaignStats(slug){
+  var recips=campaignRecipients(slug);
+  var sent=getMailLog().filter(function(m){ return m && m.opp===slug && m.direction!=="in"; }).length;
+  var opens=opensForSlug(slug);
+  var uniq={}; allHits().forEach(function(e){ if(e && e.slug===slug && (!e.type||e.type==="open") && e.vid) uniq[e.vid]=1; });
+  var repliers={};
+  recips.forEach(function(r){ if(recipientState(slug, r.addr).replied) repliers[r.addr]=1; });
+  inboundFor(slug).forEach(function(r){ if(r && r.kind!=="auto" && r.from) repliers[String(r.from).trim().toLowerCase()]=1; });
+  var replies=Object.keys(repliers).length;
+  return { recipients:recips.length, sent:sent, opens:opens, unique:Object.keys(uniq).length,
+           replies:replies, replyRate: sent? Math.round((replies/sent)*100) : 0 };
+}
+
+// A recipient of a group campaign who replies gets exactly one individual child opportunity, linked both
+// ways: spawned_from on the child, and the parent's recipient row finds the child by that link. The
+// recipient's reply re-points to the child, so the child derives Replied on its own while the parent, a
+// group, never does. Idempotent: one child per recipient per campaign, ever; re-running spawns nothing and
+// re-points nothing twice (a re-pointed reply now belongs to the child, which is not a group).
+function spawnChildrenFromReplies(){
+  var spawned=0, pairs={};
+  getInbound().forEach(function(r){
+    if(!r || !r.opp || r.kind==="auto") return;
+    var parent=getDraft(r.opp); if(!parent || !isGroupOpp(parent)) return;
+    var a=String(r.from||"").trim().toLowerCase(); if(!a) return;
+    pairs[r.opp+"|"+a]={ parentSlug:r.opp, addr:a };
+  });
+  Object.keys(pairs).forEach(function(k){
+    var pr=pairs[k], childSlug=childSlugFor(pr.parentSlug, pr.addr);
+    if(getDraft(childSlug)) return;
+    var parent=getDraft(pr.parentSlug);
+    var roster=campaignRecipients(parent).find(function(x){ return x.addr===pr.addr; }) || { addr:pr.addr, name:"", lang:"" };
+    var sendRow=getMailLog().filter(function(m){ return m && m.opp===pr.parentSlug && m.direction!=="in" && String(m.to||"").trim().toLowerCase()===pr.addr; })
+      .sort(function(x,y){ return String(y.ts||"").localeCompare(String(x.ts||"")); })[0];
+    saveDraft({ slug:childSlug, business:(roster.name||pr.addr), published:!!(parent&&parent.published),
+      html:(parent&&parent.html)||"", spawned_from:{ parent:pr.parentSlug, addr:pr.addr }, recipients:[roster],
+      lang:roster.lang||(parent&&parent.lang)||"", answered_mid:(sendRow&&(sendRow.mid||sendRow.id))||"", up:Date.now() });
+    spawned++;
+  });
+  var inb=getInbound(), moved=0;
+  var next=inb.map(function(r){
+    if(!r || !r.opp || r.kind==="auto") return r;
+    var parent=getDraft(r.opp); if(!parent || !isGroupOpp(parent)) return r;
+    var a=String(r.from||"").trim().toLowerCase(); if(!a) return r;
+    var childSlug=childSlugFor(r.opp, a);
+    if(getDraft(childSlug)){ moved++; return Object.assign({}, r, { opp:childSlug }); }
+    return r;
+  });
+  if(moved){ setInbound(next); try{ if(__supa.inbound) __supa.inbound=next.slice(); }catch(_){} }
+  if(spawned || moved){ try{ invalidateSends(); }catch(_){} try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} }
+  return { spawned:spawned, moved:moved };
+}
+
+/* ---------- personalized group send (P1.5) ----------
+   One template with a greeting placeholder, rendered per recipient in that recipient's language, so no
+   recipient ever sees another's name or a bare placeholder. A recipient with no greeting name is blocked
+   for that recipient only, never sent with an empty greeting. */
+function greetingFor(recipient){ return recipient && recipient.name ? String(recipient.name).trim() : ""; }
+function renderPersonalized(template, recipient){
+  var name=greetingFor(recipient);
+  if(!name) return { ok:false, reason:"no-greeting", subject:"", html:"" };
+  var html=String((template&&template.html)||"").replace(/\{\{\s*NAME\s*\}\}/g, esc(name));
+  var subj=String((template&&template.subject)||"").replace(/\{\{\s*NAME\s*\}\}/g, name);
+  return { ok:true, name:name, subject:subj, html:html, lang:(recipient.lang||(template&&template.lang)||"") };
+}
+// The pre-send review: every recipient, the greeting that will be used, and whether it is blocked, so the
+// name-to-address mapping is confirmed before a single message goes out.
+function groupSendPlan(recipients, template){
+  return (recipients||[]).map(function(r){
+    var g=renderPersonalized(template, r);
+    return { addr:r.addr, name:greetingFor(r), lang:r.lang||(template&&template.lang)||"", blocked:!g.ok, reason:g.ok? "" : g.reason };
+  });
 }
 /* WO-015 §5.1: status is causal. Every status a card can display is a reading of a
    documented event, never an assertion. This is the one place the map lives, so the
@@ -1122,12 +1266,16 @@ function rematchHeld(){
     setInbound(next);
     try{ if(__supa.inbound) __supa.inbound=next.slice(); }catch(_){}
     try{ invalidateSends(); }catch(_){}
-    try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){}
     try{ logActivity("rematch","", matched+" matched"+(ambiguous? (", "+ambiguous+" ambiguous") : "")); }catch(_){}
   }
-  var held=next.filter(function(r){ return r && r.kind!=="auto" && !r.opp && !inboundIsNoise(r); }).length;
-  var noise=next.filter(function(r){ return r && r.kind!=="auto" && !r.opp && inboundIsNoise(r); }).length;
-  return { matched:matched, byTier:byTier, ambiguous:ambiguous, held:held, noise:noise };
+  // A reply attributed to a group campaign spawns the individual child that carries its Replied state. Run
+  // after matching, on the same one action, and idempotently, so re-match never doubles a child.
+  var sp=spawnChildrenFromReplies();
+  if(matched || sp.spawned || sp.moved){ try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} }
+  var after=getInbound();
+  var held=after.filter(function(r){ return r && r.kind!=="auto" && !r.opp && !inboundIsNoise(r); }).length;
+  var noise=after.filter(function(r){ return r && r.kind!=="auto" && !r.opp && inboundIsNoise(r); }).length;
+  return { matched:matched, byTier:byTier, ambiguous:ambiguous, spawned:sp.spawned, held:held, noise:noise };
 }
 // Attach one held reply to an opportunity by hand (the picker records this as tier manual, teaching
 // nothing silently). Idempotent by the reply's own key.
@@ -3248,6 +3396,19 @@ function buildThread(slug){
     if(!a || a.slug!==slug) return;
     out.push({ kind:"act", ts:a.ts, action:a.action||"", detail:a.detail||"", actor:a.actor||"" });
   });
+
+  // 5. a spawned child also carries the campaign send it answered, to its one recipient, so the child card
+  //    shows the full conversation (the send that was answered, then the reply that spawned it).
+  const self=getDraft(slug);
+  if(self && self.spawned_from && self.spawned_from.parent){
+    const pa=String(self.spawned_from.addr||"").trim().toLowerCase();
+    getMailLog().forEach(m=>{
+      if(!m || m.opp!==self.spawned_from.parent || m.direction==="in") return;
+      if(String(m.to||"").trim().toLowerCase()!==pa) return;
+      out.push({ kind:"sent", ts:m.ts, to:m.to||"", toName:m.toName||"", subject:m.subject||"",
+                 channel:m.provider||"", status:m.status||"sent", templateName:m.templateName||"", chapter:m.chapter||1, mid:m.mid });
+    });
+  }
 
   out.sort((x,y)=>{ const dx=ms(x.ts), dy=ms(y.ts); return dx===dy? 0 : (dx<dy? -1 : 1); });
   return out;
