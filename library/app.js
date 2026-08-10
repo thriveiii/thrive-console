@@ -1458,7 +1458,15 @@ function rematchHeld(){
   var after=getInbound();
   var held=after.filter(function(r){ return r && r.kind!=="auto" && !r.opp && !inboundIsNoise(r); }).length;
   var noise=after.filter(function(r){ return r && r.kind!=="auto" && !r.opp && inboundIsNoise(r); }).length;
-  return { matched:matched, byTier:byTier, ambiguous:ambiguous, spawned:sp.spawned, held:held, noise:noise };
+  // Brief B: an attribution is a write. It goes onto the Stage 4 durable queue (setInbound ->
+  // supaMirrorInbound -> supaQueueUpsert), but supaFlush only POSTs when signed in, because RLS refuses
+  // an anon write. So a match made while Supabase is configured but the operator is not signed in is
+  // saved on this device and QUEUED, not yet on the board (which reads Supabase). Report that honestly,
+  // so the success is never hollow: pendingSupa means "sign in to sync"; a sign-in flushes it (supaHydrate).
+  var pendingSupa = matched>0 && supaOn() && !supaSignedIn();
+  var synced = matched>0 && supaOn() && supaSignedIn();
+  return { matched:matched, byTier:byTier, ambiguous:ambiguous, spawned:sp.spawned, held:held, noise:noise,
+           pendingSupa:pendingSupa, synced:synced };
 }
 // Attach one held reply to an opportunity by hand (the picker records this as tier manual, teaching
 // nothing silently). Idempotent by the reply's own key.
@@ -6714,8 +6722,14 @@ function renderInboxInto(host, after){
     try{ res=rematchHeld(); }
     catch(e){ const o=host.querySelector("#rpInboxOut"); if(o) o.textContent="✕ "+t("rp_rematch_err")+" "+((e&&e.message)||""); return; }
     const o=host.querySelector("#rpInboxOut");
-    if(o) o.textContent=t("rp_rematch_done").replace("{m}", res.matched).replace("{u}", res.held)+
-      (res.spawned? " · "+res.spawned+" "+t("rp_spawned") : "");
+    if(o){
+      var line=t("rp_rematch_done").replace("{m}", res.matched).replace("{u}", res.held)+
+        (res.spawned? " · "+res.spawned+" "+t("rp_spawned") : "");
+      // Never a hollow success: a match made while not signed in is saved on this device and queued,
+      // not yet on the Supabase-read board, so it says so and points to the one action that syncs it.
+      if(res.pendingSupa) line+=" · "+t("rp_rematch_local");
+      o.textContent=line;
+    }
     done();
   });
   host.querySelectorAll(".rp-attach-btn").forEach(btn=>btn.addEventListener("click", ()=>{
@@ -6723,7 +6737,13 @@ function renderInboxInto(host, after){
     const sel=btn.parentNode.querySelector(".rp-attach-sel");
     const slug=sel && sel.value;
     if(!slug){ const o=host.querySelector("#rpInboxOut"); if(o) o.textContent=t("rp_attach_need"); return; }
-    if(attachReply(gid, slug)){ try{ spawnChildrenFromReplies(); }catch(_){} done(); }
+    if(attachReply(gid, slug)){
+      try{ spawnChildrenFromReplies(); }catch(_){}
+      // A manual attach is a write too: say when it is device-only and queued, never a silent local loss.
+      const o=host.querySelector("#rpInboxOut");
+      if(o) o.textContent = (supaOn() && !supaSignedIn()) ? t("rp_attach_local") : t("rp_attach_done");
+      done();
+    }
   }));
 }
 
