@@ -15,7 +15,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=1a06f36e63">
+<link rel="stylesheet" href="styles.css?v=376590ef71">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -55,9 +55,19 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <a class="btn ghost" href="#compose" data-icon="send" data-i18n="home_send">Send an email</a>
       <a class="btn ghost" href="#library" data-icon="archive" data-i18n="home_open_lib">Open library</a>
       <a class="btn ghost" href="#home" data-icon="spark" data-i18n="board_numbers">See the numbers</a>
+      <!-- The reply attribution surface, opened from here. A quiet badge carries the unmatched-human count. -->
+      <button class="btn ghost" id="boardInboxBtn" type="button" data-icon="mail" aria-expanded="false" aria-controls="boardInbox">
+        <span data-i18n="rp_inbox">Replies</span><span class="inbox-badge" id="boardInboxBadge" hidden>0</span>
+      </button>
       <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
     </div>
   </div>
+
+  <!-- The replies inbox: held human replies, the attach picker, and the collapsed noise. One surface,
+       here on the board, never a second copy in Settings. -->
+  <section class="board-inbox" id="boardInbox" hidden aria-label="Replies inbox">
+    <div class="board-inbox-body" id="boardInboxBody"></div>
+  </section>
 
   <!-- Direction A pipeline strip: the five stage counts from board state, the stage the headline
        speaks to lit in the rose accent. A quiet visual summary, so it is hidden from the reader
@@ -745,7 +755,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 </div>
 
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=5adc6662e1"></script>
+<script src="i18n.js?v=1034691229"></script>
 <script src="gate.js?v=d3da6c583e"></script>
 <script src="stage-model.js?v=f89936985f"></script>
 <script src="lifecycle.js?v=16f886007a"></script>
@@ -757,7 +767,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=0ee92673ab"></script>
+<script src="app.js?v=789e72c278"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

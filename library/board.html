@@ -50,9 +50,19 @@
       <a class="btn ghost" href="compose.html" data-icon="send" data-i18n="home_send">Send an email</a>
       <a class="btn ghost" href="library.html" data-icon="archive" data-i18n="home_open_lib">Open library</a>
       <a class="btn ghost" href="index.html" data-icon="spark" data-i18n="board_numbers">See the numbers</a>
+      <!-- The reply attribution surface, opened from here. A quiet badge carries the unmatched-human count. -->
+      <button class="btn ghost" id="boardInboxBtn" type="button" data-icon="mail" aria-expanded="false" aria-controls="boardInbox">
+        <span data-i18n="rp_inbox">Replies</span><span class="inbox-badge" id="boardInboxBadge" hidden>0</span>
+      </button>
       <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
     </div>
   </div>
+
+  <!-- The replies inbox: held human replies, the attach picker, and the collapsed noise. One surface,
+       here on the board, never a second copy in Settings. -->
+  <section class="board-inbox" id="boardInbox" hidden aria-label="Replies inbox">
+    <div class="board-inbox-body" id="boardInboxBody"></div>
+  </section>
 
   <!-- Direction A pipeline strip: the five stage counts from board state, the stage the headline
        speaks to lit in the rose accent. A quiet visual summary, so it is hidden from the reader

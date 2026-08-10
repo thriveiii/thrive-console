@@ -715,7 +715,10 @@ function recipientState(slug, addr){
 function campaignStats(slug){
   var recips=campaignRecipients(slug);
   var sent=getMailLog().filter(function(m){ return m && m.opp===slug && m.direction!=="in"; }).length;
-  var opens=opensForSlug(slug);
+  // Opens count the same way Insights counts them: page opens at or after the first send, so a page read
+  // before anything went out is never counted as an open (the number the card shows is the Insights number).
+  var s0=sendsFor(slug);
+  var opens=(s0 && s0.count && typeof opensSince==="function") ? opensSince(slug, s0.first) : opensForSlug(slug);
   var uniq={}; allHits().forEach(function(e){ if(e && e.slug===slug && (!e.type||e.type==="open") && e.vid) uniq[e.vid]=1; });
   var repliers={};
   recips.forEach(function(r){ if(recipientState(slug, r.addr).replied) repliers[r.addr]=1; });
@@ -783,6 +786,75 @@ function groupSendPlan(recipients, template){
     var g=renderPersonalized(template, r);
     return { addr:r.addr, name:greetingFor(r), lang:r.lang||(template&&template.lang)||"", blocked:!g.ok, reason:g.ok? "" : g.reason };
   });
+}
+
+/* ---------- the quiet update badge (P1.5, minimal) ----------
+   New opens or replies on a card since its panel was last opened. Last-seen is local presentation state,
+   per device, never a stored stage: it decides only whether a small badge shows, not what a card IS. */
+var CARD_SEEN="thrive_card_seen_v1";
+function cardSeen(){ try{ return JSON.parse(localStorage.getItem(CARD_SEEN)||"{}"); }catch(e){ return {}; } }
+function markCardSeen(slug){ if(!slug) return; try{ var m=cardSeen(); m[slug]=new Date().toISOString(); localStorage.setItem(CARD_SEEN, JSON.stringify(m)); }catch(e){} }
+// How many opens and replies a card has seen since it was last opened. A child counts its own recipient's
+// slice; a normal or group card counts its slug's inbound replies and page opens.
+function cardNewActivity(slug){
+  var since=cardSeen()[slug]||"";
+  var n=0;
+  inboundFor(slug).forEach(function(r){ if(r && r.kind!=="auto" && String(r.ts||"")>since) n++; });
+  allHits().forEach(function(e){ if(e && e.slug===slug && (!e.type||e.type==="open") && String(e.ts||"")>since) n++; });
+  var self=getDraft(slug);
+  if(self && self.spawned_from && self.spawned_from.parent){
+    var pa=String(self.spawned_from.addr||"").trim().toLowerCase();
+    inboundFor(self.spawned_from.parent).forEach(function(r){ if(r && r.kind!=="auto" && String(r.from||"").trim().toLowerCase()===pa && String(r.ts||"")>since) n++; });
+  }
+  return n;
+}
+
+/* The living surface: a group card's recipients panel and its aggregate header, both read from the one
+   campaignStats / recipientState derivation, so the card and Insights can never disagree. */
+function fmtWhenShort(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"short",timeStyle:"short"}); }catch(e){ return ts||""; } }
+function campaignAggHtml(slug){
+  var s=campaignStats(slug);
+  function tile(lbl,val){ return '<div class="cg-tile"><span class="cg-n">'+esc(String(val))+'</span><span class="cg-l">'+esc(lbl)+'</span></div>'; }
+  return '<div class="cg-agg">'+tile(t("cg_sent"),s.sent)+tile(t("cg_opens"),s.opens)+tile(t("cg_unique"),s.unique)+
+    tile(t("cg_replies"),s.replies)+tile(t("cg_rate"),s.replyRate+"%")+'</div>';
+}
+function recipientsPanelHtml(o){
+  var recips=campaignRecipients(o);
+  var rows=recips.map(function(r){
+    var st=recipientState(o.slug, r.addr);
+    var chip='<span class="rc-chip rc-'+esc(st.chip)+'">'+esc(t("rc_"+st.chip))+'</span>';
+    var open=(st.chip==="replied" && st.child)? ' <button class="btn ghost sm rc-open" type="button" data-child="'+esc(st.child)+'">'+esc(t("rc_open_child"))+'</button>' : '';
+    var last=st.last? '<span class="rc-last">'+esc(ltr(fmtWhenShort(st.last)))+'</span>' : '';
+    return '<li class="rc-row"><span class="rc-name">'+esc(r.name||t("rc_no_name"))+'</span>'+
+      '<span class="rc-addr mono-iso">'+ltr(esc(r.addr))+'</span>'+chip+open+last+'</li>';
+  }).join("");
+  return '<section class="cg-panel"><h4 class="cg-h">'+esc(t("cg_recipients"))+' <span class="n">'+recips.length+'</span></h4>'+
+    campaignAggHtml(o.slug)+'<ul class="rc-list">'+rows+'</ul></section>';
+}
+function spawnedFromHtml(o){
+  return '<section class="cg-panel"><p class="st-line">'+esc(t("cg_spawned_from"))+
+    ' <button class="btn ghost sm open-parent" type="button" data-parent="'+esc(o.spawned_from.parent)+'">'+esc(o.spawned_from.parent)+'</button></p></section>';
+}
+// The pre-send review for a personalized group send: every recipient, the greeting each will receive in
+// their own language, and the ones blocked for a missing name (blocked for that recipient only, never sent
+// with an empty greeting). Purely a review of groupSendPlan; it writes nothing.
+function renderGroupReviewInto(host, recipients, template){
+  if(!host) return;
+  var plan=groupSendPlan(recipients, template);
+  var blocked=plan.filter(function(p){ return p.blocked; }).length;
+  var rows=plan.map(function(p){
+    var greet="";
+    if(!p.blocked){ var g=renderPersonalized(template, { addr:p.addr, name:p.name, lang:p.lang }); greet=g.ok? g.subject : ""; }
+    return '<li class="gr-row'+(p.blocked?" gr-blocked":"")+'" dir="'+(p.lang==="ar"?"rtl":"ltr")+'">'+
+      '<span class="gr-name">'+(p.name? esc(p.name) : '<span class="gr-miss">'+esc(t("gr_no_name"))+'</span>')+'</span>'+
+      '<span class="gr-addr mono-iso">'+ltr(esc(p.addr))+'</span>'+
+      (p.blocked? '<span class="gr-block">'+esc(t("gr_blocked"))+'</span>'
+                : '<span class="gr-greet">'+esc(greet)+'</span>')+'</li>';
+  }).join("");
+  host.innerHTML='<h4 class="cg-h">'+esc(t("gr_review_h"))+' <span class="n">'+plan.length+'</span></h4>'+
+    (blocked? '<p class="st-line st-miss"><span class="n">'+blocked+'</span> '+esc(t("gr_blocked_n"))+'</p>' : '')+
+    '<ul class="gr-list">'+rows+'</ul>';
+  return { total:plan.length, blocked:blocked };
 }
 /* WO-015 §5.1: status is causal. Every status a card can display is a reading of a
    documented event, never an assertion. This is the one place the map lives, so the
@@ -5446,6 +5518,10 @@ async function initHome(){
       r.views=p.opens; r.uniq=p.vids.size; r.dwellMs=p.dwellMs; r.dwellN=p.dwellN;
       if(p.lastTs>r.last) r.last=p.lastTs;
     });
+    // One shared derivation: the campaign numbers on the Insights row are the exact campaignStats the card
+    // header reads, so the two surfaces can never disagree. Views and dwell stay page metrics beside them.
+    Object.keys(byOpp).forEach(k=>{ try{ const cs=campaignStats(k);
+      byOpp[k].sent=cs.sent; byOpp[k].opens=cs.opens; byOpp[k].uniq=cs.unique; byOpp[k].replies=cs.replies; }catch(_){} });
     const rows=Object.values(byOpp)
       .filter(r=>!r.archived)                            // archived opportunities stay out of the active view
       .sort((a,b)=> (b.sent+b.opens+b.replies)-(a.sent+a.opens+a.replies) || String(a.biz).localeCompare(String(b.biz)));
@@ -5990,6 +6066,31 @@ async function initBoard(){
       if(window.thriveModal) window.thriveModal.open(slug, "overview", name);
       else goTo("compose","slug="+encodeURIComponent(slug));
     }));
+    try{ paintCardBadges(); refreshInboxBadge(); }catch(_){}   // quiet badges, repainted every render
+  }
+
+  // New opens or replies on a card since it was last opened show a small badge; the lane header sums them.
+  // Last-seen is local presentation state, so this never changes what a card IS, only whether it glows.
+  function paintCardBadges(){
+    var laneNew={};
+    document.querySelectorAll('#boardLanes .tok[data-slug]').forEach(function(tk){
+      var slug=tk.getAttribute("data-slug"); var n=0; try{ n=cardNewActivity(slug); }catch(e){}
+      var b=tk.querySelector(".card-badge");
+      if(n>0){ if(!b){ b=document.createElement("span"); b.className="card-badge"; tk.appendChild(b); }
+        b.textContent=String(n); b.hidden=false;
+        var lane=tk.closest("[data-body]"); if(lane){ var k=lane.getAttribute("data-body"); laneNew[k]=(laneNew[k]||0)+n; } }
+      else if(b){ b.hidden=true; }
+    });
+    document.querySelectorAll('#boardLanes [data-count]').forEach(function(c){
+      var k=c.getAttribute("data-count"), n=laneNew[k]||0, ln=c.parentNode.querySelector(".lane-new");
+      if(n>0){ if(!ln){ ln=document.createElement("span"); ln.className="lane-new"; c.parentNode.appendChild(ln); } ln.textContent=String(n); ln.hidden=false; }
+      else if(ln){ ln.hidden=true; }
+    });
+  }
+  function refreshInboxBadge(){
+    var badge=document.getElementById("boardInboxBadge"); if(!badge) return;
+    var n=0; try{ n=inboundUnmatched().filter(function(r){ return !inboundIsNoise(r); }).length; }catch(e){}
+    if(n>0){ badge.textContent=String(n); badge.hidden=false; } else { badge.hidden=true; }
   }
 
   // The tray is a posture, not a decision, so it stays on this device and never syncs.
@@ -6013,6 +6114,25 @@ async function initBoard(){
     try{ await syncNow(); }catch(e){}
     render();
   });
+
+  // The replies inbox opens from the header. It is the one attribution surface; Settings only diagnoses
+  // the relay now. Rendering it re-runs the badge count so an attach or a re-match updates the header.
+  const inboxBtn=el("boardInboxBtn"), inbox=el("boardInbox"), inboxBody=el("boardInboxBody");
+  if(inboxBtn && inbox) inboxBtn.addEventListener("click", ()=>{
+    const open=inbox.hidden;
+    inbox.hidden=!open; inboxBtn.setAttribute("aria-expanded", open?"true":"false");
+    if(open) renderInboxInto(inboxBody, ()=>{ render(); refreshInboxBadge(); });
+  });
+
+  // A gentle poll of the reply transport while the board is open. It pulls, then repaints the quiet
+  // badges; it never redraws the whole screen unless something actually arrived (syncNow fires the event).
+  try{ if(window.__boardPoll) clearInterval(window.__boardPoll); }catch(_){}
+  window.__boardPoll=setInterval(()=>{
+    if(document.hidden) return;
+    Promise.resolve().then(()=> (typeof syncNow==="function") ? syncNow() : null)
+      .then(()=>{ try{ refreshInboxBadge(); paintCardBadges(); }catch(_){} }).catch(()=>{});
+  }, 90000);
+
   onThrive("lang","board",render);
   onThrive("sync","board",render);
   onThrive("unlock","board",render);
@@ -6269,36 +6389,22 @@ async function relayOp(op, body){
   }catch(e){ return { ok:false, error:String((e&&e.message)||e) }; }
 }
 
-function renderRepliesPanel(){
-  const host=document.getElementById("rpPanel");
+/* The reply attribution surface: held human replies with a one-tap attach picker, the collapsed noise,
+   and the console-side re-match. It moved from Settings to the board (opened from the header badge), so
+   there is ONE surface that writes an attachment, not two. Rendered into whatever host it is given. */
+function renderInboxInto(host, after){
   if(!host) return;
   const all=getInbound();
   const real=all.filter(r=>r && r.kind!=="auto");
   const unmatched=inboundUnmatched();
-  const scan=inboxScanInfo();
-  const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
-    {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
-
-  // Noise is separated from human mail before either is shown, so a real reply never sits under a pile
-  // of DMARC and platform notices. Human unmatched stays named and visible; noise collapses.
   const humanUn=unmatched.filter(r=>!inboundIsNoise(r));
   const noiseUn=unmatched.filter(r=>inboundIsNoise(r));
+  const done=()=>{ renderInboxInto(host, after); try{ if(typeof after==="function") after(); }catch(_){} };
 
   let h='<p class="st-line"><b>'+esc(t("rp_have"))+'</b> <span class="n">'+real.length+'</span> '+
         esc(t("rp_of_which"))+' <span class="n">'+humanUn.length+'</span> '+esc(t("rp_unmatched_n"))+
         (noiseUn.length? ' · <span class="n">'+noiseUn.length+'</span> '+esc(t("rp_noise_n")) : '')+'</p>';
-  h+= scan
-    ? '<p class="st-line">'+esc(t("rp_last_scan"))+' '+ltr(when(scan.ts))+
-      ' · <span class="n">'+(scan.ms||0)+'</span> ms</p>'
-    : '<p class="st-line st-miss">'+esc(t("rp_never_scanned"))+'</p>';
-
-  // The held recovery: re-match every held reply through the console matcher, right here, without waiting
-  // for the relay. One tap, idempotent.
   h+='<div class="bar"><button class="btn sm" id="rpRematch" type="button">'+esc(t("rp_rematch_btn"))+'</button></div>';
-
-  /* Named, never counted. A reply nobody could attribute is the one most likely to matter, because it is
-     the one nobody is expecting. Each carries a one-tap picker that records a manual match, teaching
-     nothing silently. */
   if(humanUn.length){
     const opps=getDraftsLocal().filter(o=>o&&o.slug).slice()
       .sort((a,b)=>String(a.business||a.slug).localeCompare(String(b.business||b.slug)));
@@ -6317,33 +6423,49 @@ function renderRepliesPanel(){
       noiseUn.slice(0,20).map(r=>'<li><span class="mono-iso">'+ltr(esc(r.from))+'</span>'+
         '<span>'+esc((r.subject||"").slice(0,60))+'</span></li>').join("")+'</ul></details>';
   }
+  h+='<div id="rpInboxOut" class="st-line"></div>';
+  host.innerHTML=h;
 
+  const rm=host.querySelector("#rpRematch");
+  if(rm) rm.addEventListener("click", ()=>{
+    const o0=host.querySelector("#rpInboxOut"); if(o0) o0.textContent=t("rp_working");
+    let res=null;
+    try{ res=rematchHeld(); }
+    catch(e){ const o=host.querySelector("#rpInboxOut"); if(o) o.textContent="✕ "+t("rp_rematch_err")+" "+((e&&e.message)||""); return; }
+    const o=host.querySelector("#rpInboxOut");
+    if(o) o.textContent=t("rp_rematch_done").replace("{m}", res.matched).replace("{u}", res.held)+
+      (res.spawned? " · "+res.spawned+" "+t("rp_spawned") : "");
+    done();
+  });
+  host.querySelectorAll(".rp-attach-btn").forEach(btn=>btn.addEventListener("click", ()=>{
+    const gid=btn.getAttribute("data-gid");
+    const sel=btn.parentNode.querySelector(".rp-attach-sel");
+    const slug=sel && sel.value;
+    if(!slug){ const o=host.querySelector("#rpInboxOut"); if(o) o.textContent=t("rp_attach_need"); return; }
+    if(attachReply(gid, slug)){ try{ spawnChildrenFromReplies(); }catch(_){} done(); }
+  }));
+}
+
+/* Settings keeps the relay diagnostics only now (scan health, counts, measure). The reply attribution
+   surface lives on the board; a pointer says so, so nobody hunts for it here. */
+function renderRepliesPanel(){
+  const host=document.getElementById("rpPanel");
+  if(!host) return;
+  const scan=inboxScanInfo();
+  const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
+    {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
+
+  let h='<p class="st-line">'+esc(t("rp_on_board"))+'</p>';
+  h+= scan
+    ? '<p class="st-line">'+esc(t("rp_last_scan"))+' '+ltr(when(scan.ts))+
+      ' · <span class="n">'+(scan.ms||0)+'</span> ms</p>'
+    : '<p class="st-line st-miss">'+esc(t("rp_never_scanned"))+'</p>';
   h+='<div class="bar">'+
      '<button class="btn ghost sm" id="rpStore" type="button">'+esc(t("rp_store_btn"))+'</button>'+
      '<button class="btn ghost sm" id="rpScan" type="button">'+esc(t("rp_scan_btn"))+'</button>'+
      '<button class="btn ghost sm" id="rpRepair" type="button">'+esc(t("rp_repair_btn"))+'</button>'+
      '</div><div id="rpOut" class="st-line"></div>';
   host.innerHTML=h;
-
-  // Console-side re-match, with an honest in-progress and result line, never silent.
-  const rm=document.getElementById("rpRematch");
-  if(rm) rm.addEventListener("click", ()=>{
-    const o0=document.getElementById("rpOut"); if(o0) o0.textContent=t("rp_working");
-    let res=null;
-    try{ res=rematchHeld(); }
-    catch(e){ const o=document.getElementById("rpOut"); if(o) o.textContent="✕ "+t("rp_rematch_err")+" "+((e&&e.message)||""); return; }
-    const o=document.getElementById("rpOut");
-    if(o) o.textContent=t("rp_rematch_done").replace("{m}", res.matched).replace("{u}", res.held);
-    renderRepliesPanel();
-  });
-  // The manual attach picker, one per held human reply.
-  host.querySelectorAll(".rp-attach-btn").forEach(btn=>btn.addEventListener("click", ()=>{
-    const gid=btn.getAttribute("data-gid");
-    const sel=btn.parentNode.querySelector(".rp-attach-sel");
-    const slug=sel && sel.value;
-    if(!slug){ const o=document.getElementById("rpOut"); if(o) o.textContent=t("rp_attach_need"); return; }
-    if(attachReply(gid, slug)){ renderRepliesPanel(); }
-  }));
 
   const out=()=>document.getElementById("rpOut");
   const busy=k=>{ const o=out(); if(o) o.textContent=t(k); };
@@ -7488,13 +7610,23 @@ function initModal(){
           '<button type="button" class="btn sm" data-ovcopy="'+esc(o.slug)+'">'+esc(t("ac_copy"))+'</button>'+
         '</span></div></div>'
       : '<span class="mw-muted">'+esc(t("mw_o_unpub"))+'</span>'));
+    // A group card carries its recipients panel and campaign aggregate; a spawned child links back to its
+    // campaign. Both read the one P1.5 derivation, so these numbers are the Insights numbers.
+    var extra="";
+    if(isGroupOpp(o)) extra+=recipientsPanelHtml(o);
+    if(o.spawned_from && o.spawned_from.parent) extra+=spawnedFromHtml(o);
     box.innerHTML=prohibitionBand(o)+recordNotes(o)+
-      '<dl class="mw-rows">'+rows.join("")+'</dl>'+movesBar(o);
+      '<dl class="mw-rows">'+rows.join("")+'</dl>'+extra+movesBar(o);
+    try{ markCardSeen(o.slug); }catch(_){}                 // opening the card clears its badge (local only)
     box.querySelectorAll("[data-ovcopy]").forEach(b=>b.addEventListener("click", async ()=>{
       var okc=await copyToClipboard(liveUrl(b.getAttribute("data-ovcopy")));
       var old=b.textContent; b.textContent=t("ac_copied"); setTimeout(()=>{ b.textContent=old; }, 1600);
       if(!okc) actionStatus("err", t("act_err_unknown"));
     }));
+    var openCard=function(slug){ if(window.thriveModal) window.thriveModal.open(slug, "overview", slug);
+      else goTo("compose","slug="+encodeURIComponent(slug)); };
+    box.querySelectorAll(".rc-open").forEach(b=>b.addEventListener("click", ()=>openCard(b.getAttribute("data-child"))));
+    box.querySelectorAll(".open-parent").forEach(b=>b.addEventListener("click", ()=>openCard(b.getAttribute("data-parent"))));
     bindMoves(box, o);
   }
 
