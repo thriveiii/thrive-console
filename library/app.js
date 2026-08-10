@@ -1880,6 +1880,77 @@ function supaRecordDiverge(kind, key, msg){
   try{ logActivity("supa_diverge", kind+":"+key, String(msg||"").slice(0,120)); }catch(e){}
 }
 function supaClearDiverge(){ try{ localStorage.removeItem(SUPA_DIVERGE); }catch(e){} }
+
+/* ---------- Stage 4: Supabase is the single source; the device is a cache ----------
+   When an operator is signed in, Supabase is the authority. Reads come from it (the hydrate, gated by
+   the session since the last brief). Writes are made DURABLE here: every mirror is recorded to a local
+   pending queue BEFORE it is attempted, so a mirror that fails (offline, a transient error) is retried
+   on the next flush (the next write, or the next sign-in) and never lives only in a device store that a
+   Safari data-clear would wipe. Upserts merge by primary key and deletes are idempotent, so replaying
+   the queue is safe (at-least-once). Once the queue drains, everything the operator did is in Supabase,
+   and a cleared device rebuilds from it with no manual step. The local store is written alongside as a
+   cache and an offline-read convenience, never as a second source of truth. The verify/backfill in
+   Settings is now a one-time migration for a device that still holds records made before this queue,
+   not part of the normal path. */
+var PENDING="console_sb_pending";
+function supaPending(){ try{ return JSON.parse(localStorage.getItem(PENDING)||"[]"); }catch(e){ return []; } }
+function supaSetPending(a){ try{ localStorage.setItem(PENDING, JSON.stringify((a||[]).slice(-4000))); }catch(e){} }
+function supaEnqueue(entry){ try{ var a=supaPending(); a.push(entry); supaSetPending(a); }catch(e){} }
+var __supaFlushing=false;
+/* Replay every queued write to Supabase, dequeuing each on success and keeping the rest for the next
+   pass. Only attempts when signed in (an anon write would be refused by RLS and pointlessly churn). */
+async function supaFlush(){
+  if(__supaFlushing || !supaOn() || !supaSignedIn()) return { flushed:0, left:supaPending().length };
+  __supaFlushing=true;
+  var a=supaPending(), left=[], flushed=0;
+  for(var i=0;i<a.length;i++){
+    var e=a[i];
+    try{
+      if(e.op==="del") await window.ThriveSupa.del(e.t, e.q);
+      else await window.ThriveSupa.upsert(e.t, e.rows);
+      flushed++;
+    }catch(err){ left.push(e); supaRecordDiverge("flush", e.t, err&&err.message); }
+  }
+  supaSetPending(left); __supaFlushing=false;
+  return { flushed:flushed, left:left.length };
+}
+function supaQueueUpsert(table, rows){
+  if(!supaOn()) return;
+  supaEnqueue({ op:"upsert", t:table, rows:Array.isArray(rows)?rows:[rows] });
+  supaFlush().catch(function(){});
+}
+function supaQueueDel(table, q){
+  if(!supaOn()) return;
+  supaEnqueue({ op:"del", t:table, q:q });
+  supaFlush().catch(function(){});
+}
+window.thriveSupaPendingCount = function(){ try{ return supaPending().length; }catch(e){ return 0; } };
+window.thriveSupaFlush = function(){ return supaFlush(); };
+
+/* Templates hydrate into the local cache (Stage 4): console_templates carries the operator's custom
+   email and page templates. On a cleared device the read accessors (getEmailTemplates, getCustomTemplates)
+   read the local cache, so hydrate writes any Supabase template the cache is missing back into it, by id,
+   idempotently. The stock-seeding logic in getEmailTemplates is untouched: this only ADDS what is absent. */
+function supaMergeTemplatesToCache(rows){
+  try{
+    var email=[], page=[];
+    (rows||[]).forEach(function(r){
+      if(!r || !r.id) return;
+      var rec={ id:r.id, name:r.name||"", subject:r.subject||"", html:r.html||"", lang:r.lang||"", up:r.up||Date.now() };
+      (r.kind==="page" ? page : email).push(rec);
+    });
+    if(email.length){
+      var e=JSON.parse(localStorage.getItem(ETPL)||"[]"), have={}; e.forEach(function(x){ have[x.id]=1; });
+      var add=email.filter(function(x){ return !have[x.id]; });
+      if(add.length) localStorage.setItem(ETPL, JSON.stringify(e.concat(add)));
+    }
+    if(page.length){
+      var p=JSON.parse(localStorage.getItem(TPLSTORE)||"[]"), hp={}; p.forEach(function(x){ hp[x.id]=1; });
+      var addp=page.filter(function(x){ return !hp[x.id]; });
+      if(addp.length) localStorage.setItem(TPLSTORE, JSON.stringify(p.concat(addp)));
+    }
+  }catch(e){}
+}
 /* An opportunity becomes one console_opps row. The whole record travels in the data jsonb (forward
    compatible), minus the page html, which becomes its own console_pages row. */
 function supaRowFromOpp(d){
@@ -1892,19 +1963,14 @@ function supaRowFromOpp(d){
 }
 function supaMirrorOpp(d){
   if(!supaOn() || !d || !d.slug) return;
-  var S=window.ThriveSupa;
-  try{ S.upsertOpp(supaRowFromOpp(d)).catch(function(e){ supaRecordDiverge("opp", d.slug, e&&e.message); }); }
-  catch(e){ supaRecordDiverge("opp", d.slug, e&&e.message); }
-  if(d.html){
-    try{ S.upsertPage(d.slug, d.html).catch(function(e){ supaRecordDiverge("page", d.slug, e&&e.message); }); }
-    catch(e){ supaRecordDiverge("page", d.slug, e&&e.message); }
-  }
+  supaQueueUpsert("console_opps", supaRowFromOpp(d));
+  if(d.html) supaQueueUpsert("console_pages", { slug:d.slug, html:d.html });
 }
 function supaDeleteOpp(slug){
   if(!supaOn() || !slug) return;
-  var S=window.ThriveSupa, q="slug=eq."+encodeURIComponent(slug);
-  try{ S.del("console_opps", q).catch(function(e){ supaRecordDiverge("opp_del", slug, e&&e.message); }); }catch(e){}
-  try{ S.del("console_pages", q).catch(function(e){ supaRecordDiverge("page_del", slug, e&&e.message); }); }catch(e){}
+  var q="slug=eq."+encodeURIComponent(slug);
+  supaQueueDel("console_opps", q);
+  supaQueueDel("console_pages", q);
 }
 /* Templates. console_templates carries the core columns; a page template's or snippet's type-specific
    extras (type, template_ref) have no column in the Stage 1 schema and are not mirrored in Stage 2. That
@@ -1914,8 +1980,7 @@ function supaMirrorTemplates(list, kind){
   if(!supaOn() || !list || !list.length) return;
   var rows=list.map(function(rec){ return { id:rec.id, kind:kind, name:rec.name||"", subject:rec.subject||"",
     html:rec.html||"", lang:rec.lang||"", up:rec.up||Date.now() }; });
-  try{ window.ThriveSupa.upsert("console_templates", rows).catch(function(e){ supaRecordDiverge("template", kind, e&&e.message); }); }
-  catch(e){ supaRecordDiverge("template", kind, e&&e.message); }
+  supaQueueUpsert("console_templates", rows);
 }
 function supaMailRow(rec){
   return { id:rec.mid||rec.id||"", opp:rec.opp||"", status:rec.status||"", to_addr:rec.to||"",
@@ -1923,9 +1988,7 @@ function supaMailRow(rec){
 }
 function supaMirrorMail(rec){
   if(!supaOn() || !rec) return;
-  var row=supaMailRow(rec);
-  try{ window.ThriveSupa.upsert("console_mail", row).catch(function(e){ supaRecordDiverge("mail", row.id, e&&e.message); }); }
-  catch(e){ supaRecordDiverge("mail", row.id, e&&e.message); }
+  supaQueueUpsert("console_mail", supaMailRow(rec));
 }
 /* A reply (inbound) becomes one console_inbound row, keyed on the Gmail message id (the same key the
    inbound merge dedupes on), the whole record in the data jsonb. This is the store that was missed in
@@ -1937,9 +2000,7 @@ function supaInboundRow(r){
 }
 function supaMirrorInbound(list){
   if(!supaOn() || !list || !list.length) return;
-  var rows=list.map(supaInboundRow);
-  try{ window.ThriveSupa.upsert("console_inbound", rows).catch(function(e){ supaRecordDiverge("inbound", "batch", e&&e.message); }); }
-  catch(e){ supaRecordDiverge("inbound", "batch", e&&e.message); }
+  supaQueueUpsert("console_inbound", list.map(supaInboundRow));
 }
 /* An open (hit) becomes one console_hits row, keyed on hitKey (type|slug|ts|vid), the same key allHits
    dedupes on, so a re-mirror or a re-backfill updates in place and never doubles an open. */
@@ -1949,18 +2010,14 @@ function supaHitRow(e){
 }
 function supaMirrorHits(list){
   if(!supaOn() || !list || !list.length) return;
-  var rows=list.map(supaHitRow);
-  try{ window.ThriveSupa.upsert("console_hits", rows).catch(function(e){ supaRecordDiverge("hits", "batch", e&&e.message); }); }
-  catch(e){ supaRecordDiverge("hits", "batch", e&&e.message); }
+  supaQueueUpsert("console_hits", list.map(supaHitRow));
 }
 /* Settings travel as key/value rows. Secrets are deliberately NOT mirrored: the GitHub token, the sync
    session key, and the vault key never leave for an anon-readable table. Only non-secret settings (the
    endpoint URLs, the sending caps, the from name, the closing block) are mirrored. */
 function supaMirrorSetting(key, value){
   if(!supaOn() || !key) return;
-  var row={ key:key, value:(value===undefined?null:value) };
-  try{ window.ThriveSupa.upsert("console_settings", row).catch(function(e){ supaRecordDiverge("setting", key, e&&e.message); }); }
-  catch(e){ supaRecordDiverge("setting", key, e&&e.message); }
+  supaQueueUpsert("console_settings", { key:key, value:(value===undefined?null:value) });
 }
 /* One-time, idempotent backfill: copy the current store's existing opportunities, pages, templates,
    mail ledger and non-secret settings into Supabase, so it holds the full picture, not only new writes.
@@ -2086,6 +2143,9 @@ async function supaHydrate(){
   if(!supaOn()){ __supa.hydrated=false; return false; }
   try{
     var S=window.ThriveSupa;
+    // Stage 4: push any queued local writes up FIRST, so a device that made changes offline (or whose
+    // last mirror failed) syncs them before the read, and the hydrate reflects everything this device did.
+    try{ await supaFlush(); }catch(_){}
     var opps=await S.rest("console_opps", { query:"select=slug,data" });
     var pages=await S.rest("console_pages", { query:"select=slug,html" });
     var pageBy={}; (pages||[]).forEach(function(p){ pageBy[p.slug]=p.html; });
@@ -2110,6 +2170,8 @@ async function supaHydrate(){
     __supa.inbound=(inbound||[]).map(function(r){ return r.data||{}; });
     var hits=await S.rest("console_hits", { query:"select=data" });
     __supa.hits=(hits||[]).map(function(r){ return r.data||{}; });
+    // Templates hydrate into the local cache (its own try, so a template hiccup never fails the board).
+    try{ var tpls=await S.rest("console_templates", { query:"select=id,kind,name,subject,html,lang,up" }); supaMergeTemplatesToCache(tpls||[]); }catch(_){}
     __supa.hydrated=true; __supa.degraded=false; __supa.authRequired=false; __supa.ts=Date.now();
     // The send and open indexes are memoized off the old store; rebuild them from the migrated rows.
     try{ invalidateSends(); }catch(_){}

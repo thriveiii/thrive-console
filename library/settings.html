@@ -112,15 +112,15 @@
     <!-- Operator sign-in moved to the unlock flow (gate two), so there is one sign-in surface, not two.
          The gate asks for the operator email and password after the passcode. -->
     <p class="sub" data-i18n="sb_auth_moved"></p>
-    <!-- Stage 2: every write also mirrors to Supabase; reads still come from the current store. Backfill
-         copies what already exists; Verify shows the two stores agree. -->
+    <!-- Stage 4: when signed in, Supabase is the source. Reads come from it; writes are queued and
+         pushed to it durably; this device is a cache. Migrate is a one-time push for a device that
+         still holds records made before the queue. The read toggle governs a signed-out device only. -->
+    <p class="sub" data-i18n="sb_stage4_note"></p>
     <div class="bar">
-      <button class="btn ghost" id="sbBackfill" type="button" data-i18n="sb_backfill">Backfill existing into Supabase</button>
+      <button class="btn ghost" id="sbBackfill" type="button" data-i18n="sb_backfill">Migrate this device to Supabase (one time)</button>
       <button class="btn ghost" id="sbVerify" type="button" data-i18n="sb_verify_btn">Verify the two stores agree</button>
     </div>
     <div class="quota-readout" id="sbVerifyOut"></div>
-    <!-- Stage 3: switch reads to Supabase (refused unless the two stores agree), or revert to this
-         device instantly. Writes stay dual either way. -->
     <div class="in-count" id="sbReadSrc"></div>
     <div class="bar">
       <button class="btn ghost" id="sbReadOn" type="button" data-i18n="sb_read_on">Read from Supabase</button>

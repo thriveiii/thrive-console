@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="669fc195">
+<meta name="thrive-build" content="0e42345d">
 <title>Thrive Console</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <script>(function(){var d=document.documentElement;
@@ -650,15 +650,15 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <!-- Operator sign-in moved to the unlock flow (gate two), so there is one sign-in surface, not two.
          The gate asks for the operator email and password after the passcode. -->
     <p class="sub" data-i18n="sb_auth_moved"></p>
-    <!-- Stage 2: every write also mirrors to Supabase; reads still come from the current store. Backfill
-         copies what already exists; Verify shows the two stores agree. -->
+    <!-- Stage 4: when signed in, Supabase is the source. Reads come from it; writes are queued and
+         pushed to it durably; this device is a cache. Migrate is a one-time push for a device that
+         still holds records made before the queue. The read toggle governs a signed-out device only. -->
+    <p class="sub" data-i18n="sb_stage4_note"></p>
     <div class="bar">
-      <button class="btn ghost" id="sbBackfill" type="button" data-i18n="sb_backfill">Backfill existing into Supabase</button>
+      <button class="btn ghost" id="sbBackfill" type="button" data-i18n="sb_backfill">Migrate this device to Supabase (one time)</button>
       <button class="btn ghost" id="sbVerify" type="button" data-i18n="sb_verify_btn">Verify the two stores agree</button>
     </div>
     <div class="quota-readout" id="sbVerifyOut"></div>
-    <!-- Stage 3: switch reads to Supabase (refused unless the two stores agree), or revert to this
-         device instantly. Writes stay dual either way. -->
     <div class="in-count" id="sbReadSrc"></div>
     <div class="bar">
       <button class="btn ghost" id="sbReadOn" type="button" data-i18n="sb_read_on">Read from Supabase</button>
@@ -749,7 +749,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 </div>
 
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=71721856b0"></script>
+<script src="i18n.js?v=5f12ebe271"></script>
 <script src="gate.js?v=e38f0a438c"></script>
 <script src="stage-model.js?v=f89936985f"></script>
 <script src="lifecycle.js?v=16f886007a"></script>
@@ -761,7 +761,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=67f754af98"></script>
+<script src="app.js?v=35f36bdf2f"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with
