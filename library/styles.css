@@ -1222,14 +1222,18 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
    control on the end, aligned and never touching. Every control the same height, one gap value. */
 .rp-held{ list-style:none; margin:var(--s-3) 0 0; padding:0; display:flex; flex-direction:column; gap:var(--s-3) }
 .rp-held-row{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--s-3);
-  padding:var(--s-2) 0; border-block-end:1px solid var(--line) }
+  padding:var(--s-2) 0; border-block-end:1px solid var(--hair) }
 .rp-held-row:last-child{ border-block-end:0 }
 .rp-held-who{ display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 12rem }
 .rp-held-subj{ font-size:var(--fs-micro); color:var(--ink-4); overflow:hidden; text-overflow:ellipsis }
 .rp-attach{ display:flex; align-items:center; gap:var(--s-2); flex:0 0 auto }
-.rp-attach .rp-attach-sel{ max-width:15rem; height:2.2em }
+/* Select and Attach button share one height and a single gap, aligned and never touching, in both
+   directions. The height is in rem, not em, so it is identical for both controls regardless of each
+   one's font size (an em height rendered them a pixel apart). */
+.rp-attach .rp-attach-sel,.rp-attach .rp-attach-btn{ height:2rem; box-sizing:border-box }
+.rp-attach .rp-attach-sel{ max-width:15rem }
 .rp-attach .rp-attach-btn{ white-space:nowrap }
-.rp-noise{ margin:var(--s-3) 0 0; padding-block-start:var(--s-2); border-block-start:1px solid var(--line) }
+.rp-noise{ margin:var(--s-3) 0 0; padding-block-start:var(--s-2); border-block-start:1px solid var(--hair) }
 .rp-noise>summary{ cursor:pointer; color:var(--ink-4); font-size:var(--fs-micro); padding:var(--s-1) 0 }
 .board-inbox .bar{ margin-block:var(--s-3) 0 }
 /* The badge highlight: a card opened from its badge flashes the exact new item it announced, then calms. */
@@ -1243,7 +1247,10 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 /* Board replies inbox, opened from the header badge. One surface for attribution. */
 .inbox-badge{ display:inline-flex; align-items:center; justify-content:center; min-width:1.2em; padding:0 .35em; margin-inline-start:.4em;
   border-radius:999px; background:var(--rose, #b46a7a); color:#fff; font-size:var(--fs-micro); line-height:1.5 }
-.board-inbox{ margin-block:var(--s-3); padding:var(--s-3); border:1px solid var(--line); border-radius:var(--r-2, 10px); background:var(--bg-2, #fff) }
+/* The replies inbox wears the console's dark identity: the panel surface, a hairline border, brand ink.
+   Before this it read background:var(--bg-2,#fff) with --bg-2 undefined, so it fell back to a glaring
+   white panel, and its dividers used the undefined --line and vanished. Defined dark tokens only now. */
+.board-inbox{ margin-block:var(--s-3); padding:var(--s-3); border:1px solid var(--hair); border-radius:var(--r-2, 10px); background:var(--panel); color:var(--ink-2) }
 /* Quiet activity badges: on a card and summed on its lane header. Presentation only. */
 .card-badge{ position:absolute; inset-block-start:6px; inset-inline-end:6px; min-width:1.1em; padding:0 .3em; border-radius:999px;
   background:var(--rose, #b46a7a); color:#fff; font-size:var(--fs-micro); line-height:1.5; text-align:center }
