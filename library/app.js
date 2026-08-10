@@ -862,7 +862,28 @@ function opPrefRemember(k, v){
 
 /* The living surface: a group card's recipients panel and its aggregate header, both read from the one
    campaignStats / recipientState derivation, so the card and Insights can never disagree. */
-function fmtWhenShort(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"short",timeStyle:"short"}); }catch(e){ return ts||""; } }
+/* ONE date formatter for the whole console (ROOT B). Intl.DateTimeFormat, memoized per (locale,
+   options), with the numbering system pinned to Latin for Arabic ("ar-u-nu-latn") so dates keep
+   WESTERN digits per brand on EVERY engine. This is the fix the sandbox could not see: this build's
+   Chromium ICU renders the default "ar" locale with Latin digits, but iOS WebKit's ICU renders it
+   with Arabic-Indic digits, so the device showed non-brand numerals while every green
+   sandbox run looked correct. Pinning the numbering system removes the engine dependence. Every
+   ad-hoc date string in the console routes through fmtStamp, so there is one formatter, not eight.
+   Output lands inside .mono / .mono-iso / <bdi>, which are unicode-bidi:isolate, so a date never
+   reorders in RTL context. */
+var __DTF={};
+function dateLocale(){ try{ return (getLang()==="ar") ? "ar-u-nu-latn" : "en-US"; }catch(e){ return "en-US"; } }
+function fmtStamp(ts, opts, locOverride){
+  if(ts==null || ts==="") return "";
+  var d=new Date(ts); if(isNaN(d.getTime())) return String(ts);
+  var loc=locOverride || dateLocale(), key=loc+"|"+JSON.stringify(opts||{});
+  var f=__DTF[key];
+  if(f===undefined){ try{ f=new Intl.DateTimeFormat(loc, opts||{}); }catch(e){ try{ f=new Intl.DateTimeFormat("en-US", opts||{}); }catch(_){ f=null; } } __DTF[key]=f; }
+  try{ return f ? f.format(d) : String(ts); }catch(e){ return String(ts); }
+}
+/* Isolated for direct injection into RTL text, so a mixed line never reorders the date. */
+function fmtStampHtml(ts, opts){ var s=fmtStamp(ts, opts); return s ? '<bdi>'+esc(s)+'</bdi>' : ''; }
+function fmtWhenShort(ts){ var s=fmtStamp(ts, {dateStyle:"short", timeStyle:"short"}); return s || (ts||""); }
 function campaignAggHtml(slug){
   var s=campaignStats(slug);
   function tile(lbl,val){ return '<div class="cg-tile"><span class="cg-n">'+esc(String(val))+'</span><span class="cg-l">'+esc(lbl)+'</span></div>'; }
@@ -2024,7 +2045,21 @@ async function supaVerify(){
 var READ_FLAG="console_sb_read";
 var __supa={ opps:null, mail:null, inbound:null, hits:null, hydrated:false, degraded:false, authRequired:false, ts:0 };
 var __supaHydrating=false;
-function supaReadFlagOn(){ try{ return localStorage.getItem(READ_FLAG)==="1"; }catch(e){ return false; } }
+/* Reads engage on TWO authorities, and being signed in is the one that matters on a real device.
+   ROOT A of the "board reads no mail" defect: the mail, opens and replies slices only come from
+   Supabase when this predicate is true, and until now it was true only when a manual Settings toggle
+   had written READ_FLAG="1". That toggle is refused unless the local and Supabase stores agree, but a
+   fresh signed-in device (a Private tab, a cleared Safari, a new operator) has an EMPTY local store,
+   so the agree-check can never pass and the flag can never be set. The opportunities still appear,
+   because they are read from the committed manifest.json, but the ledger reads from an empty local
+   store and every card shows "no email yet". Post-P2 the operator session is the data authority: if an
+   operator is signed in to a configured Supabase, reads come from Supabase, full stop. The manual flag
+   remains an explicit opt-in for a signed-out device only. This is the one place the read intent is
+   decided, so every reader (getMailLog, allHits, getInbound, getDrafts) follows one path. */
+function supaReadFlagOn(){
+  try{ if(supaSignedIn()) return true; }catch(e){}
+  try{ return localStorage.getItem(READ_FLAG)==="1"; }catch(e){ return false; }
+}
 function supaReadOn(){ return supaReadFlagOn() && supaOn() && __supa.hydrated && !__supa.degraded && !!__supa.opps; }
 // Reads are switched (and the cache usable) whenever a successful hydrate is in hand. The ledger, the
 // replies and the opens each fall back to the current store when their slice is not present.
@@ -2997,7 +3032,7 @@ function initActivity(){
   const el=id=>document.getElementById(id);
   let cat="all";
   const actionLabel=a=>t("act_"+a) !== ("act_"+a) ? t("act_"+a) : a;
-  function fmt(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts; } }
+  function fmt(ts){ return fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||""); }
 
   function renderChips(){
     const cats=["all","pages","emails","templates","system"];
@@ -3111,7 +3146,7 @@ function initActivity(){
       const today=dk(new Date().toISOString()), yest=dk(new Date(Date.now()-DAY).toISOString());
       if(k===today) return t("act_today");
       if(k===yest) return t("act_yesterday");
-      try{ return new Date(k+"T12:00:00Z").toLocaleDateString(getLang()==="ar"?"ar":"en",{weekday:"long", day:"numeric", month:"long"}); }
+      try{ return fmtStamp(k+"T12:00:00Z", {weekday:"long", day:"numeric", month:"long"}) || k; }
       catch(e){ return k; }
     };
     wrap.innerHTML='<h3 class="block-h">'+esc(t("act_story_h"))+'</h3>'+
@@ -3837,8 +3872,9 @@ async function initCompose(slugArg){
   // an Arabic template needs «أغسطس», an English one needs "August".
   function defaultMonth(forTpl){
     const ar = forTpl ? /[؀-ۿ]/.test((forTpl.subject||"")+(forTpl.html||"")) : (getLang()==="ar");
-    try{ return new Date().toLocaleString(ar?"ar":"en",{month:"long"}); }
-    catch(e){ return new Date().toLocaleString("en",{month:"long"}); }
+    // Keyed to the TEMPLATE language, not the UI, so the one formatter takes an explicit locale here.
+    // Month name only (no numerals), Latin numbering pinned for consistency.
+    return fmtStamp(Date.now(), {month:"long"}, ar ? "ar-u-nu-latn" : "en-US") || "";
   }
   if(monthEl && !monthEl.value) monthEl.value=defaultMonth(null);
   // Empty selection ("") is an intentional plain, template-less message: currentTpl() returns null.
@@ -4796,7 +4832,7 @@ function initSettings(){
     function sySummary(){
       syCounts();
       const last=syncLast();
-      if(last){ try{ syShow("✓ "+t("sy_last")+" "+new Date(last).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}), "ok"); return; }catch(e){} }
+      if(last){ try{ syShow("✓ "+t("sy_last")+" "+fmtStamp(last, {dateStyle:"medium", timeStyle:"short"}), "ok"); return; }catch(e){} }
       if(getSyncEndpoint()) syShow(t("sy_ready"),"");
     }
     sySummary();
@@ -5415,7 +5451,7 @@ function initTemplates(){
 
 /* ---------- Overview home: outreach + page performance in one room ---------- */
 function fmtMs(ms){ if(!ms) return "–"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
-function fmtWhen(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||"–"; } }
+function fmtWhen(ts){ return fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"–"); }
 /* roll raw beacon events into per-slug page stats */
 function aggregateHits(events){
   const bySlug={};
@@ -5777,7 +5813,7 @@ async function initInsights(){
   el("epInput").value = getEndpoint();
 
   function fmtDur(ms){ if(!ms) return "–"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
-  function fmtDate(ts){ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",{dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||"–"; } }
+  function fmtDate(ts){ return fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"–"); }
 
   async function fetchData(){
     const ep=getEndpoint();
@@ -6518,8 +6554,7 @@ function renderRepliesPanel(){
   const host=document.getElementById("rpPanel");
   if(!host) return;
   const scan=inboxScanInfo();
-  const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
-    {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
+  const when=ts=>fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"");
 
   let h='<p class="st-line">'+esc(t("rp_on_board"))+'</p>';
   h+= scan
@@ -7707,8 +7742,7 @@ function initModal(){
     const box=el("modalHistory"); if(!box) return;
     const slug=(o&&o.slug)||current;
     const entries=buildThread(slug);
-    const when=ts=>{ try{ return new Date(ts).toLocaleString(getLang()==="ar"?"ar":"en",
-      {dateStyle:"medium",timeStyle:"short"}); }catch(e){ return ts||""; } };
+    const when=ts=>fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"");
     const label=a=>{ const k="act_"+a; const v=t(k); return v===k? a : v; };
 
     if(!entries.length){ box.innerHTML='<div class="mw-empty">'+ic("clock")+

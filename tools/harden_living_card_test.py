@@ -37,14 +37,31 @@ from playwright.sync_api import sync_playwright
 INIT = r"""
 (() => {
   try { localStorage.setItem('console_sb_url','https://fake.supabase.co'); localStorage.setItem('console_sb_anon','anon-key'); } catch(e){}
+  // Seed the stores BEFORE any hydrate can run. Post-fix, a signed-in operator is the read authority
+  // (reads come from Supabase), so the mock below SERVES these console_ tables from the same seed. This
+  // is exactly the signed-in path the old sandbox never exercised: local empty, session on, Supabase
+  // has the data. Seeding here (not mid-test) guarantees the hydrate reads it.
+  try {
+    localStorage.setItem('thrive_opps_v1', JSON.stringify([{slug:'thrive-july', business:'July', published:true,
+      recipients:[{addr:'basel.personal@gmail.com',name:'Basel',lang:'ar'},{addr:'lina@school.com',name:'Lina',lang:'en'}]}]));
+    localStorage.setItem('thrive_mail_v1', JSON.stringify([
+      {mid:'j1',opp:'thrive-july',to:'basel.personal@gmail.com',toName:'Basel',subject:'من جد وجد',status:'sent',direction:'out',ts:'2026-07-31T17:02:00Z'},
+      {mid:'j2',opp:'thrive-july',to:'lina@school.com',toName:'Lina',subject:'A page',status:'sent',direction:'out',ts:'2026-07-31T17:03:00Z'}]));
+    localStorage.setItem('thrive_inbound_v1', JSON.stringify([
+      {gid:'g1',opp:'',kind:'reply',from:'basel.personal@gmail.com',name:'Basel',subject:'Re: من جد وجد',snippet:'yes',ts:'2026-08-03T09:00:00Z'},
+      {gid:'gn',opp:'',kind:'reply',from:'notifications@instagram.com',subject:'New login',snippet:'x',ts:'2026-08-03T02:00:00Z'}]));
+    localStorage.setItem('thrive_hits_v1','[]');
+  } catch(e){}
   window.__settings = {};                       // the console_settings store (key -> value)
+  const g = (k)=>{ try{ return JSON.parse(localStorage.getItem(k)||'[]'); }catch(e){ return []; } };
+  const json = (v)=> new Response(JSON.stringify(v), {status:200, headers:{'Content-Type':'application/json'}});
   const real = window.fetch ? window.fetch.bind(window) : null;
   window.fetch = async (url, opts) => {
     const method=(opts&&opts.method)||'GET'; const body=(opts&&opts.body)?JSON.parse(opts.body):null;
     if (typeof url==='string' && url.indexOf('/auth/v1/token')>=0) {
       if (url.indexOf('grant_type=password')>=0) {
         if (body.email==='op@thrive.co' && body.password==='right')
-          return new Response(JSON.stringify({access_token:'jwt-x', refresh_token:'r', expires_at:9999999999, user:{id:'uid-1'}}), {status:200, headers:{'Content-Type':'application/json'}});
+          return json({access_token:'jwt-x', refresh_token:'r', expires_at:9999999999, user:{id:'uid-1'}});
         return new Response(JSON.stringify({error_description:'bad'}), {status:400, headers:{'Content-Type':'application/json'}});
       }
     }
@@ -52,9 +69,16 @@ INIT = r"""
       if (method==='POST'){ (body||[]).forEach(r=>{ window.__settings[r.key]=r.value; }); return new Response('',{status:201}); }
       const u=new URL(url); const q=u.searchParams.get('key')||''; const m=/^eq\.(.*)$/.exec(q);
       const key=m?decodeURIComponent(m[1]):''; const v=window.__settings[key];
-      return new Response(JSON.stringify(v!==undefined?[{key:key, value:v}]:[]), {status:200, headers:{'Content-Type':'application/json'}});
+      return json(v!==undefined?[{key:key, value:v}]:[]);
     }
-    if (typeof url==='string' && url.indexOf('/rest/v1/')>=0) return new Response('[]',{status:200,headers:{'Content-Type':'application/json'}});
+    if (typeof url==='string' && method==='GET' && url.indexOf('/rest/v1/')>=0) {
+      if (url.indexOf('console_opps')>=0)    return json(g('thrive_opps_v1').map(o=>({slug:o.slug, data:o})));
+      if (url.indexOf('console_mail')>=0)    return json(g('thrive_mail_v1').map(m=>({data:m})));
+      if (url.indexOf('console_inbound')>=0) return json(g('thrive_inbound_v1').map(r=>({data:r})));
+      if (url.indexOf('console_hits')>=0)    return json(g('thrive_hits_v1').map(h=>({data:h})));
+      return json([]);   // console_pages and anything else
+    }
+    if (typeof url==='string' && url.indexOf('/rest/v1/')>=0) return new Response('',{status:201});  // fire-and-forget writes
     if (typeof url==='string' && url.indexOf('/auth/v1/logout')>=0) return new Response('',{status:204});
     return real?real(url,opts):new Response('',{status:200});
   };
@@ -77,18 +101,10 @@ with sync_playwright() as p:
     pg.wait_for_function("()=>typeof window.recipientsPanelHtml==='function' && typeof window.rematchHeld==='function'", timeout=15000)
 
     # ---- item 1: the recipients panel renders the time as a node, not literal text ----
-    pg.evaluate("""()=>{
-      localStorage.setItem('thrive_opps_v1', JSON.stringify([{slug:'thrive-july', business:'July', published:true,
-        recipients:[{addr:'basel.personal@gmail.com',name:'Basel',lang:'ar'},{addr:'lina@school.com',name:'Lina',lang:'en'}]}]));
-      localStorage.setItem('thrive_mail_v1', JSON.stringify([
-        {mid:'j1',opp:'thrive-july',to:'basel.personal@gmail.com',toName:'Basel',subject:'من جد وجد',status:'sent',direction:'out',ts:'2026-07-31T17:02:00Z'},
-        {mid:'j2',opp:'thrive-july',to:'lina@school.com',toName:'Lina',subject:'A page',status:'sent',direction:'out',ts:'2026-07-31T17:03:00Z'}]));
-      localStorage.setItem('thrive_inbound_v1', JSON.stringify([
-        {gid:'g1',opp:'',kind:'reply',from:'basel.personal@gmail.com',name:'Basel',subject:'Re: من جد وجد',snippet:'yes',ts:'2026-08-03T09:00:00Z'},
-        {gid:'gn',opp:'',kind:'reply',from:'notifications@instagram.com',subject:'New login',snippet:'x',ts:'2026-08-03T02:00:00Z'}]));
-      localStorage.setItem('thrive_hits_v1','[]'); localStorage.removeItem('thrive_card_seen_v1');
-      window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits();
-    }""")
+    # Data was seeded in INIT (before hydrate) and is served by the mock; here only reset the derived
+    # caches and the last-seen marker so the badge sees the reply as new.
+    pg.evaluate("""()=>{ localStorage.removeItem('thrive_card_seen_v1');
+      window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits(); }""")
     html = pg.evaluate("()=>window.recipientsPanelHtml(window.getDraft('thrive-july'))")
     ck("the recipient time renders as markup, not an escaped literal string",
        '<span class="mono-iso">' in html and "&lt;span" not in html, html[:120])

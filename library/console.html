@@ -4,10 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="f9269fa2">
+<meta name="thrive-build" content="669fc195">
 <title>Thrive Console</title>
 <link rel="icon" href="../assets/thrive-logo.png">
-<script>(function(){var d=document.documentElement;function lock(){d.classList.add('gate-locked')}
+<script>(function(){var d=document.documentElement;
+/* ROOT B, first paint: set the reading direction at the app root from the stored language before any
+   other script runs, so Arabic is right-to-left from the first frame and never depends on a later
+   init succeeding. applyLang() stays the ongoing authority; this only removes the boot-order and
+   deployed-build fragility that left the root LTR. Engine-independent (plain DOM), so it holds on
+   WebKit as on Chromium. */
+try{var __l=localStorage.getItem('thrive_lang');d.setAttribute('lang',__l==='ar'?'ar':'en');d.setAttribute('dir',__l==='ar'?'rtl':'ltr');}catch(e){}
+function lock(){d.classList.add('gate-locked')}
 try{if(sessionStorage.getItem('thrive_gate_v2')!=='0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8')lock()}catch(e){lock()}
 setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;
 var ar=false;try{ar=localStorage.getItem('thrive_lang')==='ar'}catch(e){}
@@ -754,7 +761,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=e2d18b574d"></script>
+<script src="app.js?v=67f754af98"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with
