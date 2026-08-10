@@ -4960,24 +4960,14 @@ function initSettings(){
      the send endpoint. Saved to the operator's own device; nothing in the read or write path uses it
      yet, so this is shippable and does nothing until Stage 2 wires the dual-write. A failed test shows
      the real error, never a false ok. */
-  if(el("sb_url") && typeof window.ThriveSupa==="object"){
-    const S=window.ThriveSupa, u=el("sb_url"), k=el("sb_key"), sb=el("sbStatus");
-    const scfg=S.cfg(); u.value=scfg.url||""; k.value=scfg.anon||"";
-    function sbShow(msg, cls){ if(!sb) return; sb.hidden=false; sb.textContent=msg; sb.className="gh-result "+(cls||""); }
-    if(el("sbSave")) el("sbSave").addEventListener("click", ()=>{
-      S.setCfg(u.value, k.value);
-      logActivity("settings","","supabase");
-      sbShow(S.ready()? t("sb_saved") : t("sb_cleared"), S.ready()?"ok":"");
-    });
-    if(el("sbTest")) el("sbTest").addEventListener("click", async ()=>{
-      S.setCfg(u.value, k.value);
-      if(!S.ready()){ sbShow(t("sb_need"),"warn"); return; }
-      sbShow(t("testing"),"");
-      const r=await S.probe();
-      sbShow(r.ok? "✓ "+t("sb_ok") : "✕ "+t("sb_fail")+(r.reason? ": "+r.reason : ""), r.ok?"ok":"warn");
-    });
-    // The operator sign-in moved to the unlock flow (gate two, library/gate.js), so Settings is no longer a
-    // sign-in surface: one sign-in, not two. The header carries the signed-in email and the sign-out.
+  if(typeof window.ThriveSupa==="object"){
+    const S=window.ThriveSupa;
+    // The connection (project URL + anon public key) is BAKED into the build (library/config.js), so
+    // there is nothing to enter or test here: the manual fields and Save/Test are retired. A tiny
+    // read-only line reports the connection; below it, the one-time migrate, the verify, and the
+    // signed-out read toggle. The operator sign-in lives in the unlock flow (gate two), not here.
+    const connLine=el("sbConnLine");
+    if(connLine) connLine.textContent = S.ready()? t("sb_connected") : t("sb_need");
     const vout=el("sbVerifyOut");
     function verifyLine(v){
       if(!vout) return;
@@ -4993,14 +4983,12 @@ function initSettings(){
         '<div class="'+(v.ok&&!v.diverge?"ok-line":"warn-line")+'">'+(v.ok&&!v.diverge? "✓ "+esc(t("sb_v_agree")) : "✕ "+esc(t("sb_v_disagree")))+'</div>';
     }
     if(el("sbVerify")) el("sbVerify").addEventListener("click", async ()=>{
-      S.setCfg(u.value, k.value);
       if(!S.ready()){ if(vout) vout.innerHTML='<div class="warn-line">'+esc(t("sb_need"))+'</div>'; return; }
       if(vout) vout.innerHTML='<div>'+esc(t("testing"))+'</div>';
       try{ verifyLine(await supaVerify()); }
       catch(e){ if(vout) vout.innerHTML='<div class="warn-line">✕ '+esc(t("sb_fail"))+": "+esc((e&&e.message)||"")+'</div>'; }
     });
     if(el("sbBackfill")) el("sbBackfill").addEventListener("click", ()=> runAction("sbBackfill", { working:t("sb_backfilling"), run: async ()=>{
-      S.setCfg(u.value, k.value);
       if(!S.ready()) throw new Error(t("sb_need"));
       const r=await supaBackfill();
       try{ verifyLine(await supaVerify()); }catch(_){}
@@ -5021,7 +5009,6 @@ function initSettings(){
     }
     readSrc();
     if(el("sbReadOn")) el("sbReadOn").addEventListener("click", async ()=>{
-      S.setCfg(u.value, k.value);
       if(!S.ready()){ readShow(t("sb_need"),"warn"); return; }
       readShow(t("testing"),"");
       const r=await supaSetRead(true);

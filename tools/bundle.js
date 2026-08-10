@@ -42,6 +42,7 @@ const logo = "data:image/png;base64," + fs.readFileSync(path.join(ROOT, "assets/
 const fontsCss = read(path.join(LIB, "fonts.css"));
 const stylesCss = read(path.join(LIB, "styles.css"));
 const css = fontsCss + "\n" + stylesCss;
+const config = read(path.join(LIB, "config.js"));
 const icons = read(path.join(LIB, "icons.js"));
 const i18n = read(path.join(LIB, "i18n.js"));
 const gate = read(path.join(LIB, "gate.js"));
@@ -69,7 +70,7 @@ const app = read(path.join(LIB, "app.js"));
 const fphash = s => crypto.createHash("sha256").update(s, "utf8").digest("hex").slice(0, 10);
 const FP = {
   "fonts.css": fphash(fontsCss), "styles.css": fphash(stylesCss),
-  "icons.js": fphash(icons), "i18n.js": fphash(i18n), "gate.js": fphash(gate),
+  "config.js": fphash(config), "icons.js": fphash(icons), "i18n.js": fphash(i18n), "gate.js": fphash(gate),
   "stage-model.js": fphash(model), "lifecycle.js": fphash(life), "intake.js": fphash(intake),
   "supabase.js": fphash(supabase),
   "numbers.js": fphash(numbers), "inbound.js": fphash(inbound), "kinds.js": fphash(kinds),
@@ -185,6 +186,7 @@ const head = inline
     '\n<style>.view[hidden]{display:none!important}</style>';
 const body = inline
   ? '<script>window.THRIVE_SYNC_JSON = ' + JSON.stringify(published) + ';</script>' +
+    '\n<script>\n' + config + '\n</script>' +
     '\n<script>\n' + icons + '\n</script>\n<script>\n' + i18n + '\n</script>' +
     '\n<script>\n' + gate + '\n</script>' +
     '\n<script>\n' + model + '\n</script>\n<script>\n' + life + '\n</script>'+
@@ -197,7 +199,7 @@ const body = inline
     '\n<script>\n' + drafts + '\n</script>'+
     '\n<script>\n' + flows + '\n</script>'+
     '\n<script>\n' + app + '\n</script>'
-  : '<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>\n<script src="' + fp("gate.js") + '"></script>' +
+  : '<script src="' + fp("config.js") + '"></script>\n<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>\n<script src="' + fp("gate.js") + '"></script>' +
     '\n<script src="' + fp("stage-model.js") + '"></script>\n<script src="' + fp("lifecycle.js") + '"></script>' +
     '\n<script src="' + fp("intake.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>'+
     '\n<script src="' + fp("numbers.js") + '"></script>'+

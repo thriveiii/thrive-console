@@ -36,6 +36,12 @@ SEED = """()=>{ const now=Date.now();
 
 def session(b, relay=None):
     ctx = b.new_context(viewport={"width": 1280, "height": 900})
+    # The Supabase connection is baked into the build now, so a fresh device shows the operator sign-in
+    # step after the passcode. These flows exercise navigation as a returning signed-in operator: seed a
+    # session (needsOperator false, so the passcode reveals the console) and neutralize the baked Supabase
+    # network (no real request; reads fall back to the seeded local store).
+    ctx.add_init_script("(()=>{ try{ localStorage.setItem('console_sb_session', JSON.stringify({access_token:'t', refresh_token:'r', expires_at: Math.floor(Date.now()/1000)+99999, email:'op@thrive.co', uid:'op-1'})); }catch(e){} })()")
+    ctx.route("**supabase.co/**", lambda x: x.abort())
     if relay: ctx.route("**/exec", relay)
     ctx.route("https://api.github.com/**", lambda x: x.abort())
     pg = ctx.new_page()

@@ -95,20 +95,14 @@
     <div class="gh-result" id="syStatus" hidden></div>
   </section>
 
-  <!-- Supabase storage (Stage 1: connection only, inert). The console's own thrive-console project,
-       tables prefixed console_. Never any other project. Entered here the same way as the relay URL. -->
+  <!-- Supabase storage. The console's own thrive-console project, tables prefixed console_, never any
+       other project. The connection (project URL + anon public key) is BAKED into the build now
+       (library/config.js), so there is nothing to enter: a fresh or cleared device already has it and
+       the first open is a sign-in. The manual Project URL / anon key fields and Save/Test are retired. -->
   <section class="panel settings-panel">
     <h3 class="block-h" data-icon="archive" data-i18n="sb_h">Storage (Supabase)</h3>
     <p class="sub" data-i18n="sb_sub"></p>
-    <div class="field"><label for="sb_url" data-i18n="sb_url_l">Project URL</label>
-      <input id="sb_url" class="input" type="url" autocomplete="off" data-i18n-ph="sb_url_ph"></div>
-    <div class="field"><label for="sb_key" data-i18n="sb_key_l">Anon key</label>
-      <input id="sb_key" class="input" type="text" autocomplete="off" spellcheck="false" data-i18n-ph="sb_key_ph"></div>
-    <div class="bar">
-      <button class="btn" id="sbSave" type="button" data-i18n="gh_save">Save</button>
-      <button class="btn ghost" id="sbTest" type="button" data-i18n="sb_test">Test connection</button>
-    </div>
-    <div class="gh-result" id="sbStatus" hidden></div>
+    <div class="in-count" id="sbConnLine" data-i18n="sb_connected">Connected to your console tables.</div>
     <!-- Operator sign-in moved to the unlock flow (gate two), so there is one sign-in surface, not two.
          The gate asks for the operator email and password after the passcode. -->
     <p class="sub" data-i18n="sb_auth_moved"></p>
