@@ -357,6 +357,8 @@ html.gate-locked .top,html.gate-locked .wrap{display:none!important}
 .gate-btn:active{transform:scale(.99)}
 .gate-err{color:var(--pink);font-size:12.5px;font-weight:700;margin:12px 0 0}
 .gate-note{color:var(--ink-3);font-size:11.5px;margin:16px 0 0;line-height:1.5}
+.gate-build{color:var(--muted);font-size:11px;margin:12px 0 0;opacity:.75;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.gate-build bdi{unicode-bidi:isolate}
 @keyframes shake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-5px)}40%,60%{transform:translateX(5px)}}
 
 /* section headings inside panels */

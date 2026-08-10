@@ -77,6 +77,17 @@ const FP = {
 };
 const fp = f => f + "?v=" + FP[f];
 
+/* ---- build marker: a deploy is verifiable at a glance, on the device -------------------------
+   Merge is not deploy: a green Pages build and a stale-looking device are indistinguishable
+   without a mark that says which code is being served. BUILD is a content signature of the whole
+   shipped bundle, so it changes when any shipped source changes and is byte-identical when nothing
+   did. That keeps re-bundling deterministic (no wall-clock stamp to make console.html churn) while
+   giving the gate a value to print. Read it off the device gate footer and compare: same mark as
+   the latest build means the device is current; an older mark means it is serving old bytes. */
+const BUILD = crypto.createHash("sha256")
+  .update([css, icons, i18n, gate, model, life, intake, supabase, numbers, inbound, kinds, drafts, flows, store, app].join("\x00"), "utf8")
+  .digest("hex").slice(0, 8);
+
 let published = {};
 try { published = JSON.parse(read(path.join(LIB, "sync.json"))); } catch (e) {}
 
@@ -202,6 +213,7 @@ const out = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
+<meta name="thrive-build" content="${BUILD}">
 <title>Thrive Console</title>
 <link rel="icon" href="${icon}">
 <script>(function(){var d=document.documentElement;function lock(){d.classList.add('gate-locked')}

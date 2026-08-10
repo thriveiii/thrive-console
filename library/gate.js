@@ -26,7 +26,7 @@
           op_sub: "Signed device. Sign in as an operator to continue.",
           op_email: "Operator email", op_pass: "Password", op_go: "Sign in",
           op_err: "Could not sign in.", op_wait: "Too many attempts. Try again in ",
-          op_busy: "Signing in" },
+          op_busy: "Signing in", build: "Build" },
     ar: { title: "كونسول ثرايف", sub: "مساحة خاصة. أدخل رمز الدخول للمتابعة.",
           ph: "رمز الدخول", go: "فتح", err: "رمز غير صحيح. حاول مجددًا.",
           wait: "محاولات كثيرة. حاول مجددًا بعد ",
@@ -34,8 +34,24 @@
           op_sub: "الجهاز موثوق. سجّل الدخول كمشغّل للمتابعة.",
           op_email: "بريد المشغّل", op_pass: "كلمة المرور", op_go: "تسجيل الدخول",
           op_err: "تعذّر تسجيل الدخول.", op_wait: "محاولات كثيرة. حاول مجددًا بعد ",
-          op_busy: "جارٍ تسجيل الدخول" }
+          op_busy: "جارٍ تسجيل الدخول", build: "الإصدار" }
   };
+  /* The build marker (bundle.js stamps meta[name=thrive-build]). Printed on the gate so a deploy
+     is verifiable at a glance, on the device, before sign-in: the mark on the device is compared
+     against the latest build. Only hex is kept, so a foreign meta value cannot inject markup, and
+     an empty value renders nothing rather than an empty label. Standalone pages that carry no such
+     meta simply show no mark. */
+  function buildId() {
+    try {
+      var m = document.querySelector('meta[name="thrive-build"]');
+      var v = (m && m.getAttribute("content")) || (typeof window !== "undefined" && window.THRIVE_BUILD) || "";
+      return String(v).replace(/[^0-9a-f]/gi, "").slice(0, 12);
+    } catch (e) { return ""; }
+  }
+  function buildMark(s) {
+    var bid = buildId();
+    return bid ? '<p class="gate-build">' + s.build + ' <bdi>' + bid + "</bdi></p>" : "";
+  }
   function lang() { try { return localStorage.getItem("thrive_lang") === "ar" ? "ar" : "en"; } catch (e) { return "en"; } }
 
   async function pbkdf2Hex(pass, salt) {
@@ -128,6 +144,7 @@
       '  <button class="gate-btn" type="submit">' + s.go + "</button>" +
       '  <p class="gate-err" id="gateErr" hidden>' + s.err + "</p>" +
       '  <p class="gate-note">' + s.note + "</p>" +
+      buildMark(s) +
       "</form>";
     var form = wrap.querySelector("form");
     var input = wrap.querySelector("#gateInput");
@@ -199,6 +216,7 @@
       '  <button class="gate-btn" type="submit">' + s.op_go + "</button>" +
       '  <p class="gate-err" id="gateErr" hidden>' + s.op_err + "</p>" +
       '  <p class="gate-note">' + s.note + "</p>" +
+      buildMark(s) +
       "</form>";
     var form = wrap.querySelector("form");
     var email = wrap.querySelector("#gateEmail");
