@@ -1225,6 +1225,9 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .rp-noise{ margin:var(--s-2) 0 0 }
 .rp-noise>summary{ cursor:pointer; color:var(--ink-4); font-size:var(--fs-micro) }
 .rp-ambig{ font-size:var(--fs-micro); color:var(--warn, #b26a00) }
+/* The signed-in operator email and one-tap sign-out in the header. Only the email, no role. */
+.op-chip{ display:inline-flex; align-items:center; gap:var(--s-2); min-width:0 }
+.op-chip .op-email{ font-size:var(--fs-micro); color:var(--ink-4); max-width:14rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 /* Board replies inbox, opened from the header badge. One surface for attribution. */
 .inbox-badge{ display:inline-flex; align-items:center; justify-content:center; min-width:1.2em; padding:0 .35em; margin-inline-start:.4em;
   border-radius:999px; background:var(--rose, #b46a7a); color:#fff; font-size:var(--fs-micro); line-height:1.5 }

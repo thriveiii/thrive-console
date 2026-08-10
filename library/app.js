@@ -965,8 +965,33 @@ function fireThrive(kind){
   Object.keys(h).forEach(k=>{ try{ h[k](); }catch(e){} });
 }
 window.onThriveSync  = function(){ fireThrive("sync"); };
-window.onLangApplied = function(){ fireThrive("lang"); };
-window.onGateUnlocked= function(){ fireThrive("unlock"); };
+window.onLangApplied = function(){ fireThrive("lang"); renderOperatorChip(); };
+window.onGateUnlocked= function(){ fireThrive("unlock"); renderOperatorChip(); };
+
+/* The header carries the signed-in operator email and a one-tap sign-out, and nothing else about who they
+   are: no role, no title, every operator equal. Sign-out returns to the operator sign-in step (gate two),
+   never the passcode and never a blank board. */
+function renderOperatorChip(){
+  try{
+    var nav=document.querySelector("header.top .nav"); if(!nav) return;
+    var S=window.ThriveSupa;
+    var on=!!(S && S.signedIn && S.signedIn());
+    var chip=document.getElementById("opChip");
+    if(!on){ if(chip && chip.parentNode) chip.parentNode.removeChild(chip); return; }
+    var email=(S.authEmail && S.authEmail()) || "";
+    if(!chip){
+      chip=document.createElement("span"); chip.id="opChip"; chip.className="op-chip";
+      chip.innerHTML='<span class="op-email mono-iso" id="opEmail"></span>'+
+        '<button class="langbtn" id="opSignOut" type="button">'+esc(t("op_sign_out"))+'</button>';
+      var lock=document.getElementById("lockbtn");
+      if(lock && lock.parentNode===nav) nav.insertBefore(chip, lock); else nav.appendChild(chip);
+      var so=chip.querySelector("#opSignOut");
+      if(so) so.addEventListener("click", function(){ if(window.thriveSignOut) window.thriveSignOut(); });
+    }
+    var em=chip.querySelector("#opEmail"); if(em) em.textContent=email;      // only the email, never a role
+    var so2=chip.querySelector("#opSignOut"); if(so2) so2.textContent=(typeof t==="function"? t("op_sign_out") : "Sign out");
+  }catch(e){}
+}
 
 /* ---------- live cross-device sync ----------
    One shared state document, stored by the same Apps Script relay that sends email.
@@ -4788,38 +4813,8 @@ function initSettings(){
       const r=await S.probe();
       sbShow(r.ok? "✓ "+t("sb_ok") : "✕ "+t("sb_fail")+(r.reason? ": "+r.reason : ""), r.ok?"ok":"warn");
     });
-    // Path A sign-in. A real Supabase session (a refreshable, revocable JWT), not a passcode. Signed in,
-    // every data call carries the token instead of the anon key, so the console keeps working once the
-    // permissive anon policy is removed. The anon key stays the fallback until that removal, device-gated.
-    if(typeof S.signedIn==="function"){
-      const em=el("sb_email"), pw=el("sb_pass"), ast=el("sbAuthState"), aout=el("sbAuthStatus");
-      function authShow(msg, cls){ if(!aout) return; aout.hidden=false; aout.textContent=msg; aout.className="gh-result "+(cls||""); }
-      function authState(){
-        if(!ast) return;
-        const on=S.signedIn(), who=on? (S.authEmail&&S.authEmail()||"") : "";
-        ast.innerHTML= on
-          ? '<b>'+esc(t("sb_auth_in"))+'</b><span>'+esc(who)+'</span>'
-          : '<b>'+esc(t("sb_auth_out"))+'</b><span>'+esc(t("sb_auth_out_l"))+'</span>';
-      }
-      authState();
-      if(el("sbSignIn")) el("sbSignIn").addEventListener("click", ()=> runAction("sbSignIn", { working:t("sb_signing_in"), run: async ()=>{
-        S.setCfg(u.value, k.value);
-        if(!S.ready()) throw new Error(t("sb_need"));
-        const mail=(em&&em.value||"").trim(), pass=(pw&&pw.value||"");
-        if(!mail || !pass) throw new Error(t("sb_auth_need"));
-        await S.signIn(mail, pass);
-        if(pw) pw.value="";
-        logActivity("settings","","supa_signin");
-        authState(); authShow("✓ "+t("sb_auth_ok"),"ok");
-        try{ if(supaReadFlagOn && supaReadFlagOn()){ await supaHydrate(); if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); } }catch(_){}
-        return t("sb_auth_ok");
-      }}));
-      if(el("sbSignOut")) el("sbSignOut").addEventListener("click", async ()=>{
-        try{ await S.signOut(); }catch(_){}
-        logActivity("settings","","supa_signout");
-        authState(); authShow(t("sb_auth_signed_out"),"");
-      });
-    }
+    // The operator sign-in moved to the unlock flow (gate two, library/gate.js), so Settings is no longer a
+    // sign-in surface: one sign-in, not two. The header carries the signed-in email and the sign-out.
     const vout=el("sbVerifyOut");
     function verifyLine(v){
       if(!vout) return;
