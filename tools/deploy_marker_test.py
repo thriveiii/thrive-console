@@ -79,7 +79,9 @@ with sync_playwright() as p:
     # Arabic: the label localizes and the id sits in an isolated run (bdi), so RTL cannot reorder it.
     # Clear the passcode session first so the reload lands back on the passcode step (unlocking above
     # set it), then switch to Arabic.
-    pg.evaluate("""()=>{try{sessionStorage.clear();localStorage.setItem('thrive_lang','ar');}catch(e){}}""")
+    # Clearing the passcode now means clearing the 30-minute presence too (session lifecycle), else the
+    # device stays unlocked and the passcode step never returns.
+    pg.evaluate("""()=>{try{sessionStorage.clear();localStorage.removeItem('thrive_presence');localStorage.setItem('thrive_lang','ar');}catch(e){}}""")
     pg.reload(); pg.wait_for_timeout(300)
     pg.wait_for_selector("#gateInput", timeout=10000)
     ar = pg.evaluate("""()=>{var e=document.querySelector('#thriveGate .gate-build');

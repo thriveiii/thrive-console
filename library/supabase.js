@@ -100,8 +100,14 @@
         setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: s.email, uid: s.uid || (data.user && data.user.id) || "" });
         return true;
       }
-    } catch (e) {}
-    setSession(null); return false;
+      // End the session ONLY on a definitive rejection: the refresh token is invalid or expired (400/401).
+      // A transient failure (5xx, a proxy, a rate limit) keeps the session so a blip never ejects the operator.
+      if (res.status === 400 || res.status === 401) setSession(null);
+      return false;
+    } catch (e) {
+      // A network error is not a rejection. Keep the session and let the next call retry; do not eject.
+      return false;
+    }
   }
 
   /* One REST call to the operator's own PostgREST endpoint. It carries the session JWT when signed in,
