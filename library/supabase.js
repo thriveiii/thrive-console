@@ -18,13 +18,19 @@
 
   var URL_KEY = "console_sb_url", ANON_KEY = "console_sb_anon";
 
+  /* The baked-in default connection (library/config.js). Both values are public by design; RLS plus the
+     operator sign-in protect the data, not their secrecy. A stored value overrides the baked default, so
+     a deliberate change or a legacy device still works, but the baked default is always present, so a
+     fresh or cleared device is never left without a connection. */
+  function baked(k) { try { return (global.THRIVE_CONFIG && global.THRIVE_CONFIG[k]) || ""; } catch (e) { return ""; } }
+
   function cfg() {
-    try {
-      return {
-        url: (localStorage.getItem(URL_KEY) || "").trim().replace(/\/+$/, ""),
-        anon: (localStorage.getItem(ANON_KEY) || "").trim()
-      };
-    } catch (e) { return { url: "", anon: "" }; }
+    var url = "", anon = "";
+    try { url = (localStorage.getItem(URL_KEY) || "").trim(); } catch (e) {}
+    try { anon = (localStorage.getItem(ANON_KEY) || "").trim(); } catch (e) {}
+    if (!url) url = String(baked("supaUrl") || "").trim();
+    if (!anon) anon = String(baked("supaAnon") || "").trim();
+    return { url: url.replace(/\/+$/, ""), anon: anon };
   }
   function setCfg(url, anon) {
     try {
