@@ -216,7 +216,14 @@ const out = `<!DOCTYPE html>
 <meta name="thrive-build" content="${BUILD}">
 <title>Thrive Console</title>
 <link rel="icon" href="${icon}">
-<script>(function(){var d=document.documentElement;function lock(){d.classList.add('gate-locked')}
+<script>(function(){var d=document.documentElement;
+/* ROOT B, first paint: set the reading direction at the app root from the stored language before any
+   other script runs, so Arabic is right-to-left from the first frame and never depends on a later
+   init succeeding. applyLang() stays the ongoing authority; this only removes the boot-order and
+   deployed-build fragility that left the root LTR. Engine-independent (plain DOM), so it holds on
+   WebKit as on Chromium. */
+try{var __l=localStorage.getItem('thrive_lang');d.setAttribute('lang',__l==='ar'?'ar':'en');d.setAttribute('dir',__l==='ar'?'rtl':'ltr');}catch(e){}
+function lock(){d.classList.add('gate-locked')}
 try{if(sessionStorage.getItem('thrive_gate_v2')!=='${GATE_HASH}')lock()}catch(e){lock()}
 setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;
 var ar=false;try{ar=localStorage.getItem('thrive_lang')==='ar'}catch(e){}
