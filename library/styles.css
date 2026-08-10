@@ -1225,6 +1225,38 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .rp-noise{ margin:var(--s-2) 0 0 }
 .rp-noise>summary{ cursor:pointer; color:var(--ink-4); font-size:var(--fs-micro) }
 .rp-ambig{ font-size:var(--fs-micro); color:var(--warn, #b26a00) }
+/* Board replies inbox, opened from the header badge. One surface for attribution. */
+.inbox-badge{ display:inline-flex; align-items:center; justify-content:center; min-width:1.2em; padding:0 .35em; margin-inline-start:.4em;
+  border-radius:999px; background:var(--rose, #b46a7a); color:#fff; font-size:var(--fs-micro); line-height:1.5 }
+.board-inbox{ margin-block:var(--s-3); padding:var(--s-3); border:1px solid var(--line); border-radius:var(--r-2, 10px); background:var(--bg-2, #fff) }
+/* Quiet activity badges: on a card and summed on its lane header. Presentation only. */
+.card-badge{ position:absolute; inset-block-start:6px; inset-inline-end:6px; min-width:1.1em; padding:0 .3em; border-radius:999px;
+  background:var(--rose, #b46a7a); color:#fff; font-size:var(--fs-micro); line-height:1.5; text-align:center }
+.tok{ position:relative }
+.lane-new{ display:inline-flex; align-items:center; justify-content:center; min-width:1.1em; padding:0 .3em; margin-inline-start:.3em;
+  border-radius:999px; background:var(--rose, #b46a7a); color:#fff; font-size:var(--fs-micro) }
+/* The living surface inside a group card: recipients panel and aggregate. */
+.cg-panel{ margin-block-start:var(--s-4) }
+.cg-h{ margin:0 0 var(--s-2) }
+.cg-agg{ display:flex; flex-wrap:wrap; gap:var(--s-2); margin-block-end:var(--s-3) }
+.cg-tile{ display:flex; flex-direction:column; gap:2px; min-width:4.5rem; padding:var(--s-2); border:1px solid var(--line); border-radius:var(--r-1, 8px) }
+.cg-tile .cg-n{ font-weight:700 } .cg-tile .cg-l{ font-size:var(--fs-micro); color:var(--ink-4) }
+.rc-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--s-2) }
+.rc-row{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) }
+.rc-name{ font-weight:600; flex:1 1 8rem; min-width:0 }
+.rc-addr{ flex:1 1 10rem; min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--ink-4); font-size:var(--fs-micro) }
+.rc-last{ font-size:var(--fs-micro); color:var(--ink-4) }
+.rc-chip{ font-size:var(--fs-micro); padding:.1em .5em; border-radius:999px; background:var(--bg-3, #eee); color:var(--ink-2) }
+.rc-chip.rc-replied{ background:#e8f2ea; color:#2c6b45 }
+.rc-chip.rc-bounced{ background:#f6e6e6; color:#a23b3b }
+/* Group-send pre-send review. */
+.gr-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--s-2) }
+.gr-row{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) }
+.gr-name{ font-weight:600; flex:1 1 8rem }
+.gr-addr{ flex:1 1 10rem; min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--ink-4); font-size:var(--fs-micro) }
+.gr-greet{ color:var(--ink-3); font-size:var(--fs-micro) }
+.gr-row.gr-blocked{ opacity:.8 }
+.gr-block,.gr-miss{ color:var(--warn, #b26a00); font-size:var(--fs-micro) }
 #boardBand:not([hidden]){ margin-block-end:var(--s-4) }
 #boardBand .mw-band{ margin:0; align-items:center }
 #boardBand .btn{ margin-inline-start:auto; flex:0 0 auto }
