@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="46aa8b01">
+<meta name="thrive-build" content="4a613754">
 <title>Thrive Console</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <script>(function(){var d=document.documentElement;
@@ -23,7 +23,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=f6afc27bc4">
+<link rel="stylesheet" href="styles.css?v=641493f99b">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -568,25 +568,64 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <div class="page-h"><h1 class="title" data-i18n="set_title">Settings</h1><span class="pill" id="ghStatus"></span></div>
   <p class="sub" data-i18n="set_sub"></p>
 
-  <!-- WO-022: Settings reorganized into five sections, one card each, in a fixed order. Structure,
-       spacing and order only; every control keeps its id, wiring and copy. No behaviour changed. -->
+  <!-- WO-028 (Settings v2, supersedes the WO-022 five-section grouping): Settings shows only the
+       ratified daily set; everything else keeps its id, wiring and copy but collapses behind ONE
+       advanced disclosure, closed by default. Reply diagnostics live on the board (the #boardInbox
+       surface), so the duplicate Settings Replies block is dropped, not the control. Relocation and
+       reduction only; no wiring, no behaviour, no copy changed. -->
 
-  <!-- (1) Access: how you get into the console. The passcode is the first gate and the operator
-       sign-in is the second, both in the unlock flow; there is no access control to set here. -->
+  <!-- Daily: access status, the sending safety rail, the reputation glance, and backup and restore. -->
   <section class="panel set-group">
     <h2 class="set-group-h" data-icon="lock" data-i18n="setg_access_h">Access</h2>
     <p class="sub" data-i18n="setg_access_sub"></p>
     <div class="set-block">
-      <!-- Operator sign-in moved to the unlock flow (gate two), so there is one sign-in surface, not
-           two. The gate asks for the operator email and password after the passcode. -->
+      <!-- Operator sign-in lives in the unlock flow (gate two); there is no access control to set here. -->
       <p class="sub" data-i18n="sb_auth_moved"></p>
     </div>
   </section>
 
-  <!-- (2) Connections: where the console reaches GitHub, the relay and Supabase. -->
   <section class="panel set-group">
-    <h2 class="set-group-h" data-icon="channel" data-i18n="setg_conn_h">Connections</h2>
-    <p class="sub" data-i18n="setg_conn_sub"></p>
+    <h2 class="set-group-h" data-icon="mail" data-i18n="setg_mail_h">Mail</h2>
+    <p class="sub" data-i18n="setg_mail_sub"></p>
+
+    <div class="set-block">
+      <h3 class="block-h" data-icon="clock" data-i18n="set_quota_h">Sending limits (Resend free tier)</h3>
+      <p class="sub" data-i18n="set_quota_sub"></p>
+      <div class="quota-readout" id="quotaReadout"></div>
+      <div class="grid2">
+        <div class="field"><label for="q_daily" data-i18n="set_quota_daily">Daily cap</label><input id="q_daily" class="input" type="number" min="1" inputmode="numeric"></div>
+        <div class="field"><label for="q_monthly" data-i18n="set_quota_monthly">Monthly cap</label><input id="q_monthly" class="input" type="number" min="1" inputmode="numeric"></div>
+      </div>
+      <div class="bar"><button class="btn" id="qSave" data-i18n="gh_save">Save</button></div>
+    </div>
+
+    <!-- The one place a slow leak is caught while it is still slow. A daily glance, so it stays visible. -->
+    <div class="set-block">
+      <h3 class="block-h" data-icon="alert" data-i18n="rep_h">Sending reputation</h3>
+      <p class="sub" data-i18n="rep_sub"></p>
+      <div id="repPanel"></div>
+    </div>
+  </section>
+
+  <section class="panel set-group">
+    <h2 class="set-group-h" data-icon="archive" data-i18n="setg_data_h">Data</h2>
+    <p class="sub" data-i18n="setg_data_sub"></p>
+    <div class="set-block">
+      <h3 class="block-h" data-icon="archive" data-i18n="set_backup_h">Backup &amp; restore</h3>
+      <p class="sub" data-i18n="set_backup_sub"></p>
+      <div class="bar">
+        <button class="btn" id="bkExport" data-icon="archive" data-i18n="bk_export">Export backup</button>
+        <label class="btn ghost" for="bkFile" data-icon="import" data-i18n="bk_import">Restore from file</label>
+        <input id="bkFile" type="file" accept="application/json,.json" hidden>
+      </div>
+    </div>
+  </section>
+
+  <!-- Advanced: setup, connection health, and data-switch controls, used rarely. One disclosure,
+       closed by default. Every control keeps its id, wiring and copy; only its location changes. -->
+  <details class="panel set-advanced">
+    <summary class="set-adv-summary"><span class="set-group-h" data-i18n="setg_advanced_h">Advanced</span></summary>
+    <p class="sub" data-i18n="setg_advanced_sub"></p>
 
     <div class="set-block" id="connPanel">
       <h3 class="block-h" data-icon="check" data-i18n="conn_h">Connection health</h3>
@@ -620,6 +659,17 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     </div>
 
     <div class="set-block">
+      <h3 class="block-h" data-icon="mail" data-i18n="set_email_h">Email sending</h3>
+      <p class="sub" data-i18n="set_email_sub"></p>
+      <div class="grid2">
+        <div class="field"><label for="em_name" data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
+        <div class="field"><label for="em_from" data-i18n="set_from_email">Sender address</label><input id="em_from" class="input" value="hi@thriveiii.com" readonly></div>
+      </div>
+      <div class="field"><label for="em_ep" data-i18n="set_email_ep_l">Send endpoint</label><input id="em_ep" class="input" type="url" data-i18n-ph="set_email_ph"></div>
+      <div class="bar"><button class="btn" id="emSave" data-i18n="gh_save">Save</button></div>
+    </div>
+
+    <div class="set-block">
       <h3 class="block-h" data-icon="spark" data-i18n="set_ep_h">Analytics endpoint</h3>
       <p class="sub" data-i18n="set_ep_sub"></p>
       <div class="field"><input id="ep2" class="input" type="url" data-i18n-ph="ins_endpoint_ph"></div>
@@ -640,76 +690,13 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <div class="quota-readout" id="syCounts"></div>
       <div class="gh-result" id="syStatus" hidden></div>
     </div>
-  </section>
 
-  <!-- (3) Mail: how outreach goes out, and the limits that keep the address healthy. -->
-  <section class="panel set-group">
-    <h2 class="set-group-h" data-icon="mail" data-i18n="setg_mail_h">Mail</h2>
-    <p class="sub" data-i18n="setg_mail_sub"></p>
-
-    <div class="set-block">
-      <h3 class="block-h" data-icon="mail" data-i18n="set_email_h">Email sending</h3>
-      <p class="sub" data-i18n="set_email_sub"></p>
-      <div class="grid2">
-        <div class="field"><label for="em_name" data-i18n="set_from_name">Sender name</label><input id="em_name" class="input" autocomplete="off" placeholder="Thrive"></div>
-        <div class="field"><label for="em_from" data-i18n="set_from_email">Sender address</label><input id="em_from" class="input" value="hi@thriveiii.com" readonly></div>
-      </div>
-      <div class="field"><label for="em_ep" data-i18n="set_email_ep_l">Send endpoint</label><input id="em_ep" class="input" type="url" data-i18n-ph="set_email_ph"></div>
-      <div class="bar"><button class="btn" id="emSave" data-i18n="gh_save">Save</button></div>
-    </div>
-
-    <div class="set-block">
-      <h3 class="block-h" data-icon="clock" data-i18n="set_quota_h">Sending limits (Resend free tier)</h3>
-      <p class="sub" data-i18n="set_quota_sub"></p>
-      <div class="quota-readout" id="quotaReadout"></div>
-      <div class="grid2">
-        <div class="field"><label for="q_daily" data-i18n="set_quota_daily">Daily cap</label><input id="q_daily" class="input" type="number" min="1" inputmode="numeric"></div>
-        <div class="field"><label for="q_monthly" data-i18n="set_quota_monthly">Monthly cap</label><input id="q_monthly" class="input" type="number" min="1" inputmode="numeric"></div>
-      </div>
-      <div class="bar"><button class="btn" id="qSave" data-i18n="gh_save">Save</button></div>
-    </div>
-
-    <!-- The one place a slow leak is caught while it is still slow. Outreach goes out from the address
-         clients reply to and invoices come from, so a reputation hit does not only cost the next
-         campaign. §10.5. -->
-    <div class="set-block">
-      <h3 class="block-h" data-icon="alert" data-i18n="rep_h">Sending reputation</h3>
-      <p class="sub" data-i18n="rep_sub"></p>
-      <div id="repPanel"></div>
-    </div>
-  </section>
-
-  <!-- (4) Replies: what the relay sees in the inbox. The relay watches the inbox; this is where you
-       see that it is watching and what it could not attribute. -->
-  <section class="panel set-group">
-    <h2 class="set-group-h" data-icon="mail" data-i18n="setg_replies_h">Replies</h2>
-    <p class="sub" data-i18n="setg_replies_sub"></p>
-    <div class="set-block">
-      <h3 class="block-h" data-icon="mail" data-i18n="rp_h">Replies</h3>
-      <p class="sub" data-i18n="rp_sub"></p>
-      <div id="rpPanel"></div>
-    </div>
-  </section>
-
-  <!-- (5) Data: where records live, and how to move, check and back them up. Supabase is where the
-       records live and where the read source, migrate and verify controls belong; the whole Supabase
-       card is kept intact here rather than split across two sections (its connection is also reported
-       in the Connection health checklist above). The device store and the backup follow it. -->
-  <section class="panel set-group">
-    <h2 class="set-group-h" data-icon="archive" data-i18n="setg_data_h">Data</h2>
-    <p class="sub" data-i18n="setg_data_sub"></p>
-
-    <!-- Supabase storage. The console's own thrive-console project, tables prefixed console_, never any
-         other project. The connection (project URL + anon public key) is BAKED into the build now
-         (library/config.js), so there is nothing to enter: a fresh or cleared device already has it and
-         the first open is a sign-in. The manual Project URL / anon key fields and Save/Test are retired. -->
+    <!-- Supabase read-source, migrate and verify: the data-switch controls, kept intact behind the
+         disclosure until a dedicated data-switch surface exists to relocate them to. -->
     <div class="set-block">
       <h3 class="block-h" data-icon="archive" data-i18n="sb_h">Storage (Supabase)</h3>
       <p class="sub" data-i18n="sb_sub"></p>
       <div class="in-count" id="sbConnLine" data-i18n="sb_connected">Connected to your console tables.</div>
-      <!-- Stage 4: when signed in, Supabase is the source. Reads come from it; writes are queued and
-           pushed to it durably; this device is a cache. Migrate is a one-time push for a device that
-           still holds records made before the queue. The read toggle governs a signed-out device only. -->
       <p class="sub" data-i18n="sb_stage4_note"></p>
       <div class="bar">
         <button class="btn ghost" id="sbBackfill" type="button" data-i18n="sb_backfill">Migrate this device to Supabase (one time)</button>
@@ -729,17 +716,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <p class="sub" data-i18n="st_sub"></p>
       <div id="stMeter"></div>
     </div>
-
-    <div class="set-block">
-      <h3 class="block-h" data-icon="archive" data-i18n="set_backup_h">Backup &amp; restore</h3>
-      <p class="sub" data-i18n="set_backup_sub"></p>
-      <div class="bar">
-        <button class="btn" id="bkExport" data-icon="archive" data-i18n="bk_export">Export backup</button>
-        <label class="btn ghost" for="bkFile" data-icon="import" data-i18n="bk_import">Restore from file</label>
-        <input id="bkFile" type="file" accept="application/json,.json" hidden>
-      </div>
-    </div>
-  </section>
+  </details>
 </main>
 
 <div class="modal-scrim" id="modalScrim" hidden></div>
@@ -778,7 +755,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
 <script src="config.js?v=806f4221bf"></script>
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=9213ef7a63"></script>
+<script src="i18n.js?v=a06bd4fd3d"></script>
 <script src="gate.js?v=700c1c30a3"></script>
 <script src="stage-model.js?v=f89936985f"></script>
 <script src="lifecycle.js?v=16f886007a"></script>
