@@ -63,7 +63,27 @@
       return b.toString(16).padStart(2, "0");
     }).join("");
   }
-  function authed() { try { return sessionStorage.getItem(KEY) === HASH; } catch (e) { return false; } }
+  /* Presence: the 30-minute window that keeps the operator inside across a short absence.
+     The passcode unlock is a per-session flag (sessionStorage), and iOS Safari evicts a backgrounded
+     tab's sessionStorage readily, so before this the operator was ejected to the passcode on every
+     short absence. Presence records the last time the console was active, in localStorage (which
+     survives eviction), and the device counts as passcode-unlocked while that is under 30 minutes old.
+     A return inside the window goes straight to the board; after 30 minutes of idle the device re-gates.
+     The passcode itself is never stored, only this timestamp and the already-stored derived keys, so
+     the protection is exactly a 30-minute idle presence, the rule the review asked for. */
+  var PRESENCE = "thrive_presence";
+  var IDLE_MS = 30 * 60 * 1000;   // 30 minutes of idle before the device re-gates
+  function markPresent() { try { localStorage.setItem(PRESENCE, String(Date.now())); } catch (e) {} }
+  function present() {
+    try { var at = parseInt(localStorage.getItem(PRESENCE) || "0", 10); return !!at && (Date.now() - at) < IDLE_MS; }
+    catch (e) { return false; }
+  }
+  function clearPresence() { try { localStorage.removeItem(PRESENCE); } catch (e) {} }
+  // The device is passcode-unlocked when this session unlocked it OR a fresh presence still holds.
+  function authed() {
+    try { if (sessionStorage.getItem(KEY) === HASH) return true; } catch (e) {}
+    return present();
+  }
 
   /* escalating lockout: after 5 wrong tries, 30s, doubling each further failure (cap 15 min) */
   function failState() { try { return JSON.parse(localStorage.getItem(FAILS) || "{}") || {}; } catch (e) { return {}; } }
@@ -106,11 +126,39 @@
   }
   function opClearFails() { try { localStorage.removeItem(OP_FAILS); } catch (e) {} }
 
+  var __presenceWired = false;
   function reveal() {
     document.documentElement.classList.remove("gate-locked");
     var g = document.getElementById("thriveGate");
     if (g) g.parentNode.removeChild(g);
     document.body.style.overflow = "";
+    markPresent();
+    wirePresence();
+  }
+  // Re-show the gate over the live console (state preserved) when the presence window has lapsed. Used
+  // when a tab that stayed alive is foregrounded after more than 30 minutes idle.
+  function relock() {
+    if (document.getElementById("thriveGate")) return;   // already gated
+    try { sessionStorage.removeItem(KEY); } catch (e) {}  // this session must re-enter the passcode
+    clearPresence();
+    document.documentElement.classList.add("gate-locked");
+    document.body.style.overflow = "hidden";
+    buildGate();
+  }
+  // Keep the presence fresh while the console is in use, and re-gate a returning tab past the window.
+  function wirePresence() {
+    if (__presenceWired) return; __presenceWired = true;
+    var last = 0;
+    function bump() { var n = Date.now(); if (n - last > 20000) { last = n; markPresent(); } }
+    ["pointerdown", "keydown"].forEach(function (ev) {
+      try { document.addEventListener(ev, bump, { passive: true }); } catch (e) {}
+    });
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState !== "visible") return;
+      if (document.getElementById("thriveGate")) return;   // the gate is already showing
+      if (present()) markPresent();                        // within the window: extend it
+      else relock();                                       // idle past 30 minutes: re-gate
+    });
   }
 
   function buildGate() {
@@ -183,6 +231,8 @@
           if (sync) { sessionStorage.setItem(SYNC_KEY, sync); localStorage.setItem(SYNC_KEY, sync); }
           if (vault) { sessionStorage.setItem(VAULT_KEY, vault); localStorage.setItem(VAULT_KEY, vault); }
         } catch (ex) {}
+        markPresent();   // open the 30-minute presence window
+
         if (typeof window.logActivity === "function") {
           try { window.logActivity("login", "", "console unlocked"); } catch (ex) {}
         }
@@ -274,6 +324,7 @@
   // passcode session so the next entry starts at the passcode again.
   window.thriveLock = function () {
     try { sessionStorage.removeItem(KEY); sessionStorage.removeItem(SYNC_KEY); sessionStorage.removeItem(VAULT_KEY); } catch (e) {}
+    clearPresence();   // a manual lock ends the presence window at once
     location.reload();
   };
   // Operator sign-out: ends the Supabase session only. The passcode (the device gate) stays, so the reload
