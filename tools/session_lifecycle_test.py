@@ -62,6 +62,13 @@ INIT = r"""
 """
 
 def no_gate(pg): return pg.evaluate("()=>!document.getElementById('thriveGate')")
+# Submit the gate form programmatically: fires the form's submit event against the CURRENT field values,
+# with no click-actionability or value-commit race. Deterministic at the source, not by a timeout.
+def submit(pg): pg.eval_on_selector("#thriveGate form", "f => f.requestSubmit()")
+def set_val(pg, sel, val):
+    # Set the field by selector, not by typing into the focused element, so the gate's 50ms email.focus()
+    # can never divert the value into another field. Deterministic at the source.
+    pg.eval_on_selector(sel, "(el,v)=>{el.value=v; el.dispatchEvent(new Event('input',{bubbles:true}));}", val)
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
@@ -72,11 +79,11 @@ with sync_playwright() as p:
 
     # ---- deterministic fresh device: passcode, then operator, then board ----
     pg.wait_for_selector("#gateInput", timeout=10000)
-    pg.fill("#gateInput", PASSCODE); pg.click(".gate-btn")
+    set_val(pg,"#gateInput",PASSCODE); submit(pg)
     pg.wait_for_selector("#gateEmail", timeout=10000)
     ck("a fresh device is deterministic: passcode then the operator step (not the board, not a blank)",
        pg.evaluate("()=>!!document.getElementById('gateEmail')"))
-    pg.fill("#gateEmail","op@thrive.co"); pg.fill("#gatePass","right"); pg.click(".gate-btn")
+    set_val(pg,"#gateEmail","op@thrive.co"); set_val(pg,"#gatePass","right"); submit(pg)
     pg.wait_for_function("()=>!document.getElementById('thriveGate')", timeout=10000)
     ck("after the operator signs in the console reveals (board), and a presence window opens",
        no_gate(pg) and pg.evaluate("()=>!!localStorage.getItem('thrive_presence')"))
@@ -96,7 +103,7 @@ with sync_playwright() as p:
        pg.evaluate("()=>!!document.getElementById('gateInput') && !document.getElementById('gateEmail')"))
 
     # back in for the next checks
-    pg.fill("#gateInput", PASSCODE); pg.click(".gate-btn")
+    set_val(pg,"#gateInput",PASSCODE); submit(pg)
     # operator session still stored, so it goes straight past the operator step to the board
     pg.wait_for_function("()=>!document.getElementById('thriveGate')", timeout=10000)
     ck("with the operator session still valid, the re-gate asks only the passcode, then the board",
@@ -109,7 +116,7 @@ with sync_playwright() as p:
        pg.evaluate("()=>!localStorage.getItem('thrive_presence')") and pg.evaluate("()=>!!document.getElementById('gateInput')"))
 
     # ---- operator session robustness: transient 5xx keeps it; definitive 401 ends it ----
-    pg.fill("#gateInput", PASSCODE); pg.click(".gate-btn")
+    set_val(pg,"#gateInput",PASSCODE); submit(pg)
     pg.wait_for_function("()=>!document.getElementById('thriveGate')", timeout=10000)
     trans = pg.evaluate("""async ()=>{
       window.__refreshStatus = 500;
