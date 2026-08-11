@@ -1,15 +1,19 @@
-"""Supabase Stage 2 proof: dual-write, read-old, backfill, verify, honest divergence.
+"""Supabase write contract (Stage 4, refreshed from the pre-Stage-4 immediate-mirror proof).
 
-Drives the real console in Chromium with an in-page fake Supabase (window.fetch is wrapped so every
-/rest/v1/ call lands in an in-memory table store; every other URL passes through). It proves: a save lands
-in BOTH the current store (localStorage) and Supabase, with the page HTML as its own console_pages row;
-reads still come from the current store and never touch Supabase; the backfill copies the existing set
-idempotently; the verification reports agreement and flags a seeded divergence; and a failed Supabase
-write does not fail the local save, is recorded as a divergence, and is never a false success. Every
-Supabase request targets a console_ table only.
+WO-026: the original suite asserted an IMMEDIATE signed-out dual-write (a save lands in Supabase the moment
+it is made). That contract is retired: under Stage 4 a write is DURABLE, it is queued to console_sb_pending
+first and reaches Supabase only when the operator is signed in (RLS refuses an anon write), and post brief 02
+the flush drains until empty. This proves the CURRENT contract with the same faithful fake of the PostgREST
+endpoint (window.fetch wrapped, every /rest/v1/ call lands in an in-memory table store):
 
-The sandbox cannot run the live Supabase or WebKit, so the true dual-write and backfill are Thyab's
-device. This runs the real app.js dual-write against a faithful fake of the PostgREST endpoint."""
+  - signed in, a save drains to console_opps (the record in data, never the page html) and to its own
+    console_pages row (the html whole); every request targets a console_ table only;
+  - signed out, a save is queued honestly (console_sb_pending), never in Supabase, and drains on sign-in;
+  - a Supabase rejection does not fail the local save, is recorded as a divergence, is never a false
+    success, and the entry stays queued for retry (nothing swallowed);
+  - verify flags a real divergence, backfill is idempotent, and a delete mirrors.
+
+The live Supabase and WebKit are Thyab's device gate. This drives the real app.js write path."""
 import threading, http.server, socketserver, functools, os
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT = "/home/user/thrive-console"
@@ -27,8 +31,7 @@ def ck(n, c, d=None):
     print(("PASS " if c else "FAIL ") + n)
     if not c:
         fails.append(n)
-        if d is not None:
-            print("      " + str(d)[:300])
+        if d is not None: print("      " + str(d)[:300])
 
 FAKE = r"""
 () => {
@@ -63,74 +66,76 @@ FAKE = r"""
   return true;
 }
 """
+SIGN_IN  = "()=>localStorage.setItem('console_sb_session', JSON.stringify({access_token:'jwt', uid:'op', email:'op@x'}))"
+SIGN_OUT = "()=>localStorage.removeItem('console_sb_session')"
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
     pg = b.new_page()
     pg.goto(f"{base}/library/console.html")
-    pg.wait_for_timeout(500)
-    if pg.query_selector("#gateInput"):
-        pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(700)
-    pg.wait_for_function("() => typeof window.saveDraft === 'function' && typeof window.ThriveSupa === 'object'", timeout=15000)
-    pg.evaluate("() => localStorage.removeItem('thrive_opps_v1')")
+    pg.wait_for_function("()=>typeof window.saveDraft==='function' && typeof window.ThriveSupa==='object' && typeof window.thriveSupaFlush==='function'", timeout=15000)
+    pg.evaluate("()=>localStorage.removeItem('thrive_opps_v1')")
     pg.evaluate(FAKE)
-    pg.evaluate("() => window.ThriveSupa.setCfg('https://fake.supabase.co','anon-key')")
+    pg.evaluate("()=>window.ThriveSupa.setCfg('https://fake.supabase.co','anon-key')")
 
-    # 1. Dual-write: a save lands in both stores; the large page is its own console_pages row.
+    # 1. Signed in: a save drains to BOTH stores; the page html is its own console_pages row.
+    pg.evaluate(SIGN_IN)
     big = "<div>" + ("x" * 300000) + "</div>"
-    pg.evaluate("(h) => window.saveDraft({ slug:'vsd', business:'VSD Photography', outreach_text:'Hi Deborah', html:h })", big)
-    pg.wait_for_timeout(400)
-    local = pg.evaluate("() => JSON.parse(localStorage.getItem('thrive_opps_v1')||'[]').map(o=>o.slug)")
+    pg.evaluate("(h)=>window.saveDraft({ slug:'vsd', business:'VSD Photography', outreach_text:'Hi Deborah', html:h })", big)
+    pg.wait_for_timeout(500)
+    local = pg.evaluate("()=>JSON.parse(localStorage.getItem('thrive_opps_v1')||'[]').map(o=>o.slug)")
     ck("the save lands in the current store (localStorage)", "vsd" in local, local)
-    sbOpp = pg.evaluate("() => window.__sb.tables.console_opps && window.__sb.tables.console_opps.vsd")
-    ck("the save also lands in Supabase console_opps", bool(sbOpp) and sbOpp.get("slug") == "vsd")
+    sbOpp = pg.evaluate("()=>window.__sb.tables.console_opps && window.__sb.tables.console_opps.vsd")
+    ck("signed in, the save drains to Supabase console_opps", bool(sbOpp) and sbOpp.get("slug")=="vsd", sbOpp)
     ck("the opportunity row carries the record but not the page html", sbOpp and ("html" not in (sbOpp.get("data") or {})))
-    sbPage = pg.evaluate("() => window.__sb.tables.console_pages && window.__sb.tables.console_pages.vsd")
-    ck("the page is its own console_pages row, html whole", bool(sbPage) and len(sbPage.get("html") or "") == len(big), sbPage and len(sbPage.get("html") or ""))
-    onlyConsole = pg.evaluate("() => Object.keys(window.__sb.tables).every(t=>t.indexOf('console_')===0)")
+    sbPage = pg.evaluate("()=>window.__sb.tables.console_pages && window.__sb.tables.console_pages.vsd")
+    ck("the page is its own console_pages row, html whole", bool(sbPage) and len(sbPage.get("html") or "")==len(big))
+    onlyConsole = pg.evaluate("()=>Object.keys(window.__sb.tables).every(t=>t.indexOf('console_')===0)")
     ck("every Supabase request targeted a console_ table only", onlyConsole)
 
-    # 2. Reads still come from the current store; a read does not touch Supabase.
-    before = pg.evaluate("() => window.__sb.calls")
-    readSlugs = pg.evaluate("async () => (await window.mergedOpps()).map(o=>o.slug)")
-    after = pg.evaluate("() => window.__sb.calls")
-    ck("reads return from the current store", "vsd" in readSlugs, readSlugs)
-    ck("a read makes no Supabase call (read-old holds)", after == before, str(before) + " -> " + str(after))
-
-    # 3. Honest divergence: a failed Supabase write does not fail the local save; it is recorded.
-    pg.evaluate("() => { window.__sb.failOpp = true; }")
-    pg.evaluate("() => window.saveDraft({ slug:'cozy', business:'Cozy Calico', outreach_text:'Hi' })")
+    # 2. Signed OUT: a save is queued honestly, never in Supabase, and drains on sign-in (the #104 contract).
+    pg.evaluate(SIGN_OUT)
+    pg.evaluate("()=>window.saveDraft({ slug:'jia', business:'Simply Jia', outreach_text:'Hi' })")
     pg.wait_for_timeout(400)
-    local2 = pg.evaluate("() => JSON.parse(localStorage.getItem('thrive_opps_v1')||'[]').map(o=>o.slug)")
-    ck("the local save still succeeds when Supabase rejects it", "cozy" in local2, local2)
-    ck("Supabase did NOT get the rejected opp (no false success)", not pg.evaluate("() => !!(window.__sb.tables.console_opps && window.__sb.tables.console_opps.cozy)"))
-    div = pg.evaluate("() => JSON.parse(localStorage.getItem('console_sb_diverge')||'[]')")
-    ck("the failed write is recorded as a divergence, not swallowed", any(d.get("key") == "cozy" for d in div), div)
+    q = pg.evaluate("""()=>({ local: JSON.parse(localStorage.getItem('thrive_opps_v1')||'[]').some(o=>o.slug==='jia'),
+      inSupa: !!(window.__sb.tables.console_opps && window.__sb.tables.console_opps.jia),
+      pending: JSON.parse(localStorage.getItem('console_sb_pending')||'[]').some(e=> (e.rows||[]).some(r=>r.slug==='jia')) })""")
+    ck("signed out, the save is on the device and QUEUED, not in Supabase (honest, not a false success)",
+       q["local"] is True and q["inSupa"] is False and q["pending"] is True, q)
+    pg.evaluate(SIGN_IN); pg.evaluate("()=>window.thriveSupaFlush()"); pg.wait_for_timeout(400)
+    drained = pg.evaluate("""()=>({ inSupa:!!(window.__sb.tables.console_opps && window.__sb.tables.console_opps.jia),
+      pending: JSON.parse(localStorage.getItem('console_sb_pending')||'[]').length })""")
+    ck("signing in drains the queued save to Supabase, the queue empties", drained["inSupa"] is True and drained["pending"]==0, drained)
 
-    # 4. Verify reports the divergence (cozy missing in Supabase), not green.
-    v1 = pg.evaluate("async () => await window.supaVerify()")
-    ck("verify flags the opportunity missing in Supabase", (not v1["ok"]) and ("cozy" in v1["opps"]["missing"]), v1)
+    # 3. Honest divergence: a Supabase rejection does not fail the local save; it is recorded and kept queued.
+    pg.evaluate("()=>{ window.__sb.failOpp = true; localStorage.setItem('console_sb_diverge','[]'); }")
+    pg.evaluate("()=>window.saveDraft({ slug:'cozy', business:'Cozy Calico', outreach_text:'Hi' })")
+    pg.wait_for_timeout(500)
+    d = pg.evaluate("""()=>({ local: JSON.parse(localStorage.getItem('thrive_opps_v1')||'[]').some(o=>o.slug==='cozy'),
+      inSupa: !!(window.__sb.tables.console_opps && window.__sb.tables.console_opps.cozy),
+      diverge: JSON.parse(localStorage.getItem('console_sb_diverge')||'[]').length,
+      stillQueued: JSON.parse(localStorage.getItem('console_sb_pending')||'[]').some(e=> (e.rows||[]).some(r=>r.slug==='cozy')) })""")
+    ck("the local save still succeeds when Supabase rejects it", d["local"] is True, d)
+    ck("Supabase did NOT get the rejected opp (no false success)", d["inSupa"] is False, d)
+    ck("the rejection is recorded as a divergence, not swallowed", d["diverge"] >= 1, d)
+    ck("the rejected write stays queued for retry (nothing lost)", d["stillQueued"] is True, d)
 
-    # 5. Backfill copies the existing set idempotently; then the two agree.
-    r = pg.evaluate("async () => await window.supaBackfill()")
-    pg.wait_for_timeout(200)
-    ck("backfill copied the opportunities", r["opps"] >= 2, r)
-    ck("backfill now has cozy in Supabase too", pg.evaluate("() => !!(window.__sb.tables.console_opps && window.__sb.tables.console_opps.cozy)"))
-    v2 = pg.evaluate("async () => await window.supaVerify()")
-    ck("after backfill the two stores agree on opportunities and pages", v2["ok"] and v2["opps"]["missing"] == [] and v2["pages"]["missing"] == [], v2)
-    # idempotent: a second backfill changes the row set count not at all
-    n_before = pg.evaluate("() => Object.keys(window.__sb.tables.console_opps).length")
-    pg.evaluate("async () => await window.supaBackfill()")
-    n_after = pg.evaluate("() => Object.keys(window.__sb.tables.console_opps).length")
-    ck("backfill is idempotent (same rows on a second run)", n_before == n_after, str(n_before) + " -> " + str(n_after))
-
-    # 6. A delete mirrors too, so the stores stay in agreement.
-    pg.evaluate("() => window.removeDraft('vsd')")
-    pg.wait_for_timeout(300)
-    ck("removing an opportunity removes its Supabase rows", not pg.evaluate("() => !!(window.__sb.tables.console_opps && window.__sb.tables.console_opps.vsd)"))
+    # 4. Verify flags the missing opp; backfill is idempotent; a delete mirrors.
+    pg.evaluate("()=>{ window.__sb.failOpp=false; }")
+    v1 = pg.evaluate("async ()=>await window.supaVerify()")
+    ck("verify flags the opportunity missing in Supabase (not green while they diverge)",
+       (not v1["ok"]) and ("cozy" in v1["opps"]["missing"]), v1)
+    r = pg.evaluate("async ()=>await window.supaBackfill()"); pg.wait_for_timeout(300)
+    ck("backfill copies the set and now Supabase has cozy too", r["opps"] >= 2 and pg.evaluate("()=>!!(window.__sb.tables.console_opps && window.__sb.tables.console_opps.cozy)"), r)
+    n1 = pg.evaluate("()=>Object.keys(window.__sb.tables.console_opps).length")
+    pg.evaluate("async ()=>await window.supaBackfill()"); pg.wait_for_timeout(200)
+    n2 = pg.evaluate("()=>Object.keys(window.__sb.tables.console_opps).length")
+    ck("backfill is idempotent (same rows on a second run)", n1 == n2, f"{n1} -> {n2}")
+    pg.evaluate("()=>window.removeDraft('vsd')"); pg.wait_for_timeout(400)
+    ck("removing an opportunity removes its Supabase rows", not pg.evaluate("()=>!!(window.__sb.tables.console_opps && window.__sb.tables.console_opps.vsd)"))
 
     b.close()
 
 httpd.shutdown()
-print("\n" + ("FAILED: " + ", ".join(fails) if fails else "ALL SUPABASE STAGE 2 CHECKS PASS"))
+print("\n" + ("FAILED: " + ", ".join(fails) if fails else "ALL SUPABASE WRITE (STAGE 4) CHECKS PASS"))
 raise SystemExit(1 if fails else 0)

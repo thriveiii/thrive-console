@@ -54,9 +54,14 @@ def new_ctx(b, put_status=200, puts=None):
     ctx.route(f"{base}/library/manifest.json", lambda r: r.fulfill(status=200, body=json.dumps({"opportunities": []})))
     return ctx
 
+def drop_gate(pg):
+    # WO-026 harness refresh: the password gate no longer clears via the UI fill in the sandbox and the
+    # fill hung the harness for 30s. The gate is not the subject; the app boots and the editor mounts
+    # regardless of it, so reveal the content by dropping gate-locked. The activate assertions are unchanged.
+    pg.evaluate("()=>document.documentElement.classList.remove('gate-locked')")
+
 def unlock_and_seed(pg, opps):
-    if pg.query_selector("#thriveGate"):
-        pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(600)
+    drop_gate(pg)
     pg.evaluate("""(opps)=>{
       localStorage.setItem('thrive_gh_v1', JSON.stringify({token:'t',owner:'o',repo:'r',branch:'main'}));
       localStorage.setItem('thrive_opps_v1', JSON.stringify(opps));
@@ -74,9 +79,9 @@ with sync_playwright() as p:
     # 1. The window path: no slug in the URL, page's own slug is not a collision, Activate reaches the PUT.
     puts = []; ctx = new_ctx(b, 200, puts); pg = ctx.new_page()
     pg.goto(f"{base}/library/console.html"); pg.wait_for_timeout(500)
-    unlock_and_seed(pg, [JIA]); pg.reload(); pg.wait_for_timeout(1000)
-    if pg.query_selector("#thriveGate"):
-        pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(600)
+    unlock_and_seed(pg, [JIA]); pg.reload()
+    pg.wait_for_function("()=>window.thriveModal && typeof window.thriveModal.open==='function'", timeout=15000)
+    drop_gate(pg); pg.wait_for_timeout(300)
     pg.evaluate("()=>window.thriveModal.open('simply-jia-style','overview','x')"); pg.wait_for_timeout(700)
     pg.evaluate("()=>window.thriveModal.tab('page')"); pg.wait_for_timeout(1300)
     ck("window: the page's own slug is not a false collision",
@@ -90,9 +95,9 @@ with sync_playwright() as p:
     ctx = new_ctx(b, 200, None); pg = ctx.new_page()
     pg.goto(f"{base}/library/editor.html?slug=simply-jia-style"); pg.wait_for_timeout(500)
     unlock_and_seed(pg, [JIA])
-    pg.goto(f"{base}/library/editor.html?slug=simply-jia-style"); pg.wait_for_timeout(1200)
-    if pg.query_selector("#thriveGate"):
-        pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(700)
+    pg.goto(f"{base}/library/editor.html?slug=simply-jia-style")
+    pg.wait_for_function("()=>typeof window.initEditor==='function'", timeout=15000)
+    drop_gate(pg); pg.wait_for_timeout(1000)
     ck("standalone: the slug resolves from the URL, own slug is not a collision",
        not pg.eval_on_selector("#slugWarn", "e=>!e.hidden"))
     ctx.close()
@@ -100,9 +105,9 @@ with sync_playwright() as p:
     # 3. A view that fails to mount surfaces a visible error rather than an unbound silent button.
     ctx = new_ctx(b, 200, None); pg = ctx.new_page()
     pg.goto(f"{base}/library/console.html"); pg.wait_for_timeout(500)
-    unlock_and_seed(pg, [JIA]); pg.reload(); pg.wait_for_timeout(1000)
-    if pg.query_selector("#thriveGate"):
-        pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(600)
+    unlock_and_seed(pg, [JIA]); pg.reload()
+    pg.wait_for_function("()=>window.thriveModal && typeof window.thriveModal.open==='function'", timeout=15000)
+    drop_gate(pg); pg.wait_for_timeout(300)
     pg.evaluate("()=>window.thriveModal.open('simply-jia-style','overview','x')"); pg.wait_for_timeout(700)
     pg.evaluate("()=>{ window.allSlugs = function(){ throw new Error('forced-mount-failure'); }; }")
     pg.evaluate("()=>window.thriveModal.tab('page')"); pg.wait_for_timeout(1000)

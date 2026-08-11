@@ -1,14 +1,16 @@
-"""Supabase Stage 3 proof: read from Supabase, keep dual-write, guarded fallback, revert flag, refusal.
+"""Supabase read contract: read from Supabase (signed in), never a blend, guarded fallback, revert, refusal.
 
-Drives the real console in Chromium with an in-page fake Supabase (window.fetch wrapped). It proves the
-board read (getDrafts / mergedOpps) comes from Supabase when the switch is on, that writes still go to
-both stores, that a forced Supabase read failure falls back to the current store and is surfaced as
-degraded (never a blank), that the revert flag returns reads to the current store with no data change,
-that the switch is refused when the two stores diverge (naming the divergence), and that a read no longer
-depends on localStorage capacity. Every Supabase request targets a console_ table only.
+WO-026 refresh: this suite already asserts the current read contract; only "a write lands in Supabase"
+carried the retired pre-Stage-4 expectation (that a write reaches Supabase without the operator signed in).
+Under Stage 4 a write is durable and drains on sign-in, so the write case now signs in and reads the row
+back on the next hydrate (no blend). Everything else is the live contract, proven against a faithful fake
+of the PostgREST endpoint (window.fetch wrapped): the board read (getDrafts / mergedOpps) comes from
+Supabase when the switch is on and NEVER blends the local-only record; a forced read failure falls back to
+the current store and is surfaced as degraded (never a blank); the revert flag returns reads to the current
+store with no data change; the switch is refused when the two stores diverge (naming the divergence); and a
+read no longer depends on localStorage capacity. Every Supabase request targets a console_ table only.
 
-The sandbox cannot run the live Supabase or WebKit, so the true read switch is Thyab's device. This runs
-the real app.js read cache against a faithful fake of the PostgREST endpoint."""
+The live Supabase and WebKit are Thyab's device gate. This runs the real app.js read cache."""
 import threading, http.server, socketserver, functools, os
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT = "/home/user/thrive-console"
@@ -70,6 +72,8 @@ with sync_playwright() as p:
     pg.evaluate(FAKE)
     pg.evaluate("() => { localStorage.setItem('thrive_opps_v1', JSON.stringify([{slug:'local-only', business:'Local Only', up:1}])); }")
     pg.evaluate("() => window.ThriveSupa.setCfg('https://fake.supabase.co','anon')")
+    # Signed in: reading Supabase is the signed-in state, and a write drains rather than only queueing.
+    pg.evaluate("()=>localStorage.setItem('console_sb_session', JSON.stringify({access_token:'jwt', uid:'op', email:'op@x'}))")
 
     # A. Read source is Supabase. Seed a record ONLY in Supabase and confirm it is read; the local-only
     #    record is NOT read, proving the source really is Supabase.
@@ -84,12 +88,14 @@ with sync_playwright() as p:
     ck("A: the board (mergedOpps) reads from Supabase too", "sup-vsd" in merged and "local-only" not in merged, merged)
     ck("A: the read source reports supabase", pg.evaluate("() => window.supaReadStatus().source") == "supabase")
 
-    # B. Writes still go to both stores (dual-write unchanged).
+    # B. Signed in, a write lands in the current store and DRAINS to Supabase; the next hydrate reads it
+    #    back (no blend: the read cache reflects Supabase, and the written row is in Supabase).
     pg.evaluate("() => window.saveDraft({ slug:'w1', business:'Written', outreach_text:'hi' })")
-    pg.wait_for_timeout(300)
+    pg.wait_for_timeout(400)
     ck("B: a write lands in the current store (localStorage)", "w1" in pg.evaluate("() => JSON.parse(localStorage.getItem('thrive_opps_v1')||'[]').map(o=>o.slug)"))
-    ck("B: a write lands in Supabase", pg.evaluate("() => !!window.__sb.tables.console_opps.w1"))
-    ck("B: a write is visible in the read cache immediately", "w1" in pg.evaluate("() => window.getDrafts().map(o=>o.slug)"))
+    ck("B: signed in, the write drains to Supabase", pg.evaluate("() => !!window.__sb.tables.console_opps.w1"))
+    pg.evaluate("async () => await window.supaHydrate()")
+    ck("B: the written row reads back from Supabase after a hydrate", "w1" in pg.evaluate("() => window.getDrafts().map(o=>o.slug)"))
 
     # C. A failed Supabase read falls back to the current store and is surfaced as degraded, never blank.
     pg.evaluate("() => { window.__sb.failGetOpps = true; }")
