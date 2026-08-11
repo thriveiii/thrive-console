@@ -946,7 +946,7 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 @media(min-width:1024px){
   /* condensed: a tighter gap and a tighter card so five columns read calmly at ~190 to 230px */
   .board{ gap:var(--s-1) }
-  .board .tok{ padding:var(--s-1) var(--s-2) }
+  .board .tok{ --tok-pad:var(--s-2) }   /* condensed columns: one uniform inset, still equal on every side */
 }
 
 @media(max-width:1023px){
@@ -1136,7 +1136,7 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .tok-meta{
   display:block;
   font-size:var(--fs-micro); color:var(--ink-4);
-  font-weight:var(--w-strong); margin-top:var(--s-1);
+  font-weight:var(--w-strong);                 /* spaced from the title by the tok-open gap, one gap token */
   text-align:start;
   overflow-wrap:anywhere;
 }
@@ -1360,19 +1360,38 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
    the overflow control exists at all, and it was built before the drag so it
    could not be cut at the end.                                               */
 
-.tok{ display:flex; align-items:center; gap:var(--s-1); position:relative }
+/* WO-024: the card breathes. One internal geometry: a title zone that grows and wraps to two lines, a
+   reserved corner zone (the menu and the grip) the title can never enter, and the meta line below on the
+   same baseline. ONE padding token (--tok-pad, equal insets) and ONE gap token (--tok-gap, between every
+   zone). align-items:flex-start pins the corner to the top, so the chevron centres on the title's FIRST
+   line, never against the wrapped block. --tok-line is the first line's box, so a corner control's icon
+   sits on line one whatever the control's tap height. */
+.tok{
+  --tok-pad:var(--s-3);
+  --tok-gap:var(--s-2);
+  --tok-line:calc(var(--fs-xs) * var(--lh-tight));
+  display:flex; align-items:flex-start; gap:var(--tok-gap);
+  padding:var(--tok-pad);
+  position:relative;
+}
 .tok-open{
   flex:1 1 auto; min-width:0;
+  display:flex; flex-direction:column; gap:var(--tok-gap);
   background:transparent; border:0; padding:0; margin:0;
-  font:inherit; color:inherit; text-align:start; cursor:pointer; display:block;
+  font:inherit; color:inherit; text-align:start; cursor:pointer;
 }
 .tok-open:focus-visible,.tok-more:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
 .tok-more,.tok-grip{
-  flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
-  min-width:28px; min-height:28px;
+  flex:0 0 auto; align-self:flex-start;
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:22px; width:22px; height:var(--tok-line); min-height:0;   /* the first-line box: the icon centres on line one */
   background:transparent; border:0; padding:0;
   color:var(--ink-4); cursor:pointer;
+  position:relative;
 }
+/* The tap target stays generous without moving the icon off the first line: a transparent expander grows
+   the clickable area downward and sideways into the gap, never changing where the glyph sits. */
+.tok-more::after,.tok-grip::after{ content:""; position:absolute; inset:-11px -7px; }
 .tok-grip{ touch-action:none; cursor:grab; opacity:.5 }
 .tok:hover .tok-grip,.tok:hover .tok-more{ opacity:.95; color:var(--ink-3) }
 body.is-dragging .tok-grip{ cursor:grabbing }
@@ -1411,10 +1430,12 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 }
 
 @media (pointer:coarse){
-  /* The whole card is the handle, and it clears 44 by 44. */
+  /* The whole card is the handle, and it clears 44 by 44. The corner controls keep their icon ON the first
+     line (height stays --tok-line); the 44px tap target comes from the transparent expander, so a finger
+     gets a full target without the glyph drifting down to the middle of a wrapped card. */
   .tok{ min-height:44px }
-  .tok-open{ min-height:40px; display:flex; flex-direction:column; justify-content:center }
-  .tok-more,.tok-grip{ min-width:44px; min-height:44px }
+  .tok-open{ min-height:40px; display:flex; flex-direction:column }
+  .tok-more::after,.tok-grip::after{ inset:-15px -11px; }
   .cardmenu button{ min-height:44px }
 
   /* A lane wide enough to hold what the card now contains. The card gained two
