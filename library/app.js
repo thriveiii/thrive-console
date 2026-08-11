@@ -6533,9 +6533,40 @@ async function initBoard(){
     const vLine=txt(v.key, v.n).replace(String(v.n), num(v.n));
     const vNew=glowChanged("counter", v.key+":"+v.n) ? " is-glow-new" : "";
     el("boardVerdict").innerHTML = '<span class="vtext'+vNew+'">'+vLine+'</span>';
-    el("boardVerdictSub").innerHTML = b.summary.stalled
-      ? txt("vd_sub_stalled", ThriveBoard.STALL_DAYS).replace(String(ThriveBoard.STALL_DAYS), num(ThriveBoard.STALL_DAYS))
-      : txt("vd_sub_none");
+    // The hero subtitle speaks about the SAME state the headline is in, never another's line: the old
+    // selection keyed the subtitle on b.summary.stalled alone, so a reply hero with any stalled card wore
+    // "Untouched for N days or more." Selection and copy only, the count and recency come from the existing
+    // derivations (the reply records, the opens map); the verdict logic and its thresholds are untouched.
+    function heroDaysAgo(baseKey, days, extra){
+      extra = extra || {};
+      if(days===0) return txt(baseKey+"_today", 0, extra);
+      extra.days = num(days);
+      return txt(baseKey, days, extra);
+    }
+    function latestReplyDetail(){
+      var rows=[];
+      getInbound().forEach(function(r){ if(r && r.kind!=="auto" && r.opp && r.ts) rows.push({ name:String(r.name||"").trim(), from:r.from, ts:r.ts }); });
+      getMailLog().forEach(function(m){ if(m && (m.direction==="in" || m.status==="replied") && m.ts) rows.push({ name:String(m.toName||"").trim(), from:m.to, ts:m.ts }); });
+      if(!rows.length) return null;
+      rows.sort(function(a,c){ return String(c.ts).localeCompare(String(a.ts)); });
+      var r=rows[0], nm=r.name;
+      if(!nm){ var a=bareAddress(r.from||""); nm=(a.split("@")[0]||a); }
+      return { name:nm, days:Math.max(0, daysSince(r.ts)) };
+    }
+    function latestOpenDays(){
+      var m=(typeof openTimes==="function")? openTimes() : {}, best=0;
+      Object.keys(m).forEach(function(k){ (m[k]||[]).forEach(function(ms){ if(ms>best) best=ms; }); });
+      return best? Math.max(0, Math.floor((Date.now()-best)/86400000)) : null;
+    }
+    var subHtml;
+    if(v.key==="vd_replied"){ var rd=latestReplyDetail();
+      subHtml = rd ? heroDaysAgo("vd_sub_replied", rd.days, {name:esc(rd.name)}) : txt("vd_sub_none"); }
+    else if(v.key==="vd_opened"){ var od=latestOpenDays();
+      subHtml = (od!=null) ? heroDaysAgo("vd_sub_opened", od) : txt("vd_sub_none"); }
+    else if(v.key==="vd_stalled"){
+      subHtml = txt("vd_sub_stalled", ThriveBoard.STALL_DAYS).replace(String(ThriveBoard.STALL_DAYS), num(ThriveBoard.STALL_DAYS)); }
+    else subHtml = txt("vd_sub_none");
+    el("boardVerdictSub").innerHTML = subHtml;
 
     // The rose badge icon reflects the verdict, and the pipeline lights the stage the headline is
     // about. One accent (the dusty rose) across the badge, the number, and the lit chip.
