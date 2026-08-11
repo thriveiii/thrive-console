@@ -3992,10 +3992,18 @@ function activeChapterStage(o){
   return opensSince(slug, firstTs)>0 ? "opened" : "sent";
 }
 
-async function initCompose(slugArg){
+async function initCompose(slugArg, opts){
   const el=id=>document.getElementById(id);
   const body=el("ebody");
   let recordBody=()=>{};                 // reassigned once the undo history is wired, below
+  // Reply mode (the thread composer). The SAME editor, its formatting, templates and preview, scoped to a
+  // thread: the recipient is the address that replied (not the opportunity's default contact), the subject
+  // defaults to "Re: ...", the send carries In-Reply-To / References so it threads by header, and the whole
+  // thing is transient (it never touches the outreach compose_draft, and a reply is not a page send so the
+  // live gate does not apply). Set in the seed block below, read by the send and the gate. Outreach mode
+  // (no opts.reply) is unchanged in every line.
+  let replyCtx=null;
+  const onSent=(opts && typeof opts.onSent==="function") ? opts.onSent : null;
   const params=viewParams();
   const slug=(slugArg!==undefined&&slugArg!==null&&slugArg!=="")?slugArg:params.get("slug");
   const oppUrl = slug ? liveUrl(slug) : "";
@@ -4216,6 +4224,19 @@ async function initCompose(slugArg){
   let tplCache=getEmailTemplates();                       // parse localStorage once, not on every keystroke
   const refreshTplCache=()=>{ tplCache=getEmailTemplates(); };
   let subjectDirty=false;                                 // writer edited the subject by hand, so stop recomputing it
+  if(opts && opts.reply && slug){
+    replyCtx=replyTarget(slug);
+    const toEl=el("eto"), suEl=el("esubject"), nmEl=el("ename"), bd=el("ebody");
+    if(toEl){ toEl.value=replyCtx.addr||""; toEl.readOnly=true; }        // the reply answers ONE address, locked
+    if(nmEl && replyCtx.name){ nmEl.value=replyCtx.name; }
+    if(suEl){ const bs=String(replyCtx.subject||"").trim();
+      suEl.value = /^\s*(re|رد)\s*:/i.test(bs) ? bs : ("Re: "+(bs||t("th_reply_subj_fallback")));
+      subjectDirty=true; }                                              // hold the Re: subject; a template will not clobber it
+    if(bd && !(bd.textContent||"").trim()){                            // open on the greeting, in the recipient's language
+      const g=replyGreeting(replyCtx);
+      bd.innerHTML='<div dir="'+(replyCtx.lang==="ar"?"rtl":"auto")+'">'+esc(g).split("\n").join("<br>")+'</div>';
+    }
+  }
   function recipientName(){
     const n=(nameEl?nameEl.value.trim():"");
     if(firstEl && firstEl.checked && n) return n.split(/\s+/)[0];
@@ -4393,6 +4414,7 @@ async function initCompose(slugArg){
      against one prospect's page and that page reported fifteen sends it never received.
      A message belongs to an opportunity when it carries that opportunity's link. */
   function oppOf(){
+    if(replyCtx) return slug||"";                          // a reply belongs to its thread's opportunity, always
     const html=body.innerHTML||"";
     if(slug && html.indexOf("/opp/"+slug) >= 0) return slug;
     const m=html.match(/\/opp\/([a-z0-9-]+)/i);
@@ -4538,7 +4560,7 @@ async function initCompose(slugArg){
      not yet checked; the send re-checks regardless, so a stale yes can never let a message out. */
   let liveState={ ok:null, reason:"" };
   async function checkLive(){
-    if(!slug){ liveState={ ok:true, reason:"" }; return liveState; }   // a message tied to no page
+    if(!slug || replyCtx){ liveState={ ok:true, reason:"" }; return liveState; }   // no page, or a reply (not a page send)
     liveState=await pageSendable(oppObj || slug);
     return liveState;
   }
@@ -4596,7 +4618,7 @@ async function initCompose(slugArg){
     return g;
   }
   function syncSendState(){
-    const gated = !!slug;                                   // a message tied to no page is never gated
+    const gated = !!slug && !replyCtx;                      // no page, or a reply (not a page send), is never gated
     const ok = !gated || liveState.ok===true;
     const checking = gated && liveState.ok===null;
     SEND_BTNS.forEach(id=>{ const b=el(id); if(!b) return;
@@ -4643,7 +4665,7 @@ async function initCompose(slugArg){
   const savedTag=el("draftSaved");
   let composeDirty=false, composeLogged=false, restoring=false;
   const persistCompose=debounce(()=>{
-    if(!slug || !composeDirty || restoring) return;   // no record to hold it, or nothing real typed
+    if(!slug || !composeDirty || restoring || replyCtx) return;   // no record, nothing typed, or a transient reply
     const s=composeState();
     if(!composeHasContent(s)) return;                 // an untouched composer writes nothing
     saveDraft({ slug, compose_draft: Object.assign({}, s, { up:Date.now() }) });
@@ -4653,7 +4675,7 @@ async function initCompose(slugArg){
   function touchCompose(){ if(restoring) return; composeDirty=true; persistCompose(); }
   // Once the message has gone out, the working draft is done: it is cleared from the record so a
   // reopen starts fresh rather than restoring a message already sent. Additive, keyed by slug.
-  function clearComposeDraft(){ if(slug) saveDraft({ slug, compose_draft:null }); composeDirty=false; composeLogged=false; if(savedTag) savedTag.hidden=true; }
+  function clearComposeDraft(){ if(replyCtx) return; if(slug) saveDraft({ slug, compose_draft:null }); composeDirty=false; composeLogged=false; if(savedTag) savedTag.hidden=true; }
   [["ebody","input"],["esubject","input"],["eto","input"],["ename","input"],
    ["emonth","input"],["etpl","change"],["ebrand","change"],["efirst","change"],
    ["plainBox","input"]].forEach(([id,ev])=>{ const e=el(id); if(e) e.addEventListener(ev, touchCompose); });
@@ -4685,7 +4707,7 @@ async function initCompose(slugArg){
   body.addEventListener("input", debounce(refreshPreview, 400));
   const prevWrap=el("prevWrap");
   if(prevWrap) prevWrap.addEventListener("toggle", ()=>{ if(prevWrap.open) refreshPreview(); });
-  if(restoreCompose()) toast(t("draft_restored"));
+  if(!replyCtx && restoreCompose()) toast(t("draft_restored"));   // a reply is transient: never restore the outreach draft over the greeting
   refreshPreview();
 
   /* Undo and redo for the outreach message text, and only there. The history is keyed by the slug, so
@@ -4801,11 +4823,20 @@ async function initCompose(slugArg){
     // threads by header (the strongest tier). Passed through the relay to Resend; whether Resend keeps it
     // verbatim is a device gate, so sender and subject stay the reliable tiers underneath it.
     const msgid=newMessageId();
+    // A reply threads by header: In-Reply-To names the wire id it answers, References carries the chain, so
+    // the strongest attribution tier resolves it. Added only in reply mode; the outreach header set is
+    // exactly as before otherwise.
+    const replyHeaders={};
+    if(replyCtx && replyCtx.inReplyTo){
+      const chain=(replyCtx.refs||[]).concat([replyCtx.inReplyTo]).filter((v,i,a)=> v && a.indexOf(v)===i);
+      replyHeaders["In-Reply-To"]="<"+replyCtx.inReplyTo+">";
+      replyHeaders["References"]=chain.map(x=>"<"+x+">").join(" ");
+    }
     const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:to,
       subject:resolveTokens(el("esubject").value.trim()),
       html:sb.html,
       text:sb.text,
-      headers:Object.assign({}, ThriveStore.outboundHeaders(slug||""), { "Message-ID": msgid }),
+      headers:Object.assign({}, ThriveStore.outboundHeaders(slug||""), replyHeaders, { "Message-ID": msgid }),
       slug:slug||"" };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
@@ -4825,6 +4856,15 @@ async function initCompose(slugArg){
       logMail({ opp:oppOf(), to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id, msgid:msgid, chapter:sendChapter(oppOf()) });
       clearComposeDraft();                                  // the message went out, so the working draft is done
       toast(t("cmp_sent"));
+      if(replyCtx){
+        // The reply is in the thread now: refresh the thread list above the editor, and open a fresh greeting
+        // for the next reply, so the composer is ready rather than showing a message already sent.
+        replyCtx=replyTarget(slug);                         // re-read (the just-sent row can shift the target)
+        const g=replyGreeting(replyCtx);
+        body.innerHTML='<div dir="'+(replyCtx.lang==="ar"?"rtl":"auto")+'">'+esc(g).split("\n").join("<br>")+'</div>';
+        refreshLinks(); recordBody();
+        if(onSent) try{ onSent(); }catch(_){}
+      }
     }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
     finally{ el("eSend").disabled=false; el("eSend").textContent=old; }
   });
@@ -8108,25 +8148,13 @@ function initModal(){
   function renderHistory(o){
     const box=el("modalHistory"); if(!box) return;
     const slug=(o&&o.slug)||current;
-    // The thread (each message escaped and direction-isolated) then the reply composer beneath it.
-    box.innerHTML=threadListHtml(slug)+replyComposerHtml(slug);
-
-    const rbox=box.querySelector(".th-reply-box");
-    if(rbox) rbox.addEventListener("submit", async (ev)=>{
-      ev.preventDefault();
-      const ta=rbox.querySelector(".th-reply-text"), btn=rbox.querySelector(".th-reply-send"), out=rbox.querySelector(".th-reply-out");
-      const body=(ta && ta.value || "").trim();
-      if(!body){ if(out) out.textContent=t("th_reply_empty"); return; }
-      btn.disabled=true; const old=btn.textContent; btn.textContent=t("th_reply_sending"); if(out) out.textContent="";
-      try{
-        await sendThreadReply(slug, body);
-        if(out) out.textContent="✓ "+t("th_reply_sent");
-        renderHistory(o);                                   // the sent reply now appears in the thread, in order
-      }catch(e){
-        if(out) out.textContent="✕ "+t("th_reply_err")+": "+((e&&e.message)||"");
-        btn.disabled=false; btn.textContent=old;
-      }
-    });
+    // The thread only: each message escaped and direction-isolated. The reply composer is no longer a bare
+    // textarea rendered here; it is the full send editor, borrowed into #modalHost beneath this list by
+    // switchTo (reply mode), so a reply has the same formatting, templates and preview as an outreach send.
+    // When there is no address to answer, a gentle line stands in for the composer.
+    let html=threadListHtml(slug);
+    if(!(replyTarget(slug)||{}).addr) html+='<p class="th-noreply sub">'+esc(t("th_reply_no_addr"))+'</p>';
+    box.innerHTML=html;
   }
 
   /* ---- tabs -------------------------------------------------------------- */
@@ -8134,6 +8162,9 @@ function initModal(){
      tab used to open on the composer AND the send options at once, which asked
      the second question before the first. WO-013 §4.1. */
   function borrows(tab){
+    // History borrows the composer (in reply mode) whenever there is an address to answer, so the send
+    // editor sits beneath the thread. The node is the same #view-compose the outreach tab borrows.
+    if(tab==="history") return !!(current && (replyTarget(current)||{}).addr);
     if(tab!=="outreach") return !!BORROWED[tab];
     return outreachPath(rec)==="email";
   }
@@ -8175,6 +8206,28 @@ function initModal(){
       // swallowed the reason here, so a tap did nothing with no word why. Surface it instead.
       try{ if(tab==="page") await initEditor(current); else await initCompose(current); }
       catch(e){ if(typeof actionStatus==="function") actionStatus("err", t("act_mount_fail")+" "+errText(e)); }
+      return;
+    }
+    if(tab==="history"){
+      // The thread, with the full send editor beneath it in reply mode. The editor is the SAME node the
+      // outreach tab borrows (#view-compose) and the SAME initCompose, so a reply has formatting, templates
+      // and preview and there is one editor codebase, two mount points. Borrowed only when there is an
+      // address to answer; otherwise the thread shows on its own.
+      const view=document.getElementById("view-compose");
+      if(view && borrows("history")){
+        giveBack();                                    // park any other borrowed view before adopting this one
+        remember(view);
+        if(view.parentNode!==host) host.appendChild(view);
+        view.hidden=false; view.classList.remove("wrap");
+        if(typeof window.thriveViewReset==="function") window.thriveViewReset("compose");  // boot state, so init re-wires once
+        show(tab);
+        renderHistory(rec);                            // the thread list, above the editor
+        try{ await initCompose(current, { reply:true, onSent:()=>renderHistory(rec) }); }
+        catch(e){ if(typeof actionStatus==="function") actionStatus("err", t("act_mount_fail")+" "+errText(e)); }
+      } else {
+        giveBack(); show(tab); renderHistory(rec);     // no one to answer: just the thread
+      }
+      if(__restored) applyDraftFields(__restored);
       return;
     }
     giveBack();
