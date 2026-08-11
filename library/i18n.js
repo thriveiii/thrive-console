@@ -2218,7 +2218,7 @@ var I18N_BOARD = {
   en: {
     nav_board:      "Thrive Operations",
     board_title:    "Thrive Operations",
-    board_sub:      "Where every opportunity stands right now.",
+    board_sub:      "Where your outreach thrives",
     board_numbers:  "See the numbers",
 
     lane_draft:     "Draft",
@@ -2247,6 +2247,12 @@ var I18N_BOARD = {
     vd_sub_stalled: { one:"Untouched for {n} day or more.",
                       other:"Untouched for {n} days or more." },
     vd_sub_none:    { other:"Three sends a day is a full week." },
+    /* Each hero speaks about its own state. The reply hero names who answered and when, the reading hero the
+       recency of the last open; the count and duration come from the derivations, never hardcoded. */
+    vd_sub_replied:       { one:"{name} answered yesterday.",  other:"{name} answered {days} days ago." },
+    vd_sub_replied_today: { other:"{name} answered today." },
+    vd_sub_opened:        { one:"Last opened yesterday.",       other:"Last opened {days} days ago." },
+    vd_sub_opened_today:  { other:"Last opened today." },
 
     /* {d} is the stall threshold, a constant, not the chip's count */
     chip_stalled:   { other:"stalled over {d} days" },
@@ -2357,7 +2363,7 @@ var I18N_BOARD = {
   ar: {
     nav_board:      "عمليات ثرايف",
     board_title:    "عمليات ثرايف",
-    board_sub:      "أين تقف كل فرصة الآن.",
+    board_sub:      "حيث يزدهر تواصلك مع العالم الخارجي",
     board_numbers:  "اطّلع على الأرقام",
 
     lane_draft:     "مسودة",
@@ -2411,6 +2417,22 @@ var I18N_BOARD = {
       other: "لم تُلمس منذ {n} يوم أو أكثر."
     },
     vd_sub_none: { other:"ثلاث رسائل في اليوم أسبوع كامل." },
+    vd_sub_replied: {
+      one:   "أجابك {name} أمس.",
+      two:   "أجابك {name} قبل يومين.",
+      few:   "أجابك {name} قبل {days} أيام.",
+      many:  "أجابك {name} قبل {days} يومًا.",
+      other: "أجابك {name} قبل {days} يوم."
+    },
+    vd_sub_replied_today: { other:"أجابك {name} اليوم." },
+    vd_sub_opened: {
+      one:   "آخر اطّلاع أمس.",
+      two:   "آخر اطّلاع قبل يومين.",
+      few:   "آخر اطّلاع قبل {days} أيام.",
+      many:  "آخر اطّلاع قبل {days} يومًا.",
+      other: "آخر اطّلاع قبل {days} يوم."
+    },
+    vd_sub_opened_today: { other:"آخر اطّلاع اليوم." },
 
     chip_stalled: { other:"متوقفة أكثر من {d} أيام" },
     chip_sends: {
