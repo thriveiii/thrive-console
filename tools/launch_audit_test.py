@@ -62,8 +62,11 @@ ck("RLS scope: the client only touches console_ tables (a fixed allow-list refus
 app = open(os.path.join(ROOT, "library/app.js"), encoding="utf-8").read()
 ck("visible state: the action runner shows in-progress, success and a real error",
    "function runAction(" in app and 'actionStatus("work"' in app and 'actionStatus("ok"' in app)
-ck("visible state: the thread reply composer shows sending, sent and a real error (not silent)",
-   all(k in app for k in ("th_reply_sending", "th_reply_sent", "th_reply_err")) and "btn.disabled=true" in app)
+# WO-021: the thread reply is now the send editor (reply mode), not a bare textarea, so its visible send
+# states are the editor's, sending, sent and a real error, and the Send button disables while a send is in
+# flight. The reply mounts the same #view-compose node initCompose runs (one editor codebase, two mounts).
+ck("visible state: the thread reply uses the send editor's states (sending, sent, a real error), not a silent textarea",
+   all(k in app for k in ("cmp_sending", "cmp_sent", "cmp_send_err")) and "{ reply:true" in app and 'el("eSend").disabled=true' in app)
 
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 socketserver.TCPServer.allow_reuse_address = True
