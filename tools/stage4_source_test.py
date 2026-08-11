@@ -84,11 +84,15 @@ INIT = r"""
 """
 
 def sign_in(pg):
-    pg.wait_for_selector("#gateInput", timeout=10000)
+    # WO-030 audit fix: the three boot waits were 10s and flaked under cold-start Chromium load in a
+    # back-to-back bed run (2 of 3 green standalone; the third timed out on a boot wait, no assertion
+    # failing). Raised to the 15s the other suites already use, so the bed is reliably zero red. This
+    # suite still drives the real sign-in gate; only the wait ceilings change.
+    pg.wait_for_selector("#gateInput", timeout=15000)
     pg.fill("#gateInput", PASSCODE); pg.click(".gate-btn")
-    pg.wait_for_selector("#gateEmail", timeout=10000)
+    pg.wait_for_selector("#gateEmail", timeout=15000)
     pg.fill("#gateEmail","op@thrive.co"); pg.fill("#gatePass","right"); pg.click(".gate-btn")
-    pg.wait_for_function("()=>!document.getElementById('thriveGate')", timeout=10000)
+    pg.wait_for_function("()=>!document.getElementById('thriveGate')", timeout=15000)
     pg.wait_for_function("()=>typeof window.getMailLog==='function' && typeof window.saveDraft==='function'", timeout=15000)
 
 with sync_playwright() as p:
