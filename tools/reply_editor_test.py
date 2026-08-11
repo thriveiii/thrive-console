@@ -84,21 +84,24 @@ with sync_playwright() as p:
        'class="rp-subj" dir="auto"' in thtml and 'class="rp-snip" dir="auto"' in thtml)
 
     # ---- render into the DOM: no script node executes; the Arabic snippet computes rtl ----
+    # WO-022: each line of a body is now its own direction-isolated block (.rp-line dir=auto), so a mixed
+    # line reads in order instead of scrambling. The reply's direction is read on the line, where it now
+    # lives; the XSS guarantee is unchanged (still escaped, no script node from the body).
     dom = pg.evaluate("""()=>{
       const d=document.createElement('div'); d.id='thProbe'; d.innerHTML=window.threadListHtml('thrive-july');
       document.body.appendChild(d);
-      const snip=d.querySelector('.rp-snip');
+      const snip=d.querySelector('.rp-snip'), line=d.querySelector('.rp-snip .rp-line');
       return { scripts:d.querySelectorAll('script').length, snipText:(snip&&snip.textContent)||'',
-               dir:snip?getComputedStyle(snip).direction:'' };
+               dir:line?getComputedStyle(line).direction:'' };
     }""")
     ck("no script element is created from the reply body (inert, escaped as text)",
        dom["scripts"]==0 and "<script>alert(1)</script>" in dom["snipText"], dom)
-    ck("the Arabic reply snippet computes right-to-left (no interleaving)", dom["dir"]=="rtl", dom)
+    ck("the Arabic reply line computes right-to-left (per-line isolation, no interleaving)", dom["dir"]=="rtl", dom)
     en_dir = pg.evaluate("""()=>{
       const d=document.createElement('div'); d.innerHTML=window.threadListHtml('other-co'); document.body.appendChild(d);
-      const s=d.querySelector('.rp-snip'); return s?getComputedStyle(s).direction:'';
+      const s=d.querySelector('.rp-snip .rp-line'); return s?getComputedStyle(s).direction:'';
     }""")
-    ck("an English reply snippet computes left-to-right", en_dir=="ltr", en_dir)
+    ck("an English reply line computes left-to-right", en_dir=="ltr", en_dir)
 
     # ---- send a reply: the relay payload is correct and scoped; it appears in the thread in order ----
     res = pg.evaluate("""async ()=>{

@@ -3891,6 +3891,43 @@ function replyGreeting(tgt){
 }
 
 // The thread as HTML: each message escaped and isolated in its own direction. Pure and testable.
+/* A reply body renders with every LINE direction-isolated, so a mixed line, the worst case being a Gmail
+   quote header (an Arabic date, a Latin sender and address, a URL, angle brackets, all in one line), reads
+   in order instead of being reordered by the bidi algorithm into a scramble. Rendering only: every piece
+   passes through esc first, so the #99 XSS guarantee holds unchanged; then embedded URLs and email
+   addresses are wrapped in <bdi> so they stay left-to-right inside an Arabic line and wrap instead of
+   overflowing, and a leading bracket or the trailing one sits outside the isolated run, on the correct
+   side. A quoted line (a leading ">" or a "wrote:" header) renders as a quieter block. */
+var RE_REPLY_TOKEN=/(https?:\/\/[^\s]+|www\.[^\s]+|[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+)/g;
+function renderReplyLine(raw){
+  var out="", last=0, m; RE_REPLY_TOKEN.lastIndex=0;
+  while((m=RE_REPLY_TOKEN.exec(raw))){
+    out+=esc(raw.slice(last, m.index));
+    var tok=m[0], lead="", trail="";
+    while(/^[<«("'\[]/.test(tok)){ lead+=tok.charAt(0); tok=tok.slice(1); }         // a bracket belongs outside the run
+    while(tok && /[)\]>»,.;:،!؟"']$/.test(tok)){ trail=tok.slice(-1)+trail; tok=tok.slice(0,-1); }
+    out+=esc(lead)+(tok? '<bdi class="rp-ltr">'+esc(tok)+'</bdi>' : "")+esc(trail);
+    last=m.index+m[0].length;
+  }
+  out+=esc(raw.slice(last));
+  return out;
+}
+function isQuotedLine(raw){
+  var s=String(raw==null?"":raw);
+  if(/^\s*>/.test(s)) return true;                            // a quoted line
+  if(/(?:wrote|كتب)\s*:\s*$/i.test(s)) return true;           // a "...wrote:" header ending in a colon
+  // A Gmail quote header opens with "On <date> ... wrote:" or the Arabic "في <date> ... كتب ...". \b is not
+  // used: it keys on \w, so it never fires after an Arabic word; the opener plus the verb is the signal.
+  if(/^\s*(?:On\s|في\s|بتاريخ\s)/i.test(s) && /(?:wrote|كتب)/i.test(s)) return true;
+  return false;
+}
+function renderReplyBody(text){
+  var lines=String(text==null?"":text).split(/\r?\n/);
+  return lines.map(function(raw){
+    var inner=renderReplyLine(raw);                          // an empty line keeps its height via .rp-line:empty
+    return '<span class="rp-line'+(isQuotedLine(raw)?" rp-quote":"")+'" dir="auto">'+inner+'</span>';
+  }).join("");
+}
 function threadListHtml(slug){
   const entries=buildThread(slug);
   const when=ts=> fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"");
@@ -3908,7 +3945,7 @@ function threadListHtml(slug){
       '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
       (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
       (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>':'')+
-      (r.snippet? '<p class="rp-snip" dir="auto">'+esc(r.snippet)+'</p>':'')+
+      (r.snippet? '<div class="rp-snip" dir="auto">'+renderReplyBody(r.snippet)+'</div>':'')+
       '<div class="rp-foot">'+
         (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>':'')+
         (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>':'')+
