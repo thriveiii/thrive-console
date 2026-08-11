@@ -1930,6 +1930,11 @@ function getDraftsLocal(){ try{ return JSON.parse(localStorage.getItem(STORE)||"
    and the badge all reflect it. Derivation-only and idempotent: it is never written back (setDrafts strips
    it), so it never re-enters the write path. Memoized, invalidated on any opp/inbound change. */
 var __reconCache=null;
+// Visibility counter for the net (not UI). With the flush race closed (brief: the child opp now persists),
+// this should reconstruct NOTHING on fresh data. It stays as the safety net for any historic or exotic gap,
+// so a non-zero count is the signal that a real child opp went missing again: a regression, made visible.
+// Read window.__thriveReconCount at any time; each firing also logs one line naming the slugs it derived.
+window.__thriveReconCount = window.__thriveReconCount || 0;
 function invalidateRecon(){ __reconCache=null; }
 function reconstructChildren(base){
   if(__reconCache) return __reconCache;
@@ -1949,6 +1954,11 @@ function reconstructChildren(base){
       spawned_from:{ parent:parentSlug, addr:addr }, recipients:[roster],
       lang:roster.lang||parent.lang||"", _reconstructed:true });
   });
+  if(out.length){
+    try{ window.__thriveReconCount += out.length;
+      console.warn("[thrive] reconstruction net fired (a child opp is missing from the store, flush-race regression?):",
+        out.map(function(o){ return o.slug; }).join(", "), "total:", window.__thriveReconCount); }catch(_){}
+  }
   __reconCache=out; return out;
 }
 /* The READ accessor (Stage 3). When reads are switched to Supabase and the cache is hydrated and not
@@ -2014,23 +2024,57 @@ var PENDING="console_sb_pending";
 function supaPending(){ try{ return JSON.parse(localStorage.getItem(PENDING)||"[]"); }catch(e){ return []; } }
 function supaSetPending(a){ try{ localStorage.setItem(PENDING, JSON.stringify((a||[]).slice(-4000))); }catch(e){} }
 function supaEnqueue(entry){ try{ var a=supaPending(); a.push(entry); supaSetPending(a); }catch(e){} }
-var __supaFlushing=false;
-/* Replay every queued write to Supabase, dequeuing each on success and keeping the rest for the next
-   pass. Only attempts when signed in (an anon write would be refused by RLS and pointlessly churn). */
+var __supaFlushing=false, __supaFlushAgain=false;
+/* Replay every queued write to Supabase, dequeuing each on success and keeping the rest for the next pass.
+   Only attempts when signed in (an anon write would be refused by RLS and pointlessly churn).
+
+   The flush race (named in #104 and #108, proven in the live data: a spawned child opportunity never
+   persisted while its inbound re-point did) lived here. The old body snapshotted the queue once, and a
+   second flush requested while one ran early-returned and was lost; worse, the running flush wrote its
+   `left` back over the queue, ERASING any entry appended mid-flight. An entry queued microseconds after a
+   flush began (the child opp, then the inbound row that points at it) was silently dropped from Supabase.
+
+   Closed two ways, queue mechanics only:
+   - Drain until empty. Each cycle re-reads the queue, so an entry appended DURING a pass is picked up in
+     the same drain, in order. The queue is only ever APPENDED to elsewhere (supaEnqueue), so the snapshot
+     `a` stays a prefix of the live queue and the tail that arrived mid-pass is preserved, never clobbered.
+   - Coalesced trigger. A flush requested while one is running sets __supaFlushAgain instead of no-opping,
+     so the intent to run is never lost even at exact timing; the running drain honours it before exiting.
+   FIFO is preserved: still-unsent failures keep their place ahead of the mid-flight tail, so a child opp
+   lands before the inbound row that points at it, never the pointer without its target. A pass that makes
+   no progress and finds nothing new does not loop (no spin); its failures wait for the next trigger. */
 async function supaFlush(){
-  if(__supaFlushing || !supaOn() || !supaSignedIn()) return { flushed:0, left:supaPending().length };
+  if(!supaOn() || !supaSignedIn()) return { flushed:0, left:supaPending().length };
+  if(__supaFlushing){ __supaFlushAgain=true; return { flushed:0, left:supaPending().length, coalesced:true }; }
   __supaFlushing=true;
-  var a=supaPending(), left=[], flushed=0;
-  for(var i=0;i<a.length;i++){
-    var e=a[i];
-    try{
-      if(e.op==="del") await window.ThriveSupa.del(e.t, e.q);
-      else await window.ThriveSupa.upsert(e.t, e.rows);
-      flushed++;
-    }catch(err){ left.push(e); supaRecordDiverge("flush", e.t, err&&err.message); }
-  }
-  supaSetPending(left); __supaFlushing=false;
-  return { flushed:flushed, left:left.length };
+  var flushed=0;
+  try{
+    while(true){
+      __supaFlushAgain=false;
+      var a=supaPending();
+      if(a.length){
+        var left=[], progressed=false;
+        for(var i=0;i<a.length;i++){
+          var e=a[i];
+          try{
+            if(e.op==="del") await window.ThriveSupa.del(e.t, e.q);
+            else await window.ThriveSupa.upsert(e.t, e.rows);
+            flushed++; progressed=true;
+          }catch(err){ left.push(e); supaRecordDiverge("flush", e.t, err&&err.message); }
+        }
+        // Anything appended while this pass ran (the queue grew past our snapshot) is preserved, in arrival
+        // order, AFTER the still-unsent failures: rewrite the queue as failures ++ mid-flight tail.
+        var tail=supaPending().slice(a.length);
+        supaSetPending(left.concat(tail));
+        if(progressed || tail.length || __supaFlushAgain) continue;   // more to do, or new work arrived
+        break;                                                        // only un-sendable failures remain
+      } else {
+        if(__supaFlushAgain) continue;                                // an enqueue raced in as we emptied
+        break;                                                        // fully drained
+      }
+    }
+  } finally { __supaFlushing=false; }
+  return { flushed:flushed, left:supaPending().length };
 }
 function supaQueueUpsert(table, rows){
   if(!supaOn()) return;
