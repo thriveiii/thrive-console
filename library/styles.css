@@ -1049,6 +1049,43 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 
 .lane-body{ display:flex; flex-direction:column; gap:var(--s-2); min-height:60px }
 
+/* --- WO-023: the Replied lane speaks quietly ------------------------------------
+   Two elements, one visual language, reusing the Replied green (no new colour). */
+
+/* 1. A card that carries a conversation breathes a calm green glow behind it, the Replied lane's own hue.
+   Slow and quiet, never a blink. Derivation-driven: .has-reply is set from the reply derivation (#82/#108),
+   never per card. GPU-cheap: a layered pseudo-element behind the card animates OPACITY only, so nothing
+   reflows and the halo is never clipped (the lanes set no overflow). The card keeps its own border; this
+   sits behind it. */
+.tok.has-reply{ position:relative; }
+.tok.has-reply::after{
+  content:""; position:absolute; inset:0; border-radius:inherit; z-index:-1;
+  box-shadow:0 0 10px 1px var(--glow-1);            /* --glow-1 is the Replied green at low alpha, no new token */
+  opacity:.42; animation:reply-breathe 3.6s ease-in-out infinite;
+  pointer-events:none;
+}
+@keyframes reply-breathe{ 0%,100%{ opacity:.30 } 50%{ opacity:.64 } }
+/* Reduced motion: a static soft glow, no breathing. */
+@media(prefers-reduced-motion:reduce){ .tok.has-reply::after{ animation:none; opacity:.46 } }
+
+/* 2. The Replied column is set apart by one very thin dashed rule, the ONLY separator on the board. Logical
+   inline-start, so it sits before the Replied column in reading order and mirrors in Arabic with no second
+   rule. A quiet hair against the near-black board, not a wall, full column height. */
+@media(min-width:1024px){
+  .lane[data-lane="replied"]{
+    border-inline-start:1px dashed var(--hair);
+    padding-inline-start:var(--s-2);
+  }
+}
+/* Phone / iPad portrait (one lane at a time): the same language as a fine dashed TOP rule on the Replied
+   lane section, so the distinction survives without columns. The glow is identical in both layouts. */
+@media(max-width:1023px){
+  .board .lane[data-lane="replied"]{
+    border-top:1px dashed var(--hair);
+    padding-top:var(--s-2);
+  }
+}
+
 .lane-empty{
   border:1px dashed var(--hair); border-radius:var(--r-md);
   padding:var(--s-4) var(--s-3); text-align:center;

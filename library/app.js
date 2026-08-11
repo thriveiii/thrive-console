@@ -711,6 +711,16 @@ function groupHasAnyReply(o){
     return r.opp===slug || String(r.opp||"").indexOf(pfx)===0;
   });
 }
+// Does this card carry a conversation, so its glow is truthful? Read purely from the existing reply
+// derivation (#82/#108): a reply attributed to the card itself (a normal or a spawned child card), or, for
+// a group parent that never enters Replied, a reply under one of its children. Presentation reads this to
+// set the .has-reply glow class; it is derivation-only, keyed on no address and hardcoded on no card.
+function cardHasConversation(slug){
+  slug=String(slug||""); if(!slug) return false;
+  if(hasReply(slug)) return true;
+  var o=getDraft(slug);
+  return !!(o && isGroupOpp(o) && groupHasAnyReply(o));
+}
 
 // One child opportunity per replying recipient per campaign, addressed by a deterministic slug so the same
 // recipient never spawns twice.
@@ -6391,6 +6401,9 @@ async function initBoard(){
     if(tk.stalled) cls.push("is-stalled");
     if(tk.hot) cls.push("is-hot");
     if(tk.provisional) cls.push("is-provisional");
+    // A card that carries a conversation breathes the calm green glow. Derivation-driven (cardHasConversation
+    // reads the reply derivation), so a group parent whose child replied glows too, not only Replied-lane cards.
+    if(cardHasConversation(tk.slug)) cls.push("has-reply");
     // The meta line stays in the paragraph direction so the words read correctly; only the
     // digits inside it are isolated, by .n, never the whole line.
     let meta;
