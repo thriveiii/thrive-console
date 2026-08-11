@@ -542,10 +542,16 @@ function sendMail_(d) {
   if (d.text) payload.text = d.text;  // sent verbatim, footer included by the console
   if (d.headers) payload.headers = d.headers;
 
+  /* Exactly-once. The console sends one stable idempotency key per send INTENT (not per click). Forwarded
+     to Resend as its Idempotency-Key header, a retried POST for the same intent is deduped by Resend and
+     delivers AT MOST ONCE, returning the original send's id. This is what stops a slow-relay retry from
+     hitting the prospect twice. No key (a legacy caller) behaves exactly as before. */
+  var headers = { Authorization: 'Bearer ' + key };
+  if (d.idempotencyKey) headers['Idempotency-Key'] = String(d.idempotencyKey);
   var res = UrlFetchApp.fetch('https://api.resend.com/emails', {
     method: 'post',
     contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + key },
+    headers: headers,
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   });
@@ -553,7 +559,7 @@ function sendMail_(d) {
   var j = {};
   try { j = JSON.parse(body); } catch (e) {}
   if (res.getResponseCode() >= 300) throw new Error(j.message || body.slice(0, 200));
-  return { ok: true, id: j.id || '', replyTo: replyTo };
+  return { ok: true, id: j.id || '', replyTo: replyTo, delivered: true };
 }
 
 /* ===================== HTTP ===================== */
