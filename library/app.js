@@ -486,7 +486,7 @@ function sendIndex(){
   });
   __sendCache=m; __sendTs=now; return m;
 }
-function invalidateSends(){ __sendCache=null; }
+function invalidateSends(){ __sendCache=null; invalidateRecon(); }
 /* Every hand contact recorded through somebody else's channel: their contact form, an
    Instagram message, a phone call. Most of a batch has no email address at all, so without
    these the board reports that nothing went out when something did.
@@ -1321,7 +1321,7 @@ function getInboundLocal(){ try{ return JSON.parse(localStorage.getItem(INBOUND)
    (so a reply, the international-schools one included, survives a truncated or retired local store),
    else the current store. Writers use getInboundLocal. */
 function getInbound(){ if(supaReadable() && __supa.inbound) return __supa.inbound.slice(); return getInboundLocal(); }
-function setInbound(a){ lsSet(INBOUND, JSON.stringify((a||[]).slice(-800))); try{ supaMirrorInbound(a); }catch(_){} }
+function setInbound(a){ invalidateRecon(); lsSet(INBOUND, JSON.stringify((a||[]).slice(-800))); try{ supaMirrorInbound(a); }catch(_){} }
 function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
 /* Named on screen rather than counted: a reply nobody could attribute is the one
    most likely to be worth money, because it is the one nobody is expecting. */
@@ -1850,18 +1850,55 @@ async function loadManifest(){
    write merges against it and saves to it, and a read falls back to it when Supabase reads are off or
    degraded. Stage 4 retires it; here it stays the safety net. */
 function getDraftsLocal(){ try{ return JSON.parse(localStorage.getItem(STORE)||"[]"); }catch(e){ return []; } }
+/* WO-029: read-side reconstruction of a group reply's child card. A group reply becomes Replied only
+   through the child card spawnChildrenFromReplies mints at childSlugFor(parent, addr); the parent group
+   never enters Replied. When that child opportunity never persisted (the flush race named in the PR: the
+   console_opps upsert is stranded behind an in-progress supaFlush), the inbound row points at a child
+   slug with no card in the read store, so effStage is never computed for it and Replied stays 0 while the
+   attribution is correct. This DERIVES the missing child from the two records that DID persist, the parent
+   group and the child-suffixed inbound row, so effStage reads Replied and the lane, the recipient panel
+   and the badge all reflect it. Derivation-only and idempotent: it is never written back (setDrafts strips
+   it), so it never re-enters the write path. Memoized, invalidated on any opp/inbound change. */
+var __reconCache=null;
+function invalidateRecon(){ __reconCache=null; }
+function reconstructChildren(base){
+  if(__reconCache) return __reconCache;
+  var have={}; (base||[]).forEach(function(o){ if(o && o.slug) have[o.slug]=1; });
+  var out=[], seen={};
+  getInbound().forEach(function(r){
+    if(!r || !r.opp || r.kind==="auto") return;
+    var slug=String(r.opp), cut=slug.indexOf("--r-");
+    if(cut<0 || have[slug] || seen[slug]) return;              // only a child slug with no card, once each
+    var parentSlug=slug.slice(0, cut);
+    var parent=(base||[]).find(function(o){ return o && o.slug===parentSlug; });
+    if(!parent || !isGroupOpp(parent)) return;                 // only under a real group parent in the store
+    var addr=String(r.from||"").trim().toLowerCase(); if(!addr) return;
+    var roster=campaignRecipients(parent).find(function(x){ return x.addr===addr; }) || { addr:addr, name:(r.name||""), lang:"" };
+    seen[slug]=1;
+    out.push({ slug:slug, business:(roster.name||addr), published:!!parent.published,
+      spawned_from:{ parent:parentSlug, addr:addr }, recipients:[roster],
+      lang:roster.lang||parent.lang||"", _reconstructed:true });
+  });
+  __reconCache=out; return out;
+}
 /* The READ accessor (Stage 3). When reads are switched to Supabase and the cache is hydrated and not
    degraded, opportunities and their pages come from the stable Supabase rows (a full localStorage no
    longer breaks what is shown and the cards stop flickering). Otherwise it falls back to the current
-   store, so a Supabase hiccup is never a blank or a false-empty board. Writes never call this. */
+   store, so a Supabase hiccup is never a blank or a false-empty board. Writes never call this. A missing
+   group-reply child card is reconstructed on read (above), so the board counts the reply either way. */
 function getDrafts(){
+  var base=null;
   if(supaReadFlagOn() && supaOn()){
     supaEnsureHydrated();
-    if(__supa.hydrated && !__supa.degraded && __supa.opps) return __supa.opps.map(function(d){ return Object.assign({}, d); });
+    if(__supa.hydrated && !__supa.degraded && __supa.opps) base=__supa.opps.map(function(d){ return Object.assign({}, d); });
   }
-  return getDraftsLocal();
+  if(!base) base=getDraftsLocal();
+  var kids=reconstructChildren(base);
+  return kids.length ? base.concat(kids) : base;
 }
-function setDrafts(a){ return lsSet(STORE, JSON.stringify(a)); }
+// A reconstructed child is derivation-only and must never be written back (constraint 1): strip it before
+// any write to the device store, so it cannot re-enter the write path or mirror to Supabase.
+function setDrafts(a){ invalidateRecon(); return lsSet(STORE, JSON.stringify((a||[]).filter(function(o){ return !(o && o._reconstructed); }))); }
 function getDraft(slug){ return getDrafts().find(x=>x.slug===slug); }
 function saveDraft(rec){
   rec.up=Date.now();                                     // freshness stamp for cross-device merge
