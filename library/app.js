@@ -624,6 +624,26 @@ function hasReply(o){
   if(inboundFor(slug).some(function(r){ return r && r.kind!=="auto"; })) return true;
   return getMailLog().some(function(m){ return m && m.opp===slug && (m.direction==="in" || m.status==="replied"); });
 }
+/* Every reply the board attributes, counted once, so the Overview header agrees with the board and the
+   campaign and person tables (the "tiles say 0, tables say 1" divergence): an attributed inbound reply
+   (kind not "auto", an opp set) lived only in console_inbound, so a header that read the mail ledger alone
+   never saw it. Deduped by opportunity and sender, so a person who wrote twice is one reply, and a reply
+   present in both stores is not double counted. This is the one derivation both the header and the tables
+   read. */
+function repliesReceived(){
+  var seen={}, n=0;
+  getInbound().forEach(function(r){
+    if(!r || r.kind==="auto" || !r.opp) return;
+    var k=String(r.opp)+"|"+String(r.from||"").trim().toLowerCase();
+    if(!seen[k]){ seen[k]=1; n++; }
+  });
+  getMailLog().forEach(function(m){
+    if(!m || !(m.direction==="in" || m.status==="replied")) return;
+    var k=String(m.opp||"")+"|"+String(m.to||"").trim().toLowerCase();
+    if(!seen[k]){ seen[k]=1; n++; }
+  });
+  return n;
+}
 function effStage(o, opensOverride, sendOverride){
   const declared=o.stage||"";
   if(declared && declared!=="sent" && declared!=="replied") return declared;
@@ -675,7 +695,21 @@ function groupLane(o, opensOverride, sendOverride){
   var s=(sendOverride===undefined)? sendsFor(o) : sendOverride;
   if(!s || !s.count) return isLive(o) ? "live" : "draft";
   var op=(opensOverride===undefined)? outreachOpens(o) : (opensOverride||0);
-  return op>0 ? "opened" : "sent";
+  if(op>0) return "opened";
+  // Derivation floor: a recipient who replied by definition opened. A group never enters Replied (its child
+  // carries that), but it must never read Sent while a reply sits under it, so any reply floors it to Opened.
+  if(groupHasAnyReply(o)) return "opened";
+  return "sent";
+}
+// Any real reply under a group: attributed straight to the group (not yet spawned) or to one of its spawned
+// children. Read from the same inbound rows the board reads, so the floor and the child card cannot disagree.
+function groupHasAnyReply(o){
+  var slug=(o&&o.slug)||""; if(!slug) return false;
+  var pfx=slug+"--r-";
+  return getInbound().some(function(r){
+    if(!r || r.kind==="auto") return false;
+    return r.opp===slug || String(r.opp||"").indexOf(pfx)===0;
+  });
 }
 
 // One child opportunity per replying recipient per campaign, addressed by a deterministic slug so the same
@@ -1381,14 +1415,21 @@ function outboundSends(){
 // Match one reply to an opportunity. Identity is decided by the channel and by evidence of a prior send,
 // never by who owns the address: this matcher knows nothing of operator or Auth accounts, so an operator
 // address that answered a real send is a prospect reply, and an operator address that answered nothing is
-// not. Tiers, most reliable first; the matched tier AND the identifier it matched on are recorded, and an
-// unresolved tier-2 collision is flagged ambiguous rather than presented as certain. Returns
-// { opp, tier, id, ambiguous } with opp "" when nothing matches.
+// not. Returns { opp, tier, id, ambiguous } with opp "" when nothing matches, and it is the ONE matcher:
+// the held re-match, the group spawn and the manual attach all resolve through this function, never a
+// parallel ordering of their own.
+// The attribution law, in strict priority. Higher tiers use more evidence and always win; the bare address
+// never outranks a header or a subject match, and recency is only ever the last resort, never a way to beat
+// a subject or header. One opportunity legitimately receives sends from several campaigns to the same
+// address, so the address alone cannot decide between them: the subject root does, and recency only when no
+// subject matches (flagged ambiguous, for a one-tap confirm). Tier ranks are shared with the repair pass.
+var TIER_RANK={ header:3, subject:2, sender:1 };
 function matchReply(r, sends){
   sends=sends||outboundSends();
   if(!r) return { opp:"", tier:"", id:"", ambiguous:false };
-  // tier header: In-Reply-To / References against a recorded wire Message-ID. The strongest tier: it names
-  // one specific send, so it resolves even two opportunities sent to the same address.
+  // tier 1, header: In-Reply-To / References against a recorded wire Message-ID. The absolute winner: it
+  // names one specific send, so it resolves even two opportunities sent to the same address, and nothing
+  // below it can override it (an edited subject, a newer send, all lose to the header).
   var ids=inReplyIds(r);
   if(ids.length){
     for(var i=0;i<sends.length;i++){
@@ -1396,34 +1437,37 @@ function matchReply(r, sends){
       if(wid && ids.indexOf(wid)>=0) return { opp:sends[i].opp, tier:"header", id:wid, ambiguous:false };
     }
   }
-  // tier sender: the reply's sender address against an opportunity's recorded recipient. A match needs a
-  // real send record, so an address alone never attributes.
+  // The address's sends. A match needs a real send record, so an address alone never attributes: a reply
+  // from an address nobody wrote to (a forward from a third party, S6) has no candidate and stays unmatched.
   var from=String(r.from||"").trim().toLowerCase();
   var hits=[];
   if(from) for(var j=0;j<sends.length;j++){ if(String(sends[j].to||"").trim().toLowerCase()===from) hits.push(sends[j]); }
-  if(hits.length){
-    var opps={}; for(var h=0;h<hits.length;h++) opps[hits[h].opp]=1;
-    if(Object.keys(opps).length>1){
-      // The same address was written to for more than one opportunity. tier subject disambiguates only if
-      // it lands on exactly one opportunity; otherwise the newest send wins BUT the row is flagged
-      // ambiguous, so a guess is never presented as certain (the attach picker can correct it).
-      var root=subjRoot(r.subject||"");
-      if(root){
-        var subjHits=[]; for(var k=0;k<hits.length;k++){ if(subjRoot(hits[k].subject||"")===root) subjHits.push(hits[k]); }
-        var subjOpps={}; for(var s=0;s<subjHits.length;s++) subjOpps[subjHits[s].opp]=1;
-        if(subjHits.length && Object.keys(subjOpps).length===1){
-          var sh=subjHits[0]; for(var s2=1;s2<subjHits.length;s2++){ if(String(subjHits[s2].ts)>String(sh.ts)) sh=subjHits[s2]; }
-          return { opp:sh.opp, tier:"subject", id:root, ambiguous:false };
-        }
-      }
-      var b2=hits[0]; for(var l2=1;l2<hits.length;l2++){ if(String(hits[l2].ts)>String(b2.ts)) b2=hits[l2]; }
-      return { opp:b2.opp, tier:"sender", id:from, ambiguous:true };
-    }
-    var best=hits[0];
-    for(var l=1;l<hits.length;l++){ if(String(hits[l].ts)>String(best.ts)) best=hits[l]; }
-    return { opp:best.opp, tier:"sender", id:from, ambiguous:false };
+  if(!hits.length) return { opp:"", tier:"", id:"", ambiguous:false };
+  // One opportunity ever wrote to this address: the address is unambiguous, so it decides on its own.
+  var oppsAll={}; for(var h=0;h<hits.length;h++) oppsAll[hits[h].opp]=1;
+  if(Object.keys(oppsAll).length===1){
+    var only=hits[0]; for(var l=1;l<hits.length;l++){ if(String(hits[l].ts)>String(only.ts)) only=hits[l]; }
+    return { opp:only.opp, tier:"sender", id:from, ambiguous:false };
   }
-  return { opp:"", tier:"", id:"", ambiguous:false };
+  // tier 2, subject: more than one opportunity wrote to this address, so the bare address cannot decide.
+  // The normalized subject root (Re/Fwd and «رد/إعادة توجيه» stripped) selects the sends whose subject the
+  // reply answers, and THOSE are the only candidates. Recency breaks ties only WITHIN them, so a newer send
+  // whose subject does not match never wins over an older send whose subject does (S2). Ambiguous only when
+  // the matching sends still span more than one opportunity (the same subject went to two campaigns).
+  var root=subjRoot(r.subject||"");
+  if(root){
+    var subjHits=[]; for(var k=0;k<hits.length;k++){ if(subjRoot(hits[k].subject||"")===root) subjHits.push(hits[k]); }
+    if(subjHits.length){
+      var sh=subjHits[0]; for(var s2=1;s2<subjHits.length;s2++){ if(String(subjHits[s2].ts)>String(sh.ts)) sh=subjHits[s2]; }
+      var subjOpps={}; for(var s=0;s<subjHits.length;s++) subjOpps[subjHits[s].opp]=1;
+      return { opp:sh.opp, tier:"subject", id:root, ambiguous:Object.keys(subjOpps).length>1 };
+    }
+  }
+  // tier 3, recency: no send's subject matches (an edited or stripped subject with no header, S4). The last
+  // resort only: the most recent send to this address, always flagged ambiguous so a guess is never
+  // presented as certain (the attach picker can correct it). Recency is reached ONLY here.
+  var b2=hits[0]; for(var l2=1;l2<hits.length;l2++){ if(String(hits[l2].ts)>String(b2.ts)) b2=hits[l2]; }
+  return { opp:b2.opp, tier:"sender", id:from, ambiguous:true };
 }
 // Re-match every held reply through the console matcher. The tiers run FIRST, before the noise
 // classifier, so a genuine reply from a no-reply-looking address is never discarded; noise only decides
@@ -1434,30 +1478,55 @@ function matchReply(r, sends){
 function rematchHeld(){
   var sends=outboundSends();
   var rows=getInbound();
-  var matched=0, byTier={ header:0, sender:0, subject:0 }, ambiguous=0;
+  var matched=0, repaired=0, byTier={ header:0, sender:0, subject:0 }, ambiguous=0;
   var next=rows.map(function(r){
-    // Already attributed, or machinery (a mailer-daemon bounce is not a prospect reply). Noise is NOT a
-    // gate here: it is judged only at display, after the tiers had their chance.
-    if(!r || r.opp || r.kind==="auto") return r;
+    // Machinery (a mailer-daemon bounce) is never a prospect reply. Noise is NOT a gate here: it is judged
+    // only at display, after the tiers had their chance.
+    if(!r || r.kind==="auto") return r;
+    // A hand attach is immutable (it teaches the truth by hand), and a header match is the absolute winner,
+    // so neither is ever re-evaluated. Everything else runs through the one law, held or already attributed.
+    if(r.match_mode==="manual" || r.match_tier==="header") return r;
     var mm=matchReply(r, sends);
+    // An attributed row keeps its attribution when the matcher now finds nothing (the sends it matched may
+    // be momentarily absent); a blank opp is never written over a real one.
     if(!mm.opp) return r;
-    matched++; byTier[mm.tier]=(byTier[mm.tier]||0)+1; if(mm.ambiguous) ambiguous++;
-    var chapter=r.chapter;
-    if(chapter==null){ try{ chapter=activeChapter(mm.opp); }catch(e){ chapter=1; } }
-    var stamped=Object.assign({}, r, { opp:mm.opp, match_tier:mm.tier, match_id:mm.id, match_mode:"auto", chapter:chapter });
-    if(mm.ambiguous) stamped.match_ambiguous=true;
-    return stamped;
+    if(!r.opp){
+      matched++; byTier[mm.tier]=(byTier[mm.tier]||0)+1; if(mm.ambiguous) ambiguous++;
+      var chapter=r.chapter;
+      if(chapter==null){ try{ chapter=activeChapter(mm.opp); }catch(e){ chapter=1; } }
+      var stamped=Object.assign({}, r, { opp:mm.opp, match_tier:mm.tier, match_id:mm.id, match_mode:"auto", chapter:chapter });
+      if(mm.ambiguous) stamped.match_ambiguous=true; else delete stamped.match_ambiguous;
+      return stamped;
+    }
+    // Repair pass. The row is already auto-attributed, but the law may now resolve it better than the stale
+    // attribution did (a subject or header send that did not yet exist when it first matched). Re-point ONLY
+    // on a strict tier UPGRADE (a stronger tier now names a different opportunity), or when the SAME tier now
+    // names a different, non-ambiguous opportunity the old match got wrong. Never downgrade, and never demote
+    // a subject match to a bare-address recency guess: recency can never take a row away from a subject.
+    if(mm.opp===r.opp) return r;
+    // The row may already point at the spawned CHILD of the opportunity the matcher names (a group reply's
+    // child carries the parent's send-opp). That is the correct derivation, not a stale mismatch, so a child
+    // is never re-pointed back onto its own parent.
+    if(r.opp===childSlugFor(mm.opp, r.from)) return r;
+    var cur=TIER_RANK[r.match_tier||"sender"]||0, now=TIER_RANK[mm.tier]||0;
+    var upgrade=now>cur;
+    var sameTierFix=(now===cur && !mm.ambiguous);
+    if(!(upgrade || sameTierFix)) return r;
+    repaired++; byTier[mm.tier]=(byTier[mm.tier]||0)+1; if(mm.ambiguous) ambiguous++;
+    var fixed=Object.assign({}, r, { opp:mm.opp, match_tier:mm.tier, match_id:mm.id, match_mode:"auto" });
+    if(mm.ambiguous) fixed.match_ambiguous=true; else delete fixed.match_ambiguous;
+    return fixed;
   });
-  if(matched){
+  if(matched || repaired){
     setInbound(next);
     try{ if(__supa.inbound) __supa.inbound=next.slice(); }catch(_){}
     try{ invalidateSends(); }catch(_){}
-    try{ logActivity("rematch","", matched+" matched"+(ambiguous? (", "+ambiguous+" ambiguous") : "")); }catch(_){}
+    try{ logActivity("rematch","", matched+" matched"+(repaired? (", "+repaired+" repaired") : "")+(ambiguous? (", "+ambiguous+" ambiguous") : "")); }catch(_){}
   }
   // A reply attributed to a group campaign spawns the individual child that carries its Replied state. Run
   // after matching, on the same one action, and idempotently, so re-match never doubles a child.
   var sp=spawnChildrenFromReplies();
-  if(matched || sp.spawned || sp.moved){ try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} }
+  if(matched || repaired || sp.spawned || sp.moved){ try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} }
   var after=getInbound();
   var held=after.filter(function(r){ return r && r.kind!=="auto" && !r.opp && !inboundIsNoise(r); }).length;
   var noise=after.filter(function(r){ return r && r.kind!=="auto" && !r.opp && inboundIsNoise(r); }).length;
@@ -1466,9 +1535,10 @@ function rematchHeld(){
   // an anon write. So a match made while Supabase is configured but the operator is not signed in is
   // saved on this device and QUEUED, not yet on the board (which reads Supabase). Report that honestly,
   // so the success is never hollow: pendingSupa means "sign in to sync"; a sign-in flushes it (supaHydrate).
-  var pendingSupa = matched>0 && supaOn() && !supaSignedIn();
-  var synced = matched>0 && supaOn() && supaSignedIn();
-  return { matched:matched, byTier:byTier, ambiguous:ambiguous, spawned:sp.spawned, held:held, noise:noise,
+  var touched = matched>0 || repaired>0;
+  var pendingSupa = touched && supaOn() && !supaSignedIn();
+  var synced = touched && supaOn() && supaSignedIn();
+  return { matched:matched, repaired:repaired, byTier:byTier, ambiguous:ambiguous, spawned:sp.spawned, held:held, noise:noise,
            pendingSupa:pendingSupa, synced:synced };
 }
 // Attach one held reply to an opportunity by hand (the picker records this as tier manual, teaching
@@ -5725,10 +5795,15 @@ async function initHome(){
 
     // ---- outreach ----
     const sent=mail.filter(m=>m.status==="sent").length;
-    const replies=mail.filter(m=>m.direction==="in"||m.status==="replied").length;
+    // Replies read the one board derivation, not the mail ledger alone: an attributed inbound reply that
+    // lived only in console_inbound was invisible to a ledger count, so the header read 0 while the board
+    // and the campaign table read 1. repliesReceived is that shared derivation.
+    const replies=repliesReceived();
     const threads=getThreads();
     const contacted=new Set(mail.filter(m=>m.to).map(m=>String(m.to).toLowerCase())).size;
-    const answered=threads.filter(th=>th.replied>0).length;
+    // Answered reads the same attribution: a thread whose opportunity the board sees replied is answered,
+    // even when the reply sits in the inbound store rather than as a ledger row on the thread.
+    const answered=threads.filter(th=>th.replied>0 || (th.opp && hasReply(th.opp))).length;
     const rate=threads.length? Math.round(answered/threads.length*100) : 0;
     /* The header's state strip. The summary paragraph used to read these same numbers back as a
        sentence; the strip shows them as compact designed cells with a warm icon each, read once.
@@ -5940,12 +6015,21 @@ async function initHome(){
     const byPerson={};
     mail.forEach(m=>{
       const who=String(m.to||"").toLowerCase(); if(!who) return;
-      const r=byPerson[who]||(byPerson[who]={ to:m.to, name:m.toName||"", sent:0, replies:0, opens:0, opps:new Set(), last:"" });
+      const r=byPerson[who]||(byPerson[who]={ to:m.to, name:m.toName||"", sent:0, replies:0, opens:0, opps:new Set(), rk:new Set(), last:"" });
       if(m.toName && !r.name) r.name=m.toName;
       if(m.status==="sent"||m.status==="copied") r.sent++;
-      if(m.direction==="in"||m.status==="replied") r.replies++;
+      if(m.direction==="in"||m.status==="replied"){ const k=String(m.opp||"")+"|"+who; if(!r.rk.has(k)){ r.rk.add(k); r.replies++; } }
       if(m.opp) r.opps.add(m.opp);
       if(m.ts>r.last) r.last=m.ts;
+    });
+    // Fold in attributed inbound replies (console_inbound), so a reply that never became a ledger row still
+    // credits its person, deduped by opportunity and sender: the same reply the board and campaign table count.
+    getInbound().forEach(r0=>{
+      if(!r0 || r0.kind==="auto" || !r0.opp) return;
+      const who=String(r0.from||"").trim().toLowerCase(); if(!who) return;
+      const r=byPerson[who]; if(!r) return;                 // a reply from an address never written to is not a person row
+      const k=String(r0.opp)+"|"+who; if(!r.rk.has(k)){ r.rk.add(k); r.replies++; }
+      if(r0.ts && String(r0.ts)>String(r.last||"")) r.last=String(r0.ts);
     });
     Object.values(byPerson).forEach(r=>{ r.opps.forEach(slug=>{ r.opens+=outOpens(slug); }); });
     const DAY=86400000;
