@@ -478,7 +478,10 @@ function sendIndex(){
   getMailLog().forEach(x=>{
     if(!x || !x.opp) return;
     if(x.direction==="in") return;                        // a reply is not a send
-    if(x.status && x.status!=="sent" && x.status!=="copied") return;   // queued or failed is not sent
+    // A dispatched send counts, so a delivered message ALWAYS moves the card off Ready: sent and copied,
+    // and pending (dispatched, delivery not yet confirmed) which resolves to sent or, only on a KNOWN
+    // failure, to unsent. queued/failed/unsent do not count: an unsent send never left, so its card stays.
+    if(x.status && x.status!=="sent" && x.status!=="copied" && x.status!=="pending") return;
     const r=m[x.opp]||(m[x.opp]={count:0, first:"", last:""});
     r.count++;
     const ts=String(x.ts||"");
@@ -3278,6 +3281,8 @@ function initActivity(){
     if(m.direction==="in"||m.status==="replied") return t("mst_reply");
     if(m.status==="copied") return t("mst_copied");
     if(m.status==="sent") return t("mst_sent");
+    if(m.status==="pending") return t("mst_pending");     // dispatched, delivery being confirmed
+    if(m.status==="unsent") return t("mst_unsent");       // a known failure: it did not leave
     return esc(m.status||"–");
   }
   let slugs=[];
@@ -3745,6 +3750,38 @@ function logMail(rec){
   a.push(r); setMailLog(a);   // invalidates the send index: a send changes a lane immediately
   try{ supaMirrorMail(r); }catch(_){}   // Stage 2 dual-write, fire-and-forget
   return r;
+}
+/* Exactly-once send (LAUNCH BLOCKER fix). A send's identity is its intent, not the click: the same
+   message to the same address for the same opportunity is one intent, and a retry of it must reach the
+   prospect AT MOST ONCE. This key is stable across retries of that intent (content-hashed), so the guard
+   below and the relay's Idempotency-Key both key on the same thing, and a re-tap reconciles rather than
+   sending twice. A genuinely different message hashes to a different key and is a new send. */
+function sendIdem(opp, to, subject, body){
+  var s=String(opp||"")+""+String(to||"").trim().toLowerCase()+""+String(subject||"")+""+String(body||"");
+  var h=0; for(var i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; }
+  var h2=0; for(var j=s.length-1;j>=0;j--){ h2=((h2<<5)-h2+s.charCodeAt(j))|0; }   // a second pass so distinct
+  return "snd_"+(h>>>0).toString(36)+(h2>>>0).toString(36);                        // messages do not collide
+}
+function findMailRowByIdem(idem){
+  if(!idem) return null;
+  var a=getMailLogLocal();
+  for(var i=a.length-1;i>=0;i--){ if(a[i] && a[i].idem===idem) return a[i]; }       // newest match
+  return null;
+}
+// Update the intent's row in place (pending -> sent | unsent), so the ONE row moves through its lifecycle
+// and the ledger never grows a second row for the same send. Mirrors the updated row to Supabase.
+function updateMailByIdem(idem, patch){
+  if(!idem) return null;
+  var a=getMailLogLocal();
+  for(var i=a.length-1;i>=0;i--){
+    if(a[i] && a[i].idem===idem){
+      a[i]=Object.assign({}, a[i], patch||{});
+      setMailLog(a);
+      try{ supaMirrorMail(a[i]); }catch(_){}
+      return a[i];
+    }
+  }
+  return null;
 }
 // Roll the flat mail log up into thread objects, newest activity first.
 function getThreads(){
@@ -4843,18 +4880,9 @@ async function initCompose(slugArg, opts){
       toast(t("sup_blocked")+" "+t("sup_r_"+(ThriveStore.reasonFor(to)||"unknown")));
       return;
     }
-    /* Double-send guard. There is no batch email path (approveBatch activates pages, it does not send),
-       and this button disables itself while a send is in flight, so a same-tick double submit is already
-       blocked. This closes the remaining window: an identical message to the same address for the same
-       opportunity within the last minute is an accidental resubmission (a second tap after a slow relay),
-       and it is refused by name rather than sent twice. Resend's own retries are server side and never
-       reach here, so two bounce rows from a retry are benign, not a double send. */
-    if(getMailLog().some(m=> m && m.status==="sent" && m.opp===oppOf()
-        && String(m.to||"").toLowerCase()===to.toLowerCase()
-        && String(m.subject||"")===resolveTokens(el("esubject").value.trim())
-        && (Date.now()-tsMs(m.ts)) < 60000)){
-      toast(t("cmp_dupe_block")); return;
-    }
+    // The double-send guard now keys on the send's INTENT (its idempotency key), not a 60s time window,
+    // and it runs after the payload is built so it can hash the exact body. See the guard just below the
+    // payload. The button also disables itself while a send is in flight, blocking a same-tick double tap.
     /* An unresolved token blocks the send. "Hi {name}" reaching a prospect is
        the failure this whole section exists to prevent, and detecting it after
        the fact is detecting it too late. */
@@ -4879,28 +4907,52 @@ async function initCompose(slugArg, opts){
       replyHeaders["In-Reply-To"]="<"+replyCtx.inReplyTo+">";
       replyHeaders["References"]=chain.map(x=>"<"+x+">").join(" ");
     }
+    const subjectOut=resolveTokens(el("esubject").value.trim());
+    // The intent's stable idempotency key: this same message, to this address, for this opportunity, is
+    // ONE intent no matter how many times it is tapped. The relay forwards it to Resend as Idempotency-Key,
+    // so a retried POST for the same intent delivers AT MOST ONCE.
+    const idem=sendIdem(oppOf(), to, subjectOut, sb.html);
+    const prior=findMailRowByIdem(idem);
+    /* Double-send guard, keyed on the intent. A completed send (status sent) never sends again: it is
+       refused by name. A prior attempt still pending (a slow relay we never got the ack from) or a known
+       failure is NOT refused: re-tapping RECONCILES it, re-POSTing with the SAME key so Resend dedupes,
+       never a second delivery to close an uncertain first. */
+    if(prior && prior.status==="sent" && getMailLog().some(m=> m && m.idem===idem && m.status==="sent")){
+      toast(t("cmp_dupe_block")); return;
+    }
+    const m=tplMeta();
+    // A DURABLE record of the attempt, written BEFORE the POST. This is the fix for the stranded card: even
+    // if the relay times out, this row exists, carries the intent key, and (as pending) already moves the
+    // card off Ready. The response below resolves it in place to sent or, only on a KNOWN failure, unsent.
+    if(prior){ updateMailByIdem(idem, { status:"pending", ts:new Date().toISOString(), error:"" }); }
+    else { logMail({ opp:oppOf(), to:to, toName:recName(), subject:subjectOut, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"pending", idem:idem, msgid:msgid, chapter:sendChapter(oppOf()) }); }
     const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:to,
-      subject:resolveTokens(el("esubject").value.trim()),
+      subject:subjectOut,
       html:sb.html,
       text:sb.text,
+      idempotencyKey:idem,
       headers:Object.assign({}, ThriveStore.outboundHeaders(slug||""), replyHeaders, { "Message-ID": msgid }),
       slug:slug||"" };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
     try{
       const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
       const txt=await r.text();
-      if(!r.ok) throw new Error(r.status+" "+txt.slice(0,140));
-      let id="", parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
+      let parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
       noteRelayVersion(parsed);
+      // A KNOWN failure: the relay answered and did not confirm a send. Mark the intent unsent so the card
+      // does NOT advance, surface the true error, and leave a retry (under the same key) open.
+      if(!r.ok){ updateMailByIdem(idem, { status:"unsent", error:(r.status+" "+txt.slice(0,120)) }); throw new Error(r.status+" "+txt.slice(0,140)); }
       /* If the send only now revealed the relay is behind, say so with the banner
          rather than a generic send error, and refresh so the gate takes hold. */
-      if(parsed && !relayReady()){ throw new Error(relayBannerText()); }
-      if(parsed && parsed.ok===false) throw new Error(parsed.error||"send failed");
-      if(parsed) id=parsed.id||"";
-      const m=tplMeta();
+      if(parsed && !relayReady()){ updateMailByIdem(idem, { status:"unsent", error:"relay behind" }); throw new Error(relayBannerText()); }
+      if(parsed && parsed.ok===false){ updateMailByIdem(idem, { status:"unsent", error:(parsed.error||"send failed") }); throw new Error(parsed.error||"send failed"); }
+      const id=parsed? (parsed.id||"") : "";
+      // Confirmed sent: resolve the ONE intent row to sent, in one place, so a delivered send ALWAYS carries
+      // a sent record and the card is advanced by that record, not by a fragile in-memory flag. Quota is
+      // counted here, once per confirmed delivery, not per attempt.
+      updateMailByIdem(idem, { status:"sent", id:id, error:"" });
       recordSend(); renderQuota();
       logActivity("email", slug||"", to+" · "+payload.subject);
-      logMail({ opp:oppOf(), to:to, toName:recName(), subject:payload.subject, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"sent", id:id, msgid:msgid, chapter:sendChapter(oppOf()) });
       clearComposeDraft();                                  // the message went out, so the working draft is done
       toast(t("cmp_sent"));
       if(replyCtx){
@@ -4912,7 +4964,20 @@ async function initCompose(slugArg, opts){
         refreshLinks(); recordBody();
         if(onSent) try{ onSent(); }catch(_){}
       }
-    }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
+    }catch(e){
+      // Two failure shapes, told apart. A TIMEOUT means the request was in flight and MAY have delivered:
+      // the outcome is unknown, so we never assert a failure and never blind-retry. The intent row stays
+      // pending (which already advanced the card), and we say "sent, confirming"; a later reconcile (a
+      // re-tap, same key) resolves it against Resend with no second delivery. Any other error is a known
+      // failure: the row is marked unsent (so the card does not advance) and the true error is shown.
+      if(e && e.timeout){
+        const row=findMailRowByIdem(idem); if(row && row.status==="pending"){ /* leave pending */ }
+        toast(t("cmp_sent_confirming"));
+      } else {
+        const row=findMailRowByIdem(idem); if(row && row.status==="pending"){ updateMailByIdem(idem, { status:"unsent", error:(e && e.message)||"send failed" }); }
+        toast(t("cmp_send_err")+": "+e.message);
+      }
+    }
     finally{ el("eSend").disabled=false; el("eSend").textContent=old; }
   });
 }
