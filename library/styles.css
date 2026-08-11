@@ -1807,6 +1807,19 @@ body.modal-open{
   margin:var(--s-2) 0 0; color:var(--ink-3); font-size:14px; line-height:1.6;
   white-space:pre-wrap; overflow-wrap:anywhere; unicode-bidi:isolate;
 }
+/* Each reply line is its OWN direction-isolated block, so a mixed line (an Arabic date, a Latin sender and
+   address, a URL, angle brackets, all in one line: a Gmail quote header) reads in order instead of being
+   reordered into a scramble. dir="auto" in the markup picks each line's base direction; the isolate keeps a
+   line from reordering against its neighbours; embedded URLs and addresses sit in <bdi class="rp-ltr"> so
+   they stay left-to-right and wrap rather than overflow the card. */
+.rp-line{ display:block; unicode-bidi:isolate; white-space:pre-wrap; overflow-wrap:anywhere; }
+.rp-line:empty{ min-height:1.6em; }                    /* a blank line keeps its height without an invisible char */
+.rp-ltr{ unicode-bidi:isolate; overflow-wrap:anywhere; }
+/* Quoted history (the "wrote:" header and the quoted lines) reads as a quieter section, still per-line
+   direction-correct. The rule is logical (inline-start), so it sits on the right in Arabic and the left in
+   English without a second rule. */
+.rp-quote{ color:var(--ink-4); border-inline-start:2px solid var(--hair); padding-inline-start:var(--s-2); }
+[dir="rtl"] .rp-line,[dir="rtl"] .rp-ltr{ letter-spacing:normal }   /* Arabic never carries letter-spacing */
 /* The reply composer: answer the prospect in this thread, dark and aligned, mirrored in RTL. */
 .th-reply-box{ margin-block-start:var(--s-4); padding-block-start:var(--s-3); border-block-start:1px solid var(--hair);
   display:flex; flex-direction:column; gap:var(--s-2) }
