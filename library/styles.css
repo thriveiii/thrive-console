@@ -506,6 +506,16 @@ html[dir="rtl"] .elink-url{text-align:start}
 .set-block .block-h{margin:0 0 8px}
 .set-block > .sub{margin:0 0 14px}
 .set-group .bar{margin-top:14px}   /* the flex row, one gap token and equal heights come from .bar above */
+/* WO-028 Settings v2: the one advanced disclosure. Same card as a section, closed by default; the
+   summary reads like a section title with a chevron, and the blocks inside reuse the .set-block model. */
+.set-advanced{margin-bottom:22px;max-width:820px}
+.set-adv-summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:.5em}
+.set-adv-summary::-webkit-details-marker{display:none}
+.set-adv-summary::after{content:"";width:.6em;height:.6em;margin-inline-start:auto;border-right:2px solid var(--ink-3);border-bottom:2px solid var(--ink-3);transform:rotate(-45deg);transition:transform .15s}
+.set-advanced[open] .set-adv-summary::after{transform:rotate(45deg)}
+.set-advanced > .sub{margin:6px 0 0}
+.set-advanced[open] > .sub{margin:6px 0 20px}
+.set-advanced .set-block:first-of-type{margin-top:20px}
 .gh-result{margin-top:12px;font-size:13px;font-weight:700;padding:10px 14px;border-radius:10px;border:1px solid var(--hair);color:var(--ink-2);word-break:break-word}
 .gh-result.ok{color:#7ee0b8;border-color:rgba(126,224,184,.4);background:rgba(126,224,184,.08)}
 .gh-result.warn{color:#F6CF5B;border-color:rgba(246,207,91,.35);background:rgba(246,207,91,.08)}
