@@ -88,6 +88,10 @@ with sync_playwright() as p:
     pg.evaluate("() => { ['thrive_opps_v1','thrive_mail_v1','thrive_inbound_v1','thrive_hits_remote_v1','thrive_hits_v1'].forEach(k=>localStorage.removeItem(k)); }")
     pg.evaluate(FAKE)
     pg.evaluate("() => window.ThriveSupa.setCfg('https://fake.supabase.co','anon')")
+    # WO-026 refresh: under Stage 4 a mirror is DURABLE, it drains to Supabase when the operator is signed
+    # in (the pre-Stage-4 suite expected an immediate signed-out dual-write, which is retired). Sign in so
+    # each store's one writer drains; the one-writer-per-store source checks above are unchanged.
+    pg.evaluate("()=>localStorage.setItem('console_sb_session', JSON.stringify({access_token:'jwt', uid:'op', email:'op@x'}))")
 
     # Dual-write each store through its one writer.
     pg.evaluate("(s) => window.saveDraft({ slug:s, business:'International Schools', published:true })", SLUG)

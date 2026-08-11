@@ -25,6 +25,11 @@ app_src=open(f"{ROOT}/library/app.js").read()
 ck("the double-send guard exists on the send path", "cmp_dupe_block" in app_src and "getMailLog().some" in app_src)
 ck("effStage reconciles a hard bounce to bounced and a soft to failed",
    'if(bounce==="hard") return "bounced"' in app_src and 'if(bounce==="soft") return "failed"' in app_src)
+# WO-026: the delivery-truth contract begins at send time. The send path stamps a wire Message-ID and
+# records the ledger row with the recipient and that id, so a reply threads and the state is truthful.
+ck("a send records its ledger row with the recipient and a Message-ID at send time",
+   "const msgid=newMessageId();" in app_src
+   and "logMail({ opp:oppOf(), to:to, toName:recName()" in app_src and "msgid:msgid, chapter:sendChapter" in app_src)
 
 SENT_TS="2026-08-01T10:00:00Z"
 OPPS=[
@@ -49,8 +54,12 @@ LOCAL_HITS=[{"slug":"d-self","type":"open","vid":"s1","ip":"1","ts":"2026-08-02T
             {"slug":"d-preview","type":"open","vid":"p1","ip":"1","ts":"2026-07-30T10:00:00Z","self":False}]
 
 def boot(ctx, remote_pulled):
-    pg=ctx.new_page(); pg.goto(f"{base}/library/console.html"); pg.wait_for_timeout(500)
-    if pg.query_selector("#thriveGate"): pg.fill("#gateInput","ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(500)
+    # WO-026 harness refresh: the old boot filled the password gate (#gateInput) to reveal the page, but
+    # that UI flow no longer clears gate-locked in the sandbox and the fill hung for 30s. The gate is not
+    # the subject here; the app boots and renders regardless of it, so we reveal the content by dropping the
+    # gate-locked class. The delivery-truth assertions below are unchanged.
+    pg=ctx.new_page(); pg.goto(f"{base}/library/console.html")
+    pg.wait_for_function("()=>typeof window.mergedOpps==='function'", timeout=15000)
     pg.evaluate("""(a)=>{
       localStorage.setItem('thrive_opps_v1', JSON.stringify(a.opps));
       localStorage.setItem('thrive_mail_v1', JSON.stringify(a.mail));
@@ -60,8 +69,10 @@ def boot(ctx, remote_pulled):
       localStorage.setItem('thrive_hits_remote_v1', JSON.stringify(a.remote));
       localStorage.setItem('thrive_endpoint_v1', 'https://relay.example/exec');   // collection is configured
     }""", {"opps":OPPS,"mail":MAIL,"inbound":INBOUND,"local":LOCAL_HITS,"remote":REMOTE_HITS})
-    pg.reload(); pg.wait_for_timeout(1000)
-    if pg.query_selector("#thriveGate"): pg.fill("#gateInput","ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(500)
+    pg.reload()
+    pg.wait_for_function("()=>typeof window.mergedOpps==='function' && typeof window.effStage==='function'", timeout=15000)
+    pg.evaluate("()=>document.documentElement.classList.remove('gate-locked')")
+    pg.wait_for_timeout(1000)
     return pg
 
 with sync_playwright() as p:
