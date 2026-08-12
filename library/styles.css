@@ -455,7 +455,7 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100
 .etoolbar button{padding:7px 11px;border-radius:8px;border:1px solid var(--hair);background:transparent;color:var(--ink-2);font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;min-width:34px}
 .etoolbar button:hover{border-color:var(--purple);color:var(--ink)}
 .etoolbar .tb-accent{margin-inline-start:auto;color:#15121b;background:var(--grad);border:0}
-.ebody{min-height:240px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;color:var(--ink);font-size:15px;line-height:1.7;outline:none}
+.ebody{min-height:240px;max-width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;color:var(--ink);font-size:15px;line-height:1.7;outline:none;overflow-wrap:anywhere;word-break:break-word}
 .ebody:focus{border-color:var(--purple)}
 .ebody a{color:var(--teal);text-decoration:underline}
 .ebody:empty::before{content:attr(data-ph);color:var(--ink-3)}
