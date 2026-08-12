@@ -146,7 +146,8 @@ const MODAL = `
       <!-- Back exists everywhere, in a consistent position, and it mirrors by
            logical property rather than by a second rule. WO-013 §6.1. -->
       <button class="btn ghost sm modal-back" id="modalBack" type="button" data-icon="undo" data-i18n="mw_back">Back</button>
-      <button class="btn ghost sm" id="modalCopy" type="button" data-icon="link" data-i18n="mw_copy_link">Copy link</button>
+      <button class="btn ghost sm" id="modalOpen" type="button" data-icon="globe" data-i18n="mw_open_page">Open page</button>
+      <button class="btn ghost sm" id="modalCopy" type="button" data-icon="link" data-i18n="mw_copy_link">Copy page link</button>
       <button class="modal-close" id="modalClose" type="button" data-icon="close" data-i18n="dw_close">Close</button>
     </div>
     <p class="modal-why" id="modalWhy" hidden></p>
