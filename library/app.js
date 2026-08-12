@@ -931,6 +931,11 @@ function fmtStamp(ts, opts, locOverride){
 /* Isolated for direct injection into RTL text, so a mixed line never reorders the date. */
 function fmtStampHtml(ts, opts){ var s=fmtStamp(ts, opts); return s ? '<bdi>'+esc(s)+'</bdi>' : ''; }
 function fmtWhenShort(ts){ var s=fmtStamp(ts, {dateStyle:"short", timeStyle:"short"}); return s || (ts||""); }
+/* The one numeral helper for a relative-time or counted phrase. A Western numeral dropped raw into an
+   Arabic phrase ("8 days idle" / «8 أيام بلا حركة») reorders on RTL engines; wrapping it in .n
+   (direction:ltr; unicode-bidi:isolate) makes the digit group an atomic segment that sits correctly in
+   the phrase. Every number composed into a phrase routes through here, beside the date formatter. */
+function nIso(n){ return '<span class="n">'+esc(String(n))+'</span>'; }
 function campaignAggHtml(slug){
   var s=campaignStats(slug);
   function tile(lbl,val){ return '<div class="cg-tile"><span class="cg-n">'+esc(String(val))+'</span><span class="cg-l">'+esc(lbl)+'</span></div>'; }
@@ -5991,7 +5996,7 @@ async function initHome(){
     const last=syncLast();
     if(!getSyncEndpoint()){ p.textContent=t("home_sync_off"); p.className="pill warn"; return; }
     if(!last){ p.textContent=t("sy_ready"); p.className="pill"; return; }
-    p.textContent=t("sy_last")+" "+fmtWhen(last); p.className="pill ok";
+    p.innerHTML=esc(t("sy_last"))+" "+fmtStampHtml(last, {dateStyle:"medium", timeStyle:"short"}); p.className="pill ok";  // the date is direction-isolated so it never reorders in Arabic
   }
 
   async function render(){
@@ -6439,7 +6444,7 @@ async function initBoard(){
   const el=id=>document.getElementById(id);
   const lang=()=>getLang();
   const txt=(k,n,extra)=> (typeof boardText==="function")? boardText(lang(),k,n,extra) : "";
-  const num=v=>'<span class="n">'+v+'</span>';
+  const num=v=>nIso(v);   // the one isolated-numeral helper, so every board number is atomic in RTL
 
   /* The status tab bar (narrow layout). It does not build a second card list: it sets which lane is
      visible, and the same rendered lane content shows. activeTab is remembered across renders so a
@@ -6465,7 +6470,7 @@ async function initBoard(){
     const last=syncLast();
     if(!getSyncEndpoint()){ p.textContent=t("home_sync_off"); p.className="pill warn"; return; }
     if(!last){ p.textContent=t("sy_ready"); p.className="pill"; return; }
-    p.textContent=t("sy_last")+" "+fmtWhen(last); p.className="pill ok";
+    p.innerHTML=esc(t("sy_last"))+" "+fmtStampHtml(last, {dateStyle:"medium", timeStyle:"short"}); p.className="pill ok";  // the date is direction-isolated so it never reorders in Arabic
   }
 
   /* Two counts, kept apart on purpose. opens is what answered a message you sent; views is
@@ -6642,7 +6647,7 @@ async function initBoard(){
     const q=quotaUsage(), left=Math.max(0, q.dailyCap-q.day);
     const chips=[];
     if(b.summary.stalled) chips.push('<button class="chip warn" data-chip="stalled">'+
-      txt("chip_stalled", b.summary.stalled, {d:ThriveBoard.STALL_DAYS})+' <b>'+b.summary.stalled+'</b></button>');
+      txt("chip_stalled", b.summary.stalled, {d:nIso(ThriveBoard.STALL_DAYS)})+' <b>'+b.summary.stalled+'</b></button>');
     chips.push('<button class="chip" data-chip="sends">'+txt("chip_sends", left)+' <b>'+left+'</b></button>');
     if(b.archived) chips.push('<button class="chip" data-chip="archived">'+txt("chip_archived")+' <b>'+b.archived+'</b></button>');
     el("boardChips").innerHTML=chips.join("");
