@@ -39,13 +39,13 @@ EXPECT={"c-draft":"draft","c-live":"live","c-sent":"sent","c-open":"opened","c-r
 
 def boot(ctx, lang="en"):
     pg=ctx.new_page(); pg.goto(f"{base}/library/console.html"); pg.wait_for_timeout(500)
-    if pg.query_selector("#thriveGate"): pg.fill("#gateInput","ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(500)
+    pg.evaluate("()=>{ document.documentElement.classList.remove('gate-locked'); const g=document.getElementById('thriveGate'); if(g) g.remove(); }")
     pg.evaluate("""(a)=>{ localStorage.setItem('thrive_lang',a.l);
       localStorage.setItem('thrive_opps_v1', JSON.stringify(a.opps));
       localStorage.setItem('thrive_mail_v1', JSON.stringify(a.mail));
       localStorage.setItem('thrive_hits_v1', JSON.stringify(a.hits)); }""",{"l":lang,"opps":OPPS,"mail":MAIL,"hits":HITS})
     pg.reload(); pg.wait_for_timeout(1100)
-    if pg.query_selector("#thriveGate"): pg.fill("#gateInput","ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(500)
+    pg.evaluate("()=>{ document.documentElement.classList.remove('gate-locked'); const g=document.getElementById('thriveGate'); if(g) g.remove(); }")
     return pg
 
 with sync_playwright() as p:
