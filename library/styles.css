@@ -615,7 +615,9 @@ html[dir="rtl"] .logtable td.mono{direction:ltr;text-align:start}
 .press{transition:transform var(--t-instant) var(--e-standard)}
 .press:active{transform:scale(.98)}
 /* An object that arrives, capped at 8px of travel: more reads as theatre. */
-@keyframes rise-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* The board settles calmly: a card fades in where it belongs, never rising or flying from off-axis.
+   Opacity only, no transform, so a re-render (a hydrate, a sign-in, a refresh) paints in place. */
+@keyframes rise-in{from{opacity:0}to{opacity:1}}
 .enter{animation:rise-in var(--t-base) var(--e-enter) both}
 .enter-1{animation-delay:0ms} .enter-2{animation-delay:40ms} .enter-3{animation-delay:80ms}
 
@@ -1821,9 +1823,6 @@ body.modal-open{
   overflow:hidden;
 }
 
-/* A token in flight is raised above its lane and drops the raise when it lands. The lane
-   heads are sticky, so without this the token would travel underneath them. */
-.tok.is-moving{ position:relative; z-index:3; box-shadow:var(--el-raised); will-change:transform }
 .lane-count{ transition:color var(--t-quick) var(--e-standard) }
 
 /* Touch targets. The three destinations in the bar, the lock, the language switch and the
