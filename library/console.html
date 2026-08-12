@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="5c3375d0">
+<meta name="thrive-build" content="d7026780">
 <title>Thrive Console</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <script>(function(){var d=document.documentElement;
@@ -23,7 +23,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=e1f09f8f89">
+<link rel="stylesheet" href="styles.css?v=b8dcace706">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -34,6 +34,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <a href="#board" data-view="board" data-i18n="nav_board"></a>
     <a href="#home" data-view="home" data-i18n="nav_insights"></a>
     <a href="#library" data-view="library" data-i18n="nav_library"></a>
+    <a href="#profile" data-view="profile" data-i18n="nav_profile"></a>
     <a href="#settings" data-view="settings" data-i18n="nav_settings"></a>
     <button id="langbtn" class="langbtn">العربية</button>
   </nav>
@@ -564,6 +565,114 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
   <div id="logCats" class="pipeline"></div>
   <div id="logBody"></div>
 </main>
+<main class="wrap view" id="view-profile" hidden>
+  <header class="page-head">
+    <h1 class="page-title" data-i18n="pf_title">Profile</h1>
+    <p class="page-sub" data-i18n="pf_sub">You, your preferences, your memory, and how you are doing.</p>
+  </header>
+
+  <!-- Identity: read from the sign-in, editable only where personal. -->
+  <section class="pf-id" id="pfIdentity" aria-labelledby="pfIdH">
+    <div class="pf-avatar" id="pfAvatar" aria-hidden="true"></div>
+    <div class="pf-id-body">
+      <div class="field pf-name-field">
+        <label for="pfName" data-i18n="pf_name">Display name</label>
+        <input id="pfName" class="input" type="text" autocomplete="off" data-i18n-ph="pf_name_ph">
+      </div>
+      <dl class="pf-id-rows">
+        <div class="pf-id-row"><dt data-i18n="pf_email">Email</dt><dd class="mono-iso" id="pfEmail" dir="ltr"></dd></div>
+        <div class="pf-id-row"><dt data-i18n="pf_role">Role</dt><dd id="pfRole"></dd></div>
+        <div class="pf-id-row"><dt data-i18n="pf_since">Member since</dt><dd id="pfSince"></dd></div>
+      </dl>
+      <p class="pf-signin-note" id="pfSignInNote" hidden data-i18n="pf_signin_note">Sign in to save your profile and memory across devices.</p>
+    </div>
+  </section>
+
+  <div class="pf-regions">
+    <!-- Region 1: Preferences (personalization) -->
+    <section class="panel pf-region" id="pfPrefs" aria-labelledby="pfPrefsH">
+      <h2 class="pf-region-h" id="pfPrefsH" data-i18n="pf_prefs_h">Preferences</h2>
+      <p class="pf-region-sub" data-i18n="pf_prefs_sub">These shape your experience only. They never change another operator's board.</p>
+
+      <div class="field">
+        <label for="pfLang" data-i18n="pf_lang">Language</label>
+        <select id="pfLang" class="input">
+          <option value="en" data-i18n="pf_lang_en">English</option>
+          <option value="ar" data-i18n="pf_lang_ar">Arabic</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="pfDensity" data-i18n="pf_density">Density</label>
+        <select id="pfDensity" class="input">
+          <option value="cozy" data-i18n="pf_density_cozy">Cozy</option>
+          <option value="compact" data-i18n="pf_density_compact">Compact</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="pfView" data-i18n="pf_view">Default board view</label>
+        <select id="pfView" class="input">
+          <option value="board" data-i18n="pf_view_all">All lanes</option>
+          <option value="followup" data-i18n="pf_view_followup">Needs follow-up</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="pfTz" data-i18n="pf_tz">Timezone</label>
+        <input id="pfTz" class="input" type="text" autocomplete="off" data-i18n-ph="pf_tz_ph">
+      </div>
+
+      <label class="pf-check"><input type="checkbox" id="pfDigest"> <span data-i18n="pf_digest">Send me a weekly digest of my activity</span></label>
+
+      <div class="field pf-sig">
+        <label for="pfSigEn" data-i18n="pf_sig_en">Signature (English)</label>
+        <textarea id="pfSigEn" class="input" rows="3" dir="ltr"></textarea>
+      </div>
+      <div class="field pf-sig">
+        <label for="pfSigAr" data-i18n="pf_sig_ar">Signature (Arabic)</label>
+        <textarea id="pfSigAr" class="input" rows="3" dir="rtl"></textarea>
+      </div>
+      <p class="pf-saved" id="pfSaved" hidden data-i18n="pf_saved">Saved.</p>
+    </section>
+
+    <!-- Region 2: Memory (personalization) -->
+    <section class="panel pf-region" id="pfMemory" aria-labelledby="pfMemH">
+      <h2 class="pf-region-h" id="pfMemH" data-i18n="pf_mem_h">Memory</h2>
+      <p class="pf-region-sub" data-i18n="pf_mem_sub">Kept for you across sessions and devices, rebuilt when you sign in.</p>
+      <div class="pf-mem-rows">
+        <div class="pf-mem-row"><span class="pf-mem-k" data-i18n="pf_mem_pins">Pinned cards</span><b class="n" id="pfMemPins">0</b></div>
+        <div class="pf-mem-row"><span class="pf-mem-k" data-i18n="pf_mem_hints">Hints dismissed</span><b class="n" id="pfMemHints">0</b></div>
+      </div>
+      <div class="field">
+        <label for="pfNotes" data-i18n="pf_notes">Your notes</label>
+        <textarea id="pfNotes" class="input" rows="4" dir="auto" data-i18n-ph="pf_notes_ph"></textarea>
+      </div>
+    </section>
+
+    <!-- Region 3: Performance (derived, per operator) -->
+    <section class="panel pf-region" id="pfPerf" aria-labelledby="pfPerfH">
+      <h2 class="pf-region-h" id="pfPerfH" data-i18n="pf_perf_h">Your performance</h2>
+      <p class="pf-region-sub" data-i18n="pf_perf_sub">Your own numbers, from the same source as the board. They always agree with it.</p>
+      <div class="pf-stats" id="pfStats">
+        <div class="pf-stat"><b class="n" id="pfStSent">0</b><span data-i18n="pf_st_sent">Sends</span></div>
+        <div class="pf-stat"><b class="n" id="pfStOpens">0</b><span data-i18n="pf_st_opens">Opens</span></div>
+        <div class="pf-stat"><b class="n" id="pfStReplies">0</b><span data-i18n="pf_st_replies">Replies</span></div>
+        <div class="pf-stat"><b class="n" id="pfStMoved">0</b><span data-i18n="pf_st_moved">Cards moved</span></div>
+      </div>
+      <p class="pf-perf-note" data-i18n="pf_perf_note">Cadence and outcomes over time follow next.</p>
+    </section>
+  </div>
+
+  <!-- The reserved sensitive zone: present and functional for the owner, absent for every other
+       operator. The tier is a database fact (console_admins), not a client flag, so this is refused
+       at the API for a non-owner, not merely hidden. -->
+  <section class="panel pf-infra" id="pfInfra" aria-labelledby="pfInfraH" hidden>
+    <h2 class="pf-region-h" id="pfInfraH" data-i18n="pf_infra_h">Infrastructure</h2>
+    <p class="pf-region-sub" data-i18n="pf_infra_sub">Connections, activation, relay, sync and storage. Owner only.</p>
+    <a class="btn ghost sm" href="#settings" id="pfInfraLink" data-i18n="pf_infra_open">Open the infrastructure controls</a>
+  </section>
+</main>
 <main class="wrap view" id="view-settings" hidden>
   <div class="page-h"><h1 class="title" data-i18n="set_title">Settings</h1><span class="pill" id="ghStatus"></span></div>
   <p class="sub" data-i18n="set_sub"></p>
@@ -756,7 +865,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
 <script src="config.js?v=806f4221bf"></script>
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=25d23e3081"></script>
+<script src="i18n.js?v=573431a1aa"></script>
 <script src="gate.js?v=700c1c30a3"></script>
 <script src="stage-model.js?v=f89936985f"></script>
 <script src="lifecycle.js?v=df368247ea"></script>
@@ -768,7 +877,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=7460b4b6b5"></script>
+<script src="app.js?v=ef45297fd9"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with
@@ -780,7 +889,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
    would double every listener, so the view's markup is restored from the snapshot taken at boot
    first. A view is then exactly as freshly loaded as it would be on its own page. */
 (function(){
-  var VIEWS = [{"id":"board","init":"initBoard"},{"id":"home","init":"initHome"},{"id":"library","init":"initDashboard"},{"id":"editor","init":"initEditor"},{"id":"compose","init":"initCompose"},{"id":"templates","init":"initTemplates"},{"id":"activity","init":"initActivity"},{"id":"settings","init":"initSettings"}];
+  var VIEWS = [{"id":"board","init":"initBoard"},{"id":"home","init":"initHome"},{"id":"library","init":"initDashboard"},{"id":"editor","init":"initEditor"},{"id":"compose","init":"initCompose"},{"id":"templates","init":"initTemplates"},{"id":"activity","init":"initActivity"},{"id":"profile","init":"initProfile"},{"id":"settings","init":"initSettings"}];
   var started = {};      // id -> the parameter string it was started with
   var stale = {};        // ids that must run again even with the same parameters
   var snapshot = {};     // id -> its markup at boot, so a re-init starts clean

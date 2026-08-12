@@ -206,10 +206,19 @@ function setActivity(a){ lsSet(LOG, JSON.stringify(a.slice(-500))); }
    after a year of history means a migration over records that cannot be
    attributed. WO-013 §10.7. */
 const ACTOR="thyab";
+/* Who did this. When a real operator is signed in, their Supabase uid stamps the row, so per-operator
+   performance is derivable going forward (this is the field WO-013 §10.7 reserved for exactly that).
+   With no session the console is single-operator and the reserved default stands, so every historical
+   row and every sandbox keeps "thyab" and nothing needs a migration. The profile subsystem reads this
+   field, filtered to the signed-in operator, through the one derivation the board and Insights use. */
+function currentActor(){
+  try{ var u=window.ThriveSupa && ThriveSupa.authUid && ThriveSupa.authUid(); return (u && String(u)) || ACTOR; }catch(e){ return ACTOR; }
+}
+window.currentActor = currentActor;
 function logActivity(action, slug, detail){
   const a=getActivity();
   a.push({ ts:new Date().toISOString(), action:action||"", slug:slug||"", detail:detail||"",
-           actor:ACTOR });
+           actor:currentActor() });
   setActivity(a);
 }
 window.logActivity = logActivity;
@@ -903,6 +912,86 @@ function opPrefRemember(k, v){
   if(__opSaveTimer) clearTimeout(__opSaveTimer);
   __opSaveTimer=setTimeout(function(){ try{ window.ThriveSupa.upsert("console_settings", { key:key, value:__opPrefs }).catch(function(){}); }catch(e){} }, 400);
 }
+
+/* ---------- the operator profile (WO-029 Phase A) ------------------------------
+   One row per operator in console_profiles, keyed to their auth.uid(), holding preferences and memory
+   as JSON. RLS scopes each row to its owner (docs/supabase-operator-profile.sql), so an operator reads
+   and writes only their own. It follows the Stage-4 pattern: read on sign-in, cache on device, write
+   debounced. On the first read it defaults from the existing op_prefs:<uid> row and the shared
+   signature, so no operator loses what they had (D2: the signature is per-operator from here on,
+   seeded by what was shared). The owner tier is a database fact: console_admins holds a row per owner,
+   readable only for one's own uid and writable by no client, so the tier can never be self-granted and
+   no admin address is ever a client literal. */
+var __profile=null, __profileLoaded=false, __adminTier=null, __profSaveT=null;
+function profileUid(){ try{ return (window.ThriveSupa && ThriveSupa.authUid && ThriveSupa.authUid()) || ""; }catch(e){ return ""; } }
+function profileEmail(){ try{ return (window.ThriveSupa && ThriveSupa.authEmail && ThriveSupa.authEmail()) || ""; }catch(e){ return ""; } }
+function profileCacheKey(){ var u=profileUid(); return u? ("thrive_profile:"+u) : ""; }
+function profileCacheRead(){ try{ var k=profileCacheKey(); return k? (JSON.parse(localStorage.getItem(k)||"null")) : null; }catch(e){ return null; } }
+function profileCacheWrite(p){ try{ var k=profileCacheKey(); if(k) localStorage.setItem(k, JSON.stringify(p||{})); }catch(e){} }
+function profileDefaults(){
+  var prefs={};
+  try{ if(__opPrefs && __opPrefs.lang) prefs.lang=__opPrefs.lang; }catch(e){}
+  try{ prefs.sig_en=signatureFor("EN"); prefs.sig_ar=signatureFor("AR"); }catch(e){}
+  return { prefs:prefs, memory:{} };
+}
+async function loadProfile(){
+  var uid=profileUid();
+  if(!uid || !supaOn()){ __profile=profileCacheRead()||profileDefaults(); __profileLoaded=true; return __profile; }
+  var row=null;
+  try{ var rows=await window.ThriveSupa.rest("console_profiles", { query:"uid=eq."+encodeURIComponent(uid)+"&select=uid,email,display_name,avatar,prefs,memory,created_at" }); row=rows && rows[0]; }catch(e){ row=null; }
+  if(row){ __profile={ uid:uid, email:row.email||profileEmail(), display_name:row.display_name||"", avatar:row.avatar||"", prefs:row.prefs||{}, memory:row.memory||{}, created_at:row.created_at||"" }; }
+  else {
+    // First sign-in on this account: seed from the op_prefs defaults and write the row once so it exists.
+    var d=profileDefaults();
+    __profile={ uid:uid, email:profileEmail(), display_name:"", avatar:"", prefs:d.prefs, memory:d.memory };
+    try{ window.ThriveSupa.upsert("console_profiles", { uid:uid, email:profileEmail(), prefs:d.prefs, memory:d.memory, updated_at:new Date().toISOString() }).catch(function(){}); }catch(e){}
+  }
+  __profileLoaded=true; profileCacheWrite(__profile);
+  return __profile;
+}
+function profileNow(){ return __profile || profileCacheRead() || profileDefaults(); }
+function profilePref(k, dflt){ var p=profileNow(); return (p.prefs && p.prefs[k]!==undefined) ? p.prefs[k] : dflt; }
+function profileMem(k, dflt){ var p=profileNow(); return (p.memory && p.memory[k]!==undefined) ? p.memory[k] : dflt; }
+function profileWrite(patch){
+  var uid=profileUid(); if(!uid) return;                 // only a signed-in operator has a profile
+  __profile=__profile||profileDefaults(); __profile.uid=uid; __profile.email=__profile.email||profileEmail();
+  Object.assign(__profile, patch);
+  profileCacheWrite(__profile);
+  if(!supaOn()) return;
+  if(__profSaveT) clearTimeout(__profSaveT);
+  __profSaveT=setTimeout(function(){ try{ window.ThriveSupa.upsert("console_profiles", { uid:uid, email:__profile.email, display_name:__profile.display_name||"", avatar:__profile.avatar||"", prefs:__profile.prefs||{}, memory:__profile.memory||{}, updated_at:new Date().toISOString() }).catch(function(){}); }catch(e){} }, 400);
+}
+function setProfilePref(k, v){ var p=profileNow(); var prefs=Object.assign({}, p.prefs); prefs[k]=v; profileWrite({ prefs:prefs }); }
+function setProfileMem(k, v){ var p=profileNow(); var mem=Object.assign({}, p.memory); mem[k]=v; profileWrite({ memory:mem }); }
+function setProfileField(k, v){ var patch={}; patch[k]=v; profileWrite(patch); }
+async function loadAdminTier(){
+  var uid=profileUid();
+  if(!uid || !supaOn()){ __adminTier=false; return false; }
+  try{ var rows=await window.ThriveSupa.rest("console_admins", { query:"uid=eq."+encodeURIComponent(uid)+"&select=uid" }); __adminTier=!!(rows && rows.length); }
+  catch(e){ __adminTier=false; }
+  return __adminTier;
+}
+function isOwnerTier(){ return __adminTier===true; }
+
+/* The operator's own numbers, from the SAME derivation the board and Insights use, filtered to the
+   operator by the actor stamped on the send (currentActor). No parallel store: opens and replies come
+   through outreachOpens / hasReply, exactly as the board reads them, so a person's numbers can never
+   disagree with the board. A new operator with no sends of their own reads honest zeros; the fuller
+   cadence and outcomes-over-time are Phase B. */
+function operatorStats(actor){
+  actor=actor||currentActor();
+  var mail=getMailLog();
+  var mine=mail.filter(function(m){ return m && m.actor===actor && m.direction!=="in" && m.status==="sent"; });
+  var oppSet={}; mine.forEach(function(m){ if(m.opp) oppSet[m.opp]=1; });
+  var opps=Object.keys(oppSet), opens=0, replies=0;
+  opps.forEach(function(slug){ try{ opens+=outreachOpens(slug)||0; if(hasReply(slug)) replies++; }catch(e){} });
+  var moved=getActivity().filter(function(a){ return a && a.actor===actor && /^lc_/.test(a.action||""); }).length;
+  return { sent:mine.length, opps:opps.length, opens:opens, replies:replies, moved:moved };
+}
+window.operatorStats = operatorStats;
+window.ThriveProfile = { load:loadProfile, now:profileNow, pref:profilePref, mem:profileMem,
+  setPref:setProfilePref, setMem:setProfileMem, setField:setProfileField,
+  loadTier:loadAdminTier, isOwner:isOwnerTier, uid:profileUid, email:profileEmail, stats:operatorStats };
 // Read on sign-in; write on change. Language is the clearest per-person setting; the board view state
 // (thrive_board_v1) rides along. Both already exist in the UI; no new setting is invented here. The
 // onThrive registrations live below, after __hooks is declared (registerOpPrefHooks).
@@ -3788,9 +3877,9 @@ function newMessageId(){ try{ return "<c"+Date.now().toString(36)+Math.random().
 // Central ledger writer: stamps a unique message id, resolves the thread, and fixes direction.
 function logMail(rec){
   const a=getMailLogLocal();
-  const r=Object.assign({ ts:new Date().toISOString(), actor:ACTOR }, rec);
+  const r=Object.assign({ ts:new Date().toISOString(), actor:currentActor() }, rec);
   if(!r.mid) r.mid=newMid();
-  if(!r.actor) r.actor=ACTOR;
+  if(!r.actor) r.actor=currentActor();
   if(!r.thread) r.thread=threadKey(r.to, r.opp, r.subject);
   if(!r.direction) r.direction=(r.status==="replied"||r.status==="received")?"in":"out";
   /* WO-015 I8: a mail record carries its chapter. One is the first contact, two is
@@ -5216,6 +5305,76 @@ async function connCheck(candidate, onStep){
   add("conn_publish", ghReady(), ghReady()? (gc.owner+"/"+gc.repo) : "");
   return steps;
 }
+
+/* ---------- the profile view (WO-029 Phase A) ----------------------------------
+   One coherent surface: an identity header read from the sign-in, then three self-contained regions
+   (Preferences, Memory, Performance), then the owner-only infrastructure zone. Every region is filled,
+   nothing dead-ends. Preferences persist to console_profiles; Performance derives from the one source
+   (operatorStats); the infrastructure zone is present-and-functional for the owner and removed for
+   every other operator, whose tier is refused at the database (console_admins), not merely hidden. */
+async function initProfile(){
+  const el=id=>document.getElementById(id);
+  var signedIn=false; try{ signedIn=!!profileUid(); }catch(e){}
+  var prof=profileNow();
+  try{ prof=await loadProfile(); }catch(e){ prof=profileNow(); }
+  try{ await loadAdminTier(); }catch(e){}
+
+  // ---- identity ----
+  var email=profileEmail(), name=(prof.display_name||"").trim();
+  var initSrc=(name||email||"?").trim();
+  if(el("pfAvatar")) el("pfAvatar").textContent=initSrc? initSrc.charAt(0).toUpperCase() : "?";
+  if(el("pfEmail")) el("pfEmail").textContent=email||t("pf_no_email");
+  if(el("pfName")){ el("pfName").value=name; el("pfName").addEventListener("input", debounceProfileName); }
+  if(el("pfRole")) el("pfRole").textContent=isOwnerTier()? t("pf_role_owner") : t("pf_role_operator");
+  if(el("pfSince")) el("pfSince").innerHTML=prof.created_at? fmtStampHtml(prof.created_at, {year:"numeric",month:"short"}) : ('<span class="mw-muted">'+esc(t("pf_since_now"))+'</span>');
+  if(el("pfSignInNote")) el("pfSignInNote").hidden=signedIn;
+
+  // ---- preferences ----
+  function setVal(id,v){ var e=el(id); if(e!=null && v!=null) e.value=v; }
+  setVal("pfLang", profilePref("lang", getLang()));
+  setVal("pfDensity", profilePref("density","cozy"));
+  setVal("pfView", profilePref("view","board"));
+  setVal("pfTz", profilePref("tz",""));
+  if(el("pfDigest")) el("pfDigest").checked=!!profilePref("digest",false);
+  setVal("pfSigEn", profilePref("sig_en", (function(){ try{ return signatureFor("EN"); }catch(e){ return ""; } })()));
+  setVal("pfSigAr", profilePref("sig_ar", (function(){ try{ return signatureFor("AR"); }catch(e){ return ""; } })()));
+  function flashSaved(){ var s=el("pfSaved"); if(s){ s.hidden=false; clearTimeout(s.__t); s.__t=setTimeout(function(){ s.hidden=true; }, 1400); } }
+  function bindPref(id,key,ev,get){ var e=el(id); if(!e) return; e.addEventListener(ev||"change", function(){ setProfilePref(key, get? get(e) : e.value); flashSaved(); }); }
+  bindPref("pfDensity","density");
+  bindPref("pfView","view");
+  bindPref("pfTz","tz","input");
+  bindPref("pfDigest","digest","change", function(e){ return !!e.checked; });
+  bindPref("pfSigEn","sig_en","input");
+  bindPref("pfSigAr","sig_ar","input");
+  // Language applies immediately, per person, and rides the existing op_prefs bus as it did before.
+  if(el("pfLang")) el("pfLang").addEventListener("change", function(){
+    var v=el("pfLang").value; setProfilePref("lang", v); flashSaved();
+    try{ localStorage.setItem("thrive_lang", v); }catch(_){}
+    try{ if(typeof opPrefRemember==="function") opPrefRemember("lang", v); }catch(_){}
+    try{ if(typeof setLang==="function") setLang(v); }catch(_){}
+  });
+
+  // ---- memory ----
+  var pins=profileMem("pins",[]); if(el("pfMemPins")) el("pfMemPins").textContent=String(Array.isArray(pins)? pins.length : 0);
+  var hints=profileMem("hints",[]); if(el("pfMemHints")) el("pfMemHints").textContent=String(Array.isArray(hints)? hints.length : 0);
+  if(el("pfNotes")){ el("pfNotes").value=profileMem("notes",""); el("pfNotes").addEventListener("input", function(){ setProfileMem("notes", el("pfNotes").value); }); }
+
+  // ---- performance (the one derivation, filtered to this operator) ----
+  var s=operatorStats();
+  if(el("pfStSent")) el("pfStSent").textContent=String(s.sent);
+  if(el("pfStOpens")) el("pfStOpens").textContent=String(s.opens);
+  if(el("pfStReplies")) el("pfStReplies").textContent=String(s.replies);
+  if(el("pfStMoved")) el("pfStMoved").textContent=String(s.moved);
+
+  // ---- the owner-only infrastructure zone: present for the owner, ABSENT for everyone else ----
+  var infra=el("pfInfra");
+  if(infra){ if(isOwnerTier()){ infra.hidden=false; } else if(infra.parentNode){ infra.parentNode.removeChild(infra); } }
+}
+window.initProfile = initProfile;
+var __pfNameT=null;
+function debounceProfileName(){ var e=document.getElementById("pfName"); if(!e) return; if(__pfNameT) clearTimeout(__pfNameT);
+  __pfNameT=setTimeout(function(){ setProfileField("display_name", e.value);
+    var av=document.getElementById("pfAvatar"); if(av){ var s=(e.value||profileEmail()||"?").trim(); av.textContent=s? s.charAt(0).toUpperCase() : "?"; } }, 400); }
 
 function initSettings(){
   renderStorageMeter();
