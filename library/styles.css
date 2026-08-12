@@ -1679,7 +1679,10 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 /* A business name is a name, not a sentence: it keeps its own reading order so
    "2 Faces" is not reordered into "Faces 2" on an Arabic screen. */
 [dir="rtl"] .modal-title{ unicode-bidi:plaintext; text-align:start }
-.modal-acts{ display:flex; align-items:center; gap:var(--s-2); flex:0 0 auto }
+/* The actions can wrap onto a second row on a narrow sheet rather than push a
+   button past the sheet edge: with three controls plus Close, 390px cannot hold
+   one line. It stays a single right-hand row wherever it fits. */
+.modal-acts{ display:flex; align-items:center; justify-content:flex-end; gap:var(--s-2); flex:0 1 auto; flex-wrap:wrap; min-width:0 }
 .modal-close{
   background:transparent; border:1px solid var(--hair);
   border-radius:var(--r-sm); color:var(--ink-3); cursor:pointer;

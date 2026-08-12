@@ -953,9 +953,10 @@ const I18N = {
     mw_outreach:    "Outreach",
     mw_history:     "History",
 
-    mw_copy_link:   "Copy link",
-    mw_copied:      "Link copied.",
-    mw_copy_why:    "Not activated yet, so there is no link to copy.",
+    mw_copy_link:   "Copy page link",
+    mw_open_page:   "Open page",
+    mw_copied:      "Page link copied.",
+    mw_copy_why:    "Not activated yet, so there is no page to open or copy.",
 
     mw_hist_empty:  "Nothing has happened to this opportunity yet.",
     th_sent:        "Sent",
@@ -1983,9 +1984,10 @@ const I18N = {
     mw_outreach:    "التواصل",
     mw_history:     "السجل",
 
-    mw_copy_link:   "نسخ الرابط",
-    mw_copied:      "تم نسخ الرابط.",
-    mw_copy_why:    "غير مُنشّطة بعد، فلا يوجد رابط لنسخه.",
+    mw_copy_link:   "نسخ رابط الصفحة",
+    mw_open_page:   "فتح الصفحة",
+    mw_copied:      "نسخنا رابط الصفحة.",
+    mw_copy_why:    "غير مُنشّطة بعد، فلا صفحة لفتحها أو نسخ رابطها.",
 
     mw_hist_empty:  "لم يحدث شيء لهذه الفرصة بعد.",
     th_sent:        "رسالة صادرة",

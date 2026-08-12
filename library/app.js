@@ -8407,7 +8407,7 @@ function initModal(){
   }
   function copyLink(){
     if(!rec || !isLive(rec)) return;
-    const url=liveUrl(rec.slug);
+    const url=liveUrl(rec.slug);   // the opportunity's own PUBLIC page, never a console-internal deep link
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(url).then(
         ()=>toast(t("mw_copied")),
@@ -8415,6 +8415,12 @@ function initModal(){
       return;
     }
     toast(legacyCopy(url)? t("mw_copied") : t("cmp_copy_err"));
+  }
+  /* Open the opportunity's own live page in a new tab, from inside the card. Same gate and same URL as
+     Copy: only when the page is live, and always the public liveUrl, never a console-internal link. */
+  function openLink(){
+    if(!rec || !isLive(rec)) return;
+    try{ window.open(liveUrl(rec.slug), "_blank", "noopener"); }catch(e){}
   }
   /* The header pill and the copy control both read the record, so they are refreshed together
      and from one place. Two places that describe the same record drift the first time one of
@@ -8431,9 +8437,10 @@ function initModal(){
     copyState();
   }
   function copyState(){
-    const b=el("modalCopy"), why=el("modalWhy");
-    const can=!!(rec && isLive(rec));
+    const b=el("modalCopy"), o=el("modalOpen"), why=el("modalWhy");
+    const can=!!(rec && isLive(rec));   // a live page: copy and open both work; otherwise both are refused
     if(b) b.disabled=!can;
+    if(o) o.disabled=!can;
     if(why){ why.hidden=can; why.textContent=can? "" : t("mw_copy_why"); }
   }
 
@@ -8635,6 +8642,7 @@ function initModal(){
   el("modalBack").addEventListener("click", async ()=>{ if(await askBeforeClose()) goBack(); });
   el("modalClose").addEventListener("click", async ()=>{ if(await askBeforeClose()) close(); });
   el("modalCopy").addEventListener("click", copyLink);
+  if(el("modalOpen")) el("modalOpen").addEventListener("click", openLink);
   scrim.addEventListener("click", async ()=>{ if(await askBeforeClose()) close(); });
   modal.querySelectorAll(".modal-tab").forEach(b=>
     b.addEventListener("click", ()=>switchTo(b.getAttribute("data-tab"), {push:true})));
