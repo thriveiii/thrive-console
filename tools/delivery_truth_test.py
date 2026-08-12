@@ -27,9 +27,12 @@ ck("effStage reconciles a hard bounce to bounced and a soft to failed",
    'if(bounce==="hard") return "bounced"' in app_src and 'if(bounce==="soft") return "failed"' in app_src)
 # WO-026: the delivery-truth contract begins at send time. The send path stamps a wire Message-ID and
 # records the ledger row with the recipient and that id, so a reply threads and the state is truthful.
-ck("a send records its ledger row with the recipient and a Message-ID at send time",
-   "const msgid=newMessageId();" in app_src
-   and "logMail({ opp:oppOf(), to:to, toName:recName()" in app_src and "msgid:msgid, chapter:sendChapter" in app_src)
+# The send was unified into one hardened function (relaySend); the durable row is written there, BEFORE
+# the POST, carrying the recipient and the Message-ID, from both the outreach composer and the thread reply.
+ck("a send records its ledger row with the recipient and a Message-ID at send time (relaySend, before the POST)",
+   "const msgid=intent.msgid || newMessageId();" in app_src
+   and 'to:to, toName:intent.toName||""' in app_src
+   and 'status:"pending", idem:idem, msgid:msgid, chapter:' in app_src)
 
 SENT_TS="2026-08-01T10:00:00Z"
 OPPS=[

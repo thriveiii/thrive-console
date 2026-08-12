@@ -3884,6 +3884,11 @@ function buildThread(slug){
       out.push({ kind:"reply", ts:m.ts, source:"ledger", from:(m.toName||m.to||""),
                  subject:m.subject||"", snippet:(m.preview||"").slice(0,600), chapter:m.chapter||1, mid:m.mid });
     }else{
+      // A known failure is not a send: an unsent row is the durable record of an attempt that the relay
+      // did not confirm (kept, keyed by intent, so a retry reconciles), never a message in the thread.
+      // A pending row stays, because it is in flight and has already advanced the card. This is what
+      // keeps the thread unchanged when a reply genuinely fails.
+      if(m.status==="unsent") return;
       out.push({ kind:"sent", ts:m.ts, to:m.to||"", toName:m.toName||"",
                  subject:m.subject||"", channel:m.provider||"", status:m.status||"sent",
                  templateName:m.templateName||"", chapter:m.chapter||1, mid:m.mid });
@@ -4081,33 +4086,88 @@ function replyComposerHtml(slug){
 // Send a reply into the thread through the relay. From hi@thriveiii.com, threaded by In-Reply-To /
 // References and a fresh Message-ID, logged as an outbound send so buildThread shows it in order.
 // Never touches another slug's ledger. Self-test sends only for the device gate; sends no outreach.
+/* ---- the one hardened send, shared by outreach and the thread reply ---------
+   Brief 01 hardened the OUTREACH send: a stable per-intent idempotency key (the relay forwards it to
+   Resend, which dedupes, so a retried POST delivers at most once), a DURABLE pending row written BEFORE
+   the POST (so a timeout never strands the intent), no blind retry, and the relay's true answer as the
+   outcome. That hardening lived only inside the composer's click handler, so the thread reply ran its
+   own bare route: it POSTed with none of it, so a stale relay's 404 surfaced raw in the composer and no
+   durable row was left to reconcile, which means a retry could double-send. This is that core, extracted
+   into ONE function both entry points call. It owns the mail-row lifecycle only; the DOM, the quota and
+   the toasts stay with the caller. Returns { status, idem, msgid, id?, error?, banner? }, where status
+   is "sent" (confirmed), "unsent" (a true, retryable failure, the card does not advance), "pending" (in
+   flight after a timeout, reconciled on the next re-tap under the same key), or "duplicate" (a completed
+   send, refused by name, no second POST). */
+async function relaySend(intent){
+  intent=intent||{};
+  const ep=getEmailEndpoint();
+  if(!ep) return { status:"unsent", error:t("cmp_no_ep"), noEp:true };
+  const opp=String(intent.opp||""), to=String(intent.to||"");
+  const subject=String(intent.subject||""), html=String(intent.html||""), text=String(intent.text||"");
+  const idem=intent.idem || sendIdem(opp, to, subject, html);
+  const msgid=intent.msgid || newMessageId();
+  // A known-stale relay is refused BEFORE the POST, so a send never lands in a deployment whose shape it
+  // does not match (the source of the 404). relayReady is true until a response has disagreed, so a first
+  // send is never blocked by this; only a relay that already answered with the wrong version is refused.
+  if(!relayReady()) return { status:"unsent", idem:idem, msgid:msgid, error:relayBannerText(), banner:true };
+  const prior=findMailRowByIdem(idem);
+  // A completed send never sends again: refused by name. A pending or failed prior is NOT refused;
+  // re-tapping reconciles under the SAME key so the relay dedupes, never a second delivery.
+  if(prior && prior.status==="sent" && getMailLog().some(m=> m && m.idem===idem && m.status==="sent"))
+    return { status:"duplicate", idem:idem, msgid:prior.msgid||msgid, id:prior.id||"" };
+  // The durable record, written BEFORE the POST.
+  if(prior){ updateMailByIdem(idem, { status:"pending", ts:new Date().toISOString(), error:"" }); }
+  else { logMail(Object.assign({ opp:opp, to:to, toName:intent.toName||"", subject:subject,
+      preview:String(intent.preview!=null?intent.preview:text).slice(0,600), provider:"endpoint",
+      status:"pending", idem:idem, msgid:msgid, chapter:(intent.chapter!=null?intent.chapter:1) }, intent.mailExtra||{})); }
+  const headers=Object.assign({}, ThriveStore.outboundHeaders(opp), intent.headers||{}, { "Message-ID": msgid });
+  const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:to, subject:subject,
+    html:html, text:text, idempotencyKey:idem, headers:headers, slug:opp };
+  try{
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
+    const txt=await r.text();
+    let parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
+    noteRelayVersion(parsed);
+    if(!r.ok){ updateMailByIdem(idem, { status:"unsent", error:(r.status+" "+txt.slice(0,120)) }); return { status:"unsent", idem:idem, msgid:msgid, error:(r.status+" "+String(txt).slice(0,140)) }; }
+    if(parsed && !relayReady()){ updateMailByIdem(idem, { status:"unsent", error:"relay behind" }); return { status:"unsent", idem:idem, msgid:msgid, error:relayBannerText(), banner:true }; }
+    if(parsed && parsed.ok===false){ updateMailByIdem(idem, { status:"unsent", error:(parsed.error||"send failed") }); return { status:"unsent", idem:idem, msgid:msgid, error:(parsed.error||"send failed") }; }
+    const id=parsed? (parsed.id||"") : "";
+    updateMailByIdem(idem, { status:"sent", id:id, error:"" });
+    return { status:"sent", idem:idem, msgid:msgid, id:id };
+  }catch(e){
+    // A timeout was in flight and MAY have delivered: leave it pending, never assert failure, never
+    // blind-retry. Any other throw is a known failure: mark it unsent so the card does not advance.
+    if(e && e.timeout) return { status:"pending", idem:idem, msgid:msgid, timeout:true };
+    const row=findMailRowByIdem(idem); if(row && row.status==="pending"){ updateMailByIdem(idem, { status:"unsent", error:(e && e.message)||"send failed" }); }
+    return { status:"unsent", idem:idem, msgid:msgid, error:(e && e.message)||"send failed" };
+  }
+}
+
+/* A thread reply is one entry point into relaySend, carrying the thread's In-Reply-To / References and
+   a fresh Message-ID, so it inherits the exact exactly-once, true-outcome guarantee the outreach send
+   has. It no longer POSTs its own route. Returns the send result plus the thread fields the caller needs. */
 async function sendThreadReply(slug, bodyText){
   slug=String(slug||"");
-  const ep=getEmailEndpoint(); if(!ep) throw new Error(t("th_reply_no_ep"));
+  if(!getEmailEndpoint()) throw new Error(t("th_reply_no_ep"));
   const tgt=replyTarget(slug); if(!tgt.addr) throw new Error(t("th_reply_no_addr"));
   const body=String(bodyText||"").trim(); if(!body) throw new Error(t("th_reply_empty"));
   const baseSubj=String(tgt.subject||"").trim();
   const subject=/^\s*(re|رد)\s*:/i.test(baseSubj) ? baseSubj : ("Re: "+(baseSubj||t("th_reply_subj_fallback")));
-  const msgid=newMessageId();                                   // "<c...@thriveiii.com>"
   const html='<div dir="'+(tgt.lang==="ar"?"rtl":"ltr")+'" style="font-family:Arial,Helvetica,sans-serif;white-space:pre-wrap">'+
              esc(body).replace(/\n/g,"<br>")+'</div>';
-  const headers=Object.assign({}, ThriveStore.outboundHeaders(slug), { "Message-ID": msgid });
+  const replyHeaders={};
   if(tgt.inReplyTo){
-    headers["In-Reply-To"]="<"+tgt.inReplyTo+">";
+    replyHeaders["In-Reply-To"]="<"+tgt.inReplyTo+">";
     const chain=(tgt.refs||[]).concat([tgt.inReplyTo]).filter(function(v,i,a){ return v && a.indexOf(v)===i; });
-    headers["References"]=chain.map(x=>"<"+x+">").join(" ");
+    replyHeaders["References"]=chain.map(x=>"<"+x+">").join(" ");
   }
-  const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:tgt.addr,
-    subject:subject, html:html, text:body, headers:headers, slug:slug };
-  const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
-  const txt=await r.text(); if(!r.ok) throw new Error(r.status+" "+String(txt).slice(0,140));
-  let parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
-  if(parsed && parsed.ok===false) throw new Error(parsed.error||"send failed");
-  const id=(parsed && parsed.id)||"";
+  const res=await relaySend({ opp:slug, to:tgt.addr, toName:tgt.name, subject:subject, html:html, text:body,
+    headers:replyHeaders, preview:body, chapter:activeChapter(slug) });
+  if(res.status==="duplicate") return { ok:true, duplicate:true, to:tgt.addr, msgid:res.msgid, subject:subject };
+  if(res.status==="pending")   return { ok:true, pending:true, to:tgt.addr, msgid:res.msgid, subject:subject };
+  if(res.status!=="sent")      throw new Error(res.error||"send failed");
   logActivity("email", slug, tgt.addr+" · "+subject);
-  logMail({ opp:slug, to:tgt.addr, toName:tgt.name, subject:subject, preview:body.slice(0,600),
-    provider:"endpoint", status:"sent", id:id, msgid:msgid, chapter:activeChapter(slug) });
-  return { ok:true, to:tgt.addr, msgid:msgid, subject:subject };
+  return { ok:true, to:tgt.addr, msgid:res.msgid, subject:subject };
 }
 /* WO-015 §6: the lane reflects the furthest state of the ACTIVE chapter. For the
    only chapter that exists today, chapter one, this is exactly effStage, so the
@@ -4963,77 +5023,40 @@ async function initCompose(slugArg, opts){
       replyHeaders["References"]=chain.map(x=>"<"+x+">").join(" ");
     }
     const subjectOut=resolveTokens(el("esubject").value.trim());
-    // The intent's stable idempotency key: this same message, to this address, for this opportunity, is
-    // ONE intent no matter how many times it is tapped. The relay forwards it to Resend as Idempotency-Key,
-    // so a retried POST for the same intent delivers AT MOST ONCE.
-    const idem=sendIdem(oppOf(), to, subjectOut, sb.html);
-    const prior=findMailRowByIdem(idem);
-    /* Double-send guard, keyed on the intent. A completed send (status sent) never sends again: it is
-       refused by name. A prior attempt still pending (a slow relay we never got the ack from) or a known
-       failure is NOT refused: re-tapping RECONCILES it, re-POSTing with the SAME key so Resend dedupes,
-       never a second delivery to close an uncertain first. */
-    if(prior && prior.status==="sent" && getMailLog().some(m=> m && m.idem===idem && m.status==="sent")){
-      toast(t("cmp_dupe_block")); return;
-    }
+    // The whole send is now the ONE hardened relay path, shared with the thread reply (relaySend): the
+    // per-intent idempotency key, the durable pending row before the POST, no blind retry, and the relay's
+    // true answer as the outcome all live there. The composer keeps only what is its own: the button
+    // state, the quota count, the working draft, and the reply greeting reset.
     const m=tplMeta();
-    // A DURABLE record of the attempt, written BEFORE the POST. This is the fix for the stranded card: even
-    // if the relay times out, this row exists, carries the intent key, and (as pending) already moves the
-    // card off Ready. The response below resolves it in place to sent or, only on a KNOWN failure, unsent.
-    if(prior){ updateMailByIdem(idem, { status:"pending", ts:new Date().toISOString(), error:"" }); }
-    else { logMail({ opp:oppOf(), to:to, toName:recName(), subject:subjectOut, templateId:m.templateId, templateName:m.templateName, branded:isBranded(), preview:preview(), provider:"endpoint", status:"pending", idem:idem, msgid:msgid, chapter:sendChapter(oppOf()) }); }
-    const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:to,
-      subject:subjectOut,
-      html:sb.html,
-      text:sb.text,
-      idempotencyKey:idem,
-      headers:Object.assign({}, ThriveStore.outboundHeaders(slug||""), replyHeaders, { "Message-ID": msgid }),
-      slug:slug||"" };
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
+    let res;
     try{
-      const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
-      const txt=await r.text();
-      let parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
-      noteRelayVersion(parsed);
-      // A KNOWN failure: the relay answered and did not confirm a send. Mark the intent unsent so the card
-      // does NOT advance, surface the true error, and leave a retry (under the same key) open.
-      if(!r.ok){ updateMailByIdem(idem, { status:"unsent", error:(r.status+" "+txt.slice(0,120)) }); throw new Error(r.status+" "+txt.slice(0,140)); }
-      /* If the send only now revealed the relay is behind, say so with the banner
-         rather than a generic send error, and refresh so the gate takes hold. */
-      if(parsed && !relayReady()){ updateMailByIdem(idem, { status:"unsent", error:"relay behind" }); throw new Error(relayBannerText()); }
-      if(parsed && parsed.ok===false){ updateMailByIdem(idem, { status:"unsent", error:(parsed.error||"send failed") }); throw new Error(parsed.error||"send failed"); }
-      const id=parsed? (parsed.id||"") : "";
-      // Confirmed sent: resolve the ONE intent row to sent, in one place, so a delivered send ALWAYS carries
-      // a sent record and the card is advanced by that record, not by a fragile in-memory flag. Quota is
-      // counted here, once per confirmed delivery, not per attempt.
-      updateMailByIdem(idem, { status:"sent", id:id, error:"" });
-      recordSend(); renderQuota();
-      logActivity("email", slug||"", to+" · "+payload.subject);
-      clearComposeDraft();                                  // the message went out, so the working draft is done
-      toast(t("cmp_sent"));
-      if(replyCtx){
-        // The reply is in the thread now: refresh the thread list above the editor, and open a fresh greeting
-        // for the next reply, so the composer is ready rather than showing a message already sent.
-        replyCtx=replyTarget(slug);                         // re-read (the just-sent row can shift the target)
-        const g=replyGreeting(replyCtx);
-        body.innerHTML='<div dir="'+(replyCtx.lang==="ar"?"rtl":"auto")+'">'+esc(g).split("\n").join("<br>")+'</div>';
-        refreshLinks(); recordBody();
-        if(onSent) try{ onSent(); }catch(_){}
-      }
-    }catch(e){
-      // Two failure shapes, told apart. A TIMEOUT means the request was in flight and MAY have delivered:
-      // the outcome is unknown, so we never assert a failure and never blind-retry. The intent row stays
-      // pending (which already advanced the card), and we say "sent, confirming"; a later reconcile (a
-      // re-tap, same key) resolves it against Resend with no second delivery. Any other error is a known
-      // failure: the row is marked unsent (so the card does not advance) and the true error is shown.
-      if(e && e.timeout){
-        const row=findMailRowByIdem(idem); if(row && row.status==="pending"){ /* leave pending */ }
-        toast(t("cmp_sent_confirming"));
-      } else {
-        const row=findMailRowByIdem(idem); if(row && row.status==="pending"){ updateMailByIdem(idem, { status:"unsent", error:(e && e.message)||"send failed" }); }
-        toast(t("cmp_send_err")+": "+e.message);
-      }
+      res=await relaySend({ opp:oppOf(), to:to, toName:recName(), subject:subjectOut,
+        html:sb.html, text:sb.text, msgid:msgid, headers:replyHeaders, preview:preview(),
+        chapter:sendChapter(oppOf()),
+        mailExtra:{ templateId:m.templateId, templateName:m.templateName, branded:isBranded() } });
+    } finally { el("eSend").disabled=false; el("eSend").textContent=old; }
+    // A completed send, refused by name: no second delivery.
+    if(res.status==="duplicate"){ toast(t("cmp_dupe_block")); return; }
+    // A timeout: in flight and MAY have delivered. The pending row already advanced the card; say "sent,
+    // confirming" and a later re-tap reconciles under the same key, never a second delivery.
+    if(res.status==="pending"){ toast(t("cmp_sent_confirming")); return; }
+    // A known failure: the intent is unsent (the card did not advance) and the true error is shown.
+    if(res.status!=="sent"){ toast(t("cmp_send_err")+": "+(res.error||"")); return; }
+    // Confirmed sent. Quota is counted here, once per confirmed delivery, not per attempt.
+    recordSend(); renderQuota();
+    logActivity("email", slug||"", to+" · "+subjectOut);
+    clearComposeDraft();                                  // the message went out, so the working draft is done
+    toast(t("cmp_sent"));
+    if(replyCtx){
+      // The reply is in the thread now: re-read the target and open a fresh greeting for the next reply,
+      // so the composer is ready rather than showing a message already sent.
+      replyCtx=replyTarget(slug);
+      const g=replyGreeting(replyCtx);
+      body.innerHTML='<div dir="'+(replyCtx.lang==="ar"?"rtl":"auto")+'">'+esc(g).split("\n").join("<br>")+'</div>';
+      refreshLinks(); recordBody();
+      if(onSent) try{ onSent(); }catch(_){}
     }
-    finally{ el("eSend").disabled=false; el("eSend").textContent=old; }
   });
 }
 
