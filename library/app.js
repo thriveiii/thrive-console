@@ -4649,8 +4649,11 @@ async function initCompose(slugArg, opts){
     renderPreSend();
     if(!prevFrame) return;
     const card = oppObj ? linkCard(oppObj, {copy:false}) : "";
+    // The preview is its own document (an iframe), so the console stylesheet cannot reach inside it. The
+    // body wraps within the frame here: overflow-wrap and word-break both inherit, so composedHtml and the
+    // card wrap long words and URLs and no line escapes the frame at any width, in either direction.
     prevFrame.srcdoc='<!DOCTYPE html><html dir="'+(docLoc()==="AR"?"rtl":"ltr")+'"><body '+
-      'style="margin:0;padding:16px;background:#fff">'+composedHtml()+card+'</body></html>';
+      'style="margin:0;padding:16px;background:#fff;overflow-wrap:anywhere;word-break:break-word">'+composedHtml()+card+'</body></html>';
   }
 
   /* Send safety: the page is proven live before any message leaves for a party. liveState is the
