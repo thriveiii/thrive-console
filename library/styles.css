@@ -1072,19 +1072,27 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 
 /* 2. The Replied column is set apart by one very thin dashed rule, the ONLY separator on the board. Logical
    inline-start, so it sits before the Replied column in reading order and mirrors in Arabic with no second
-   rule. A quiet hair against the near-black board, not a wall, full column height. */
+   rule, full column height (the lanes stretch to the grid row, so the rule spans it even when Replied holds
+   fewer cards). It reads as a clear, calm boundary: a touch more contrast than --hair (.10 was too faint to
+   the eye against the near-black board, so .16 white, still quiet, still no new colour), and one spacing
+   token on BOTH sides of it (margin before it, padding after it) so the Replied column is a distinct region
+   with room to breathe, not a line crammed against its neighbour. The wider inset also clears the reply
+   glow, so the two never collide. Still not a wall. */
 @media(min-width:1024px){
   .lane[data-lane="replied"]{
-    border-inline-start:1px dashed var(--hair);
-    padding-inline-start:var(--s-2);
+    border-inline-start:1px dashed rgba(255,255,255,.16);
+    margin-inline-start:var(--s-3);
+    padding-inline-start:var(--s-3);
   }
 }
 /* Phone / iPad portrait (one lane at a time): the same language as a fine dashed TOP rule on the Replied
-   lane section, so the distinction survives without columns. The glow is identical in both layouts. */
+   lane section, so the distinction survives without columns, with the same contrast and the same spacing
+   token above and below it. The glow is identical in both layouts. */
 @media(max-width:1023px){
   .board .lane[data-lane="replied"]{
-    border-top:1px dashed var(--hair);
-    padding-top:var(--s-2);
+    border-top:1px dashed rgba(255,255,255,.16);
+    margin-top:var(--s-3);
+    padding-top:var(--s-3);
   }
 }
 
