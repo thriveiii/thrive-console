@@ -433,8 +433,13 @@ def causal_thread(pg):
 def causal_walk(pg, lang, w):
     tag = "%s/%d" % (lang, w)
     pg.evaluate("x=>location.hash='#board'"); pg.wait_for_timeout(800)
-    bad = causal_controls(pg, lang)
-    ck("%s: no card exposes a won, lost or exclude control" % tag, not bad, bad)
+    # The lifecycle-legacy brief ("every card has an end") reverses WO-015 §5.2 / invariant I9: an
+    # opportunity must be able to reach its terminus (Won/Lost/No-fit) from the card, each with its
+    # reason, rather than only ever being archived. So the outcomes are reachable now; this asserts the
+    # terminus IS offered where legal, at the data layer where it is deterministic.
+    reach = pg.evaluate("""()=>{ try{ return cardMenuFor({slug:'__t',stage:'sent',published:true},'sent')
+        .some(it=>['mark_won','mark_lost','drop'].indexOf(it.move)>=0); }catch(e){ return 'err:'+e; } }""")
+    ck("%s: the terminus (won/lost/no-fit) is reachable from a card that went out" % tag, reach is True, reach)
     th = causal_thread(pg)
     ck("%s: the thread renders" % tag, th["thread"], th)
     ck("%s: a reply shows a snippet and not a full body" % tag, th["snippet"] and th["no_body"], th)

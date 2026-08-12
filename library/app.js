@@ -2509,6 +2509,33 @@ function migrateRetiredStatuses(){
   return changed;
 }
 
+/* ---- legacy parity: default the fields the board now assumes, on read -------
+   A card made before Stage 4 carries the old shape: the manifest wrote a `status`
+   (only ever "sent") where the derivation now reads `stage`, and an early record can
+   lack a roster entirely. Nothing here is written back: this returns a normalized
+   copy for the read view (the board, the window, the library all read mergedOpps),
+   exactly like the #108 reconstruction pattern defaults on read and setDrafts strips
+   the derived rows before any write. If the map should persist, it is the additive
+   SQL in docs/supabase-lifecycle-legacy.sql that Thyab runs, never a blind mass write.
+
+   Only the stages the derivation honors as a DECLARATION are carried across from a
+   legacy `status`: sent, opened, replied, won, lost, dropped, bounced, failed. The
+   pre-send states (draft, ready, live) are deliberately left empty so isLive and the
+   send evidence keep deriving them, because those are the states the new model reads
+   from evidence rather than from a claim the record makes about itself. */
+const LEGACY_DECLARED_STAGES={ sent:1, opened:1, replied:1, won:1, lost:1, dropped:1, bounced:1, failed:1 };
+function normalizeOpp(o){
+  if(!o || typeof o!=="object") return o;
+  const n=o;
+  // A legacy status stands in for a missing stage, so a card sent months ago reads as Sent,
+  // not as a never-sent Ready, and a Won/Lost card keeps its terminus instead of re-deriving.
+  if(!n.stage && n.status && LEGACY_DECLARED_STAGES[n.status]) n.stage=n.status;
+  // An empty roster where one is absent, so the group and recipient reads never touch undefined.
+  if(!Array.isArray(n.recipients)) n.recipients=[];
+  if(!Array.isArray(n.manual_contacts)) n.manual_contacts=[];
+  return n;
+}
+
 async function mergedOpps(){
   const {list}=await loadManifest();
   const bySlug={};
@@ -2518,7 +2545,9 @@ async function mergedOpps(){
     else bySlug[d.slug]={...d, _local:true, _edited:false};
   });
   const rows=Object.values(bySlug);
-  rows.forEach(o=>{ o.archived=!!o.archived; });
+  // Normalize the read view once, in the one place every screen reads through. Each row here is a
+  // fresh spread (never the stored object), so defaulting a field cannot mutate what is on disk.
+  rows.forEach(o=>{ o.archived=!!o.archived; normalizeOpp(o); });
   return rows;
 }
 async function allSlugs(){ return (await mergedOpps()).map(o=>o.slug); }
@@ -3681,7 +3710,11 @@ function getEmailTemplates(){
     a=a.concat(add);
     try{ localStorage.setItem(ETPL, JSON.stringify(a)); localStorage.setItem(ETPL_SEED, JSON.stringify(seedNow)); }catch(e){}
   }
-  return a;
+  // Legacy parity: an old message template made before the type taxonomy carries no type. Default it
+  // on read (a message template is a text snippet, exactly as saveEmailTemplate stamps a new one), so
+  // it lists and opens like any other. The render path already guards every string field with ||, so
+  // a template missing a subject, name or html draws with the same defaults rather than a broken row.
+  return a.map(x=> (x && !x.type) ? {...x, type:T_SNIPPET} : x);
 }
 function setEmailTemplates(a){ const ok=lsSet(ETPL, JSON.stringify(a)); try{ supaMirrorTemplates(a, "email"); }catch(_){} return ok; }
 function saveEmailTemplate(rec){ rec.up=Date.now(); const a=getEmailTemplates(); const i=a.findIndex(x=>x.id===rec.id);
@@ -6658,14 +6691,27 @@ async function initBoard(){
       else goTo("compose");
     }));
 
-    const bounced=b.closed.bounced||[], failed=b.closed.failed||[];
-    const closed=b.closed.won.concat(b.closed.lost, bounced, failed);
+    const bounced=b.closed.bounced||[], failed=b.closed.failed||[], dropped=b.closed.dropped||[];
+    // Dropped joins won/lost/bounced/failed: a closed card of any kind is countable and reachable,
+    // never a row that vanishes from the board with no way back to it.
+    const closed=b.closed.won.concat(b.closed.lost, dropped, bounced, failed);
     el("trayCount").textContent=closed.length;
+    /* Every closed card is a real control that opens its window, so a finished card stays
+       retrievable rather than being a dead label. A reply that arrived after the card closed is
+       marked here (a quiet dot) so it surfaces on the board without silently reopening the card;
+       opening it offers the one-tap reopen. */
+    const trayItem=(o,cls,title)=>{
+      const reply=cardHasConversation(o.slug);
+      return '<button type="button" class="tray-item '+cls+(reply?' has-reply':'')+'" data-tray-open data-slug="'+esc(o.slug)+'"'+
+        (title?' title="'+esc(title)+'"':'')+(reply?' aria-label="'+esc((o.business||o.slug)+": "+t("tray_reply"))+'"':'')+'>'+
+        esc(o.business||o.slug)+(reply?'<span class="tray-dot" aria-hidden="true"></span>':'')+'</button>';
+    };
     el("trayList").innerHTML = closed.length
-      ? b.closed.won.map(o=>'<span class="tray-item won">'+esc(o.business||o.slug)+'</span>').join("")+
-        b.closed.lost.map(o=>'<span class="tray-item lost">'+esc(o.business||o.slug)+'</span>').join("")+
-        bounced.map(o=>'<span class="tray-item bounced" title="'+esc(t("stage_bounced"))+'">'+esc(o.business||o.slug)+'</span>').join("")+
-        failed.map(o=>'<span class="tray-item failed" title="'+esc(t("stage_failed"))+'">'+esc(o.business||o.slug)+'</span>').join("")
+      ? b.closed.won.map(o=>trayItem(o,"won","")).join("")+
+        b.closed.lost.map(o=>trayItem(o,"lost","")).join("")+
+        dropped.map(o=>trayItem(o,"dropped",t("stage_dropped"))).join("")+
+        bounced.map(o=>trayItem(o,"bounced",t("stage_bounced"))).join("")+
+        failed.map(o=>trayItem(o,"failed",t("stage_failed"))).join("")
       : '<div class="lane-empty">'+ic("archive",18)+'<p>'+esc(t("tray_empty"))+'</p></div>';
 
     // A signed-out read from Supabase (an empty 200 after the anon door closes, or a 401/403) is a call
@@ -6707,6 +6753,15 @@ async function initBoard(){
         else window.thriveModal.open(slug, "overview", name);
         try{ markCardSeen(slug); paintCardBadges(); }catch(_){}
       } else goTo("compose","slug="+encodeURIComponent(slug));
+    }));
+
+    // A closed card in the tray opens its window like any other card, so a finished opportunity is
+    // retrievable, its reply is readable, and the reopen is one tap away.
+    document.querySelectorAll("#trayList [data-tray-open]").forEach(btn=>btn.addEventListener("click",()=>{
+      const slug=btn.getAttribute("data-slug"); if(!slug) return;
+      const name=(btn.textContent||slug).trim();
+      if(window.thriveModal) window.thriveModal.open(slug, "overview", name);
+      else goTo("compose","slug="+encodeURIComponent(slug));
     }));
     try{ paintCardBadges(); refreshInboxBadge(); }catch(_){}   // quiet badges, repainted every render
   }
@@ -7358,14 +7413,16 @@ async function applyDrop(slug, from, to, opts){
    Every card carries a control that lists every legal destination for that card, plus move up
    and move down. Illegal destinations are ABSENT, not disabled: a person should not have to
    read greyed options to work out the rules, and a rule learned that way is learned wrong. */
-/* WO-015 §5.2: the opinion controls. "won", "lost" and "exclude" (drop) assert an
-   outcome no event backs, so they are never offered on the board or in the window.
-   A dead opportunity is archived (Phase E), where the "no" lives with its whole
-   thread intact. "won" is emitted only by the contracts module on a signature,
-   never set by hand. These moves stay in the lifecycle table because migration and
-   the future contracts module still reach them through apply(); they are removed
-   only from what a person can click. Status is read, never asserted (I9). */
-const RETIRED_MOVES = { mark_won:1, mark_lost:1, drop:1 };
+/* An opportunity must have an end it can reach from the card. WO-015 §5.2 held these three
+   outcome moves back from what a person can click, on the reasoning that an outcome should be read
+   rather than asserted and that "won" waits for a contracts module. This brief reverses that: a
+   board where a card can only ever be archived has no terminus, so cards accumulate with no
+   won/lost/no-fit end. Won, Lost and No-fit (drop) are reachable now, each through movePrompt, which
+   already asks Lost for its reason from the list and No-fit for its free text; Won is the outcome
+   itself and asks for none. Each move is still guarded by the lifecycle table (Won only from a card
+   that went out, and so on) and each is UNDOABLE, so a misclick is one tap back. The set stays as an
+   empty map rather than being deleted, so a later decision to gate a specific outcome has one place. */
+const RETIRED_MOVES = {};
 function cardMenuFor(o, lane){
   const out=[];
   ThriveBoard.LANES.forEach(k=>{
@@ -7949,6 +8006,22 @@ function initModal(){
     return out.length? '<div class="mw-notes">'+out.join("")+'</div>' : "";
   }
 
+  /* ---- a reply that arrived after the card was closed ---------------------
+     A closed card does not silently reopen when a reply lands on it: the derivation holds the
+     terminus (effStage returns won/lost/dropped verbatim, before the reply branch). Instead the
+     reply surfaces here, with one-tap reopen. The notice is the confirmation, so the reopen it
+     performs passes confirmed:true rather than raising a second dialog on top of it. */
+  function closedReplyNotice(o){
+    if(!o) return "";
+    var st=effStage(o);
+    var closed=ThriveLifecycle.CLOSED_STAGES.indexOf(st)>=0;
+    if(!closed || !cardHasConversation(o.slug)) return "";
+    return '<div class="mw-reopen" role="status">'+
+      '<span class="mw-reopen-txt">'+esc(t("lc_reopen_notice"))+'</span>'+
+      '<button type="button" class="btn sm" data-reopen="'+esc(o.slug)+'">'+esc(t("lc_reopen"))+'</button>'+
+      '</div>';
+  }
+
   /* ---- the moves bar -----------------------------------------------------
      Only the moves that are legal from where this record actually stands. Illegal ones are
      absent rather than disabled: a person should not have to read greyed options to work out
@@ -8268,7 +8341,7 @@ function initModal(){
     var extra="";
     if(isGroupOpp(o)) extra+=recipientsPanelHtml(o);
     if(o.spawned_from && o.spawned_from.parent) extra+=spawnedFromHtml(o);
-    box.innerHTML=prohibitionBand(o)+recordNotes(o)+
+    box.innerHTML=prohibitionBand(o)+recordNotes(o)+closedReplyNotice(o)+
       '<dl class="mw-rows">'+rows.join("")+'</dl>'+extra+movesBar(o);
     try{ markCardSeen(o.slug); }catch(_){}                 // opening the card clears its badge (local only)
     box.querySelectorAll("[data-ovcopy]").forEach(b=>b.addEventListener("click", async ()=>{
@@ -8280,6 +8353,10 @@ function initModal(){
       else goTo("compose","slug="+encodeURIComponent(slug)); };
     box.querySelectorAll(".rc-open").forEach(b=>b.addEventListener("click", ()=>openCard(b.getAttribute("data-child"))));
     box.querySelectorAll(".open-parent").forEach(b=>b.addEventListener("click", ()=>openCard(b.getAttribute("data-parent"))));
+    // The reply notice reopens on one tap; the notice already said what it does, so it does not ask again.
+    box.querySelectorAll("[data-reopen]").forEach(b=>b.addEventListener("click", async ()=>{
+      await runMove("reopen", b.getAttribute("data-reopen"), { confirmed:true });
+    }));
     bindMoves(box, o);
   }
 
