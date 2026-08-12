@@ -2660,7 +2660,7 @@ async function initDashboard(){
           <span class="fact fact-tmpl">${esc(o.template)||t("none")}</span>
           <span class="fact">${t("col_made")}: ${esc(o.sent_on)||t("none")}</span>
           ${snd.count?`<span class="fact">${t("col_sent")}: ${esc(sentDay)||t("none")}</span>`:""}
-          ${live?`<span class="fact">${snd.count?t("ins_opens")+": "+outreachOpens(o):t("col_views")+": "+opensForSlug(o.slug)}</span>`:""}
+          ${live&&snd.count?`<span class="fact">${t("ins_opens")}: ${outreachOpens(o)}</span>`:""}
           <span class="fact">${t("col_location")}: ${esc(o.location)||t("none")}</span>
         </p>
         <div class="card-foot">
@@ -6487,10 +6487,15 @@ async function initBoard(){
     // digits inside it are isolated, by .n, never the whole line.
     let meta;
     if(tk.lane==="draft") meta=txt("tok_nopage");
-    else if(tk.lane==="live") meta = tk.views>0
-      // Read, but by somebody who was never written to. Real information, and not an open.
-      ? txt("tok_views", tk.views).replace(String(tk.views), num(tk.views))
-      : txt("tok_noemail");
+    else if(tk.lane==="live"){
+      // The invariant: a view is a recipient opening a link WE SENT, so a card can carry a recipient view
+      // only if a delivered send exists. outreachOpens is that derivation (zero until a send, and the
+      // owner's own opens are already excluded by allHits), so raw page traffic on a page nobody was
+      // emailed can never read as a view here. A live card has no send, so this is zero and the card reads
+      // "no email yet", never the impossible "no email yet, one view".
+      const rv=outreachOpens(tk.slug);
+      meta = rv>0 ? txt("tok_views", rv).replace(String(rv), num(rv)) : txt("tok_noemail");
+    }
     else if(tk.lane==="replied") meta=txt("tok_answered");
     else if(tk.opens>0) meta=txt("tok_opens", tk.opens).replace(String(tk.opens), num(tk.opens));
     else meta=txt("tok_idle", tk.age).replace(String(tk.age), num(tk.age));
