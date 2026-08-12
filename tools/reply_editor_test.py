@@ -42,7 +42,9 @@ INIT = r"""
   window.fetch = async (url, opts) => {
     if (typeof url==='string' && url.indexOf('relay.example')>=0) {
       try{ window.__posts.push(JSON.parse(opts.body)); }catch(e){ window.__posts.push({parseError:String(e)}); }
-      return new Response(JSON.stringify({ok:true, id:'sent-1'}), {status:200, headers:{'Content-Type':'application/json'}});
+      // A healthy relay answers with its version, so the hardened send (relaySend) is satisfied it matches
+      // the request shape. Without relay_version the send is correctly refused as behind, which is the fix.
+      return new Response(JSON.stringify({ok:true, id:'sent-1', relay_version:5}), {status:200, headers:{'Content-Type':'application/json'}});
     }
     if (typeof url==='string' && url.indexOf('supabase.co')>=0) return new Response('[]',{status:200});
     return real?real(url,opts):new Response('',{status:200});
