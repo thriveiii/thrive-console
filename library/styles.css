@@ -1201,17 +1201,28 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .tray-chev{ width:10px; height:10px; flex:0 0 10px; opacity:.6 }
 .tray-body{ padding-top:var(--s-3) }
 .tray-list{ display:flex; flex-wrap:wrap; gap:var(--s-2) }
+/* A tray item is a real control now: a closed card opens its window from here, so a finished
+   opportunity stays retrievable rather than being a dead label. It keeps the same quiet chip look. */
 .tray-item{
+  display:inline-flex; align-items:center; gap:6px;
+  background:transparent; cursor:pointer; font:inherit;
   border:1px solid var(--hair); border-radius:var(--r-sm);
   padding:6px 11px; font-size:var(--fs-xs); color:var(--ink-4);
   font-weight:var(--w-strong);
 }
+.tray-item:hover{ border-color:var(--purple); color:var(--ink) }
+.tray-item:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
 .tray-item.won{ color:var(--state-good); border-color:rgba(126,224,184,.30) }
 .tray-item.lost{ color:var(--ink-4) }
+.tray-item.dropped{ color:var(--ink-4) }
 /* A bounced or failed delivery wears the warning rose, so a non-delivery reads as one, never as a
    quiet Sent. Placement (this tray, a lane, or a card chip) is raised in the PR as a product-voice call. */
 .tray-item.bounced{ color:var(--state-bad); border-color:rgba(238,140,157,.34) }
 .tray-item.failed{ color:var(--state-stall); border-color:rgba(246,207,91,.34) }
+/* A reply that arrived after the card closed: a quiet green dot on the tray item, so it surfaces on
+   the board without reopening the card. The card's window carries the one-tap reopen. */
+.tray-item.has-reply{ border-color:rgba(126,224,184,.45) }
+.tray-dot{ width:7px; height:7px; border-radius:50%; background:var(--state-good); flex:0 0 auto }
 
 
 /* --- the lifecycle: moves, notes, and the standing prohibition -------------
@@ -1244,6 +1255,16 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 }
 .mw-note-row b{ color:var(--ink-2) }
 .mw-warn-line{ margin:var(--s-2) 0 0; font-size:var(--fs-xs); color:var(--state-stall) }
+
+/* A reply that landed on a closed card, surfaced in its window with a one-tap reopen. It reads as
+   a live note (the good green) rather than an error, because a reply is good news. */
+.mw-reopen{
+  display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap;
+  margin-block-end:var(--s-4); padding:var(--s-2) var(--s-3);
+  border:1px solid rgba(126,224,184,.34); border-radius:var(--r-sm);
+  background:rgba(126,224,184,.06);
+}
+.mw-reopen-txt{ flex:1 1 auto; min-width:0; font-size:var(--fs-xs); color:var(--ink-2) }
 
 /* Only the legal moves, and they are buttons rather than a menu of greyed rules. */
 .mw-moves{ display:flex; flex-wrap:wrap; gap:var(--s-2) }

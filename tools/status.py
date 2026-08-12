@@ -96,19 +96,22 @@ with sync_playwright() as p:
     ck("won-co reads as won with NO backing event (flagged for reconciliation)",
        won_cs["status"] == "won" and won_cs["event"] == "", won_cs)
 
-    # ---- no opinion control on any card, both languages, on the rendered screen ----
+    # ---- every card can reach its terminus, both languages, on the rendered screen ----
+    # The lifecycle-legacy brief ("every card has an end") reverses WO-015 §5.2 / invariant I9: the
+    # outcomes Won/Lost/No-fit are reachable from the card now, each with its reason, so a board is not a
+    # place where work only ever accumulates. This asserts the terminus IS offered where legal.
     for lang in ("en", "ar"):
         pg.evaluate("l=>localStorage.setItem('thrive_lang',l)", lang); pg.reload(); pg.wait_for_timeout(1600); unlock(pg)
         pg.evaluate("x=>location.hash='#board'"); pg.wait_for_timeout(900)
-        seen = menu_labels_for_all_cards(pg)
-        bad = [(s, l) for (s, labels) in seen for l in labels if l in LABELS[lang]]
-        ck("no card menu offers won, lost or exclude (%s), across %d cards" % (lang, len(seen)), not bad, bad)
-        # data level: cardMenuFor never returns a retired move, any lane
-        retired = pg.evaluate("""()=>{ const bad=[]; const opps=getDrafts();
-          opps.forEach(o=>{ ['draft','ready','sent','opened','replied'].forEach(lane=>{
-            try{ cardMenuFor(o,lane).forEach(it=>{ if(it.move==='mark_won'||it.move==='mark_lost'||it.move==='drop') bad.push(o.slug+':'+it.move); }); }catch(e){} }); });
-          return bad; }""")
-        ck("cardMenuFor returns no retired move in any lane (%s)" % lang, not retired, retired)
+        # data level: a card that went out offers its outcomes; a fresh draft does not (still guarded).
+        reach = pg.evaluate("""()=>{
+          const sent=cardMenuFor({slug:'__s',stage:'sent',published:true},'sent').map(it=>it.move);
+          const draft=cardMenuFor({slug:'__d',stage:'',published:false},'draft').map(it=>it.move);
+          return { sent, draft }; }""")
+        ck("cardMenuFor offers the terminus on a card that went out (%s)" % lang,
+           all(m in reach["sent"] for m in ("mark_won", "mark_lost", "drop")), reach)
+        ck("a fresh draft is not offered Won (the outcome is still guarded) (%s)" % lang,
+           "mark_won" not in reach["draft"], reach)
 
     ctx.close(); b.close()
 

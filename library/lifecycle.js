@@ -83,7 +83,7 @@
     restore:         { from: ["dropped", "lost"],                to: "@prev" },
     archive:         { from: "*",                                to: "@flag" },
     unarchive:       { from: "@archived",                        to: "@prev" },
-    reopen:          { from: ["won", "lost"],                    to: "replied" },
+    reopen:          { from: ["won", "lost", "dropped"],         to: "replied" },
     retire_page:     { from: "*",                                to: "@same" }
   };
 
@@ -279,6 +279,7 @@
     if (move === "reopen") {
       setStage("replied");
       patch.lost_reason = ""; undo.lost_reason = o.lost_reason || "";
+      patch.drop_reason = ""; undo.drop_reason = o.drop_reason || "";
       patch.prev_stage = ""; undo.prev_stage = o.prev_stage || "";
     }
     if (move === "retire_page") {
@@ -388,6 +389,14 @@
     var won = { slug: "c", stage: "won", __st: "won" };
     if (apply("reopen", won, {}, ctx).error !== "lc_err_confirm") f.push("reopen needs confirmation");
     if (!apply("reopen", won, { confirmed: true }, ctx).ok) f.push("a confirmed reopen must work");
+
+    /* a reply can reopen a dropped card too, and it clears the drop reason it leaves behind */
+    var droppedCard = { slug: "c2", stage: "dropped", drop_reason: "he sells food", __st: "dropped" };
+    if (!can("reopen", droppedCard, ctx)) f.push("a dropped card must offer reopen");
+    var reDrop = apply("reopen", droppedCard, { confirmed: true }, ctx);
+    if (!reDrop.ok) f.push("a confirmed reopen of a dropped card must work, got " + reDrop.error);
+    if (reDrop.patch.stage !== "replied") f.push("reopen moves a dropped card to replied");
+    if (reDrop.patch.drop_reason !== "") f.push("reopen clears the drop reason");
 
     /* convert binds an offer, needs its text, and happens once */
     var replied = { slug: "r", __st: "replied" };
