@@ -1092,6 +1092,20 @@ window.onGateUnlocked= function(){ fireThrive("unlock"); renderOperatorChip(); }
 // language on change. (Defined earlier as hoisted functions; only the registration must follow __hooks.)
 onThrive("unlock","opprefs", function(){ opPrefsLoad(); });
 onThrive("lang","opprefs", function(){ try{ opPrefRemember("lang", getLang()); }catch(_){} });
+// Signing in lands on the LIVE board with no manual refresh. A signed-out boot hydrate leaves the read
+// layer degraded and authRequired (a signed-out empty read is indistinguishable from an RLS denial), and
+// that flag makes supaEnsureHydrated bail, so without this the board would keep showing the sign-in prompt
+// until a manual refresh rebuilt the read state. On sign-in we clear that stale state and hydrate against
+// the operator's session, then the board refreshes onto the live cards when the hydrate lands.
+onThrive("unlock","supahydrate", function(){
+  try{
+    if(supaOn() && supaReadFlagOn() && supaSignedIn()){
+      __supa.degraded=false; __supa.authRequired=false; __supa.hydrated=false; __supaHydrating=false;
+      supaEnsureHydrated();   // fires supaHydrate and refreshes the board when it resolves
+    }
+  }catch(e){}
+  try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(e){}   // paint now (local cards), no prompt
+});
 
 /* The header carries the signed-in operator email and a one-tap sign-out, and nothing else about who they
    are: no role, no title, every operator equal. Sign-out returns to the operator sign-in step (gate two),
@@ -6674,7 +6688,10 @@ async function initBoard(){
     // to sign in, not an empty board. The prompt replaces the whole board so a locked store never reads
     // as data loss, even when this device was cleared and has nothing to fall back to. A degrade (relay
     // or network) is not this: it keeps falling back to the device, so authRequired is the only trigger.
-    const authReq = supaReadStatus().authRequired;
+    // The prompt is only ever the SIGNED-OUT state (#84): once an operator is signed in it is never shown,
+    // even in the brief window before the sign-in hydrate resolves a stale authRequired. A signed-in
+    // operator lands on the board (local cards until the hydrate lands, then the live board), never here.
+    const authReq = supaReadStatus().authRequired && !supaSignedIn();
     if(authReq){
       // The header band must not say "a quiet board" over a locked store. It names the state instead.
       el("boardVerdict").innerHTML='<span class="vtext">'+esc(t("board_auth_h"))+'</span>';
