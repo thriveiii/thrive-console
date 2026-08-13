@@ -343,7 +343,10 @@
     // graduated drops are enforced here so the session state always matches the step that is shown, and
     // the two gates can never disagree. Never a blank board (#84): a target is always chosen.
     var target = gateTarget();
-    if (target === "board") { reveal(); return; }
+    // A returning operator (session still live) skips both steps. Reveal AND signal the unlock, the same
+    // as a fresh sign-in: without the signal the board renders from the local store and the live Supabase
+    // hydrate never fires on a presence return, so the operator lands on stale cards until a manual refresh.
+    if (target === "board") { finish(); return; }
     if (target === "passcode") { try { sessionStorage.removeItem(KEY); } catch (e) {} clearOperatorSession(); }
     else if (!operatorPresent()) { clearOperatorSession(); }   // lobby via a 30 to 45 minute idle drop
     document.documentElement.classList.add("gate-locked");

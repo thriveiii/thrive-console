@@ -2408,8 +2408,12 @@ function supaReadDegraded(){ return supaReadFlagOn() && supaOn() && __supa.degra
 function supaSignedIn(){ try{ return !!(window.ThriveSupa && window.ThriveSupa.signedIn && window.ThriveSupa.signedIn()); }catch(e){ return false; } }
 function supaReadStatus(){
   // authRequired is a Supabase-read concern only: it is reported true only while reads are switched to
-  // Supabase and it is configured, so a device-only board never shows a sign-in prompt.
-  var authReq = __supa.authRequired && supaReadFlagOn() && supaOn();
+  // Supabase and it is configured, so a device-only board never shows a sign-in prompt. And it is a pure
+  // function of "no session": the source ANDs in !supaSignedIn() so the locked hero can never be reported
+  // while an operator is signed in, whatever the ordering of the sign-in hydrate. This is the one place the
+  // signed-in state decides the prompt, so a stale authRequired left over from a signed-out read (set before
+  // the sign-in resolved, or by an in-flight signed-out hydrate that lands after it) can never surface here.
+  var authReq = __supa.authRequired && supaReadFlagOn() && supaOn() && !supaSignedIn();
   return { flag:supaReadFlagOn(), configured:supaOn(), hydrated:__supa.hydrated, degraded:__supa.degraded,
     authRequired:authReq, signedIn:supaSignedIn(),
     count:(__supa.opps? __supa.opps.length : 0),
@@ -2463,7 +2467,9 @@ async function supaHydrate(){
   }catch(e){
     // A denial the operator can fix by signing in (a 401/403 once the anon door is closed) is marked
     // apart from a network degrade, so the read layer prompts an honest sign-in and never a blank board.
-    __supa.authRequired = !!(e && e.authRequired);
+    // Never while signed in: a 401/403 seen by a signed-in operator is a token or network fault to degrade
+    // over, not a sign-in prompt, so the flag stays a pure function of "no session" at every assignment.
+    __supa.authRequired = !!(e && e.authRequired) && !supaSignedIn();
     __supa.degraded=true; __supa.hydrated=false; __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null;
     supaRecordDiverge("read", "hydrate", e&&e.message);
     try{ logActivity(__supa.authRequired ? "supa_auth_required" : "supa_read_degraded", "", String((e&&e.message)||"").slice(0,120)); }catch(_){}
@@ -6680,6 +6686,35 @@ async function initBoard(){
     }
   }
 
+  /* The warm arrival. The board is "live" once the lanes are actually shown (not the signed-out prompt,
+     not the empty state). The first render that reaches that state - a cold open resolving, a sign-in
+     landing, the hydrate returning the live board - plays the settle ONCE: the lanes come from a soft blur
+     into focus and the count chips tick up to their values over the same half-second. A later poll or badge
+     repaint does not replay it (boardLive stays true); a sign-out (back to the prompt) re-arms it. Opacity
+     and filter only, and under reduced motion the settle is skipped and the numbers land at their value. */
+  let boardLive=false;
+  function reducedMotion(){ try{ return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); }catch(e){ return false; } }
+  function countUp(node, target){
+    var to=parseInt(String(target).replace(/[^0-9-]/g,""),10); if(!isFinite(to)) return;
+    if(reducedMotion() || to<=0){ node.textContent=String(to); return; }
+    var dur=520, t0=null;
+    node.textContent="0";
+    function step(ts){ if(t0==null) t0=ts; var p=Math.min(1,(ts-t0)/dur);
+      var e=1-Math.pow(1-p,3);                 // ease-out: it eases to rest, never a linear crawl
+      node.textContent=String(Math.round(to*e));
+      if(p<1){ requestAnimationFrame(step); } else { node.textContent=String(to); }
+    }
+    requestAnimationFrame(step);
+  }
+  function playBoardArrival(){
+    var lanes=document.getElementById("boardLanes");
+    if(lanes && !reducedMotion()){ lanes.classList.remove("board-settle"); void lanes.offsetWidth; lanes.classList.add("board-settle"); }
+    // The count chips: the pipeline stage figures and the summary chip figures both count up to their value.
+    document.querySelectorAll("#boardPipeline .pl-n, #boardChips [data-chip] b").forEach(function(n){
+      countUp(n, (n.textContent||"").trim());
+    });
+  }
+
   function syncPill(){
     const p=el("boardSync"); if(!p) return;
     const last=syncLast();
@@ -6903,7 +6938,9 @@ async function initBoard(){
     // The prompt is only ever the SIGNED-OUT state (#84): once an operator is signed in it is never shown,
     // even in the brief window before the sign-in hydrate resolves a stale authRequired. A signed-in
     // operator lands on the board (local cards until the hydrate lands, then the live board), never here.
-    const authReq = supaReadStatus().authRequired && !supaSignedIn();
+    // authRequired is now session-aware at its source (supaReadStatus ANDs in !supaSignedIn()), so the board
+    // reads the one signal instead of re-deciding the session here: one signed-in state machine, one prompt.
+    const authReq = supaReadStatus().authRequired;
     if(authReq){
       // The header band must not say "a quiet board" over a locked store. It names the state instead.
       el("boardVerdict").innerHTML='<span class="vtext">'+esc(t("board_auth_h"))+'</span>';
@@ -6918,6 +6955,13 @@ async function initBoard(){
     if(el("boardPipeline")) el("boardPipeline").hidden=empty||authReq;   // all zeros is noise on an empty board
     el("boardChips").hidden=empty||authReq;
     el("boardTray").hidden=empty||authReq;
+
+    // The warm arrival fires the first time the real board is on screen (lanes shown, not the prompt and
+    // not the empty state), and once per arrival only: a signed-in operator lands on a board that settles
+    // into focus and counts up, never a dead gap. Re-arms if the board later returns to the prompt.
+    const boardShown = !authReq && !empty;
+    if(boardShown && !boardLive){ try{ playBoardArrival(); }catch(_){} }
+    boardLive = boardShown;
 
     // A token opens the whole opportunity: what it is, its text, its page, its outreach, and
     // what has happened to it.

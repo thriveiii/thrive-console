@@ -35,8 +35,12 @@ def ck(n, c, d=None):
 
 # Source guard: the fix is in the code, not only the harness.
 app = open(f"{ROOT}/library/app.js").read()
-ck("the auth prompt is gated on being signed OUT (#84 only)",
-   "supaReadStatus().authRequired && !supaSignedIn()" in app)
+# The session guard now lives at the SOURCE (supaReadStatus), so authRequired is a pure function of "no
+# session": it can never be reported true while signed in, whatever the ordering of the sign-in hydrate.
+# The board reads that one signal instead of re-deciding the session at the render site.
+ck("the auth prompt is gated on being signed OUT (#84 only), at the source",
+   "__supa.authRequired && supaReadFlagOn() && supaOn() && !supaSignedIn()" in app
+   and "const authReq = supaReadStatus().authRequired;" in app)
 ck("sign-in (unlock) clears the stale read state and hydrates",
    'onThrive("unlock","supahydrate"' in app and "supaEnsureHydrated()" in app
    and "__supa.authRequired=false; __supa.hydrated=false" in app)
