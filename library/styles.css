@@ -1421,9 +1421,22 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .rc-name{ font-weight:600; flex:1 1 8rem; min-width:0 }
 .rc-addr{ flex:1 1 10rem; min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--ink-4); font-size:var(--fs-micro) }
 .rc-last{ font-size:var(--fs-micro); color:var(--ink-4) }
-.rc-chip{ font-size:var(--fs-micro); padding:.1em .5em; border-radius:999px; background:var(--bg-3, #eee); color:var(--ink-2) }
-.rc-chip.rc-replied{ background:#e8f2ea; color:#2c6b45 }
-.rc-chip.rc-bounced{ background:#f6e6e6; color:#a23b3b }
+/* One status chip, one state logic. Every status chip - the recipient list, and anywhere else a recipient
+   state is shown - wears a muted Thrive tone, colored by the SAME lane the board already speaks, so a
+   state's colour means the same thing everywhere: Sent the Sent lane's violet, Opened the Opened rose,
+   Replied the Replied green, a bounce a muted warning rose (calm, not alarming), and pending a quiet
+   neutral surface. Dark low-alpha fills with toned text, never a solid or a white pill; AA-readable on the
+   near-black surface. Geometry (padding, radius, height) lives here once and is reused, never per-surface. */
+.chip-st{ display:inline-block; white-space:nowrap;
+  font-size:var(--fs-micro); font-weight:var(--w-head); line-height:1.5;
+  padding:.15em .6em; border-radius:var(--r-pill);
+  background:rgba(255,255,255,.06); color:var(--ink-3);   /* pending / not sent: a quiet neutral surface */
+  border:1px solid transparent; }
+.chip-st.is-sent{    background:var(--lane-sent-t);    color:var(--lane-sent) }     /* Sent lane violet */
+.chip-st.is-opened{  background:var(--lane-opened-t);  color:var(--lane-opened) }   /* Opened lane rose */
+.chip-st.is-replied{ background:var(--lane-replied-t); color:var(--lane-replied) }  /* Replied lane green */
+.chip-st.is-bounced{ background:var(--ops-rose-fill);  color:var(--ops-rose); border-color:var(--ops-rose-bd) }  /* muted warning */
+[dir="rtl"] .chip-st{ letter-spacing:normal }           /* Arabic never carries letter-spacing */
 /* Group-send pre-send review. */
 .gr-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--s-2) }
 .gr-row{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) }

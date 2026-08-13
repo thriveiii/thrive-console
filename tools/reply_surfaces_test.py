@@ -90,8 +90,8 @@ with sync_playwright() as p:
     # ---- recipients panel renders name, email, chip, last; header shows campaignStats aggregate ----
     panel = pg.evaluate("""()=>{ const html=window.recipientsPanelHtml(window.getDraft('thrive-july'));
       const d=document.createElement('div'); d.innerHTML=html;
-      return { rows:d.querySelectorAll('.rc-row').length, chips:d.querySelectorAll('.rc-chip').length,
-               agg:!!d.querySelector('.cg-agg'), replied:!!d.querySelector('.rc-replied'),
+      return { rows:d.querySelectorAll('.rc-row').length, chips:d.querySelectorAll('.chip-st').length,
+               agg:!!d.querySelector('.cg-agg'), replied:!!d.querySelector('.chip-st.is-replied'),
                addr:!!d.querySelector('.rc-addr'), openChild:!!d.querySelector('.rc-open') }; }""")
     ck("recipients panel renders a row per recipient with chip, email, and the aggregate",
        panel["rows"]==3 and panel["chips"]==3 and panel["agg"] and panel["addr"], panel)
