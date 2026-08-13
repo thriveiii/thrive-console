@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="6edace13">
+<meta name="thrive-build" content="2669aacf">
 <title>Thrive Console</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <script>(function(){var d=document.documentElement;
@@ -23,7 +23,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=9357a21c05">
+<link rel="stylesheet" href="styles.css?v=0e64d525df">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -853,31 +853,33 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <button class="modal-tab"    role="tab" aria-selected="false" data-tab="page"     data-icon="page" data-i18n="mw_page">Page</button>
     <button class="modal-tab"    role="tab" aria-selected="false" data-tab="outreach" data-icon="send" data-i18n="mw_outreach">Outreach</button>
     <button class="modal-tab"    role="tab" aria-selected="false" data-tab="history"  data-icon="clock" data-i18n="mw_history">History</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="discussion" data-icon="channel" data-i18n="mw_discussion">Discussion</button>
   </nav>
   <div class="modal-body" id="modalBody">
     <div class="modal-panel" id="modalOverview"></div>
     <div class="modal-panel" id="modalText" hidden></div>
     <div class="modal-panel" id="modalOutreach" hidden></div>
     <div class="modal-panel" id="modalHistory" hidden></div>
+    <div class="modal-panel" id="modalDiscussion" hidden></div>
     <div class="modal-host" id="modalHost"></div>
   </div>
 </div>
 
 <script src="config.js?v=806f4221bf"></script>
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=87019db1fe"></script>
+<script src="i18n.js?v=a859f1069b"></script>
 <script src="gate.js?v=fec6036cc5"></script>
 <script src="stage-model.js?v=f89936985f"></script>
 <script src="lifecycle.js?v=df368247ea"></script>
 <script src="intake.js?v=946abe743b"></script>
-<script src="supabase.js?v=d22135dedb"></script>
+<script src="supabase.js?v=5333665ab5"></script>
 <script src="numbers.js?v=2fa1ded9ee"></script>
 <script src="inbound.js?v=54868a3081"></script>
 <script src="kinds.js?v=6ab99c4e8b"></script>
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=1e9862e144"></script>
+<script src="app.js?v=475d63b5bd"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

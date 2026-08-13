@@ -161,12 +161,14 @@ const MODAL = `
     <button class="modal-tab"    role="tab" aria-selected="false" data-tab="page"     data-icon="page" data-i18n="mw_page">Page</button>
     <button class="modal-tab"    role="tab" aria-selected="false" data-tab="outreach" data-icon="send" data-i18n="mw_outreach">Outreach</button>
     <button class="modal-tab"    role="tab" aria-selected="false" data-tab="history"  data-icon="clock" data-i18n="mw_history">History</button>
+    <button class="modal-tab"    role="tab" aria-selected="false" data-tab="discussion" data-icon="channel" data-i18n="mw_discussion">Discussion</button>
   </nav>
   <div class="modal-body" id="modalBody">
     <div class="modal-panel" id="modalOverview"></div>
     <div class="modal-panel" id="modalText" hidden></div>
     <div class="modal-panel" id="modalOutreach" hidden></div>
     <div class="modal-panel" id="modalHistory" hidden></div>
+    <div class="modal-panel" id="modalDiscussion" hidden></div>
     <div class="modal-host" id="modalHost"></div>
   </div>
 </div>`;

@@ -306,9 +306,9 @@ def gate3(b):
                  const h=document.querySelector('.modal-head'), t=document.getElementById('modalTabs');
                  const sc=e=>getComputedStyle(e).overflowY;
                  return sc(b)==='auto' && sc(h)!=='auto' && sc(t)!=='auto';}"""))
-        ck("all five tabs are present",
+        ck("all six tabs are present",
            pg.eval_on_selector_all("#modalTabs .modal-tab", "e=>e.map(x=>x.dataset.tab).join(',')")
-           == "overview,text,page,outreach,history")
+           == "overview,text,page,outreach,history,discussion")
         pg.click("#modalTabs [data-tab='text']")
         pg.wait_for_timeout(700)
         # Scoped to the empty state, which is what the rule is about: one icon, one sentence,

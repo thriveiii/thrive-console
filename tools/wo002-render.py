@@ -101,8 +101,9 @@ with sync_playwright() as p:
                 ck(f"{tag}: it sits on the bottom edge", geo["bottom"] <= 1, geo["bottom"])
                 ck(f"{tag}: it is a full height sheet", geo["height"] >= geo["vh"] * 0.9,
                    (geo["height"], geo["vh"]))
-                ck(f"{tag}: the sheet keeps the same five tabs",
-                   pg.eval_on_selector_all("#modalTabs .modal-tab", "e=>e.length") == 5)
+                # Overview, Text, Page, Outreach, History, and the open team Discussion.
+                ck(f"{tag}: the sheet keeps the same six tabs",
+                   pg.eval_on_selector_all("#modalTabs .modal-tab", "e=>e.length") == 6)
 
             ck(f"{tag}: nothing overflows its own container", pg.evaluate(
                 """()=>{const m=document.getElementById('modal');
