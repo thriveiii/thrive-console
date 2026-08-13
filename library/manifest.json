@@ -110,6 +110,15 @@
       "location": "Falls Church, VA",
       "phone": "",
       "status": "sent"
+    },
+    {
+      "slug": "the-rosy-posy",
+      "business": "The Rosy Posy",
+      "template": "custom",
+      "sent_on": "2026-08-13",
+      "location": "Nokesville, VA",
+      "phone": "",
+      "status": "sent"
     }
   ]
 }
