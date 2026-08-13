@@ -8375,17 +8375,50 @@ function initModal(){
      Only the moves that are legal from where this record actually stands. Illegal ones are
      absent rather than disabled: a person should not have to read greyed options to work out
      the rules, and a rule you learn by reading disabled controls is a rule you learn wrong. */
+  /* The terminal outcomes are the Closed states plus retire-page; they read as ONE designed control.
+     Everything else that is legal (convert, and the recover/advance moves) is a promotion, never a
+     sibling of the closing set, so it sits apart and above. This is presentation only: every choice keeps
+     its data-move and still routes through bindMoves -> movePrompt -> runMove, so the lifecycle logic from
+     the terminus PR is unchanged. */
+  const CLOSE_MOVES=["mark_won","mark_lost","drop","archive","retire_page"];
+  /* Minimal inline SVGs, drawn in-repo in the icon set's language (24 box, 1.6 stroke, round, currentColor),
+     one per terminal outcome. Inline rather than through the sprite so the symbol set stays fixed, and each
+     carries explicit width and height. */
+  function ocIcon(m){
+    const A='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
+    const Z='</svg>';
+    if(m==="mark_won")    return A+'<circle cx="12" cy="12" r="9"/><path d="M8.4 12.4l2.6 2.6 4.6-5.6"/>'+Z;      // a check in a ring
+    if(m==="mark_lost")   return A+'<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>'+Z;             // a cross in a ring
+    if(m==="drop")        return A+'<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>'+Z;                        // a minus in a ring
+    if(m==="archive")     return A+'<rect x="4" y="5" width="16" height="4" rx="1"/><path d="M5.5 9v9a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/>'+Z;   // an archive box
+    if(m==="retire_page") return A+'<path d="M14 3H8a2 2 0 0 0-2 2v9"/><path d="M14 3v5h5"/><path d="M6 20L20 6"/>'+Z;   // a page, struck through
+    return "";
+  }
   function movesBar(o){
     if(!o) return "";
-    /* §5.2: the opinion moves are never offered in the window either. Archive is
-       how a "no" is recorded; won waits for the contracts module. */
-    const moves=ThriveLifecycle.movesFor(o).filter(m=> m!=="send_email" && m!=="send_offchannel" && !RETIRED_MOVES[m]);
-    if(!moves.length) return "";
-    const primary={ publish:1, record_reply:1, restore:1, unarchive:1 };
-    return '<section class="mw-sec"><h4 class="mw-h">'+esc(t("lc_h"))+'</h4>'+
-      '<div class="mw-moves">'+moves.map(m=>
+    const legal=ThriveLifecycle.movesFor(o).filter(m=> m!=="send_email" && m!=="send_offchannel" && !RETIRED_MOVES[m]);
+    if(!legal.length) return "";
+    const closeMoves=CLOSE_MOVES.filter(m=> legal.indexOf(m)>=0);
+    const advance=legal.filter(m=> CLOSE_MOVES.indexOf(m)<0);   // convert, publish, record_reply, restore, unarchive, reopen
+    const primary={ convert:1, publish:1, record_reply:1, restore:1, unarchive:1, reopen:1 };
+    let html='<div class="mw-outcome">';
+    // Promotion / recover: primary-styled, above, apart from the closing set.
+    if(advance.length){
+      html+='<div class="mw-advance">'+advance.map(m=>
         '<button type="button" class="btn '+(primary[m]?"":"ghost ")+'sm" data-move="'+esc(m)+'">'+
-        esc(t("lc_"+m))+'</button>').join("")+'</div></section>';
+        esc(t("lc_"+m))+'</button>').join("")+'</div>';
+    }
+    // The one outcome control: a labeled section, each terminal choice icon-led with a one-line description.
+    if(closeMoves.length){
+      html+='<section class="mw-sec mw-close"><h4 class="mw-h">'+esc(t("lc_close_h"))+'</h4>'+
+        '<div class="close-set">'+closeMoves.map(m=>
+          '<button type="button" class="close-opt close-'+esc(m)+'" data-move="'+esc(m)+'">'+
+            '<span class="close-ic" aria-hidden="true">'+ocIcon(m)+'</span>'+
+            '<span class="close-txt"><span class="close-label">'+esc(t("lc_"+m))+'</span>'+
+            '<span class="close-desc">'+esc(t("lc_"+m+"_d"))+'</span></span>'+
+          '</button>').join("")+'</div></section>';
+    }
+    return html+'</div>';
   }
 
   /* Each guarded move asks for exactly what its guard requires, and nothing else. The prompts

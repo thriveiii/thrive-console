@@ -1307,6 +1307,27 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 /* Only the legal moves, and they are buttons rather than a menu of greyed rules. */
 .mw-moves{ display:flex; flex-wrap:wrap; gap:var(--s-2) }
 
+/* One outcome control. The terminal choices (Won, Lost, No-fit, Archived, page-gone) read as one designed
+   set: icon-led rows, one height, one gap, each with a quiet one-line description of its value in the flow.
+   The promotion (convert) and the recover moves sit apart and above, so closing and advancing never read as
+   siblings. One gap token throughout keeps the campaign chip above from being crowded. RTL mirrors for free:
+   logical properties and text-align:start, and the icon leads in the reading direction. */
+.mw-outcome{ margin-block-start:var(--s-4); display:flex; flex-direction:column; gap:var(--s-4) }
+.mw-advance{ display:flex; flex-wrap:wrap; gap:var(--s-2) }
+.mw-close .mw-h{ margin-block-end:var(--s-3) }
+.close-set{ display:grid; gap:var(--s-2) }
+.close-opt{ display:flex; align-items:flex-start; gap:var(--s-3); inline-size:100%; text-align:start;
+  padding:12px 14px; border:1px solid var(--hair); border-radius:12px; background:var(--panel);
+  color:var(--ink); cursor:pointer; font-family:inherit; transition:border-color var(--t-quick) var(--ease) }
+.close-opt:hover{ border-color:var(--purple); background:var(--panel-2,rgba(255,255,255,.02)) }
+.close-opt:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
+.close-ic{ flex:0 0 auto; display:inline-flex; margin-block-start:1px; color:var(--ink-3) }
+.close-won .close-ic{ color:#7ee0b8 }
+.close-mark_lost .close-ic{ color:var(--ops-rose) }
+.close-txt{ display:flex; flex-direction:column; gap:2px; min-inline-size:0 }
+.close-label{ font-weight:700; font-size:14px; color:var(--ink) }
+.close-desc{ font-size:12.5px; color:var(--ink-4); line-height:1.5; overflow-wrap:anywhere }
+
 /* --- the off channel send, three numbered steps --------------------------- */
 
 .oc-step .mw-h{ gap:var(--s-2) }
@@ -1332,7 +1353,7 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .mw-more .field{ margin-block-start:var(--s-3) }
 
 @media (pointer:coarse){
-  .mw-moves .btn,.oc-body,.toast-act{ min-height:44px }
+  .mw-moves .btn,.mw-advance .btn,.close-opt,.oc-body,.toast-act{ min-height:44px }
 }
 
 
