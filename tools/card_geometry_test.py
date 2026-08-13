@@ -39,7 +39,10 @@ SEED = """
     {slug:'short',business:'Acme',published:true,stage:'sent',recipients:[{addr:'c@x.ex'}]} ]);
   set('thrive_mail_v1',[{mid:'m1',opp:'asfa',to:'a@x.ex',subject:'H',status:'sent',direction:'out',ts:'2026-08-01T10:00:00Z'},
     {mid:'m2',opp:'madar',to:'b@x.ex',subject:'H',status:'sent',direction:'out',ts:'2026-08-01T10:00:00Z'},
-    {mid:'m3',opp:'short',to:'c@x.ex',subject:'H',status:'sent',direction:'out',ts:'2026-08-01T10:00:00Z'}]); })()
+    {mid:'m3',opp:'short',to:'c@x.ex',subject:'H',status:'sent',direction:'out',ts:'2026-08-01T10:00:00Z'}]);
+  // A lane is derived from the send RECORD, never from a bare stage:'sent'. These three cards each carry a
+  // real delivered mail row, so the send cache must be invalidated to see the freshly seeded ledger.
+  try{ window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits(); }catch(e){} })()
 """
 
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)

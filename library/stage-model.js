@@ -123,8 +123,10 @@
         if (ts > last) last = ts;
       }
     }
-    if (!count && o && o.stage === "sent")
-      return { count: 1, first: o.sent_on || "", last: o.sent_on || "", declared: true };
+    // INVARIANT I2: a lane is never assigned by anything softer than evidence (the law this file states
+    // below). A bare stage==="sent" with no ledger row is NOT a send; the phantom-send fallback that
+    // fabricated one here is removed, so an activated-but-unsent, legacy, or corrupt record can never
+    // derive to the Sent lane. laneOf then files it as a live page (Ready) or a draft.
     return { count: count, first: first, last: last };
   }
 

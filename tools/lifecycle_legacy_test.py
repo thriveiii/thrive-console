@@ -8,7 +8,9 @@ Two joined defects from the device pass, proven fixed here:
      chokepoint every screen reads through, mergedOpps) maps a legacy status to the stage the
      derivation honors, and defaults an absent roster, without ever writing back: the board, the
      window and the library all read the normalized view, but the stored row is untouched (the
-     persist is the additive SQL Thyab runs).
+     persist is the additive SQL Thyab runs). A lane is derived from the send RECORD, never from the
+     bare stamp, so a genuinely sent legacy card earns Sent through its real delivered send record; a
+     never-sent card carrying only a phantom status:'sent' reads Ready, which is the intake-integrity law.
 
   2. The terminus. A closed card (won/lost/dropped/bounced/failed) lived in the tray as a plain
      <span> with no handler: unresponsive, unreadable, with no way back to it, and a dropped card was
@@ -76,6 +78,10 @@ OPPS = [
 ]
 # A reply that arrived on the won-reply card AFTER it was closed.
 INBOUND = [{"id":"g1","opp":"won-reply","kind":"","from":"a@x.com","ts":"2026-07-20T10:00:00Z","snippet":"still interested"}]
+# A genuinely sent legacy card carries a real delivered send record (its evidence). A lane is derived from
+# the send RECORD, never from a bare stage:'sent', so the sent-legacy card lands in Sent because it truly
+# went out, not because a legacy stamp says so.
+MAIL = [{"mid":"lm1","opp":"sent-legacy","to":"a@x.com","subject":"H","status":"sent","direction":"out","ts":"2026-05-01T10:00:00Z"}]
 # An old message template with no type, no name, no up: it must still list and render.
 OLDTPL = [{"id":"legacy-tpl","locale":"EN","subject":"Hi {{BIZ}}","html":"Hello {{NAME}}"}]
 
@@ -86,11 +92,13 @@ def boot(pg, lang="en"):
     pg.evaluate("""(a)=>{ localStorage.setItem('thrive_lang',a.lang);
         localStorage.setItem('thrive_opps_v1',JSON.stringify(a.opps));
         localStorage.setItem('thrive_inbound_v1',JSON.stringify(a.inbound));
+        localStorage.setItem('thrive_mail_v1',JSON.stringify(a.mail));
         localStorage.setItem('thrive_email_templates_v1',JSON.stringify(a.tpl)); }""",
-        {"lang":lang,"opps":OPPS,"inbound":INBOUND,"tpl":OLDTPL})
+        {"lang":lang,"opps":OPPS,"inbound":INBOUND,"mail":MAIL,"tpl":OLDTPL})
     pg.reload()
     pg.wait_for_function("()=>typeof window.thriveBoardRefresh==='function'", timeout=15000)
     pg.evaluate("()=>{document.documentElement.classList.remove('gate-locked');const g=document.getElementById('thriveGate');if(g)g.remove();}")
+    pg.evaluate("()=>{ try{ window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits(); }catch(e){} }")
     pg.evaluate("()=>location.hash='board'"); pg.wait_for_timeout(500)
     pg.evaluate("()=>window.thriveBoardRefresh()"); pg.wait_for_timeout(400)
 
@@ -113,7 +121,9 @@ with sync_playwright() as p:
     boot(pg)
 
     # ---- Legacy parity: a legacy status:sent card derives, clicks, can be closed ----
-    ck("legacy status:sent derives to the Sent lane, not a never-sent Ready", lane_of(pg,"sent-legacy")=="sent", lane_of(pg,"sent-legacy"))
+    # A genuinely sent legacy card carries a real send record, so it earns the Sent lane through evidence,
+    # never through the bare status:'sent' stamp (a never-sent card with only that stamp reads Ready).
+    ck("a legacy card with its real send record derives to the Sent lane, not a never-sent Ready", lane_of(pg,"sent-legacy")=="sent", lane_of(pg,"sent-legacy"))
     open_modal(pg,"sent-legacy")
     ck("a legacy card clicks open into its window", pg.evaluate("()=>{const m=document.getElementById('modal');return m && !m.hidden;}"))
     moves=pg.evaluate("()=>[...document.querySelectorAll('#modalOverview [data-move]')].map(b=>b.getAttribute('data-move'))")

@@ -95,7 +95,10 @@ with sync_playwright() as p:
     def seed(pg, opps, mail, inbound):
         pg.evaluate("""(a)=>{ localStorage.setItem('thrive_opps_v1', JSON.stringify(a.opps));
           localStorage.setItem('thrive_mail_v1', JSON.stringify(a.mail));
-          localStorage.setItem('thrive_inbound_v1', JSON.stringify(a.inbound)); }""",
+          localStorage.setItem('thrive_inbound_v1', JSON.stringify(a.inbound));
+          // A lane derives from the send RECORD, not a bare stage:'sent': refresh the caches so the seeded
+          // ledger is what counts (the phantom-send fallback that masked a stale cache is gone).
+          window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits(); }""",
           {"opps":opps, "mail":mail, "inbound":inbound})
 
     pg = boot(pg_b := b)
