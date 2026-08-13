@@ -4127,6 +4127,106 @@ function renderReplyBody(text){
     return '<span class="rp-line'+(isQuotedLine(raw)?" rp-quote":"")+'" dir="auto">'+inner+'</span>';
   }).join("");
 }
+
+/* ---- the thread grows up: parse the reply into typed blocks, then render each in its own layout ----
+   Per-line isolation (renderReplyBody) sets a base direction per line, but it cannot ORDER a single
+   physical line that mixes right-to-left and left-to-right runs. Basel's Gmail quote header is exactly
+   that: "في <arabic date>، كتب <Latin name> <address>:" arrives as ONE line, and the bidi algorithm
+   reorders the Arabic date, the Latin name and the address into an unreadable scramble no line-level dir
+   can fix. The structural answer is to stop rendering that raw run at all: parse the header into its
+   parts and RECOMPOSE it from isolated pieces, so the bidi problem disappears by construction.
+
+   Everything here is derivation at RENDER time only: the stored body is never rewritten, and every part
+   still passes through esc before it reaches the DOM, so the #99 XSS guarantee holds unchanged. The
+   parser works on text (split lines, match patterns), never on injected HTML. On any body it cannot
+   structure - an exotic header it cannot parse, or a plain message with no quote - it returns null and
+   the caller falls back to the per-line isolated rendering, so the result is never worse than today. */
+function isQuoteHeaderLine(raw){
+  var s=String(raw==null?"":raw);
+  // The opener plus the verb is the signal. \b is avoided (it keys on \w and never fires after Arabic).
+  if(/^\s*(?:On\s|في\s|بتاريخ\s)/i.test(s) && /(?:wrote|كتب)/i.test(s)) return true;
+  if(/(?:wrote|كتب)\s*:\s*$/i.test(s)) return true;
+  return false;
+}
+/* Split the "On <date>, <name> <address> wrote:" header (English) or "في <date>، كتب <name> <address>:"
+   header (Arabic) into its parts, tolerant of the date carrying its own commas and the word في. Returns
+   null when the line is header-shaped but does not parse, so the caller degrades to full isolation. */
+function parseQuoteHeader(line){
+  var s=String(line==null?"":line).trim();
+  // The date is captured GREEDILY: a Gmail date carries its own commas ("Mon, Aug 3, 2026 at 9:37 PM"),
+  // so the separator before the name is the LAST comma before "<name> <address>", not the first. The name
+  // is then lazy up to the address. Arabic mirrors this with "، كتب" as the separator.
+  var m=/^On\s+(.+),\s*(.+?)\s*<([^<>\s]+@[^<>\s]+)>\s*wrote\s*:?\.?$/i.exec(s);
+  if(m) return { lang:"en", lead:"On", verb:"wrote", date:m[1].trim(), name:m[2].trim(), address:m[3].trim() };
+  m=/^(في|بتاريخ)\s+(.+)،\s*كتب\s+(.+?)\s*<([^<>\s]+@[^<>\s]+)>\s*:?\.?$/.exec(s);
+  if(m) return { lang:"ar", lead:m[1], verb:"كتب", date:m[2].trim(), name:m[3].trim(), address:m[4].trim() };
+  // Tolerant fallbacks: an address with no angle brackets (still one clean recomposition).
+  m=/^On\s+(.+),\s*(.+?)\s*(\S+@\S+\.\S+)\s*wrote\s*:?\.?$/i.exec(s);
+  if(m) return { lang:"en", lead:"On", verb:"wrote", date:m[1].trim(), name:m[2].trim(), address:m[3].trim() };
+  m=/^(في|بتاريخ)\s+(.+)،\s*كتب\s+(.+?)\s*(\S+@\S+\.\S+)\s*:?\.?$/.exec(s);
+  if(m) return { lang:"ar", lead:m[1], verb:"كتب", date:m[2].trim(), name:m[3].trim(), address:m[4].trim() };
+  return null;
+}
+/* Parse a reply body into ordered typed blocks. Returns null unless it produced a real quote structure
+   (a parsed header or quoted history), so a plain single-direction message renders exactly as before. */
+function parseReplyBody(text){
+  var lines=String(text==null?"":text).split(/\r?\n/), n=lines.length, i=0, blocks=[];
+  // 1) the new message: everything before the first quote header or the first quoted (>) line.
+  var msg=[];
+  for(; i<n; i++){ if(isQuoteHeaderLine(lines[i]) || /^\s*>/.test(lines[i])) break; msg.push(lines[i]); }
+  while(msg.length && !msg[msg.length-1].trim()) msg.pop();
+  // A signature block (an "-- " sig delimiter inside the message) is split off and muted.
+  var sig=null, sd=-1;
+  for(var k=0;k<msg.length;k++){ if(/^\s*--\s*$/.test(msg[k])){ sd=k; break; } }
+  if(sd>=0){ sig=msg.slice(sd+1).join("\n"); msg=msg.slice(0,sd); while(msg.length && !msg[msg.length-1].trim()) msg.pop(); }
+  if(msg.join("\n").trim()) blocks.push({ type:"message", text:msg.join("\n") });
+  var structured=false;
+  // 2) the quote header line, recomposed from parts (an unparsable header shape aborts to fallback).
+  if(i<n && isQuoteHeaderLine(lines[i])){
+    var hp=parseQuoteHeader(lines[i]);
+    if(!hp) return null;
+    blocks.push({ type:"quoteHeader", parts:hp }); structured=true; i++;
+  }
+  // 3) the quoted history: the remaining lines, one leading "> " stripped, as a quiet collapsible block.
+  var hist=[];
+  for(; i<n; i++){ hist.push(lines[i].replace(/^\s?>\s?/, "")); }
+  while(hist.length && !hist[0].trim()) hist.shift();
+  while(hist.length && !hist[hist.length-1].trim()) hist.pop();
+  if(hist.length){ blocks.push({ type:"quote", text:hist.join("\n") }); structured=true; }
+  if(sig && sig.trim()) blocks.push({ type:"signature", text:sig });
+  return structured ? blocks : null;
+}
+/* Recompose the quote header as a clean line from isolated parts. Each variable part (date, name,
+   address) is its own <bdi>, so the container's direction orders the SIBLINGS in DOM order and no part
+   can bidi-reorder against another: the scramble is gone by construction. dir="auto" lets the header take
+   the base direction of its own language (Arabic or English) with no branch. Every part is escaped. */
+function renderQuoteHeader(pt){
+  var date = '<bdi class="rp-qh-date">'+esc(pt.date)+'</bdi>';
+  var name = pt.name ? '<bdi class="rp-qh-name">'+esc(pt.name)+'</bdi>' : '';
+  var addr = pt.address ? '<bdi class="rp-qh-addr rp-ltr">'+esc(pt.address)+'</bdi>' : '';
+  var lead = '<span class="rp-qh-t">'+esc(pt.lead)+' </span>';
+  var inner;
+  if(pt.lang==="ar"){
+    inner = lead+date+'<span class="rp-qh-t">، '+esc(pt.verb)+' </span>'+name+(name&&addr?' ':'')+addr;
+  } else {
+    inner = lead+date+'<span class="rp-qh-t">, </span>'+name+(name&&addr?' ':'')+addr+'<span class="rp-qh-t"> '+esc(pt.verb)+':</span>';
+  }
+  return '<div class="rp-qhead" dir="auto">'+inner+'</div>';
+}
+/* The thread body, structured. A parsed body renders block by block; an unstructured or exotic body
+   falls straight back to the per-line isolated rendering (never worse than today), losing no content. */
+function renderReplyBodyStructured(text){
+  var blocks=parseReplyBody(text);
+  if(!blocks) return renderReplyBody(text);
+  return blocks.map(function(bk){
+    if(bk.type==="message")   return '<div class="rp-msg">'+renderReplyBody(bk.text)+'</div>';
+    if(bk.type==="signature") return '<div class="rp-sig">'+renderReplyBody(bk.text)+'</div>';
+    if(bk.type==="quoteHeader") return renderQuoteHeader(bk.parts);
+    // quoted history: a quieter, indented, collapsible section, still per-line direction-correct inside.
+    return '<details class="rp-quoted"><summary class="rp-quoted-sum">'+esc(t("rp_quoted_history"))+
+      '</summary><div class="rp-quoted-body">'+renderReplyBody(bk.text)+'</div></details>';
+  }).join("");
+}
 function threadListHtml(slug){
   const entries=buildThread(slug);
   const when=ts=> fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"");
@@ -4144,7 +4244,7 @@ function threadListHtml(slug){
       '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
       (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
       (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>':'')+
-      (r.snippet? '<div class="rp-snip" dir="auto">'+renderReplyBody(r.snippet)+'</div>':'')+
+      (r.snippet? '<div class="rp-snip" dir="auto">'+renderReplyBodyStructured(r.snippet)+'</div>':'')+
       '<div class="rp-foot">'+
         (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>':'')+
         (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>':'')+

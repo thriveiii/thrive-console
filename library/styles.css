@@ -1919,6 +1919,32 @@ body.modal-open{
    English without a second rule. */
 .rp-quote{ color:var(--ink-4); border-inline-start:2px solid var(--hair); padding-inline-start:var(--s-2); }
 [dir="rtl"] .rp-line,[dir="rtl"] .rp-ltr{ letter-spacing:normal }   /* Arabic never carries letter-spacing */
+
+/* The thread, structured. A reply renders as typed blocks with one margin token and one vertical rhythm:
+   the new message prominent, the quote header recomposed and quiet, the quoted history collapsed, the
+   signature muted. Each block owns its layout so the thread reads as a conversation, not a raw dump. */
+.rp-msg{ display:block; }
+.rp-sig{ display:block; margin-block-start:var(--s-2); color:var(--ink-4); font-size:13px; }
+/* The recomposed quote header: built from isolated parts (each a <bdi>), so no part reorders against
+   another. It sits quiet under the message, one rhythm step down, direction taken from its own language. */
+.rp-qhead{ margin-block-start:var(--s-3); color:var(--ink-4); font-size:13px; line-height:1.6;
+  overflow-wrap:anywhere; }
+.rp-qhead .rp-qh-t{ color:var(--ink-4); }
+.rp-qh-date,.rp-qh-name,.rp-qh-addr{ unicode-bidi:isolate; }
+.rp-qh-name{ color:var(--ink-3); }
+.rp-qh-addr{ overflow-wrap:anywhere; }
+[dir="rtl"] .rp-qhead,[dir="rtl"] .rp-qh-date,[dir="rtl"] .rp-qh-name{ letter-spacing:normal }
+/* The quoted history: a quieter, indented, collapsible section. Collapsed by default so the reply's own
+   words lead; the summary is the one control that opens it. The rule is logical, so it sits on the correct
+   side in both languages, and the body inside keeps its per-line direction isolation. */
+.rp-quoted{ margin-block-start:var(--s-3); border-inline-start:2px solid var(--hair); padding-inline-start:var(--s-2); }
+.rp-quoted-sum{ color:var(--ink-4); font-size:12px; cursor:pointer; list-style:none; user-select:none; }
+.rp-quoted-sum::-webkit-details-marker{ display:none; }
+.rp-quoted-sum::before{ content:"+"; display:inline-block; inline-size:1em; color:var(--ink-4); }
+.rp-quoted[open] .rp-quoted-sum::before{ content:"\2212"; }   /* a minus when open, one glyph either way */
+.rp-quoted-body{ margin-block-start:var(--s-2); color:var(--ink-4); font-size:13px; line-height:1.6;
+  white-space:pre-wrap; overflow-wrap:anywhere; }
+
 /* The reply composer: answer the prospect in this thread, dark and aligned, mirrored in RTL. */
 .th-reply-box{ margin-block-start:var(--s-4); padding-block-start:var(--s-3); border-block-start:1px solid var(--hair);
   display:flex; flex-direction:column; gap:var(--s-2) }
