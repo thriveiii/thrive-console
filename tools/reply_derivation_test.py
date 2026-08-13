@@ -84,6 +84,10 @@ with sync_playwright() as p:
         {gid:'g1', opp:'intl-schools', kind:'', direction:'in', ts:'2026-08-03T09:00:00Z', snippet:'yes'}
       ]));
       localStorage.setItem('thrive_hits_v1', JSON.stringify([{type:'open', slug:'intl-schools', ts:'2026-08-02T10:00:00Z', vid:'v1'}]));
+      // The send/open caches must see the freshly seeded ledger: a lane is derived from the send RECORD,
+      // never from a bare stage:'sent' (the phantom-send fallback is gone), so quiet-co reads Sent from its
+      // real mail row m2, not from its declared stage.
+      window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits();
     }""")
     ck("a reply derives effStage to replied (was sent)", eff(pg, "intl-schools") == "replied", eff(pg, "intl-schools"))
     ck("the board lane is replied", lane(pg, "intl-schools") == "replied", lane(pg, "intl-schools"))

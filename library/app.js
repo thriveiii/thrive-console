@@ -531,8 +531,12 @@ function sendsFor(o){
              last:(m.last && m.last>r.last)? m.last : r.last };
   }
   if(m.count) return m;
-  if(o && typeof o==="object" && o.stage==="sent")
-    return { count:1, first:o.sent_on||"", last:o.sent_on||"", declared:true };
+  // INVARIANT I2, evidence-backed lanes: a send is a delivered send RECORD (a ledger row or a recorded
+  // manual contact), never a declared word. The old code fabricated a phantom send here from a bare
+  // stage==="sent" with no ledger and no manual contact, so a never-sent record that acquired that stamp
+  // (an activated page whose manifest defaulted status:"sent", a legacy or corrupt row) derived to the
+  // Sent lane and drained Ready. That backdoor is closed: no evidence, no send. A stage stamp cannot mint
+  // a send; effStage clamps such a record to Ready (a page exists) or Draft (none).
   return { count:0, first:"", last:"" };
 }
 /* Opens that answer a message: views recorded at or after the first send. Zero until something
@@ -674,6 +678,15 @@ function effStage(o, opensOverride, sendOverride){
   if(bounce==="soft") return "failed";
   const op=(opensOverride===undefined)? outreachOpens(o) : (opensOverride||0);
   return op>0 ? "opened" : "sent";
+}
+
+// INVARIANT I1/I2: the exported manifest carries a card's TRUE status at export time, derived from
+// evidence through effStage, never a blind status:"sent" default. A never-sent card (draft or ready)
+// exports no status, so a later re-import can never resurrect a phantom send; a genuinely sent, replied
+// or closed card exports its real derived stage, because its evidence justifies the word.
+function manifestStatusFor(o){
+  const s=effStage(o);
+  return LEGACY_DECLARED_STAGES[s] ? s : "";
 }
 
 /* ---------- the living card: recipient-level state (P1.5) ----------
@@ -1258,6 +1271,9 @@ function renderOperatorChip(){
 const SYNC_EP="thrive_sync_ep", SYNC_AUTH="thrive_sync_auth", SYNC_LAST="thrive_sync_last", SCAL_UP="thrive_scalars_up";
 const SYNC_EP_UP="thrive_sync_ep_up", SYNC_EP_FILE="thrive_sync_ep_file";
 let __syncBusy=false, __syncApplying=false, __syncPushT=null, __syncBootstrapped=false;
+// INVARIANT I3: >0 while an import/activate batch is staging writes. Suppresses scheduleSyncPush so no
+// sync round (and no board repaint) can fire against a half-committed batch. Reset in a finally.
+let __batchDepth=0;
 function getSyncEndpoint(){ try{ return localStorage.getItem(SYNC_EP)||""; }catch(e){ return ""; } }
 function setSyncEndpoint(u){ try{ u?localStorage.setItem(SYNC_EP,u):localStorage.removeItem(SYNC_EP); }catch(e){} }
 // When was this device's relay URL last chosen by a person who verified it here? A published
@@ -1805,6 +1821,10 @@ async function syncPush(){
 }
 function scheduleSyncPush(){
   if(__syncApplying) return;                              // merges must not re-trigger themselves
+  // INVARIANT I3, atomic batch: while an import/activate batch is staging its writes, no sync round is
+  // scheduled, so syncNow cannot fire mid-batch, remerge remote state over a half-written batch, and
+  // repaint the board against partial lanes. The batch fires ONE scheduleSyncPush after it commits.
+  if(__batchDepth>0) return;
   if(!syncAuth()) return;
   clearTimeout(__syncPushT); __syncPushT=setTimeout(syncNow, 4000);
 }
@@ -1922,8 +1942,12 @@ async function ghVerify(){
   return r.json();
 }
 function manifestEntry(rec){
+  // INVARIANT I1/I2: publishing a PAGE never implies a send. The status field carried only the record's
+  // own status and must not invent one: it used to default to "sent", so every activated page wrote
+  // status:"sent" into the manifest for a business nobody had emailed, which normalizeOpp then promoted
+  // to stage:"sent". Default to empty; the lane is derived from send evidence, not from this field.
   return { slug:rec.slug, business:rec.business||"", template:rec.template||"", sent_on:rec.sent_on||"",
-    location:rec.location||"", phone:rec.phone||"", status:rec.status||"sent" };
+    location:rec.location||"", phone:rec.phone||"", status:rec.status||"" };
 }
 /* Every published page MUST carry the beacon, or it can never record an open. An uploaded
    page authored elsewhere has no way to know that. Inject it at publish time when missing,
@@ -2132,6 +2156,28 @@ function saveDraft(rec){
   try{ supaMirrorOpp(merged); }catch(_){}
 }
 function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDraftsLocal().filter(x=>x.slug!==slug)); try{ supaCacheDrop(slug); }catch(_){} try{ supaDeleteOpp(slug); }catch(_){} }
+/* INVARIANT I3, atomic batch commit: apply MANY records to the store as ONE transition. saveDraft writes
+   the store once per record, so a batch of N leaves N intermediate store states, each visible to any
+   repaint that races the loop; that is the scatter and the oscillation. This merges every record against
+   one snapshot and writes the store EXACTLY ONCE (one lsSet, so one scheduleSyncPush), so the board only
+   ever sees the store before the batch or after it, never a partial batch. Same per-record merge semantics
+   as saveDraft; the cache and the Stage-4 mirror are updated per merged record after the single write. */
+function commitDraftsBatch(records){
+  records=(records||[]).filter(Boolean);
+  if(!records.length) return [];
+  const a=getDraftsLocal(); const idx={}; a.forEach((x,i)=>{ idx[x.slug]=i; });
+  const merged=[];
+  records.forEach(rec=>{
+    rec.up=Date.now();
+    const i=idx[rec.slug];
+    const m = (i>=0) ? {...a[i], ...rec} : rec;
+    if(i>=0) a[i]=m; else { idx[rec.slug]=a.length; a.push(m); }
+    merged.push(m);
+  });
+  setDrafts(a);                                          // the ONE write: one store transition, one sync schedule
+  merged.forEach(m=>{ try{ supaCachePut(m); }catch(_){} try{ supaMirrorOpp(m); }catch(_){} });
+  return merged;
+}
 
 /* ---------- Supabase dual-write mirror (Stage 2) ----------
    Every write that lands in the current store (localStorage plus the relay) is also mirrored to the
@@ -2567,32 +2613,43 @@ async function writeImport(items, ctx){
   const existing=ctx.existing||{};
   const seen={}; Object.keys(existing).forEach(k=>seen[k]=1);
   const tally={ imported:0, updated:0, hosted:0, incomplete:0, failed:0, slugs:[] };
-  for(let i=0;i<items.length;i++){
-    const it=items[i]||{}, e=it.entry; if(!e) continue;
-    try{
-      const rec=ThriveIntake.toRecord(e, { today:today(), note_text:ctx.notes, batch:ctx.batch });
-      let s=rec.slug;
-      const isUpdate=!!existing[s];
-      if(seen[s] && !existing[s]){ let k=2; while(seen[s+"-"+k]) k++; s=s+"-"+k; }
-      rec.slug=s; seen[s]=1;
-      const html=(e.file&&e.file.html)||"";
-      // Re-import updates in place without knocking a sent or activated opportunity back to a draft.
-      if(isUpdate){ delete rec.published; delete rec.stage; delete rec.sent_on; }
-      // The one flag an import always clears, new or updated: nothing imported may stay archived, or
-      // the confirmation would say Draft while the record sits out of sight in the archive.
-      rec.archived=false;
-      if(it.host){
-        await publishOpp(Object.assign({}, rec, { slug:s, published:false, stage:(rec.stage||""), html:html }));
-        rec.published=true; tally.hosted++;
-      }
-      saveDraft(rec);                                   // the single write both surfaces share
-      if(isUpdate) tally.updated++; else tally.imported++;
-      if(!e.subject && !e.body) tally.incomplete++;     // stored, but named text-less rather than hidden
-      tally.slugs.push(s);
-      logActivity("in_import", s, (rec.business||"")+(it.host?" · hosted":""));
-      if(rec.outreach_text || rec.outreach_subject) logActivity("in_import", s, t("bt_text_stored"));
-    }catch(err){ tally.failed++; logActivity("publish_half", (e.slug_hint||e.business||""), String((err&&err.message)||err)); }
-  }
+  // INVARIANT I3, atomic batch: every record is MINTED and its page HOSTED in the loop, but nothing is
+  // written to the store until the loop is done. The records are staged, then committed as ONE store
+  // transition (commitDraftsBatch) after the loop, while __batchDepth suppresses any sync round. So the
+  // board is never repainted against a half-written batch: it sees the store before the batch or after
+  // it, never a partial one. Every creation still flows through the one mint (ThriveIntake.toRecord).
+  const staged=[];
+  __batchDepth++;
+  try{
+    for(let i=0;i<items.length;i++){
+      const it=items[i]||{}, e=it.entry; if(!e) continue;
+      try{
+        const rec=ThriveIntake.toRecord(e, { today:today(), note_text:ctx.notes, batch:ctx.batch });
+        let s=rec.slug;
+        const isUpdate=!!existing[s];
+        if(seen[s] && !existing[s]){ let k=2; while(seen[s+"-"+k]) k++; s=s+"-"+k; }
+        rec.slug=s; seen[s]=1;
+        const html=(e.file&&e.file.html)||"";
+        // Re-import updates in place without knocking a sent or activated opportunity back to a draft.
+        if(isUpdate){ delete rec.published; delete rec.stage; delete rec.sent_on; }
+        // The one flag an import always clears, new or updated: nothing imported may stay archived, or
+        // the confirmation would say Draft while the record sits out of sight in the archive.
+        rec.archived=false;
+        if(it.host){
+          await publishOpp(Object.assign({}, rec, { slug:s, published:false, stage:(rec.stage||""), html:html }));
+          rec.published=true; tally.hosted++;
+        }
+        staged.push(rec);                               // staged, not yet written: the store stays whole
+        if(isUpdate) tally.updated++; else tally.imported++;
+        if(!e.subject && !e.body) tally.incomplete++;   // stored, but named text-less rather than hidden
+        tally.slugs.push(s);
+        logActivity("in_import", s, (rec.business||"")+(it.host?" · hosted":""));
+        if(rec.outreach_text || rec.outreach_subject) logActivity("in_import", s, t("bt_text_stored"));
+      }catch(err){ tally.failed++; logActivity("publish_half", (e.slug_hint||e.business||""), String((err&&err.message)||err)); }
+    }
+    commitDraftsBatch(staged);                          // the ONE atomic store write for the whole batch
+  } finally { __batchDepth--; }
+  try{ scheduleSyncPush(); }catch(_){}                  // one sync round, after the batch has fully landed
   return tally;
 }
 /* One confirmation, built from the tally, so both surfaces report the same honest counts: only what
@@ -2880,7 +2937,10 @@ async function initDashboard(){
         if(!liveHtml && !hasFields){ try{ const cur=await ghGetFile("opp/"+slug+"/index.html"); if(cur&&cur.content) liveHtml=unb64(cur.content); }catch(_){} }
         await unpublishOpp(slug);
         const useUpload = !!liveHtml && !hasFields;   // no fields to regenerate from → keep verbatim HTML
-        const back={slug, business:o.business, template:o.template, sent_on:o.sent_on, location:o.location, phone:o.phone, status:o.status||"sent", published:false, mode:useUpload?"upload":(o.mode||(o.template&&o.template!=="custom"?"fill":"upload")), fields:o.fields||{}};
+        // INVARIANT I1: unpublishing returns a page to Draft; it never asserts a send. The carried status
+        // used to default to "sent" (status:o.status||"sent"), stamping a phantom send on a record whose
+        // page was just taken down. The real send state lives in the ledger; no status is written here.
+        const back={slug, business:o.business, template:o.template, sent_on:o.sent_on, location:o.location, phone:o.phone, published:false, mode:useUpload?"upload":(o.mode||(o.template&&o.template!=="custom"?"fill":"upload")), fields:o.fields||{}};
         if(liveHtml) back.html=liveHtml;
         saveDraft(back);
         logActivity("unpublish", slug, o.business);
@@ -2966,7 +3026,7 @@ async function initDashboard(){
     const out={ site:site||SITE, base_path:OPP_PATH, updated:new Date().toISOString().slice(0,10),
       opportunities: rows.map(o=>{
         const e={ slug:o.slug, business:o.business||"", template:o.template||"", sent_on:o.sent_on||"",
-                  location:o.location||"", phone:o.phone||"", status:o.status||"sent" };
+                  location:o.location||"", phone:o.phone||"", status:manifestStatusFor(o) };
         if(o.archived) e.archived=true;
         return e;
       }) };
@@ -3164,7 +3224,10 @@ async function initEditor(slugArg){
     return { slug, business:el("f_biz").value.trim(),
       template: mode==="upload"?"custom":el("f_template").value,
       sent_on:el("f_sent").value, location:el("f_location").value.trim(),
-      phone:el("f_phone").value.trim(), status:"sent", mode:mode, published:editingLive,
+      // INVARIANT I1: a record the editor builds is a page, not a send. It used to hardcode status:"sent",
+      // so a brand-new or edited opportunity carried a phantom sent-status; the real Sent state comes from
+      // the send ledger, never from this stamp. No status is written; the lane derives from evidence.
+      phone:el("f_phone").value.trim(), mode:mode, published:editingLive,
       doc_lang:(el("f_doclang")&&el("f_doclang").value)||"EN",
       fields:{ QUOTE:v.QUOTE, QUOTE_BY:v.QUOTE_BY, PROOF1:v.PROOF1, PROOF2:v.PROOF2, PROOF3:v.PROOF3, WANT:v.WANT } };
   }
