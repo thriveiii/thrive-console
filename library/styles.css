@@ -2121,3 +2121,54 @@ body.modal-open{
 }
 .lane-empty .ic{ opacity:.4; color:var(--lane-c, var(--ink-4)) }
 .lane-empty p{ margin:0 }
+
+/* --- the operator profile (WO-029 Phase A) ---------------------------------
+   One coherent surface: an identity header, three quiet regions, then the owner-only zone. Calm,
+   panelled, logical properties throughout so it mirrors in Arabic with no second rule. */
+.page-head{ margin-block-end:var(--s-5) }
+.page-title{ margin:0 0 var(--s-1); font-size:var(--fs-lg); font-weight:var(--w-head); color:var(--ink); line-height:var(--lh-tight) }
+.page-sub{ margin:0; font-size:var(--fs-sm); color:var(--ink-3) }
+
+.pf-id{
+  display:flex; align-items:flex-start; gap:var(--s-4); flex-wrap:wrap;
+  background:var(--panel); border:1px solid var(--hair); border-radius:var(--r-lg);
+  padding:var(--s-5); margin-block-end:var(--s-5);
+}
+.pf-avatar{
+  flex:0 0 auto; width:56px; height:56px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(150,133,202,.18); color:var(--purple);
+  font-size:var(--fs-lg); font-weight:var(--w-head); line-height:1;
+}
+.pf-id-body{ flex:1 1 260px; min-width:0 }
+.pf-name-field{ margin-block-end:var(--s-3) }
+.pf-id-rows{ display:grid; gap:var(--s-2); margin:0 }
+.pf-id-row{ display:flex; gap:var(--s-3); align-items:baseline; font-size:var(--fs-sm) }
+.pf-id-row dt{ flex:0 0 auto; min-width:96px; color:var(--ink-4); font-weight:var(--w-head) }
+.pf-id-row dd{ margin:0; color:var(--ink-2); min-width:0; word-break:break-word }
+.pf-signin-note{ margin:var(--s-3) 0 0; font-size:var(--fs-xs); color:var(--ink-4) }
+
+.pf-regions{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:var(--s-4); align-items:start }
+@media(max-width:960px){ .pf-regions{ grid-template-columns:1fr } }
+.pf-region{ padding:var(--s-5) }
+.pf-region-h{ margin:0 0 var(--s-1); font-size:var(--fs-md); font-weight:var(--w-head); color:var(--ink) }
+.pf-region-sub{ margin:0 0 var(--s-4); font-size:var(--fs-xs); color:var(--ink-4); line-height:var(--lh-base) }
+.pf-check{ display:flex; align-items:center; gap:var(--s-2); font-size:var(--fs-sm); color:var(--ink-2); margin-block-end:var(--s-3); cursor:pointer }
+.pf-check input{ inline-size:auto; width:auto }
+.pf-sig textarea{ resize:vertical }
+.pf-saved{ margin:var(--s-2) 0 0; font-size:var(--fs-xs); color:var(--lane-replied) }
+
+.pf-mem-rows{ display:grid; gap:var(--s-2); margin-block-end:var(--s-4) }
+.pf-mem-row{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s-3);
+  font-size:var(--fs-sm); color:var(--ink-2); border-block-end:1px solid var(--hair-2); padding-block-end:var(--s-2) }
+.pf-mem-k{ color:var(--ink-3) }
+.pf-mem-row b{ color:var(--ink); font-variant-numeric:tabular-nums }
+
+.pf-stats{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:var(--s-3); margin-block-end:var(--s-3) }
+.pf-stat{ display:flex; flex-direction:column; gap:2px; align-items:flex-start;
+  background:var(--hair-2); border:1px solid var(--hair); border-radius:var(--r-md); padding:var(--s-3) var(--s-4) }
+.pf-stat b{ font-size:var(--fs-lg); font-weight:var(--w-head); color:var(--ink); line-height:1; font-variant-numeric:tabular-nums }
+.pf-stat span{ font-size:var(--fs-xs); color:var(--ink-4) }
+.pf-perf-note{ margin:0; font-size:var(--fs-xs); color:var(--ink-4) }
+
+.pf-infra{ margin-block-start:var(--s-5); padding:var(--s-5); border-color:rgba(246,207,91,.28) }

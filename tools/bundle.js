@@ -34,6 +34,7 @@ const VIEWS = [
   { id: "compose",   file: "compose.html",   init: "initCompose",   key: "nav_compose" },
   { id: "templates", file: "templates.html", init: "initTemplates", key: "nav_templates" },
   { id: "activity",  file: "activity.html",  init: "initActivity",  key: "nav_activity" },
+  { id: "profile",   file: "profile.html",   init: "initProfile",   key: "nav_profile" },
   { id: "settings",  file: "settings.html",  init: "initSettings",  key: "nav_settings" },
 ];
 
@@ -173,7 +174,7 @@ const MODAL = `
 /* Four destinations, not three. The numbers were reachable only from inside the Library after
    the reduction, which read as though they had been deleted. What you measure has to be one
    tap from where you work. */
-const TOPBAR = ["board","home","library","settings"];
+const TOPBAR = ["board","home","library","profile","settings"];
 const nav = VIEWS.filter(v => TOPBAR.indexOf(v.id) >= 0).map(v =>
   '<a href="#' + v.id + '" data-view="' + v.id + '" data-i18n="' + v.key + '"></a>'
 ).join("\n    ");
