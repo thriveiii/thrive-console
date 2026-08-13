@@ -2823,6 +2823,11 @@ async function initDashboard(){
       const moreActions =
           (!live?`<button class="btn ghost sm" data-prev="${esc(o.slug)}">${t("preview")}</button>`:``)
         + (live?`<a class="btn ghost sm" href="${viewHref("compose","slug="+enc)}">${t("email_btn")}</a><button class="btn ghost sm" data-pdf="${esc(o.slug)}">PDF</button>`:``)
+        // Follow up in one tap: open the composer bound to this opportunity with the follow-up (nudge)
+        // template already chosen in the opportunity's own language. Pure wiring of the existing ?etpl=
+        // preselect and the stock nudge template; the send path is untouched. Offered only where the
+        // console already says a follow-up is due (a live opportunity the follow-up filter flags).
+        + (live&&fu?`<a class="btn ghost sm" data-fu="${esc(o.slug)}" href="${viewHref("compose","slug="+enc+"&etpl="+(docLang(o)==="AR"?"opp-nudge-ar":"opp-nudge"))}">${t("flw_send")}</a>`:``)
         + (isOffer?``:`<a class="btn ghost sm" href="${viewHref("editor","slug="+enc)}">${t("edit")}</a>`)
         + `<button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>`
         + (half?`<button class="btn sm" data-finish="${esc(o.slug)}">${t("pub_finish")}</button>`:``)
