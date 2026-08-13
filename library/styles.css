@@ -2014,6 +2014,50 @@ body.modal-open{
    is then diagnosable by the person looking at it rather than mysterious. */
 .rp-rule{ font-size:12px; color:var(--ink-4) }
 [dir="rtl"] .rp-rule,[dir="rtl"] .rp-when,[dir="rtl"] .rp-from{ letter-spacing:normal }
+
+/* --- the open team discussion (inside a card) ------------------------------
+   One calm room: comments oldest-first, each in its own panel with the author's real name and the one
+   date composer, a reply indented one step under its parent, a quiet composer at the foot. Every body is
+   direction-isolated (dir="auto" in the markup, isolate here), so an Arabic comment reads right-to-left
+   with joined letters and never interleaves with an English neighbour, and Arabic never carries
+   letter-spacing. The palette is the console's own tokens, so the discussion belongs to the surface. */
+.dc-wrap{ display:flex; flex-direction:column; gap:var(--s-3) }
+.dc-title{ margin:0; font-size:var(--fs-sm); color:var(--ink-3); font-weight:600 }
+.dc-list{ list-style:none; margin:0; padding:0; display:grid; gap:var(--s-2) }
+.dc-item{ display:block }
+.dc-reply{ margin-inline-start:var(--s-4) }   /* one level of replies, indented on the correct side per dir */
+.dc-bubble{
+  border:1px solid var(--hair); border-radius:var(--r-md);
+  padding:var(--s-3); background:var(--panel);
+}
+.dc-reply .dc-bubble{ background:transparent; border-style:dashed }
+.dc-head{ display:flex; align-items:baseline; gap:var(--s-2); flex-wrap:wrap }
+.dc-who{ font-weight:600; unicode-bidi:isolate }
+.dc-when{ font-size:12px; color:var(--ink-4) }
+.dc-pending{ display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--ink-4);
+  border:1px solid var(--hair); border-radius:999px; padding:0 var(--s-2) }
+.dc-pending .ic{ inline-size:12px; block-size:12px }
+.dc-body{ margin-block-start:var(--s-2); color:var(--ink-2); line-height:1.6;
+  unicode-bidi:isolate; overflow-wrap:anywhere; white-space:pre-wrap }
+.dc-foot{ display:flex; gap:var(--s-3); margin-block-start:var(--s-2); flex-wrap:wrap }
+.dc-act{ background:none; border:0; padding:0; cursor:pointer; font-size:12px; color:var(--ink-4) }
+.dc-act:hover{ color:var(--ink-2) }
+.dc-edit-bar{ display:flex; gap:var(--s-2); justify-content:flex-end; margin-block-start:var(--s-2) }
+.dc-composer{ display:flex; flex-direction:column; gap:var(--s-2);
+  margin-block-start:var(--s-3); padding-block-start:var(--s-3); border-block-start:1px solid var(--hair) }
+.dc-replyto{ display:flex; align-items:center; justify-content:space-between; gap:var(--s-2);
+  font-size:var(--fs-micro); color:var(--ink-4) }
+.dc-replyto-txt{ unicode-bidi:isolate }
+.dc-replyto-x{ background:none; border:0; padding:0; cursor:pointer; color:var(--ink-4); display:inline-flex }
+.dc-replyto-x .ic{ inline-size:14px; block-size:14px }
+.dc-input,.dc-edit-input{ min-height:4.5em; resize:vertical; line-height:1.6 }
+.dc-bar{ display:flex; align-items:center; justify-content:space-between; gap:var(--s-2); flex-wrap:wrap }
+.dc-hint{ font-size:var(--fs-micro); color:var(--ink-4) }
+.dc-out{ font-size:var(--fs-micro); color:var(--ink-3); min-height:1.2em }
+.dc-out.is-err{ color:var(--state-stall) }
+[dir="rtl"] .dc-who,[dir="rtl"] .dc-when,[dir="rtl"] .dc-body,[dir="rtl"] .dc-act,
+[dir="rtl"] .dc-hint,[dir="rtl"] .dc-pending,[dir="rtl"] .dc-replyto{ letter-spacing:normal }
+
 .mw-autos{ margin-block-end:var(--s-4) }
 .rp-auto{
   display:flex; align-items:center; gap:var(--s-2);

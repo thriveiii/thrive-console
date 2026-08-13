@@ -2297,6 +2297,26 @@ function supaMirrorMail(rec){
   if(!supaOn() || !rec) return;
   supaQueueUpsert("console_mail", supaMailRow(rec));
 }
+/* A team-discussion comment becomes one console_comments row. Unlike the ledger, the shape is discrete
+   columns (not a data jsonb): the RLS ownership check reads `author` and the open read selects the same
+   named columns back, so the schema and the client speak one vocabulary. The row travels through the SAME
+   Stage-4 queue as every other mutation (no second write path); the client-minted id is the primary key,
+   so a replayed upsert merges in place and never doubles a comment. author_name is a snapshot taken from
+   the poster's own console_profiles at post time: the profile RLS is own-read-only, so another operator's
+   name cannot be read live, and snapshotting is how a comment renders its author's real name at all. */
+function supaCommentRow(c){
+  return { id:c.id, opp:c.opp||"", author:c.author||"", author_name:c.author_name||"",
+    body:c.body||"", parent_id:c.parent_id||null,
+    created_at:c.created_at||new Date().toISOString(), updated_at:c.updated_at||new Date().toISOString() };
+}
+function supaMirrorComment(c){
+  if(!supaOn() || !c || !c.id) return;
+  supaQueueUpsert("console_comments", supaCommentRow(c));
+}
+function supaDeleteComment(id){
+  if(!supaOn() || !id) return;
+  supaQueueDel("console_comments", "id=eq."+encodeURIComponent(id));
+}
 /* A reply (inbound) becomes one console_inbound row, keyed on the Gmail message id (the same key the
    inbound merge dedupes on), the whole record in the data jsonb. This is the store that was missed in
    Stage 2, so a migrated reply, the international-schools one included, reappears once it is read back. */
@@ -2407,7 +2427,7 @@ async function supaVerify(){
    no column for a snippet's type or template_ref, so reading templates back would be lossy; that waits
    for an additive column, raised in the PR. */
 var READ_FLAG="console_sb_read";
-var __supa={ opps:null, mail:null, inbound:null, hits:null, hydrated:false, degraded:false, authRequired:false, ts:0 };
+var __supa={ opps:null, mail:null, inbound:null, hits:null, comments:null, hydrated:false, degraded:false, authRequired:false, ts:0 };
 var __supaHydrating=false;
 /* Reads engage on TWO authorities, and being signed in is the one that matters on a real device.
    ROOT A of the "board reads no mail" defect: the mail, opens and replies slices only come from
@@ -2469,7 +2489,7 @@ async function supaHydrate(){
     // board and passes through; before the close a signed-out read still returns rows and passes through.
     if(supaReadFlagOn() && !supaSignedIn() && __supa.opps.length===0){
       __supa.authRequired=true; __supa.degraded=true; __supa.hydrated=false;
-      __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null;
+      __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null; __supa.comments=null;
       try{ logActivity("supa_auth_required", "", "signed-out empty read"); }catch(_){}
       return false;
     }
@@ -2481,6 +2501,14 @@ async function supaHydrate(){
     __supa.inbound=(inbound||[]).map(function(r){ return r.data||{}; });
     var hits=await S.rest("console_hits", { query:"select=data" });
     __supa.hits=(hits||[]).map(function(r){ return r.data||{}; });
+    // The open team discussion. Discrete columns (not a data jsonb): the read selects exactly what RLS
+    // owns and the client renders. Its own try, so a comment hiccup never fails the board; on failure the
+    // slice stays empty and reads fall back to the local cache.
+    try{
+      var comments=await S.rest("console_comments",
+        { query:"select=id,opp,author,author_name,body,parent_id,created_at,updated_at&order=created_at.asc" });
+      __supa.comments=(comments||[]).map(function(r){ return r||{}; });
+    }catch(_){ __supa.comments=(__supa.comments||[]); }
     // Templates hydrate into the local cache (its own try, so a template hiccup never fails the board).
     try{ var tpls=await S.rest("console_templates", { query:"select=id,kind,name,subject,html,lang,up" }); supaMergeTemplatesToCache(tpls||[]); }catch(_){}
     __supa.hydrated=true; __supa.degraded=false; __supa.authRequired=false; __supa.ts=Date.now();
@@ -2494,7 +2522,7 @@ async function supaHydrate(){
     // Never while signed in: a 401/403 seen by a signed-in operator is a token or network fault to degrade
     // over, not a sign-in prompt, so the flag stays a pure function of "no session" at every assignment.
     __supa.authRequired = !!(e && e.authRequired) && !supaSignedIn();
-    __supa.degraded=true; __supa.hydrated=false; __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null;
+    __supa.degraded=true; __supa.hydrated=false; __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null; __supa.comments=null;
     supaRecordDiverge("read", "hydrate", e&&e.message);
     try{ logActivity(__supa.authRequired ? "supa_auth_required" : "supa_read_degraded", "", String((e&&e.message)||"").slice(0,120)); }catch(_){}
     return false;
@@ -3897,6 +3925,81 @@ function getMailLogLocal(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)
    card falls back to Ready. Writers (logMail, the sync merge, reassign) use getMailLogLocal. */
 function getMailLog(){ if(supaReadable() && __supa.mail) return __supa.mail.slice(); return getMailLogLocal(); }
 function setMailLog(a){ const ok=lsSet(MAILLOG, JSON.stringify(a.slice(-800))); invalidateSends(); return ok; }
+
+/* ---------- the open team discussion (console_comments) ----------
+   Every operator writes, replies and reads inside any card, openly: one shared room, not private notes.
+   A comment is stamped with the REAL operator (currentActor(), which is the Supabase auth.uid() once
+   signed in) and carries a snapshot of the poster's display name taken from their own console_profiles at
+   post time. The snapshot is deliberate: the profile RLS is own-read-only, so another operator's name
+   cannot be read live; snapshotting is the only way a comment renders its author's real name. Writes go
+   through the SAME Stage-4 queue as every other mutation (supaMirrorComment / supaDeleteComment), so a
+   signed-out post is durably queued and drains on sign-in, and there is no second write path. The read
+   accessor prefers the hydrated Supabase slice and falls back to the local cache, exactly like the ledger.
+   The discussion NEVER leaves the console: it is read here and rendered in the card, and no send composer
+   reads console_comments or __supa.comments, so it can never reach an outbound surface. */
+const COMMENTS="thrive_comments_v1";
+function getCommentsLocal(){ try{ return JSON.parse(localStorage.getItem(COMMENTS)||"[]"); }catch(e){ return []; } }
+function setCommentsLocal(a){ try{ localStorage.setItem(COMMENTS, JSON.stringify((a||[]).slice(-5000))); }catch(e){} }
+function getComments(){ if(supaReadable() && __supa.comments) return __supa.comments.slice(); return getCommentsLocal(); }
+// Mint a stable client id that is also the Stage-4 idempotency key (the row's primary key), so a replayed
+// upsert merges in place. Time-ordered prefix keeps the local list roughly sortable even before hydrate.
+function mintCommentId(){
+  var t=Date.now().toString(36), r=Math.floor((1+Math.random())*0x1000000).toString(36).slice(1);
+  return "c_"+t+"_"+r;
+}
+// Write to BOTH the local cache and the hydrated read slice, so an open card reflects the change at once,
+// whether it is reading from Supabase or the device. The mirror then queues the durable write.
+function commentCachePut(c){
+  var a=getCommentsLocal(), i=a.findIndex(function(x){ return x && x.id===c.id; });
+  if(i>=0) a[i]=c; else a.push(c); setCommentsLocal(a);
+  if(__supa.comments){ var j=__supa.comments.findIndex(function(x){ return x && x.id===c.id; });
+    if(j>=0) __supa.comments[j]=c; else __supa.comments.push(c); }
+}
+function commentCacheDrop(id){
+  setCommentsLocal(getCommentsLocal().filter(function(x){ return x && x.id!==id; }));
+  if(__supa.comments) __supa.comments=__supa.comments.filter(function(x){ return x && x.id!==id; });
+}
+// A comment is still queued (not yet confirmed to Supabase) while an upsert for its id sits in the pending
+// queue. This is the honest queued state the card shows, and it clears when the queue drains on sign-in.
+function commentPending(id){
+  try{ return supaPending().some(function(e){ return e && e.op==="upsert" && e.t==="console_comments" &&
+    (e.rows||[]).some(function(r){ return r && r.id===id; }); }); }catch(e){ return false; }
+}
+// Every comment for one opportunity, oldest first (the room reads top to bottom).
+function commentsForOpp(slug){
+  return getComments().filter(function(c){ return c && c.opp===slug; })
+    .sort(function(a,b){ return String(a.created_at||"").localeCompare(String(b.created_at||"")); });
+}
+function postComment(slug, body, parentId){
+  var text=String(body==null?"":body).trim();
+  if(!slug || !text) return null;
+  var now=new Date().toISOString();
+  var prof=(typeof profileNow==="function" && profileNow())||{};
+  var c={ id:mintCommentId(), opp:slug, author:currentActor(),
+    author_name:String(prof.display_name||"").trim(), body:text,
+    parent_id:parentId||null, created_at:now, updated_at:now };
+  commentCachePut(c);
+  try{ logActivity("comment_add", slug, c.id); }catch(_){}
+  supaMirrorComment(c);
+  return c;
+}
+function editComment(id, body){
+  var text=String(body==null?"":body).trim(); if(!id || !text) return null;
+  var mine=getComments().find(function(c){ return c && c.id===id; }); if(!mine) return null;
+  if(mine.author!==currentActor()) return null;                 // own only, mirrors the RLS update policy
+  var c=Object.assign({}, mine, { body:text, updated_at:new Date().toISOString() });
+  commentCachePut(c); supaMirrorComment(c); return c;
+}
+function deleteComment(id){
+  var mine=getComments().find(function(c){ return c && c.id===id; }); if(!mine) return false;
+  if(mine.author!==currentActor()) return false;                // own only, mirrors the RLS delete policy
+  commentCacheDrop(id);
+  try{ logActivity("comment_del", mine.opp, id); }catch(_){}
+  supaDeleteComment(id); return true;
+}
+window.ThriveComments={ list:commentsForOpp, post:postComment, edit:editComment, del:deleteComment,
+  all:getComments, pending:commentPending };
+
 // Normalise a subject into a stable conversation root (strip Re:/Fwd:/رد: prefixes).
 function subjRoot(s){ return (s||"").replace(/^\s*(re|fwd|fw|رد|إعادة\s*توجيه)\s*:\s*/i,"").replace(/^\s*(re|fwd|fw|رد)\s*:\s*/i,"").trim().toLowerCase().slice(0,80); }
 // A thread groups every message to one recipient about one opportunity (or, with no
@@ -4293,6 +4396,56 @@ function threadListHtml(slug){
     else if(e.kind==="act") html+=line("clock", label(e.action), e.detail? '<span dir="auto">'+esc(e.detail)+'</span>':"", e.ts);
   });
   return html+'</ol>';
+}
+
+/* ---- the open discussion, rendered inside the card ----------------------------
+   One list of comments, oldest first, each with its author's real name and the one date composer, one
+   level of threaded replies grouped under their parent, and a calm composer at the foot. Every body is
+   escaped (esc) and direction-isolated (dir="auto"), so an Arabic comment reads right-to-left with joined
+   letters and a hostile body renders as text, never as HTML. Own comments carry edit and delete; anyone's
+   comment can be replied to. A comment still in the Stage-4 queue wears an honest "queued" marker until it
+   drains. This is a pure builder; initModal binds the controls and re-renders after each change. */
+function discussionHtml(slug){
+  var mine=currentActor();
+  var all=(window.ThriveComments ? ThriveComments.list(slug) : []);
+  var roots=all.filter(function(c){ return !c.parent_id; });
+  var kids={}; all.forEach(function(c){ if(c.parent_id){ (kids[c.parent_id]=kids[c.parent_id]||[]).push(c); } });
+  function whenHtml(ts){ return fmtWhenHtml(ts) || esc(String(ts==null?"":ts)); }
+  function who(c){ return esc(String(c.author_name||"").trim() || t("dc_someone")); }
+  function bubble(c, isReply){
+    var own=c.author===mine, pend=(window.ThriveComments && ThriveComments.pending(c.id));
+    return '<li class="dc-item'+(isReply?" dc-reply":"")+'" data-cid="'+esc(c.id)+'">'+
+      '<div class="dc-bubble">'+
+        '<div class="dc-head"><span class="dc-who" dir="auto">'+who(c)+'</span>'+
+          '<span class="dc-when">'+whenHtml(c.created_at)+'</span>'+
+          (pend? '<span class="dc-pending" data-icon="clock">'+esc(t("dc_queued"))+'</span>' : '')+'</div>'+
+        '<div class="dc-body" dir="auto">'+esc(c.body)+'</div>'+
+        '<div class="dc-foot">'+
+          (isReply? '' : '<button type="button" class="dc-act dc-reply-btn" data-cid="'+esc(c.id)+'">'+esc(t("dc_reply"))+'</button>')+
+          (own? '<button type="button" class="dc-act dc-edit-btn" data-cid="'+esc(c.id)+'">'+esc(t("dc_edit"))+'</button>'+
+                '<button type="button" class="dc-act dc-del-btn" data-cid="'+esc(c.id)+'">'+esc(t("dc_delete"))+'</button>' : '')+
+        '</div>'+
+      '</div></li>';
+  }
+  var list;
+  if(!all.length){
+    list='<div class="mw-empty">'+ic("channel")+'<p>'+esc(t("dc_empty"))+'</p></div>';
+  } else {
+    list='<ol class="dc-list">';
+    roots.forEach(function(r){
+      list+=bubble(r,false);
+      (kids[r.id]||[]).forEach(function(k){ list+=bubble(k,true); });
+    });
+    list+='</ol>';
+  }
+  var composer='<form class="dc-composer" data-slug="'+esc(slug)+'" autocomplete="off">'+
+    '<div class="dc-replyto" hidden><span class="dc-replyto-txt"></span>'+
+      '<button type="button" class="dc-replyto-x" aria-label="'+esc(t("dc_reply_cancel"))+'">'+ic("close")+'</button></div>'+
+    '<textarea class="input dc-input" dir="auto" rows="3" placeholder="'+esc(t("dc_placeholder"))+'"></textarea>'+
+    '<div class="dc-bar"><span class="dc-hint sub">'+esc(t("dc_open_note"))+'</span>'+
+      '<button type="submit" class="btn sm dc-send">'+esc(t("dc_send"))+'</button></div>'+
+    '<div class="dc-out" role="status"></div></form>';
+  return '<section class="dc-wrap"><h3 class="dc-title">'+esc(t("mw_discussion"))+'</h3>'+list+composer+'</section>';
 }
 
 // The reply composer for a thread: a textarea prefilled with a greeting and closing in the recipient's
@@ -8298,7 +8451,7 @@ function initModal(){
   const modal=el("modal"), scrim=el("modalScrim"), body=el("modalBody"), host=el("modalHost");
   if(!modal || !body || !host) return null;
 
-  const PANELS={ overview:"modalOverview", text:"modalText", outreach:"modalOutreach", history:"modalHistory" };
+  const PANELS={ overview:"modalOverview", text:"modalText", outreach:"modalOutreach", history:"modalHistory", discussion:"modalDiscussion" };
   /* Outreach shows both: the off channel flow this window renders, and the composer it
      borrows, stacked in that order. Off channel comes first because most of a batch has no
      email address at all, so it is the common case rather than the exception. */
@@ -8766,6 +8919,63 @@ function initModal(){
     box.innerHTML=html;
   }
 
+  /* The open team discussion. The list and composer are drawn by discussionHtml (a pure builder); this
+     binds the controls and re-renders after each change, so a post, reply, edit or delete lands in place
+     and the board (its card badge) refreshes. Reply repoints the one composer at a root comment; edit
+     swaps a bubble body for an inline editor; delete removes an own comment. Every write is own-only at
+     the store, mirroring the RLS, and goes through the Stage-4 queue, never a second path. */
+  function renderDiscussion(o){
+    const box=el("modalDiscussion"); if(!box) return;
+    const slug=(o&&o.slug)||current;
+    box.innerHTML=discussionHtml(slug);
+    if(typeof applyIcons==="function") applyIcons(box);
+    const rerender=()=>{ renderDiscussion(rec||o); try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} };
+    const form=box.querySelector(".dc-composer");
+    const ta=form&&form.querySelector(".dc-input");
+    const out=form&&form.querySelector(".dc-out");
+    const replyBar=form&&form.querySelector(".dc-replyto");
+    const replyTxt=form&&form.querySelector(".dc-replyto-txt");
+    const say=(kind,msg)=>{ if(out){ out.textContent=msg||""; out.className="dc-out"+(kind?(" is-"+kind):""); } };
+    let parentId=null;
+    const clearReply=()=>{ parentId=null; if(replyBar) replyBar.hidden=true; };
+    if(form){
+      form.addEventListener("submit", e=>{
+        e.preventDefault();
+        const c=postComment(slug, ta&&ta.value, parentId);
+        if(!c){ say("err", t("dc_empty_warn")); return; }
+        if(ta) ta.value=""; clearReply(); rerender();
+      });
+    }
+    const xBtn=form&&form.querySelector(".dc-replyto-x");
+    if(xBtn) xBtn.addEventListener("click", clearReply);
+    box.querySelectorAll(".dc-reply-btn").forEach(b=> b.addEventListener("click", ()=>{
+      // One level only: the reply attaches to the ROOT comment clicked, and the one composer is repointed.
+      parentId=b.getAttribute("data-cid");
+      const item=box.querySelector('.dc-item[data-cid="'+parentId+'"] .dc-who');
+      const nm=item? item.textContent : "";
+      if(replyTxt) replyTxt.textContent=t("dc_replying_to")+" "+nm;
+      if(replyBar) replyBar.hidden=false;
+      if(ta){ try{ ta.focus(); }catch(_){ } }
+    }));
+    box.querySelectorAll(".dc-del-btn").forEach(b=> b.addEventListener("click", ()=>{
+      if(deleteComment(b.getAttribute("data-cid"))) rerender(); else say("err", t("dc_not_yours"));
+    }));
+    box.querySelectorAll(".dc-edit-btn").forEach(b=> b.addEventListener("click", ()=>{
+      const cid=b.getAttribute("data-cid");
+      const bubble=box.querySelector('.dc-item[data-cid="'+cid+'"] .dc-bubble');
+      const bodyEl=bubble&&bubble.querySelector(".dc-body"); if(!bodyEl) return;
+      const cur=(ThriveComments.all().find(x=>x.id===cid)||{}).body||"";
+      bodyEl.innerHTML='<textarea class="input dc-edit-input" dir="auto" rows="3"></textarea>'+
+        '<div class="dc-edit-bar"><button type="button" class="btn ghost sm dc-edit-cancel">'+esc(t("dc_cancel"))+'</button>'+
+        '<button type="button" class="btn sm dc-edit-save">'+esc(t("dc_save"))+'</button></div>';
+      const inp=bodyEl.querySelector(".dc-edit-input"); if(inp){ inp.value=cur; try{ inp.focus(); }catch(_){ } }
+      bodyEl.querySelector(".dc-edit-cancel").addEventListener("click", ()=> renderDiscussion(rec||o));
+      bodyEl.querySelector(".dc-edit-save").addEventListener("click", ()=>{
+        if(editComment(cid, inp&&inp.value)) rerender(); else say("err", t("dc_empty_warn"));
+      });
+    }));
+  }
+
   /* ---- tabs -------------------------------------------------------------- */
   /* The composer is only adopted when the reader has chosen the email path. The
      tab used to open on the composer AND the send options at once, which asked
@@ -8848,6 +9058,7 @@ function initModal(){
       renderOverview(rec);
     }
     else if(tab==="text") renderText(rec);
+    else if(tab==="discussion") renderDiscussion(rec);
     else renderHistory(rec);
     if(__restored) applyDraftFields(__restored);
   }
@@ -9151,6 +9362,7 @@ function initModal(){
     if(BORROWED[tab]) return;
     if(tab==="overview") renderOverview(rec);
     else if(tab==="text") renderText(rec);
+    else if(tab==="discussion") renderDiscussion(rec);
     else renderHistory(rec);
   });
 
@@ -9165,6 +9377,7 @@ function initModal(){
     if(tab==="overview") renderOverview(rec);
     else if(tab==="text") renderText(rec);
     else if(tab==="outreach") renderOutreach(rec);
+    else if(tab==="discussion") renderDiscussion(rec);
     else if(tab==="history") renderHistory(rec);
   }
   /* switchTo is exported so the Outreach tab can hand off to the composer

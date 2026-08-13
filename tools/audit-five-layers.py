@@ -175,8 +175,8 @@ with sync_playwright() as p:
             ck(5,tag+": it is a full height sheet on the bottom edge",
                pg.evaluate("""()=>{const r=document.getElementById('modal').getBoundingClientRect();
                  return (innerHeight-r.bottom)<=1 && r.height>=innerHeight*0.9;}"""))
-        ck(1,tag+": all five tabs are there",
-           pg.eval_on_selector_all("#modalTabs .modal-tab","e=>e.length")==5)
+        ck(1,tag+": all six tabs are there",
+           pg.eval_on_selector_all("#modalTabs .modal-tab","e=>e.length")==6)
         ck(5,tag+": the board behind it cannot be scrolled",
            pg.evaluate("()=>getComputedStyle(document.body).position==='fixed'"))
         # a modal is modal: the bar behind it is out of reach, on purpose
