@@ -1,17 +1,18 @@
-"""A reply body renders unscrambled in Arabic: every line is direction-isolated (WO-022).
+"""A reply body renders unscrambled in Arabic: the thread is STRUCTURED, not raw lines (WO-022, WO-031).
 
 The device showed Basel's thread with the Gmail quote-header line scrambled: an Arabic date, a Latin sender
 and address, a URL and angle brackets, all in one line, reordered by the bidi algorithm into an unreadable
-run. #99 isolated each MESSAGE's direction; it did not isolate the mixed-direction LINES inside a body. This
-renders each line as its own dir="auto" block (unicode-bidi:isolate), wraps embedded URLs and addresses in
-<bdi> so they stay left-to-right and wrap, and keeps a bracket outside the isolated run so it sits on the
-correct side. Rendering only: every piece still passes through esc (the #99 XSS guarantee holds).
+run. Per-line direction isolation (the first fix) set a base direction per line but could not ORDER that one
+physical line mixing right-to-left and left-to-right runs. The structural fix parses the body into typed
+blocks and RECOMPOSES the quote header from its isolated parts, so the raw mixed run is never painted and the
+scramble is gone by construction. Rendering only: the stored body is never rewritten and every part still
+passes through esc (the #99 XSS guarantee holds); a body that will not parse falls back to per-line isolation.
 
-Engine-independent facts (the final glyph order on WebKit is Thyab's iPad device gate): Basel's actual
-quote-header line renders as separate isolated lines; the address and URL are isolated LTR runs; the angle
-brackets are outside those runs; the body stays escaped (no script node); a long URL wraps inside the card
-(no horizontal overflow); and an all-Arabic, an all-English and a mixed line each compute the right base
-direction in the same thread."""
+Engine-independent facts (the final glyph order on WebKit is Thyab's iPad device gate): Basel's reply renders
+as its message, a recomposed header whose date/name/address are each isolated (the address a clean LTR chip,
+no raw <address> run painted at all), and a collapsed quoted-history section; the body stays escaped (no
+script node); a long URL wraps inside the card (no horizontal overflow); and an all-English reply with no
+quote falls back to per-line isolation and computes left-to-right."""
 import threading, http.server, socketserver, functools, os
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT = "/home/user/thrive-console"
@@ -82,43 +83,54 @@ with sync_playwright() as p:
       document.body.appendChild(wrap);
     }""")
 
-    # ---- the quote header is split into its own isolated lines (not one scrambled block) ----
+    # ---- STRUCTURAL: the body parses into typed blocks (message, recomposed header, quoted history) ----
+    # Per-line isolation was not enough: it could not ORDER the one physical quote-header line. The body now
+    # renders as structure: the new message, a recomposed header built from isolated parts (so the raw mixed
+    # run is never painted), and the quoted history in its own collapsible section.
     struct = pg.evaluate("""()=>{
       const card=document.querySelector('#probe .th-reply .rp-snip');
-      const lines=[...card.querySelectorAll('.rp-line')];
-      return { lineCount:lines.length,
-               allAuto: lines.every(l=>l.getAttribute('dir')==='auto'),
-               allBlock: lines.every(l=>getComputedStyle(l).display==='block'),
-               allIsolate: lines.every(l=>getComputedStyle(l).unicodeBidi.indexOf('isolate')>=0) }; }""")
-    ck("the reply body is split into per-line blocks, each dir=auto and unicode-bidi:isolate (not one flow)",
-       struct["lineCount"] >= 4 and struct["allAuto"] and struct["allBlock"] and struct["allIsolate"], struct)
+      return { hasMsg: !!card.querySelector('.rp-msg'),
+               hasHeader: !!card.querySelector('.rp-qhead'),
+               hasQuoted: !!card.querySelector('details.rp-quoted'),
+               msgText: (card.querySelector('.rp-msg')||{}).textContent||'',
+               // the message keeps per-line direction isolation inside its block
+               msgLinesIsolate: [...card.querySelectorAll('.rp-msg .rp-line')].every(l=>getComputedStyle(l).unicodeBidi.indexOf('isolate')>=0) }; }""")
+    ck("the body renders as typed blocks: the message, a recomposed header, and a collapsible quoted history",
+       struct["hasMsg"] and struct["hasHeader"] and struct["hasQuoted"], struct)
+    ck("the new message is the human's words, still per-line direction-isolated",
+       "نعم، هذا رائع" in struct["msgText"] and struct["msgLinesIsolate"], struct)
 
-    # ---- the address is an isolated LTR run; the angle brackets are OUTSIDE it (correct side) ----
+    # ---- the header is recomposed from ISOLATED parts; the address is a clean LTR chip, no raw run ----
     addr = pg.evaluate("""()=>{
-      const card=document.querySelector('#probe .th-reply .rp-snip');
-      const hdr=[...card.querySelectorAll('.rp-line')].find(l=>l.textContent.indexOf('كتب')>=0);
-      const bdi=hdr && hdr.querySelector('bdi.rp-ltr');
-      return { headerDir: hdr? getComputedStyle(hdr).direction : '',
-               bdiText: bdi? bdi.textContent : '',
-               bdiDir: bdi? getComputedStyle(bdi).direction : '',
-               bracketsOutside: !!hdr && hdr.textContent.indexOf('<hi@thriveiii.com>')>=0 && (bdi.textContent.indexOf('<')<0 && bdi.textContent.indexOf('>')<0) }; }""")
-    ck("the quote-header line reads right-to-left (Arabic base direction), not flipped to LTR by the address",
-       addr["headerDir"]=="rtl", addr)
-    ck("the email address is an isolated left-to-right run (a <bdi> computing ltr), so it never drags the line",
-       addr["bdiText"]=="hi@thriveiii.com" and addr["bdiDir"]=="ltr", addr)
-    ck("the angle brackets sit OUTSIDE the isolated address run, on the correct side (not inside the LTR bdi)",
-       addr["bracketsOutside"] is True, addr)
+      const hdr=document.querySelector('#probe .th-reply .rp-snip .rp-qhead');
+      const date=hdr.querySelector('.rp-qh-date'), name=hdr.querySelector('.rp-qh-name'), a=hdr.querySelector('.rp-qh-addr');
+      const iso=el=>el && getComputedStyle(el).unicodeBidi.indexOf('isolate')>=0;
+      return { headerDir: getComputedStyle(hdr).direction,
+               dateText:(date||{}).textContent||'', nameText:(name||{}).textContent||'',
+               addrText:(a||{}).textContent||'', addrDir: a? getComputedStyle(a).direction:'',
+               partsIsolated: iso(date)&&iso(name)&&iso(a),
+               // the raw "<address>" mixed run is never rendered: the chip is clean, no angle brackets
+               noRawRun: hdr.textContent.indexOf('<hi@thriveiii.com>')<0 }; }""")
+    ck("the recomposed header reads right-to-left (its own Arabic base direction)", addr["headerDir"]=="rtl", addr)
+    ck("the header parts (date, name, address) are each isolated, so none reorders against another",
+       addr["partsIsolated"] is True, addr)
+    ck("the Arabic date and the Latin name survive intact in their own parts",
+       "آب ٢٠٢٦" in addr["dateText"] and addr["nameText"]=="Thrive Digital Solutions", addr)
+    ck("the email address is a clean isolated LTR chip (no raw <address> run is painted at all)",
+       addr["addrText"]=="hi@thriveiii.com" and addr["addrDir"]=="ltr" and addr["noRawRun"] is True, addr)
 
-    # ---- the quoted lines (leading > and the wrote: header) render as the quieter quoted section ----
+    # ---- the quoted history is the quieter, collapsible section with a logical inline-start rule ----
     quote = pg.evaluate("""()=>{
-      const card=document.querySelector('#probe .th-reply .rp-snip');
-      const lines=[...card.querySelectorAll('.rp-line')];
-      const header=lines.find(l=>l.textContent.indexOf('كتب')>=0);
-      const quoted=lines.filter(l=>l.classList.contains('rp-quote'));
-      return { headerQuoted: !!header && header.classList.contains('rp-quote'), quotedCount:quoted.length,
-               hasBorder: quoted.length>0 && getComputedStyle(quoted[0]).borderInlineStartWidth!=='0px' }; }""")
-    ck("the wrote: header and the > quoted lines render as a quieter quoted section (a border, muted)",
-       quote["headerQuoted"] and quote["quotedCount"]>=2 and quote["hasBorder"], quote)
+      const det=document.querySelector('#probe .th-reply .rp-snip details.rp-quoted');
+      const body=det.querySelector('.rp-quoted-body');
+      return { hasSummary: !!det.querySelector('summary.rp-quoted-sum'),
+               collapsedByDefault: !det.open,
+               hasBorder: getComputedStyle(det).borderInlineStartWidth!=='0px',
+               quotedLines: body.querySelectorAll('.rp-line').length,
+               carriesUrl: body.textContent.indexOf('console.thriveiii.com/opp/thrive-july')>=0 }; }""")
+    ck("the quoted history is a collapsed, bordered section with the referenced lines inside",
+       quote["hasSummary"] and quote["collapsedByDefault"] and quote["hasBorder"]
+       and quote["quotedLines"]>=2 and quote["carriesUrl"], quote)
 
     # ---- the URL is isolated and the body stays escaped: no script node, the text is inert ----
     safe = pg.evaluate("""()=>{
