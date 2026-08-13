@@ -141,7 +141,7 @@ with sync_playwright() as p:
     dates = pg.evaluate("""()=>{
       window.setLang && window.setLang('ar');
       const ts='2026-07-31T17:02:00Z';
-      return { loc: window.dateLocale(), when: window.fmtWhen(ts), short: window.fmtWhenShort(ts),
+      return { loc: window.dateLocale(), when: window.fmtWhen(ts), short: window.fmtWhenShortHtml(ts),
                html: window.fmtStampHtml(ts, {dateStyle:'medium'}) };
     }""")
     EASTERN = re.compile('[٠-٩۰-۹]')   # Arabic-Indic and Extended Arabic-Indic digits
