@@ -34,7 +34,7 @@ def ck(n, c, d=None):
 # Source guards
 app = open(f"{ROOT}/library/app.js").read()
 ck("the board card's live-lane view is the send-gated recipient derivation (outreachOpens), not raw opens",
-   "const rv=outreachOpens(tk.slug);" in app and 'rv>0 ? txt("tok_views", rv)' in app)
+   "const rv=outreachOpens(tk.slug);" in app and 'rv>0 ? fmtRelative("tok_views", rv)' in app)
 ck("the window overview shows an opens fact only when a send exists",
    "live&&snd.count?" in app and "t(\"col_views\")+\": \"+opensForSlug" not in app)
 
