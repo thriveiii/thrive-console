@@ -1,7 +1,7 @@
 {
   "site": "console.thriveiii.com",
   "base_path": "/opp/",
-  "updated": "2026-08-11",
+  "updated": "2026-08-13",
   "opportunities": [
     {
       "slug": "ludic-lillian",
@@ -99,6 +99,15 @@
       "template": "custom",
       "sent_on": "2026-08-11",
       "location": "Sterling, VA",
+      "phone": "",
+      "status": "sent"
+    },
+    {
+      "slug": "glowy-skin-studio",
+      "business": "Glowy Skin Studio",
+      "template": "custom",
+      "sent_on": "2026-08-13",
+      "location": "Falls Church, VA",
       "phone": "",
       "status": "sent"
     }
