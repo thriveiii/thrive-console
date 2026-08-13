@@ -775,11 +775,11 @@ const I18N = {
     df_discard:      "Discard",
     df_restored:     "Restored.",
     df_discarded:    "Discarded.",
-    df_ask_h:        "You have unsaved changes",
-    df_ask_p:        "Nothing you typed has to be lost. Choose what happens to it.",
+    df_ask_h:        "You have unsaved edits",
+    df_ask_p:        "Save keeps your edits to reopen later. Discard drops only these edits; the opportunity and its saved content stay.",
     df_keep:         "Keep editing",
     df_saveclose:    "Save and close",
-    df_throw:        "Throw it away",
+    df_throw:        "Discard edits",
     fl_blocked:      "That flow is not declared, so it cannot open:",
 
     /* ---- the walls and the seams, WO-013 phase 8 ------------------------- */
@@ -1878,11 +1878,11 @@ const I18N = {
     df_discard:      "تجاهل",
     df_restored:     "تمت الاستعادة.",
     df_discarded:    "تم التجاهل.",
-    df_ask_h:        "لديك تغييرات لم تُحفظ",
-    df_ask_p:        "لا شيء مما كتبته مضطر أن يضيع. اختر ما يحدث له.",
+    df_ask_h:        "لديك تعديلات لم تحفظها بعد",
+    df_ask_p:        "الحفظ يبقي تعديلاتك لتفتحها لاحقًا. التجاهل يسقط هذه التعديلات فقط، وتبقى الفرصة ومحتواها المحفوظ.",
     df_keep:         "أكمل التحرير",
     df_saveclose:    "احفظ وأغلق",
-    df_throw:        "تخلّص منه",
+    df_throw:        "تجاهل التعديلات",
     fl_blocked:      "هذا المسار غير معرّف، فلا يمكن فتحه:",
 
     /* ---- الجدران والوصلات ---- */

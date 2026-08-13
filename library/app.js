@@ -3686,27 +3686,33 @@ function bindLinkCards(root){
    confirm() offers two, and the answer a person actually wants when they tap
    outside a half written message is the third one: keep editing. So this is a
    real dialogue rather than a window.confirm, and it returns the index. */
-function threeWay(title, body, labels){
+/* The one shared three-way question, used wherever a close would lose unsaved work. Each choice declares
+   its ROLE, so styling and the default focus follow meaning rather than position: one primary (the safe,
+   recommended action, styled and focused), the rest secondary, and one quiet-destructive marked danger.
+   One choice is the CANCEL: Escape and a backdrop click resolve to it, because the gesture that dismisses a
+   question must never be the gesture that loses or discards work. Resolves the index of the chosen button. */
+function threeWay(title, body, choices){
   return new Promise(resolve=>{
     const old=document.getElementById("threeWay");
     if(old) old.remove();
+    let cancelIx=0; choices.forEach((c,i)=>{ if(c && c.cancel) cancelIx=i; });
     const box=document.createElement("div");
     box.id="threeWay"; box.className="tw-scrim";
     box.innerHTML='<div class="tw-box" role="alertdialog" aria-modal="true" aria-labelledby="twT">'+
       '<h3 class="tw-t" id="twT">'+esc(title)+'</h3>'+
       '<p class="tw-p">'+esc(body)+'</p>'+
-      '<div class="tw-acts">'+labels.map((l,i)=>
-        '<button class="btn'+(i===0?"":" ghost")+(i===2?" danger":"")+'" type="button" data-tw="'+i+'">'+
-        esc(l)+'</button>').join("")+'</div></div>';
+      '<div class="tw-acts">'+choices.map((c,i)=>
+        '<button class="btn'+(c.kind==="primary"?"":" ghost")+(c.kind==="danger"?" danger":"")+'" type="button" '+
+        'data-tw="'+i+'"'+(c.kind==="primary"?' data-tw-primary="1"':'')+'>'+esc(c.label)+'</button>').join("")+
+      '</div></div>';
     document.body.appendChild(box);
     const done=i=>{ box.remove(); resolve(i); };
     box.querySelectorAll("[data-tw]").forEach(b=>
       b.addEventListener("click",()=>done(parseInt(b.getAttribute("data-tw"),10))));
-    /* Escape on the question means keep editing. Anything else would make the
-       gesture that saves you the gesture that loses your work. */
-    box.addEventListener("keydown", e=>{ if(e.key==="Escape"){ e.stopPropagation(); done(0); } });
-    box.addEventListener("click", e=>{ if(e.target===box) done(0); });
-    const first=box.querySelector("[data-tw]"); if(first) first.focus();
+    box.addEventListener("keydown", e=>{ if(e.key==="Escape"){ e.stopPropagation(); done(cancelIx); } });
+    box.addEventListener("click", e=>{ if(e.target===box) done(cancelIx); });
+    const focusBtn=box.querySelector('[data-tw-primary="1"]') || box.querySelector("[data-tw]");
+    if(focusBtn) focusBtn.focus();
   });
 }
 
@@ -9090,11 +9096,20 @@ function initModal(){
     if(!isDirty()) return true;
     const data=draftFields();
     if(!ThriveDrafts.isSubstantive(data)) return true;
-    const ans=await threeWay(t("df_ask_h"), t("df_ask_p"),
-      [t("df_keep"), t("df_saveclose"), t("df_throw")]);
-    if(ans===0) return false;                    // keep editing
-    if(ans===1){ ThriveDrafts.save(FLOW, current, data); return true; }
-    ThriveDrafts.drop(FLOW, current); return true;
+    /* Three answers, each doing exactly what its label says. The safe, recommended action is primary and
+       focused (save and close); continuing to edit is the secondary and the cancel (Escape / backdrop land
+       here, changing nothing); discarding is the quiet-destructive one. Crucially, discard drops ONLY the
+       autosaved edits for this flow (ThriveDrafts.drop, a scratch store keyed by flow+slug); it never
+       deletes the opportunity card (thrive_opps_v1) or any of its saved content. */
+    const ans=await threeWay(t("df_ask_h"), t("df_ask_p"), [
+      { label:t("df_saveclose"), kind:"primary" },              // 0: persist the edits, then close
+      { label:t("df_keep"),      kind:"ghost", cancel:true },   // 1: return to the editor, state intact
+      { label:t("df_throw"),     kind:"danger" }                // 2: drop only these edits, card untouched
+    ]);
+    if(ans===1) return false;                                          // keep editing
+    if(ans===0){ ThriveDrafts.save(FLOW, current, data); return true; } // save and close
+    if(ans===2){ ThriveDrafts.drop(FLOW, current); return true; }       // discard edits (never the card)
+    return false;
   }
 
   el("modalBack").addEventListener("click", async ()=>{ if(await askBeforeClose()) goBack(); });

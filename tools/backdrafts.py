@@ -131,20 +131,25 @@ with sync_playwright() as p:
     ck("and the ask offers three answers",
        pg.eval_on_selector_all("#threeWay [data-tw]", "e=>e.length") == 3)
     tw = pg.eval_on_selector("#threeWay", "e=>e.innerText")
-    ck("keep editing, save and close, throw it away",
-       "Keep editing" in tw and "Save and close" in tw and "Throw it away" in tw, tw[:250])
+    ck("keep editing, save and close, discard edits",
+       "Keep editing" in tw and "Save and close" in tw and "Discard edits" in tw, tw[:250])
+    # Standard styling: save-and-close is the primary (safe default), discard is the quiet-destructive one.
+    ck("save-and-close is the primary/default; discard is quiet-destructive, not the default",
+       pg.eval_on_selector("#threeWay [data-tw='0']", "e=>e.className.indexOf('ghost')<0")
+       and pg.eval_on_selector("#threeWay [data-tw='2']", "e=>e.className.indexOf('danger')>=0"))
 
-    pg.click("#threeWay [data-tw='0']"); pg.wait_for_timeout(700)
+    # Keep editing is index 1 (secondary / the Escape-cancel), and it keeps the window and the text.
+    pg.click("#threeWay [data-tw='1']"); pg.wait_for_timeout(700)
     ck("keep editing keeps the window open",
        pg.eval_on_selector("#modal", "e=>!e.hidden"))
     ck("and keeps what was typed",
        "middle of writing" in pg.eval_on_selector("#otBox", "e=>e.value"))
 
-    # Escape asks too, and saving keeps the work
+    # Escape asks too, and saving (the primary, index 0) keeps the work
     pg.keyboard.press("Escape"); pg.wait_for_timeout(800)
     ck("Escape with unsaved changes asks too",
        pg.eval_on_selector_all("#threeWay", "e=>e.length") == 1)
-    pg.click("#threeWay [data-tw='1']"); pg.wait_for_timeout(900)
+    pg.click("#threeWay [data-tw='0']"); pg.wait_for_timeout(900)
     ck("save and close closes it",
        pg.eval_on_selector("#modal", "e=>e.hidden") is True)
     ck("and the work is kept",
