@@ -71,7 +71,6 @@ function actionStatus(kind, msg){
   // time is an error nobody saw. Working and success states clear on their own.
   if(kind!=="err") window.__as=setTimeout(function(){ el.classList.remove("show"); }, kind==="work"? 20000 : 2600);
 }
-function clearActionStatus(){ var el=document.getElementById("actionStatus"); if(el) el.classList.remove("show"); }
 /* Copy helper with a fallback for engines without the async clipboard: a temporary textarea and
    execCommand, so Copy confirms an actual copy rather than a swallowed failure. */
 async function copyToClipboard(text){
@@ -285,7 +284,6 @@ function setTombs(o){
   return lsSet(TOMB, JSON.stringify(out));
 }
 function markRemoved(kind, id){ const o=tombs(); o[kind+":"+id]=Date.now(); setTombs(o); }
-function removedAt(kind, id){ return Number(tombs()[kind+":"+id])||0; }
 /* One merge rule for every keyed collection, so opportunities, message templates and page
    templates cannot drift into three different ideas of what "deleted" means. */
 function mergeKeyed(local, remote, key, tombKind, allTombs, carry){
@@ -1983,7 +1981,6 @@ async function publishOpp(rec){
    offer is a sub artifact of one opportunity, and the manifest still holds one
    entry per slug, so its shape is unchanged (standing rule 6). The published flag
    is stored additively on the offer, through saveDraft. */
-function liveOfferUrl(slug){ return liveUrl(slug)+"/offer"; }
 async function publishOffer(rec){
   const offer=rec.offer||{};
   await ghPutFile("opp/"+rec.slug+"/offer/index.html", withBeacon(offer.html||""),
@@ -2152,7 +2149,6 @@ function supaRecordDiverge(kind, key, msg){
     localStorage.setItem(SUPA_DIVERGE, JSON.stringify(a.slice(-50))); }catch(e){}
   try{ logActivity("supa_diverge", kind+":"+key, String(msg||"").slice(0,120)); }catch(e){}
 }
-function supaClearDiverge(){ try{ localStorage.removeItem(SUPA_DIVERGE); }catch(e){} }
 
 /* ---------- Stage 4: Supabase is the single source; the device is a cache ----------
    When an operator is signed in, Supabase is the authority. Reads come from it (the hydrate, gated by
@@ -2448,7 +2444,6 @@ function supaReadOn(){ return supaReadFlagOn() && supaOn() && __supa.hydrated &&
 // Reads are switched (and the cache usable) whenever a successful hydrate is in hand. The ledger, the
 // replies and the opens each fall back to the current store when their slice is not present.
 function supaReadable(){ return supaReadFlagOn() && supaOn() && __supa.hydrated && !__supa.degraded; }
-function supaReadDegraded(){ return supaReadFlagOn() && supaOn() && __supa.degraded; }
 function supaSignedIn(){ try{ return !!(window.ThriveSupa && window.ThriveSupa.signedIn && window.ThriveSupa.signedIn()); }catch(e){ return false; } }
 function supaReadStatus(){
   // authRequired is a Supabase-read concern only: it is reported true only while reads are switched to
@@ -7335,14 +7330,14 @@ async function initBoard(){
     if(open) renderInboxInto(inboxBody, ()=>{ render(); refreshInboxBadge(); });
   });
 
-  // A gentle poll of the reply transport while the board is open. It pulls, then repaints the quiet
-  // badges; it never redraws the whole screen unless something actually arrived (syncNow fires the event).
-  try{ if(window.__boardPoll) clearInterval(window.__boardPoll); }catch(_){}
-  window.__boardPoll=setInterval(()=>{
-    if(document.hidden) return;
-    Promise.resolve().then(()=> (typeof syncNow==="function") ? syncNow() : null)
-      .then(()=>{ try{ refreshInboxBadge(); paintCardBadges(); }catch(_){} }).catch(()=>{});
-  }, 90000);
+  // Freshness on the board rides the ONE live-sync heartbeat (startLiveSync: a single 60s poll that
+  // pulls the reply transport when the tab is visible and signed in) plus the "sync" hook below, which
+  // re-renders the board and repaints its quiet badges on every completed round. A second 90s poll used
+  // to run here too, pulling the same transport and repainting the same badges that render() already
+  // repaints (paintCardBadges/refreshInboxBadge, above): two overlapping loops of one transport, and an
+  // extra board render every 90s for nothing. It is removed; the 60s heartbeat is more frequent and
+  // covers it, so no freshness is lost and the board polls once, not twice.
+  try{ if(window.__boardPoll){ clearInterval(window.__boardPoll); window.__boardPoll=null; } }catch(_){}
 
   onThrive("lang","board",render);
   onThrive("sync","board",render);
