@@ -128,6 +128,15 @@
       "location": "South Riding, VA",
       "phone": "",
       "status": "sent"
+    },
+    {
+      "slug": "shes-unique",
+      "business": "She's Unique",
+      "template": "custom",
+      "sent_on": "2026-08-13",
+      "location": "Old Town Alexandria, VA",
+      "phone": "",
+      "status": "sent"
     }
   ]
 }
