@@ -1059,7 +1059,7 @@ function recipientsPanelHtml(o){
   var recips=campaignRecipients(o);
   var rows=recips.map(function(r){
     var st=recipientState(o.slug, r.addr);
-    var chip='<span class="rc-chip rc-'+esc(st.chip)+'">'+esc(t("rc_"+st.chip))+'</span>';
+    var chip='<span class="chip-st is-'+esc(st.chip)+'">'+esc(t("rc_"+st.chip))+'</span>';
     var open=(st.chip==="replied" && st.child)? ' <button class="btn ghost sm rc-open" type="button" data-child="'+esc(st.child)+'">'+esc(t("rc_open_child"))+'</button>' : '';
     // ltr() already returns an escaped, isolated span; wrapping it in esc() again printed the tag as
     // literal text (the "<span class=mono-iso>7/31/26, 5:02 PM</span>" symptom). Insert it as markup.
