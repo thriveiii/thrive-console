@@ -1923,14 +1923,44 @@ body.modal-open{
 
 /* Touch targets. The three destinations in the bar, the lock, the language switch and the
    board chips measured 24 to 33px tall, and they are the most-tapped controls in the console.
-   A pointer keeps the tighter density; a finger gets 40. */
+   A pointer keeps the tighter density; a finger gets the 44px floor. The interactive chrome (the
+   nav, the language toggle, the window tabs and its close, every button, field and select) meets
+   the floor on a coarse pointer; an informational chip stays its quiet label size. */
 @media (pointer:coarse){
-  .nav a,.langbtn{min-height:40px;display:inline-flex;align-items:center}
+  .nav a,.langbtn{min-height:44px;display:inline-flex;align-items:center}
   .chip{min-height:40px;display:inline-flex;align-items:center}
   .tok{min-height:44px}
-  .modal-tab,.modal-close{min-height:40px}
+  .modal-tab,.modal-close{min-height:44px}
   .btn,.btn.sm{min-height:44px}
-  .tray-toggle{min-height:40px}
+  .tray-toggle{min-height:44px}
+  .input,.search input,select,textarea{min-height:44px}
+}
+
+/* --- the phone is a first-class console: safe-area insets ------------------------
+   With viewport-fit=cover the shell paints edge to edge, so content can reach a notch, a rounded
+   corner and the home indicator. env() insets are zero on a desktop or a non-notched screen, so
+   max(existing, env(...)) adds room ONLY where the hardware takes it and changes nothing elsewhere.
+   One language, adaptive expression: the same sticky header, the same window and gate, given the
+   clearance the device asks for rather than a separate mobile layout. */
+.top{
+  padding-top: max(14px, env(safe-area-inset-top));
+  padding-inline: max(20px, env(safe-area-inset-left)) max(20px, env(safe-area-inset-right));
+}
+.wrap{
+  padding-inline: max(20px, env(safe-area-inset-left)) max(20px, env(safe-area-inset-right));
+}
+/* The fixed feedback surfaces sit clear of the home indicator and the notch. */
+.toast{ inset-block-end: max(20px, env(safe-area-inset-bottom)); }
+.act-status{ padding-top: max(12px, env(safe-area-inset-top)); }
+/* The entry gate keeps clear of every inset on all four edges. */
+#thriveGate{
+  padding: max(22px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right))
+           max(22px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
+}
+/* The card window is a full height sheet on the phone: its foot clears the home indicator, so the
+   composer and its Post never sit under it. */
+@media(max-width:720px){
+  .modal{ padding-bottom: max(0px, env(safe-area-inset-bottom)); }
 }
 
 /* --- replies ---------------------------------------------------------------
