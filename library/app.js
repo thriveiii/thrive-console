@@ -1017,14 +1017,38 @@ function fmtStamp(ts, opts, locOverride){
   if(f===undefined){ try{ f=new Intl.DateTimeFormat(loc, opts||{}); }catch(e){ try{ f=new Intl.DateTimeFormat("en-US", opts||{}); }catch(_){ f=null; } } __DTF[key]=f; }
   try{ return f ? f.format(d) : String(ts); }catch(e){ return String(ts); }
 }
-/* Isolated for direct injection into RTL text, so a mixed line never reorders the date. */
+/* THE date composer. fmtStamp is the raw Intl string (for sorting, keys, non-display use); every DISPLAYED
+   date is composed here, wrapped in <bdi> so its direction follows its CONTENT (Arabic date -> rtl, English
+   date -> ltr) and is isolated from the surrounding run. This is the whole root of the persisting scramble:
+   the earlier fix isolated dates but often through an LTR-FORCING wrapper (.mono, or ltr() -> .mono-iso),
+   which is right for a Latin identifier (a slug, an address) but forces an Arabic date to render
+   left-to-right, and the bidi algorithm then shuffles «2026/08/11، 3:46 م» into a scramble. A <bdi> lets the
+   date keep its own reading direction inside any container, even an LTR-forced cell, so it never reorders.
+   Never wrap a displayed date in ltr()/.mono; route it here. */
 function fmtStampHtml(ts, opts){ var s=fmtStamp(ts, opts); return s ? '<bdi>'+esc(s)+'</bdi>' : ''; }
-function fmtWhenShort(ts){ var s=fmtStamp(ts, {dateStyle:"short", timeStyle:"short"}); return s || (ts||""); }
+/* The common shorthand: a medium date with a short time, composed and isolated. Every "when" on a thread
+   row, a history row, a scan line or an insights cell routes through this, never through ltr(when(...)). */
+function fmtWhenHtml(ts){ return fmtStampHtml(ts, {dateStyle:"medium", timeStyle:"short"}); }
+function fmtWhenShortHtml(ts){ return fmtStampHtml(ts, {dateStyle:"short", timeStyle:"short"}); }
+/* The date composer for a PLAIN-TEXT sink (a .textContent status line, where no HTML wrapper is possible).
+   Same isolation, baked with Unicode controls instead of a <bdi>: a first-strong isolate (U+2068 .. U+2069)
+   makes the date an atomic unit that keeps its own reading direction inside a mixed Arabic line. */
+function fmtStampTxt(ts, opts){ var s=fmtStamp(ts, opts); return s ? "⁨"+s+"⁩" : ""; }
 /* The one numeral helper for a relative-time or counted phrase. A Western numeral dropped raw into an
    Arabic phrase ("8 days idle" / «8 أيام بلا حركة») reorders on RTL engines; wrapping it in .n
    (direction:ltr; unicode-bidi:isolate) makes the digit group an atomic segment that sits correctly in
    the phrase. Every number composed into a phrase routes through here, beside the date formatter. */
 function nIso(n){ return '<span class="n">'+esc(String(n))+'</span>'; }
+/* THE relative/counted-phrase composer, beside the date composer. A counted phrase ("8 days idle" /
+   «8 أيام بلا حركة») must never be assembled at the call site by dropping the raw numeral into the
+   template and trusting the container's direction: on an RTL engine the bare digit reorders. This composes
+   the plural-correct phrase in ONE place and isolates the counted numeral (nIso -> .n), so the digit is an
+   atomic LTR segment that sits correctly whatever the surrounding direction. Every counted phrase routes
+   here; no call site does txt(...).replace(String(n), num(n)) or hand-rolls the split/join any more. */
+function fmtRelative(key, n, extra){
+  var s = boardText(getLang(), key, n, extra||{});
+  return String(n).length ? s.split(String(n)).join(nIso(n)) : s;   // isolate every place the count was put
+}
 function campaignAggHtml(slug){
   var s=campaignStats(slug);
   function tile(lbl,val){ return '<div class="cg-tile"><span class="cg-n">'+esc(String(val))+'</span><span class="cg-l">'+esc(lbl)+'</span></div>'; }
@@ -1039,7 +1063,7 @@ function recipientsPanelHtml(o){
     var open=(st.chip==="replied" && st.child)? ' <button class="btn ghost sm rc-open" type="button" data-child="'+esc(st.child)+'">'+esc(t("rc_open_child"))+'</button>' : '';
     // ltr() already returns an escaped, isolated span; wrapping it in esc() again printed the tag as
     // literal text (the "<span class=mono-iso>7/31/26, 5:02 PM</span>" symptom). Insert it as markup.
-    var last=st.last? '<span class="rc-last">'+ltr(fmtWhenShort(st.last))+'</span>' : '';
+    var last=st.last? '<span class="rc-last">'+fmtWhenShortHtml(st.last)+'</span>' : '';
     return '<li class="rc-row"><span class="rc-name">'+esc(r.name||t("rc_no_name"))+'</span>'+
       '<span class="rc-addr mono-iso">'+ltr(esc(r.addr))+'</span>'+chip+open+last+'</li>';
   }).join("");
@@ -3412,7 +3436,7 @@ function initActivity(){
   const el=id=>document.getElementById(id);
   let cat="all";
   const actionLabel=a=>t("act_"+a) !== ("act_"+a) ? t("act_"+a) : a;
-  function fmt(ts){ return fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||""); }
+  function fmt(ts){ return fmtWhenHtml(ts) || esc(String(ts==null?"":ts)); }   // isolated date markup (bdi)
 
   function renderChips(){
     const cats=["all","pages","emails","templates","system"];
@@ -3452,7 +3476,7 @@ function initActivity(){
         const tp=m.templateName?'<span class="tag tag-templates">'+esc(m.templateName)+'</span>':'<span class="tag tag-plain">'+t("cmp_no_tpl")+'</span>';
         const br=m.branded?' <span class="tag">'+t("mst_branded")+'</span>':'';
         const pv=m.preview?'<div class="mprev">'+esc(m.preview)+'</div>':'';
-        return '<div class="msg"><div class="msg-top">'+dir+'<span class="mono msg-time">'+esc(fmt(m.ts))+'</span>'+
+        return '<div class="msg"><div class="msg-top">'+dir+'<span class="mono msg-time">'+fmt(m.ts)+'</span>'+
           '<span class="tag">'+statusLabel(m)+'</span>'+tp+br+'</div>'+
           '<div class="msg-subj">'+esc(m.subject||"–")+'</div>'+pv+'</div>';
       }).join("");
@@ -3467,7 +3491,7 @@ function initActivity(){
           esc(sg.business||sg.slug)+'</option>').join("")+'</select>';
       return '<details class="thread"><summary>'+
         '<div class="th-main"><span class="th-who">'+who+'</span><span class="th-meta">'+oppSel+tplB+'</span></div>'+
-        '<div class="th-side"><span class="th-counts">'+counts+'</span><span class="mono th-last">'+esc(fmt(th.last))+'</span>'+
+        '<div class="th-side"><span class="th-counts">'+counts+'</span><span class="mono th-last">'+fmt(th.last)+'</span>'+
         '<button class="btn ghost sm th-reply" data-th="'+esc(th.id)+'" data-to="'+esc(th.to)+'" data-opp="'+esc(th.opp)+'">'+t("act_reply_btn")+'</button></div>'+
         '</summary><div class="thread-body">'+rows+'</div></details>';
     }).join("");
@@ -3524,23 +3548,23 @@ function initActivity(){
     hits.forEach(e=>{ day(dk(e.ts)).opens++; });
     const keys=Object.keys(days).sort().reverse();
     if(!keys.length){ wrap.innerHTML='<div class="empty">'+esc(t("act_story_quiet"))+'</div>'; return; }
-    const when=k=>{
+    const when=k=>{   // returns isolated markup: a plain label, or the composed date in a <bdi>
       const today=dk(new Date().toISOString()), yest=dk(new Date(Date.now()-DAY).toISOString());
-      if(k===today) return t("act_today");
-      if(k===yest) return t("act_yesterday");
-      try{ return fmtStamp(k+"T12:00:00Z", {weekday:"long", day:"numeric", month:"long"}) || k; }
-      catch(e){ return k; }
+      if(k===today) return esc(t("act_today"));
+      if(k===yest) return esc(t("act_yesterday"));
+      try{ return fmtStampHtml(k+"T12:00:00Z", {weekday:"long", day:"numeric", month:"long"}) || esc(k); }
+      catch(e){ return esc(k); }
     };
     wrap.innerHTML='<h3 class="block-h">'+esc(t("act_story_h"))+'</h3>'+
       '<p class="sub">'+esc(t("act_story_sub"))+'</p>'+
       '<ol class="story-days">'+keys.map(k=>{
         const d=days[k], said=[];
         const L=getLang();
-        if(d.sent){ said.push(boardText(L,"act_s_sent",d.sent)); said.push(boardText(L,"act_s_to",d.people.size)); }
-        if(d.replies) said.push(boardText(L,"act_s_replies",d.replies));
-        if(d.published) said.push(boardText(L,"act_s_published",d.published));
-        if(d.opens) said.push(boardText(L,"act_s_opens",d.opens));
-        return '<li><span class="story-when">'+esc(when(k))+'</span><span class="story-said">'+
+        if(d.sent){ said.push(fmtRelative("act_s_sent",d.sent)); said.push(fmtRelative("act_s_to",d.people.size)); }
+        if(d.replies) said.push(fmtRelative("act_s_replies",d.replies));
+        if(d.published) said.push(fmtRelative("act_s_published",d.published));
+        if(d.opens) said.push(fmtRelative("act_s_opens",d.opens));
+        return '<li><span class="story-when">'+when(k)+'</span><span class="story-said">'+
           (said.length? said.join(" ") : esc(t("act_s_nothing")))+'</span></li>';
       }).join("")+'</ol>';
   }
@@ -3554,7 +3578,7 @@ function initActivity(){
     if(!rows.length){ wrap.innerHTML='<div class="empty">'+t("act_empty")+'</div>'; return; }
     wrap.innerHTML='<div class="logwrap"><table class="logtable"><thead><tr>'+
       '<th>'+t("act_time")+'</th><th>'+t("act_category")+'</th><th>'+t("act_action")+'</th><th>'+t("act_item")+'</th><th>'+t("act_detail")+'</th></tr></thead><tbody>'+
-      rows.map(r=>`<tr><td class="mono">${esc(fmt(r.ts))}</td><td><span class="tag tag-cat-${esc(actCat(r.action))}">${t("cat_"+actCat(r.action))}</span></td><td><span class="tag tag-${esc(r.action)}">${esc(actionLabel(r.action))}</span></td><td class="mono">${esc(r.slug)||"–"}</td><td>${esc(r.detail)||"–"}</td></tr>`).join("")+
+      rows.map(r=>`<tr><td class="mono">${fmt(r.ts)}</td><td><span class="tag tag-cat-${esc(actCat(r.action))}">${t("cat_"+actCat(r.action))}</span></td><td><span class="tag tag-${esc(r.action)}">${esc(actionLabel(r.action))}</span></td><td class="mono">${esc(r.slug)||"–"}</td><td>${esc(r.detail)||"–"}</td></tr>`).join("")+
       '</tbody></table></div>';
   }
   el("logRefresh").addEventListener("click",render);
@@ -4229,19 +4253,19 @@ function renderReplyBodyStructured(text){
 }
 function threadListHtml(slug){
   const entries=buildThread(slug);
-  const when=ts=> fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"");
+  const when=ts=> fmtWhenHtml(ts) || esc(String(ts==null?"":ts));   // isolated date markup (bdi), never LTR-forced
   const label=a=>{ const k="act_"+a; const v=t(k); return v===k? a : v; };
   if(!entries.length) return '<div class="mw-empty">'+ic("clock")+'<p>'+esc(t("mw_hist_empty"))+'</p></div>';
   function line(icn, what, detail, ts){
     return '<li class="th-line"><span class="th-icn">'+ic(icn)+'</span>'+
       '<span class="th-what">'+esc(what)+'</span>'+
       (detail? '<span class="th-detail" dir="auto">'+detail+'</span>':'')+
-      '<span class="th-when">'+ltr(when(ts))+'</span></li>';
+      '<span class="th-when">'+when(ts)+'</span></li>';
   }
   function replyCard(r){
     return '<li class="th-reply"'+(r.id? ' data-rid="'+esc(r.id)+'"' : '')+'><div class="rp-card">'+
       '<div class="rp-top"><span class="rp-who" dir="auto">'+esc(r.from||t("th_someone"))+'</span>'+
-      '<span class="rp-when">'+ltr(when(r.ts))+'</span></div>'+
+      '<span class="rp-when">'+when(r.ts)+'</span></div>'+
       (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
       (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>':'')+
       (r.snippet? '<div class="rp-snip" dir="auto">'+renderReplyBodyStructured(r.snippet)+'</div>':'')+
@@ -5672,16 +5696,16 @@ function initSettings(){
         ' · <b>'+getSendStamps().length+'</b> '+t("sy_c_stamps")+' · <b>'+getDraftsLocal().length+'</b> '+t("sy_c_opps")+
         ' · <b>'+getEmailTemplates().length+'</b> '+t("sy_c_msgtpl")+
         ' · <b>'+getCustomTemplates().length+'</b> '+t("sy_c_pagetpl")+
-        ' · <b>'+Object.keys(tombs()).length+'</b> '+t("sy_c_removed")+
+        ' · <b>'+nIso(Object.keys(tombs()).length)+'</b> '+t("sy_c_removed")+
         (agree?'<br>'+agree:"")+
-        (held.length? '<br><span class="warn-line" data-icon="alert">'+boardText(getLang(),"sy_held",held.length,
+        (held.length? '<br><span class="warn-line" data-icon="alert">'+fmtRelative("sy_held",held.length,
           {list: esc(held.map(x=>String(x).replace(/^tpl:/,"")).join("، "))})+'</span>' : "")+
         sizeLine();
     }
     function sySummary(){
       syCounts();
       const last=syncLast();
-      if(last){ try{ syShow("✓ "+t("sy_last")+" "+fmtStamp(last, {dateStyle:"medium", timeStyle:"short"}), "ok"); return; }catch(e){} }
+      if(last){ try{ syShow("✓ "+t("sy_last")+" "+fmtStampTxt(last, {dateStyle:"medium", timeStyle:"short"}), "ok"); return; }catch(e){} }
       if(getSyncEndpoint()) syShow(t("sy_ready"),"");
     }
     sySummary();
@@ -5894,7 +5918,7 @@ function initTemplates(){
                  belongs to one prospect. WO-013 §3.4. -->
             <div class="id">${esc(ct.id)} · <span class="kind-tag">${esc(t("type_editable"))}</span>
               · ${esc(t("loc_"+String(localeOf(ct)||"en").toLowerCase()))}
-              · ${esc(boardText(getLang(),"kd_fields", (ct.fields||ThriveKinds.fillableFields(ct.html||"")).length))}
+              · ${fmtRelative("kd_fields", (ct.fields||ThriveKinds.fillableFields(ct.html||"")).length)}
               ${ct.type_migrated?`· <span class="type-mig">${esc(t("type_migrated"))}</span>`:""}</div>
           </div>
           <!-- Editable template actions only: edit it, generate an offer from it, activate it. -->
@@ -6026,7 +6050,7 @@ function initTemplates(){
     b.innerHTML='<div class="kd-ok">'+
       '<p class="kd-said">'+ic("page")+esc(t("kd_read_template"))+'</p>'+
       '<p class="kd-line"><b>'+esc(t("kd_locale"))+'</b> '+esc(t("loc_"+c.locale.toLowerCase()))+'</p>'+
-      '<p class="kd-line"><b>'+esc(boardText(getLang(),"kd_fields", c.fields.length))+'</b></p>'+
+      '<p class="kd-line"><b>'+fmtRelative("kd_fields", c.fields.length)+'</b></p>'+
       '<ul class="kd-fields">'+c.fields.map(x=>'<li><span class="mono-iso">'+esc(x)+'</span>'+
         (ThriveKinds.KNOWN_FIELDS.indexOf(x)<0? ' <span class="kd-unk">'+esc(t("kd_unknown"))+'</span>':'')+
         '</li>').join("")+'</ul>'+
@@ -6287,7 +6311,7 @@ function initTemplates(){
 
 /* ---------- Overview home: outreach + page performance in one room ---------- */
 function fmtMs(ms){ if(!ms) return "–"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
-function fmtWhen(ts){ return fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"–"); }
+function fmtWhen(ts){ return fmtWhenHtml(ts) || esc("–"); }   // isolated date markup (bdi)
 /* roll raw beacon events into per-slug page stats */
 function aggregateHits(events){
   const bySlug={};
@@ -6498,7 +6522,7 @@ async function initHome(){
           '<td'+gc("sent",r)+'>'+num(r.sent)+'</td><td'+gc("views",r)+'>'+num(r.views)+'</td><td'+gc("opens",r)+'>'+num(r.opens)+'</td><td'+gc("uniq",r)+'>'+num(r.uniq)+'</td>'+
           '<td'+gc("dwell",r)+'>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):'<span class="zero">–</span>')+'</td>'+
           '<td'+gc("replies",r)+'>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
-          '<td class="mono">'+(r.lastOpen?esc(fmtWhen(r.lastOpen)):'<span class="zero">–</span>')+'</td></tr>').join("")+
+          '<td class="mono">'+(r.lastOpen?fmtWhen(r.lastOpen):'<span class="zero">–</span>')+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_no_campaigns")+'</div>';
 
@@ -6545,7 +6569,7 @@ async function initHome(){
           '<td>'+(r.sent? pct(r.uniq, r.people.size||r.sent) : '<span class="zero">0%</span>')+'</td>'+
           '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
           '<td>'+(r.sent? pct(r.replies, r.people.size||r.sent) : '<span class="zero">0%</span>')+'</td>'+
-          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">–</span>')+'</td></tr>').join("")+
+          '<td class="mono">'+(r.last?fmtWhen(r.last):'<span class="zero">–</span>')+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_tpl_empty")+'</div>';
 
@@ -6587,7 +6611,7 @@ async function initHome(){
           '<td>'+num(r.sent)+'</td><td>'+num(r.opens)+'</td>'+
           '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
           '<td><span class="tag tag-st-'+r.state+'">'+esc(t("home_p_"+r.state))+'</span></td>'+
-          '<td class="mono">'+(r.last?esc(fmtWhen(r.last)):'<span class="zero">–</span>')+'</td></tr>').join("")+
+          '<td class="mono">'+(r.last?fmtWhen(r.last):'<span class="zero">–</span>')+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_p_empty")+'</div>';
 
@@ -6602,7 +6626,7 @@ async function initHome(){
         opened.slice(0,10).map(r=>'<tr><td><a class="link" href="'+relOpp(r.slug)+'" target="_blank" rel="noopener">'+esc(r.slug)+'</a></td>'+
           '<td><b>'+r.opens+'</b></td><td>'+r.vids.size+'</td>'+
           '<td>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):"–")+'</td>'+
-          '<td class="mono">'+(r.lastTs?esc(fmtWhen(r.lastTs)):"–")+'</td></tr>').join("")+
+          '<td class="mono">'+(r.lastTs?fmtWhen(r.lastTs):"–")+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_no_opens")+'</div>';
   }
@@ -6663,7 +6687,7 @@ async function initInsights(){
   el("epInput").value = getEndpoint();
 
   function fmtDur(ms){ if(!ms) return "–"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60); return m+"m "+(s%60)+"s"; }
-  function fmtDate(ts){ return fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"–"); }
+  function fmtDate(ts){ return fmtWhenHtml(ts) || esc("–"); }   // isolated date markup (bdi)
 
   async function fetchData(){
     const ep=getEndpoint();
@@ -6723,7 +6747,7 @@ async function initInsights(){
       rows.map(r=>`<tr>
         <td><a class="link" href="${relOpp(r.slug)}" target="_blank" rel="noopener">${esc(r.slug)}</a></td>
         <td><b>${r.opens}</b></td><td>${r.vids.size}</td><td>${r.ips.size||"–"}</td>
-        <td>${r.dwellN?fmtDur(r.dwellMs/r.dwellN):"–"}</td><td class="mono">${r.lastTs?esc(fmtDate(r.lastTs)):"–"}</td>
+        <td>${r.dwellN?fmtDur(r.dwellMs/r.dwellN):"–"}</td><td class="mono">${r.lastTs?fmtDate(r.lastTs):"–"}</td>
         <td>${spark(r.days)}</td></tr>`).join("")+'</tbody></table></div>';
   }
 
@@ -6852,11 +6876,11 @@ async function initBoard(){
       // emailed can never read as a view here. A live card has no send, so this is zero and the card reads
       // "no email yet", never the impossible "no email yet, one view".
       const rv=outreachOpens(tk.slug);
-      meta = rv>0 ? txt("tok_views", rv).replace(String(rv), num(rv)) : txt("tok_noemail");
+      meta = rv>0 ? fmtRelative("tok_views", rv) : txt("tok_noemail");
     }
     else if(tk.lane==="replied") meta=txt("tok_answered");
-    else if(tk.opens>0) meta=txt("tok_opens", tk.opens).replace(String(tk.opens), num(tk.opens));
-    else meta=txt("tok_idle", tk.age).replace(String(tk.age), num(tk.age));
+    else if(tk.opens>0) meta=fmtRelative("tok_opens", tk.opens);
+    else meta=fmtRelative("tok_idle", tk.age);
     /* The card is a row now, not a single button: the label opens the window, the grip picks it
        up, and the overflow control is the path that needs no dragging at all. */
     /* WO-015 §6: one quiet chapter marker per card, on the cards where a chapter is
@@ -6943,7 +6967,7 @@ async function initBoard(){
     // counts feed the pipeline strip below, so the headline number and its stage chip are one
     // value from one source, never a second figure.
     const v=ThriveBoard.verdict(b);
-    const vLine=txt(v.key, v.n).replace(String(v.n), num(v.n));
+    const vLine=fmtRelative(v.key, v.n);
     const vNew=glowChanged("counter", v.key+":"+v.n) ? " is-glow-new" : "";
     el("boardVerdict").innerHTML = '<span class="vtext'+vNew+'">'+vLine+'</span>';
     // The hero subtitle speaks about the SAME state the headline is in, never another's line: the old
@@ -6977,7 +7001,7 @@ async function initBoard(){
     else if(v.key==="vd_opened"){ var od=latestOpenDays();
       subHtml = (od!=null) ? heroDaysAgo("vd_sub_opened", od) : txt("vd_sub_none"); }
     else if(v.key==="vd_stalled"){
-      subHtml = txt("vd_sub_stalled", ThriveBoard.STALL_DAYS).replace(String(ThriveBoard.STALL_DAYS), num(ThriveBoard.STALL_DAYS)); }
+      subHtml = fmtRelative("vd_sub_stalled", ThriveBoard.STALL_DAYS); }
     else subHtml = txt("vd_sub_none");
     el("boardVerdictSub").innerHTML = subHtml;
 
@@ -6997,9 +7021,9 @@ async function initBoard(){
     const q=quotaUsage(), left=Math.max(0, q.dailyCap-q.day);
     const chips=[];
     if(b.summary.stalled) chips.push('<button class="chip warn" data-chip="stalled">'+
-      txt("chip_stalled", b.summary.stalled, {d:nIso(ThriveBoard.STALL_DAYS)})+' <b>'+b.summary.stalled+'</b></button>');
-    chips.push('<button class="chip" data-chip="sends">'+txt("chip_sends", left)+' <b>'+left+'</b></button>');
-    if(b.archived) chips.push('<button class="chip" data-chip="archived">'+txt("chip_archived")+' <b>'+b.archived+'</b></button>');
+      txt("chip_stalled", b.summary.stalled, {d:nIso(ThriveBoard.STALL_DAYS)})+' <b>'+nIso(b.summary.stalled)+'</b></button>');
+    chips.push('<button class="chip" data-chip="sends">'+txt("chip_sends", left)+' <b>'+nIso(left)+'</b></button>');
+    if(b.archived) chips.push('<button class="chip" data-chip="archived">'+txt("chip_archived")+' <b>'+nIso(b.archived)+'</b></button>');
     el("boardChips").innerHTML=chips.join("");
     el("boardChips").querySelectorAll("[data-chip]").forEach(c=>c.addEventListener("click",()=>{
       const k=c.getAttribute("data-chip");
@@ -7252,7 +7276,7 @@ function localeTabBar(id){
 }
 function localeEmpty(L, n){
   const count='<span class="loc-count">'+
-    esc(boardText(getLang(),"loc_count",n)).split(String(n)).join('<span class="n">'+n+'</span>')+
+    fmtRelative("loc_count",n)+
     ' '+esc(t("loc_counter"))+'</span>';
   if(n) return count;
   return '<div class="mw-empty">'+
@@ -7323,7 +7347,7 @@ function renderSyncBand(){
   if(n < SYNC_STALE_DAYS){ host.hidden=true; host.innerHTML=""; return; }
   const line = (n===Infinity)
     ? esc(t("st_never"))
-    : esc(boardText(getLang(),"st_stale_n",n)).split(String(n)).join('<span class="n">'+n+'</span>');
+    : fmtRelative("st_stale_n",n);
   host.hidden=false;
   host.innerHTML='<div class="mw-band"><span class="mw-band-i" aria-hidden="true">!</span>'+
     '<div><b>'+esc(t("st_stale_h"))+'</b><span>'+line+' '+esc(t("st_stale_p"))+'</span></div>'+
@@ -7487,11 +7511,11 @@ function renderRepliesPanel(){
   const host=document.getElementById("rpPanel");
   if(!host) return;
   const scan=inboxScanInfo();
-  const when=ts=>fmtStamp(ts, {dateStyle:"medium", timeStyle:"short"}) || (ts||"");
+  const when=ts=>fmtWhenHtml(ts) || esc(String(ts==null?"":ts));   // isolated date markup (bdi)
 
   let h='<p class="st-line">'+esc(t("rp_on_board"))+'</p>';
   h+= scan
-    ? '<p class="st-line">'+esc(t("rp_last_scan"))+' '+ltr(when(scan.ts))+
+    ? '<p class="st-line">'+esc(t("rp_last_scan"))+' '+when(scan.ts)+
       ' · <span class="n">'+(scan.ms||0)+'</span> ms</p>'
     : '<p class="st-line st-miss">'+esc(t("rp_never_scanned"))+'</p>';
   h+='<div class="bar">'+
@@ -8089,8 +8113,7 @@ function initIntake(){
       ? '<ul class="in-named">'+list.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>' : "";
 
     out.innerHTML=
-      '<div class="in-head"><b>'+esc(boardText(getLang(),"in_found",n))
-        .split(String(n)).join('<span class="n">'+n+'</span>')+'</b>'+
+      '<div class="in-head"><b>'+fmtRelative("in_found",n)+'</b>'+
         '<span class="in-actions">'+
           '<button class="btn sm" id="intakeAdd" type="button" data-icon="import">'+esc(t("in_add"))+'</button>'+
           '<button class="btn ghost sm" id="intakeCancel" type="button">'+esc(t("in_cancel"))+'</button>'+
@@ -8642,8 +8665,7 @@ function initModal(){
     rows.push(row(t("mw_o_state"), '<span class="mw-state mw-state-'+esc(st)+'">'+esc(stageName(st))+'</span>'));
     // The age carries a number, so it goes through the plural rule rather than a flat template:
     // Arabic inflects the noun after the count and "3 يوم" is not Arabic.
-    rows.push(row(t("mw_o_age"), esc(boardText(getLang(),"tok_days",age))
-      .split(String(age)).join('<span class="n">'+age+'</span>')));
+    rows.push(row(t("mw_o_age"), fmtRelative("tok_days",age)));
     if(o.location) rows.push(row(t("mw_o_where"), esc(o.location)));
     if(o.template) rows.push(row(t("mw_o_tpl"), esc(o.template)));
     if(o.sent_on) rows.push(row(t("mw_o_made"), ltr(o.sent_on)));
