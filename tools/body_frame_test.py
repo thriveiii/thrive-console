@@ -35,9 +35,16 @@ app = open(f"{ROOT}/library/app.js").read()
 css = open(f"{ROOT}/library/styles.css").read()
 ck("the preview iframe body wraps its content (srcdoc CSS)",
    "overflow-wrap:anywhere;word-break:break-word" in app and "prevFrame.srcdoc" in app)
-ck("the editable body wraps long content (.ebody in styles.css)",
-   ".ebody{" in css and "overflow-wrap:anywhere" in css.split(".ebody{")[1].split("}")[0]
-   and "word-break:break-word" in css.split(".ebody{")[1].split("}")[0])
+# The wrapping now lives on ONE shared message-body rule that every body surface is grouped into (the
+# editable .ebody, the modal text tab / overview <pre class="mw-pitch"> that the earlier fix missed, the
+# thread reply body, and the message preview), instead of each surface carrying its own divergent copy.
+_sel = css.split(".msg-body,")[1].split("{")[0] if ".msg-body," in css else ""
+_dec = css.split(".msg-body,")[1].split("{")[1].split("}")[0] if ".msg-body," in css else ""
+ck("every message body wraps via ONE shared rule (.ebody and the previously-missed .mw-pitch grouped in)",
+   ".mw-pitch," in _sel and ".ebody," in _sel
+   and "white-space:pre-wrap" in _dec and "overflow-wrap:anywhere" in _dec
+   and "word-break:break-word" in _dec and "max-width:100%" in _dec
+   and "overflow-wrap:anywhere" not in css.split(".ebody{")[1].split("}")[0])   # no divergent per-surface copy
 
 LONG = "supercalifragilisticexpialidociousmusiclovacademyautumnenrolmentcampaign2026"
 URL = "https://console.thriveiii.com/opp/" + LONG + "?ref=outreach_email_autumn_campaign_2026"

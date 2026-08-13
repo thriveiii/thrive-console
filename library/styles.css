@@ -455,10 +455,30 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100
 .etoolbar button{padding:7px 11px;border-radius:8px;border:1px solid var(--hair);background:transparent;color:var(--ink-2);font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;min-width:34px}
 .etoolbar button:hover{border-color:var(--purple);color:var(--ink)}
 .etoolbar .tb-accent{margin-inline-start:auto;color:#15121b;background:var(--grad);border:0}
-.ebody{min-height:240px;max-width:100%;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;color:var(--ink);font-size:15px;line-height:1.7;outline:none;overflow-wrap:anywhere;word-break:break-word}
+.ebody{min-height:240px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;color:var(--ink);font-size:15px;line-height:1.7;outline:none}
 .ebody:focus{border-color:var(--purple)}
 .ebody a{color:var(--teal);text-decoration:underline}
 .ebody:empty::before{content:attr(data-ph);color:var(--ink-3)}
+
+/* One message body, one frame. Every surface that renders a message body shares ONE set of wrapping rules,
+   so a long line or an unbreakable URL wraps INSIDE the frame instead of running past its edge. The earlier
+   frame fix reached the compose-preview iframe and the editable .ebody, but not the <pre class="mw-pitch">
+   of the modal text tab and the overview pitch: a bare <pre> keeps the UA default white-space:pre (no wrap)
+   and clipped every long line. Routing every body surface through this one rule closes that gap and leaves
+   no surface with its own divergent wrapping. CSS only; the type is never shrunk, the text wraps. Surfaces:
+   the modal text tab and overview pitch (.mw-pitch), the editable compose body (.ebody), the thread reply
+   body and its blocks (.rp-snip/.rp-msg/.rp-line/.rp-quoted-body), and the message preview (.mprev). The
+   compose preview is its own iframe document and mirrors these values in its srcdoc body style. */
+.msg-body,
+.mw-pitch,
+.ebody,
+.rp-snip, .rp-msg, .rp-line, .rp-quoted-body,
+.mprev{
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  max-width:100%;
+}
 .etoolbar button u{text-decoration:underline}
 .elinkbar{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;padding:12px;border:1px solid var(--hair);border-radius:12px;background:var(--panel-2,rgba(255,255,255,.02))}
 .elinkrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -696,7 +716,7 @@ html.tab-hidden .brand img,html.tab-hidden .gate-logo{animation-play-state:pause
 .mdir.out{color:#8fd3de}
 .mdir.in{color:#8ecf9a}
 .msg-subj{font-size:14px;color:var(--ink);font-weight:600;overflow-wrap:anywhere}
-.mprev{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5;overflow-wrap:anywhere}
+.mprev{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5}
 html[dir="rtl"] .th-side{justify-content:flex-start}
 html[dir="rtl"] .mdir.out,html[dir="rtl"] .mdir.in{transform:scaleX(-1);display:inline-block}
 
@@ -1904,14 +1924,14 @@ body.modal-open{
    direction, so an Arabic reply reads right-to-left and never interleaves with a neighbour. */
 .rp-snip{
   margin:var(--s-2) 0 0; color:var(--ink-3); font-size:14px; line-height:1.6;
-  white-space:pre-wrap; overflow-wrap:anywhere; unicode-bidi:isolate;
+  unicode-bidi:isolate;   /* wrapping comes from the shared .msg-body rule; this keeps only its isolation */
 }
 /* Each reply line is its OWN direction-isolated block, so a mixed line (an Arabic date, a Latin sender and
    address, a URL, angle brackets, all in one line: a Gmail quote header) reads in order instead of being
    reordered into a scramble. dir="auto" in the markup picks each line's base direction; the isolate keeps a
    line from reordering against its neighbours; embedded URLs and addresses sit in <bdi class="rp-ltr"> so
    they stay left-to-right and wrap rather than overflow the card. */
-.rp-line{ display:block; unicode-bidi:isolate; white-space:pre-wrap; overflow-wrap:anywhere; }
+.rp-line{ display:block; unicode-bidi:isolate; }   /* wrapping from the shared .msg-body rule */
 .rp-line:empty{ min-height:1.6em; }                    /* a blank line keeps its height without an invisible char */
 .rp-ltr{ unicode-bidi:isolate; overflow-wrap:anywhere; }
 /* Quoted history (the "wrote:" header and the quoted lines) reads as a quieter section, still per-line
@@ -1942,8 +1962,7 @@ body.modal-open{
 .rp-quoted-sum::-webkit-details-marker{ display:none; }
 .rp-quoted-sum::before{ content:"+"; display:inline-block; inline-size:1em; color:var(--ink-4); }
 .rp-quoted[open] .rp-quoted-sum::before{ content:"\2212"; }   /* a minus when open, one glyph either way */
-.rp-quoted-body{ margin-block-start:var(--s-2); color:var(--ink-4); font-size:13px; line-height:1.6;
-  white-space:pre-wrap; overflow-wrap:anywhere; }
+.rp-quoted-body{ margin-block-start:var(--s-2); color:var(--ink-4); font-size:13px; line-height:1.6; }
 
 /* The reply composer: answer the prospect in this thread, dark and aligned, mirrored in RTL. */
 .th-reply-box{ margin-block-start:var(--s-4); padding-block-start:var(--s-3); border-block-start:1px solid var(--hair);
