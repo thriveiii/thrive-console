@@ -4,8 +4,9 @@ The live site looked stale because merge is not deploy and nothing on the device
 was serving. bundle.js now stamps a content-signature build id into meta[name=thrive-build], and the
 gate prints it on both steps (passcode and operator), before sign-in, so a deploy is verifiable at a
 glance on the device. This proves: the marker renders and equals the stamped meta; it survives into
-the operator step; the id is a real hex signature; and re-bundling is byte-for-byte identical (a
-content signature, not a wall-clock stamp), so it never churns console.html or trips a sync gate."""
+the operator step; the id is a real hex signature; and re-bundling is byte-for-byte identical EXCEPT the
+build-time stamp (the one intentional deploy-time value the fresh-code brief adds), so nothing else in
+the shipped shell churns between re-bundles."""
 import threading, http.server, socketserver, functools, os, subprocess, hashlib, re
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT = "/home/user/thrive-console"
@@ -19,14 +20,19 @@ def ck(n, c, d=None):
         fails.append(n)
         if d is not None: print("      " + str(d)[:300])
 
-# ---- determinism: a content signature, not a timestamp. Re-bundle is byte-identical. ----
-def sha(p): return hashlib.sha256(open(p, "rb").read()).hexdigest()
-before = sha(os.path.join(ROOT, "library/console.html"))
+# ---- determinism: the content signature never churns; only the deploy-time stamp does. ----
+# Mask the one intentionally non-deterministic value (the build time) so the guard still proves that
+# nothing ELSE in the shell changes between re-bundles.
+def masked_sha(p):
+    s = open(p, encoding="utf-8").read()
+    s = re.sub(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', 'BUILT_AT', s)
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+before = masked_sha(os.path.join(ROOT, "library/console.html"))
 meta_before = re.search(r'name="thrive-build" content="([0-9a-f]+)"', open(os.path.join(ROOT, "library/console.html")).read()).group(1)
 subprocess.run(["node", "tools/bundle.js"], cwd=ROOT, check=True, capture_output=True)
-after = sha(os.path.join(ROOT, "library/console.html"))
+after = masked_sha(os.path.join(ROOT, "library/console.html"))
 meta_after = re.search(r'name="thrive-build" content="([0-9a-f]+)"', open(os.path.join(ROOT, "library/console.html")).read()).group(1)
-ck("re-running the bundle is byte-identical (a content signature, not a clock stamp)", before == after, before[:12] + " vs " + after[:12])
+ck("re-running the bundle is byte-identical except the build-time stamp (the content signature never churns)", before == after, before[:12] + " vs " + after[:12])
 ck("the stamped build id is a stable 8-hex signature, unchanged across bundles", meta_before == meta_after and re.fullmatch(r"[0-9a-f]{8}", meta_before) is not None, meta_before)
 
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)

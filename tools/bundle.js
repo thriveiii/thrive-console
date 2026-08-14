@@ -89,6 +89,12 @@ const fp = f => f + "?v=" + FP[f];
 const BUILD = crypto.createHash("sha256")
   .update([css, icons, i18n, gate, model, life, intake, supabase, numbers, inbound, kinds, drafts, flows, store, app].join("\x00"), "utf8")
   .digest("hex").slice(0, 8);
+/* The deploy time, baked here at build time (never read at runtime). BUILD says WHICH code is live;
+   BUILT_AT says WHEN it was built, so a capture from the device is labeled with both. This is the one
+   value that is not a pure content signature: a re-bundle stamps a new time, so console.html carries its
+   own build time. The determinism guard (deploy_marker_test) masks this stamp and still proves that
+   nothing ELSE churns between re-bundles. UTC, second precision, so it reads the same in every timezone. */
+const BUILT_AT = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
 let published = {};
 try { published = JSON.parse(read(path.join(LIB, "sync.json"))); } catch (e) {}
@@ -220,6 +226,14 @@ const out = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="thrive-build" content="${BUILD}">
+<meta name="thrive-built-at" content="${BUILT_AT}">
+<!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
+     bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
+     in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
+     (console.html?v=BUILD) plus every asset carrying ?v=<content hash>. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Thrive Console</title>
 <link rel="icon" href="${icon}">
 <script>(function(){var d=document.documentElement;
@@ -229,6 +243,10 @@ const out = `<!DOCTYPE html>
    deployed-build fragility that left the root LTR. Engine-independent (plain DOM), so it holds on
    WebKit as on Chromium. */
 try{var __l=localStorage.getItem('thrive_lang');d.setAttribute('lang',__l==='ar'?'ar':'en');d.setAttribute('dir',__l==='ar'?'rtl':'ltr');}catch(e){}
+/* Cause 1 insurance: no service worker is registered by this console, but if a stale one was ever
+   installed (a past experiment, another app on the same origin) it could pin old bytes forever. Unregister
+   any that exist, so old code can never be served from a worker cache. */
+try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){try{r.unregister();}catch(e){}});}).catch(function(){});}}catch(e){}
 function lock(){d.classList.add('gate-locked')}
 try{if(sessionStorage.getItem('thrive_gate_v2')!=='${GATE_HASH}')lock()}catch(e){lock()}
 setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;
@@ -248,6 +266,12 @@ ${head}
     <button id="langbtn" class="langbtn">العربية</button>
   </nav>
 </header>
+<!-- Part 2: the always-visible build stamp. Baked here at build time (BUILD is the content signature,
+     BUILT_AT the deploy time), never read at runtime. Thyab glances at the bottom corner and knows in one
+     second which code is live and when it was built; every device capture is now labeled. Low contrast and
+     pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
+     the Arabic layout cannot reorder them. -->
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">${BUILD}</bdi> · <bdi class="mono-iso">${BUILT_AT}</bdi></div>
 
 ${sections2}
 ${MODAL}
@@ -360,3 +384,27 @@ function emit(file, inline){
 }
 emit("library/console.html", false);
 emit("dist/thrive-console.html", true);
+
+/* Part 1, the load-bearing cache fix: the root redirect carries the build id, so a new deploy points the
+   browser at console.html?v=<new BUILD>, a URL it has never cached, and it must fetch the fresh shell (and
+   through it the fresh, content-hashed assets). GitHub Pages caches this tiny HTML for a short window we
+   cannot header-override, so the meta cache directives are best effort on top; the version in the redirect
+   is what guarantees a merged-and-deployed build is the build that runs. Generated here so BUILD is always
+   current, never a hand-typed version to forget. */
+const rootIndex = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Thrive</title>
+<meta http-equiv="refresh" content="0; url=./library/console.html?v=${BUILD}">
+<link rel="icon" href="./assets/thrive-logo.png">
+<style>html,body{margin:0;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;height:100%}
+.c{height:100%;display:flex;align-items:center;justify-content:center;gap:12px}
+img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
+a{color:#71BFCC}</style></head>
+<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=${BUILD}">Thrive Opportunity Library</a>…</span></div>
+<script>location.replace("./library/console.html?v=${BUILD}");</script></body></html>
+`;
+fs.writeFileSync(path.join(ROOT, "index.html"), rootIndex);
+console.log("wrote index.html  (redirect -> console.html?v=" + BUILD + ")");
