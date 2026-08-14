@@ -86,6 +86,12 @@ with sync_playwright() as p:
         if rtl: pg.evaluate("()=>{ try{ window.setLang&&window.setLang('ar'); }catch(e){} document.documentElement.setAttribute('dir','rtl'); }")
         try: pg.evaluate("()=>{ location.hash='#board'; }")
         except Exception: pass
+        # the board reads the server-computed view now: seed the view rows so acme lands in Replied
+        pg.evaluate("""()=>window.__boardViewSet([
+          {slug:'acme', stage:'replied', open_count:1, replied:true, idle_days:3, has_page:true, has_email:false, archived:false},
+          {slug:'grp', stage:'sent', open_count:0, replied:false, idle_days:3, has_page:true, has_email:false, archived:false},
+          {slug:'plain', stage:'sent', open_count:0, replied:false, idle_days:3, has_page:true, has_email:false, archived:false}
+        ])""")
         pg.evaluate("()=>window.thriveBoardRefresh&&window.thriveBoardRefresh()")
         pg.wait_for_function("""()=>{ const t=document.querySelector('#boardLanes .tok[data-slug=\\"acme\\"]');
           return !!t; }""", timeout=8000)

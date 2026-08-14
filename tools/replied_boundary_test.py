@@ -56,6 +56,12 @@ def boot(pg, lang):
     pg.wait_for_function("()=>typeof window.thriveBoardRefresh==='function'", timeout=15000)
     pg.evaluate("()=>{document.documentElement.classList.remove('gate-locked');const g=document.getElementById('thriveGate');if(g)g.remove();}")
     pg.evaluate("()=>location.hash='board'"); pg.wait_for_timeout(500)
+    # the board reads the server-computed view now: seed rep1 into Replied and the op* cards into Opened
+    pg.evaluate("""(a)=>window.__boardViewSet(
+        a.opps.map(o=>({slug:o.slug, stage:o.stage,
+          open_count:(o.stage==='replied'?1:o.stage==='opened'?1:0),
+          replied:o.stage==='replied', idle_days:3, has_page:true, has_email:false, archived:false})))""",
+        {"opps":OPPS})
     pg.evaluate("()=>window.thriveBoardRefresh()"); pg.wait_for_timeout(400)
 
 MEASURE = r"""

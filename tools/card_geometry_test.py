@@ -76,6 +76,12 @@ def board(brow, w, rtl=False):
     pg.evaluate("()=>document.documentElement.classList.remove('gate-locked')")   # the gate only hides .wrap; reveal for layout
     pg.evaluate("(s)=>eval(s)", SEED)
     if rtl: pg.evaluate("()=>{ try{ window.setLang&&window.setLang('ar'); }catch(e){} document.documentElement.setAttribute('dir','rtl'); }")
+    # the board reads the server-computed view now: seed the three cards into the Sent lane
+    pg.evaluate("""()=>window.__boardViewSet([
+      {slug:'asfa', stage:'sent', open_count:0, replied:false, idle_days:3, has_page:true, has_email:false, archived:false},
+      {slug:'madar', stage:'sent', open_count:0, replied:false, idle_days:3, has_page:true, has_email:false, archived:false},
+      {slug:'short', stage:'sent', open_count:0, replied:false, idle_days:3, has_page:true, has_email:false, archived:false}
+    ])""")
     pg.evaluate("()=>{ location.hash='#board'; window.thriveBoardRefresh&&window.thriveBoardRefresh(); }")
     pg.wait_for_function("()=>document.querySelector('#boardLanes .tok[data-slug=asfa]')", timeout=8000)
     # set the visible lane AFTER the render (the narrow layout resets data-active-lane during render)

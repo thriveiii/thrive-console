@@ -86,6 +86,14 @@ SEED_STALLED = """(() => {
 
 def render(pg, seed, lang="en"):
     pg.evaluate("(s)=>eval(s)", seed)
+    # The board reads ONE server-computed stage from v_console_board now (it derives no stage of its own),
+    # so hand it the computed rows for the seeded cards: the reply card is replied (3 days ago), the old
+    # card is a sent card gone stale (idle 20). The hero and its subtitle then read from that one board
+    # model. A view row for a slug the seed did not create is simply ignored (that card is not on the board).
+    pg.evaluate("""()=>window.__boardViewSet([
+      {slug:'rep', stage:'replied', open_count:0, replied:true, idle_days:3, has_page:true, has_email:false, archived:false},
+      {slug:'old', stage:'sent', open_count:0, replied:false, idle_days:20, has_page:true, has_email:false, archived:false}
+    ])""")
     pg.evaluate("(l)=>{ try{ window.setLang&&window.setLang(l); }catch(e){} }", lang)
     pg.evaluate("()=>window.thriveBoardRefresh&&window.thriveBoardRefresh()")
     pg.wait_for_timeout(120)

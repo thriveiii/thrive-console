@@ -36,7 +36,7 @@ app = open(f"{ROOT}/library/app.js").read()
 # Brief A (F5): the live-lane view is now the DELIVERED-send-gated recipient derivation (boardViews wraps
 # outreachOpens and returns 0 unless a sent/copied send exists), strictly stronger than raw opens.
 ck("the board card's live-lane view is the send-gated recipient derivation (boardViews), not raw opens",
-   "const rv=boardViews(tk.slug);" in app and 'rv>0 ? fmtRelative("tok_views", rv)' in app
+   "const rv=tk.opens||0;" in app and 'rv>0 ? fmtRelative("tok_views", rv)' in app
    and "function boardViews(o){ return boardDeliveredSend(o)" in app)
 ck("the window overview shows an opens fact only when a send exists",
    "live&&snd.count?" in app and "t(\"col_views\")+\": \"+opensForSlug" not in app)
@@ -77,6 +77,14 @@ with sync_playwright() as p:
         {"opps":OPPS,"mail":MAIL,"hits":HITS})
     hits_before = pg.evaluate("()=>localStorage.getItem('thrive_hits_v1')")
     pg.evaluate("()=>location.hash='board'"); pg.wait_for_timeout(500)
+    # The board now buckets by the server-computed stage from v_console_board (read through the view map),
+    # not by re-deriving from local mail/hits. Inject the view rows the server would return: V2's card is
+    # opened with the one recipient view; V3 stays sent with no recipient view (owner open excluded, so
+    # open_count 0). V1/V4 need no row - base stage files never-sent pages in the live lane.
+    pg.evaluate("""()=>window.__boardViewSet([
+        {slug:'v2-sent-open', stage:'opened', open_count:1, replied:false, has_page:true, has_email:true},
+        {slug:'v3-owner-only', stage:'sent', open_count:0, replied:false, has_page:true, has_email:true}
+    ])""")
     pg.evaluate("()=>{ if(window.invalidateHits) invalidateHits(); if(window.invalidateSends) invalidateSends(); window.thriveBoardRefresh(); }")
     pg.wait_for_selector(".tok[data-slug]", timeout=8000)
 

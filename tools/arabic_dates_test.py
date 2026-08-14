@@ -79,6 +79,11 @@ def boot(pg, lang):
     pg.wait_for_function("()=>typeof window.thriveBoardRefresh==='function'", timeout=15000)
     pg.evaluate("()=>{document.documentElement.classList.remove('gate-locked');const g=document.getElementById('thriveGate');if(g)g.remove();}")
     pg.evaluate("()=>location.hash='board'"); pg.wait_for_timeout(600)
+    # the board reads the server-computed view now: seed idle-co as a stalled sent card (idle_days >= 10)
+    # so its meta renders the isolated idle-days number and the stalled chip still shows
+    pg.evaluate("""()=>window.__boardViewSet([
+      {slug:'idle-co', stage:'sent', open_count:0, replied:false, idle_days:12, has_page:true, has_email:false, archived:false}
+    ])""")
     pg.evaluate("()=>window.thriveBoardRefresh()"); pg.wait_for_timeout(400)
 
 with sync_playwright() as p:
