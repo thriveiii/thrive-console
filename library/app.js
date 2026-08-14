@@ -303,7 +303,10 @@ var ThrivePaintDebug=(function(){
   function overlay(rec, prev, diverged){
     try{
       if(!box){ box=document.createElement("div"); box.id="paintDebugOverlay";
-        box.setAttribute("style","position:fixed;inset-block-end:8px;inset-inline-start:8px;z-index:2147483647;max-inline-size:min(92vw,520px);max-block-size:40vh;overflow:auto;background:rgba(12,12,16,.92);color:#e8e8ea;font:11px/1.4 ui-monospace,Menlo,monospace;padding:8px 10px;border-radius:8px;pointer-events:none;white-space:pre-wrap;box-shadow:0 4px 24px rgba(0,0,0,.4)");
+        // pointer-events:auto and touch momentum so the panel is actually SCROLLABLE on an iPad, where the
+        // browser console cannot be read; it is small and cornered so it does not obstruct the board, and
+        // it exists only with the debug flag on.
+        box.setAttribute("style","position:fixed;inset-block-end:8px;inset-inline-start:8px;z-index:2147483647;max-inline-size:min(92vw,520px);max-block-size:40vh;overflow:auto;-webkit-overflow-scrolling:touch;background:rgba(12,12,16,.94);color:#e8e8ea;font:11px/1.4 ui-monospace,Menlo,monospace;padding:8px 10px;border-radius:8px;pointer-events:auto;white-space:pre-wrap;box-shadow:0 4px 24px rgba(0,0,0,.45)");
         document.body.appendChild(box); }
       var line="#"+rec.seq+"  "+rec.kind+"  ["+rec.trigger+"]  src="+rec.src+"  hash="+rec.hash+"\n"+
                "     lanes "+JSON.stringify(rec.lanes)+(diverged? ("\n     DIVERGED from #"+prev.seq+" ("+prev.trigger+", "+prev.hash+")") : "");

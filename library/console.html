@@ -4,7 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="e924da2e">
+<meta name="thrive-build" content="996e4778">
+<meta name="thrive-built-at" content="2026-08-14T05:43:19Z">
+<!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
+     bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
+     in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
+     (console.html?v=BUILD) plus every asset carrying ?v=<content hash>. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Thrive Console</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <script>(function(){var d=document.documentElement;
@@ -14,6 +22,10 @@
    deployed-build fragility that left the root LTR. Engine-independent (plain DOM), so it holds on
    WebKit as on Chromium. */
 try{var __l=localStorage.getItem('thrive_lang');d.setAttribute('lang',__l==='ar'?'ar':'en');d.setAttribute('dir',__l==='ar'?'rtl':'ltr');}catch(e){}
+/* Cause 1 insurance: no service worker is registered by this console, but if a stale one was ever
+   installed (a past experiment, another app on the same origin) it could pin old bytes forever. Unregister
+   any that exist, so old code can never be served from a worker cache. */
+try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){try{r.unregister();}catch(e){}});}).catch(function(){});}}catch(e){}
 function lock(){d.classList.add('gate-locked')}
 try{if(sessionStorage.getItem('thrive_gate_v2')!=='0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8')lock()}catch(e){lock()}
 setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;
@@ -23,7 +35,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=e11aed16d3">
+<link rel="stylesheet" href="styles.css?v=3b436ac6e8">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -39,6 +51,12 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
     <button id="langbtn" class="langbtn">العربية</button>
   </nav>
 </header>
+<!-- Part 2: the always-visible build stamp. Baked here at build time (BUILD is the content signature,
+     BUILT_AT the deploy time), never read at runtime. Thyab glances at the bottom corner and knows in one
+     second which code is live and when it was built; every device capture is now labeled. Low contrast and
+     pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
+     the Arabic layout cannot reorder them. -->
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">996e4778</bdi> · <bdi class="mono-iso">2026-08-14T05:43:19Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
 
@@ -906,7 +924,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=6bb228dd73"></script>
+<script src="app.js?v=3345ed7cbb"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with
