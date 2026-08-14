@@ -24,9 +24,9 @@ app=open(f"{ROOT}/library/app.js").read()
 ck("the instrument is flag-gated (?debug=paint or the localStorage switch), never on by default",
    "var ThrivePaintDebug" in app and 'debug=paint' in app and 'thrive_debug_paint' in app)
 ck("the board render stamps the one derived model it already built (no extra read, no store write)",
-   'ThrivePaintDebug.stamp("board", b)' in app)
+   'ThrivePaintDebug.stamp("board", b' in app)
 ck("the stamp only observes: it never writes localStorage or a store",
-   "function stamp(kind, b)" in app and "setItem" not in app.split("function stamp(kind, b)")[1].split("return {")[0])
+   "function stamp(kind, b" in app and "setItem" not in app.split("function stamp(kind, b")[1].split("return {")[0])
 
 Handler=functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 socketserver.TCPServer.allow_reuse_address=True

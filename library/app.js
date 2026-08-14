@@ -315,7 +315,7 @@ var ThrivePaintDebug=(function(){
       while(box.childNodes.length>8) box.removeChild(box.lastChild);
     }catch(e){}
   }
-  function stamp(kind, b){
+  function stamp(kind, b, meta){
     if(!enabled() || !b || !b.lanes) return;
     seq++;
     var LANES=(window.ThriveBoard && ThriveBoard.LANES) || Object.keys(b.lanes);
@@ -324,7 +324,11 @@ var ThrivePaintDebug=(function(){
       model.push(k+":"+arr.map(function(t){ return t.slug; }).sort().join(",")); });
     var counts=(b.summary && b.summary.counts) || {};
     var hash=hashStr(model.join("|")+"#"+JSON.stringify(counts));
-    var rec={ seq:seq, t:new Date().toISOString(), kind:kind, trigger:trigger(), src:sources(), lanes:lanes, hash:hash };
+    // The orchestrator (Brief A) passes the real trigger name and the resolved authority; fall back to the
+    // call-stack read and the live source probe when a caller does not (backward compatible).
+    var trig=(meta && meta.trigger) || trigger();
+    var src=(meta && meta.src) || sources();
+    var rec={ seq:seq, t:new Date().toISOString(), kind:kind, trigger:trig, src:src, lanes:lanes, hash:hash };
     var diverged=!!(last && last.hash!==hash);
     try{ console.log("%c[paint#"+rec.seq+"]","color:#c2185b;font-weight:bold",
         rec.kind, "trigger="+rec.trigger, "src="+rec.src, "lanes="+JSON.stringify(rec.lanes), "hash="+rec.hash,
@@ -469,7 +473,7 @@ function allHits(opts){
   const seen={}, out=[];
   // Reading from Supabase (Stage 3+): opens come from the migrated console_hits rows so a card's Opened
   // survives a truncated or retired local store. Otherwise the durable local union, exactly as before.
-  const src = (supaReadable() && __supa.hits) ? __supa.hits : getRemoteHitsLocal().concat(getHitsLocal());
+  const src = __boardPin ? __boardPin.hits : ((supaReadable() && __supa.hits) ? __supa.hits : getRemoteHitsLocal().concat(getHitsLocal()));
   src.forEach(e=>{
     if(!e) return;
     if(!inclSelf && e.self) return;                 // never the sender's own opens or self views
@@ -547,9 +551,11 @@ function setEndpoint(u){ try{ u?localStorage.setItem(ENDPT,u):localStorage.remov
 let __opensCache=null, __opensTs=0;
 function opensMap(){
   const now=Date.now();
-  if(__opensCache && (now-__opensTs)<3000) return __opensCache;
+  // Brief A (F4): while a board cycle has pinned its authority, recompute from that one snapshot and never
+  // serve or store the 3s TTL cache, so a cache populated by an earlier paint can never feed a newer one.
+  if(!__boardPin && __opensCache && (now-__opensTs)<3000) return __opensCache;
   const m={}; allHits().forEach(e=>{ if(e.type==="open"||!e.type){ m[e.slug]=(m[e.slug]||0)+1; } });
-  __opensCache=m; __opensTs=now; return m;
+  if(!__boardPin){ __opensCache=m; __opensTs=now; } return m;
 }
 /* Every recorded view of a page, whatever caused it. This is a real number and it is shown as
    one, but it is not the same number as "somebody read what I sent them". */
@@ -566,14 +572,14 @@ function tsMs(v){ if(!v) return 0; const s=String(v);
 let __openTimesCache=null, __openTimesTs=0;
 function openTimes(){
   const now=Date.now();
-  if(__openTimesCache && (now-__openTimesTs)<3000) return __openTimesCache;
+  if(!__boardPin && __openTimesCache && (now-__openTimesTs)<3000) return __openTimesCache;   // F4: bypass TTL under a pin
   const m={};
   allHits().forEach(e=>{
     if(e.type && e.type!=="open") return;
     const ms=tsMs(e.ts); if(!ms) return;
     (m[e.slug]||(m[e.slug]=[])).push(ms);
   });
-  __openTimesCache=m; __openTimesTs=now; return m;
+  if(!__boardPin){ __openTimesCache=m; __openTimesTs=now; } return m;
 }
 function opensSince(slug, since){
   const from=tsMs(since); if(!from) return 0;
@@ -594,7 +600,7 @@ function invalidateHits(){ __opensCache=null; __openTimesCache=null; }
 let __sendCache=null, __sendTs=0;
 function sendIndex(){
   const now=Date.now();
-  if(__sendCache && (now-__sendTs)<3000) return __sendCache;
+  if(!__boardPin && __sendCache && (now-__sendTs)<3000) return __sendCache;   // F4: bypass TTL under a pin
   const m={};
   getMailLog().forEach(x=>{
     if(!x || !x.opp) return;
@@ -608,8 +614,30 @@ function sendIndex(){
     const ts=String(x.ts||"");
     if(ts){ if(!r.first || ts<r.first) r.first=ts; if(ts>r.last) r.last=ts; }
   });
-  __sendCache=m; __sendTs=now; return m;
+  if(!__boardPin){ __sendCache=m; __sendTs=now; } return m;
 }
+/* Brief A (F5), scoped to the board: the ONE send definition the board reads for a recipient view is a
+   DELIVERED send, sent or copied (or a recorded manual contact), the SAME set the board lane uses
+   (stage-model sendInfo). pending is dispatched but not delivered, so a pending-only card is Ready in the
+   lane AND carries no recipient view here: the two board derivations can never disagree (the "no email yet,
+   one view" impossibility is closed). This is confined to the board's model; the compose and send-once flow
+   keep their own pending semantics, which are out of this brief's scope. */
+function boardDeliveredSend(o){
+  var slug=(typeof o==="string")? o : ((o&&o.slug)||"");
+  var rec=(typeof o==="object")? o : getDraft(slug);
+  if(rec && Array.isArray(rec.manual_contacts)){
+    for(var k=0;k<rec.manual_contacts.length;k++){ if(rec.manual_contacts[k] && rec.manual_contacts[k].sent_on) return true; }
+  }
+  var log=getMailLog();
+  for(var i=0;i<log.length;i++){ var m=log[i];
+    if(!m || m.opp!==slug || m.direction==="in") continue;
+    if(m.status && m.status!=="sent" && m.status!=="copied") continue;
+    return true;
+  }
+  return false;
+}
+function boardViews(o){ return boardDeliveredSend(o) ? outreachOpens(o) : 0; }
+window.boardViews=boardViews; window.boardDeliveredSend=boardDeliveredSend;
 function invalidateSends(){ __sendCache=null; invalidateRecon(); }
 /* Every hand contact recorded through somebody else's channel: their contact form, an
    Instagram message, a phone call. Most of a batch has no email address at all, so without
@@ -1396,6 +1424,7 @@ function importBackup(obj){
    registered by key now. A view replaces only its own, and all of them run. */
 const __hooks={ sync:{}, lang:{}, unlock:{} };
 function onThrive(kind, key, fn){ (__hooks[kind]||(__hooks[kind]={}))[key]=fn; }
+function offThrive(kind, key){ if(__hooks[kind]) delete __hooks[kind][key]; }   // Brief A (F16): a view can drop its own listener on teardown
 function fireThrive(kind){
   const h=__hooks[kind]||{};
   Object.keys(h).forEach(k=>{ try{ h[k](); }catch(e){} });
@@ -1701,7 +1730,7 @@ function getInboundLocal(){ try{ return JSON.parse(localStorage.getItem(INBOUND)
 /* The READ accessor for replies: the migrated console_inbound rows when reads are switched to Supabase
    (so a reply, the international-schools one included, survives a truncated or retired local store),
    else the current store. Writers use getInboundLocal. */
-function getInbound(){ if(supaReadable() && __supa.inbound) return __supa.inbound.slice(); return getInboundLocal(); }
+function getInbound(){ if(__boardPin) return __boardPin.inbound.slice(); if(supaReadable() && __supa.inbound) return __supa.inbound.slice(); return getInboundLocal(); }
 function setInbound(a){ invalidateRecon(); lsSet(INBOUND, JSON.stringify((a||[]).slice(-800))); try{ supaMirrorInbound(a); }catch(_){} }
 function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
 /* Named on screen rather than counted: a reply nobody could attribute is the one
@@ -2270,6 +2299,13 @@ async function loadManifest(){
        return {site:j.site||SITE, list:(j.opportunities||[])}; }
   catch(e){ return {site:SITE, list:[]}; }
 }
+/* Brief A: the published manifest is a static per-deploy file, the same between two paints, so it is not a
+   source of the oscillation. Cache it once so the board's derivation can run SYNCHRONOUSLY (no await
+   between resolving the authority and painting), which is what lets one generation win deterministically
+   instead of whichever async build resolves last. */
+var __manifestCache=null;
+async function ensureManifest(){ if(!__manifestCache){ __manifestCache=await loadManifest(); } return __manifestCache; }
+function manifestNow(){ return __manifestCache || { site:SITE, list:[] }; }
 /* The current store, read straight from localStorage. This is the WRITE target and the fallback: every
    write merges against it and saves to it, and a read falls back to it when Supabase reads are off or
    degraded. Stage 4 retires it; here it stays the safety net. */
@@ -2320,8 +2356,26 @@ function reconstructChildren(base){
    longer breaks what is shown and the cards stop flickering). Otherwise it falls back to the current
    store, so a Supabase hiccup is never a blank or a false-empty board. Writes never call this. A missing
    group-reply child card is reconstructed on read (above), so the board counts the reply either way. */
+/* Brief A: one authority per render cycle. resolveAuthority decides local-vs-supa ONCE and freezes a
+   snapshot of every store the board reads; deriveBoardModel pins it (__boardPin) for the whole synchronous
+   cycle, so every accessor below and every derivation reads that one snapshot, never re-choosing the
+   authority per call (F1), never a live global re-read mid-build (F3), and never a stale TTL cache (F4). */
+var __boardPin=null, __renderGen=0;
+function resolveAuthority(){
+  var useSupa = supaReadable() && !!__supa.opps;
+  if(useSupa) return { kind:"supa",
+    opps:__supa.opps.map(function(d){ return Object.assign({}, d); }),
+    mail:(__supa.mail||[]).slice(), inbound:(__supa.inbound||[]).slice(), hits:(__supa.hits||[]).slice() };
+  return { kind:"local", opps:getDraftsLocal(), mail:getMailLogLocal(),
+    inbound:getInboundLocal(), hits:getRemoteHitsLocal().concat(getHitsLocal()) };
+}
 function getDrafts(){
   var base=null;
+  if(__boardPin){
+    base=__boardPin.opps.map(function(d){ return Object.assign({}, d); });
+    var pk=reconstructChildren(base);
+    return pk.length ? base.concat(pk) : base;
+  }
   if(supaReadFlagOn() && supaOn()){
     supaEnsureHydrated();
     if(__supa.hydrated && !__supa.degraded && __supa.opps) base=__supa.opps.map(function(d){ return Object.assign({}, d); });
@@ -2926,8 +2980,11 @@ function normalizeOpp(o){
   return n;
 }
 
-async function mergedOpps(){
-  const {list}=await loadManifest();
+/* The synchronous core: assemble the read view from the cached manifest plus the current drafts. Every
+   screen reads through here. When the board has pinned an authority (deriveBoardModel), getDrafts returns
+   that one frozen snapshot, so this whole assembly is deterministic for the cycle. */
+function mergedOppsSync(){
+  const list=manifestNow().list||[];
   const bySlug={};
   list.forEach(o=>{ bySlug[o.slug]={...o, _local:false, _edited:false}; });
   getDrafts().forEach(d=>{
@@ -2940,6 +2997,7 @@ async function mergedOpps(){
   rows.forEach(o=>{ o.archived=!!o.archived; normalizeOpp(o); });
   return rows;
 }
+async function mergedOpps(){ await ensureManifest(); return mergedOppsSync(); }
 async function allSlugs(){ return (await mergedOpps()).map(o=>o.slug); }
 
 /* One disclosure, used by the two screens that had grown too many controls at rest. It counts
@@ -4177,7 +4235,7 @@ function getMailLogLocal(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)
 /* The READ accessor for the ledger: the migrated console_mail rows when reads are switched to Supabase,
    so Sent, Opened and Replied derive from the complete rows rather than a truncated local store and no
    card falls back to Ready. Writers (logMail, the sync merge, reassign) use getMailLogLocal. */
-function getMailLog(){ if(supaReadable() && __supa.mail) return __supa.mail.slice(); return getMailLogLocal(); }
+function getMailLog(){ if(__boardPin) return __boardPin.mail.slice(); if(supaReadable() && __supa.mail) return __supa.mail.slice(); return getMailLogLocal(); }
 function setMailLog(a){ const ok=lsSet(MAILLOG, JSON.stringify(a.slice(-800))); invalidateSends(); return ok; }
 
 /* ---------- the open team discussion (console_comments) ----------
@@ -7328,10 +7386,17 @@ async function initBoard(){
   /* Two counts, kept apart on purpose. opens is what answered a message you sent; views is
      every time the page was looked at. A page can be read before anybody was written to, and
      the board says so rather than promoting it into a lane it did not earn. */
-  async function build(){
-    const opps=await mergedOpps();
+  // Brief A: the board model is derived SYNCHRONOUSLY from the pinned authority (the manifest is already
+  // cached by renderBoard), so there is no await between resolving the authority and painting, and one
+  // generation runs to completion atomically. This is the one derived model every surface of the paint
+  // consumes: lane membership and summary.counts are computed here once, so a chip and a lane header can
+  // never disagree.
+  function build(){
+    const opps=mergedOppsSync();
     const opens={}, views={};
-    opps.forEach(o=>{ opens[o.slug]=outreachOpens(o); views[o.slug]=opensForSlug(o.slug); });
+    // Brief A (F5): a recipient view requires a DELIVERED send (boardViews), the same set the lane uses, so
+    // a Ready or pending card never carries a view and the two board derivations agree.
+    opps.forEach(o=>{ opens[o.slug]=boardViews(o); views[o.slug]=opensForSlug(o.slug); });
     return ThriveBoard.build(opps, { opens:opens, views:views, mail:getMailLog() });
   }
 
@@ -7353,7 +7418,7 @@ async function initBoard(){
       // owner's own opens are already excluded by allHits), so raw page traffic on a page nobody was
       // emailed can never read as a view here. A live card has no send, so this is zero and the card reads
       // "no email yet", never the impossible "no email yet, one view".
-      const rv=outreachOpens(tk.slug);
+      const rv=boardViews(tk.slug);
       meta = rv>0 ? fmtRelative("tok_views", rv) : txt("tok_noemail");
     }
     else if(tk.lane==="replied") meta=txt("tok_answered");
@@ -7385,11 +7450,32 @@ async function initBoard(){
      fades in quietly (the .enter opacity fade), never sliding across the board from a prior position:
      a full re-render (a hydrate, a sign-in, a refresh) settles calmly, not in a scramble. A drag keeps
      its own live-follow motion (.is-drag), which is a direct user action, not an arrival. */
-  async function render(){
+  /* Brief A: the one serialized orchestrator (F2). Every trigger, sign-in, unlock, hydrate, refresh button,
+     queue drain, interval, mutation, and thriveBoardRefresh, calls renderBoard. It stamps a generation,
+     awaits the manifest ONCE (the only async gap), and if a newer generation has started while it waited it
+     returns without painting: the LATEST generation wins, not the last async build to resolve, the exact
+     reversal of the oscillation. Past the manifest gate it resolves ONE authority (F1), pins it for the
+     whole synchronous derive-and-paint so no accessor re-chooses the source and no derivation reads a live
+     global (F3) or a stale TTL cache (F4), then unpins. If the board is not mounted (a heartbeat firing on
+     another screen) it does nothing (F16). */
+  var __boardTornDown=false;
+  async function renderBoard(trigger){
+    const myGen=++__renderGen;
+    try{ await ensureManifest(); }catch(_){}
+    if(myGen!==__renderGen || __boardTornDown) return;              // superseded by a newer paint, or the board left
+    if(!document.getElementById("boardLanes")) return;              // not mounted: a sync heartbeat on another screen
+    const source=resolveAuthority();
+    __boardPin=source;
+    try{
+      render(trigger, source);
+    } finally { __boardPin=null; }
+  }
+
+  function render(trigger, source){
     syncPill();
-    const b=await build();
+    const b=build();
     // Sentinel Sweep 5, Layer 1: stamp this paint (no-op unless ?debug=paint or the localStorage switch is on).
-    try{ ThrivePaintDebug.stamp("board", b); }catch(_){}
+    try{ ThrivePaintDebug.stamp("board", b, { trigger:trigger, src:(source&&source.kind) }); }catch(_){}
 
     ThriveBoard.LANES.forEach(k=>{
       const body=document.querySelector('[data-body="'+k+'"]');
@@ -7639,7 +7725,7 @@ async function initBoard(){
   if(el("boardRefresh")) el("boardRefresh").addEventListener("click", async ()=>{
     try{ await fetchRemoteHits(); }catch(e){}
     try{ await syncNow(); }catch(e){}
-    render();
+    renderBoard("refresh-button");
   });
 
   // The replies inbox opens from the header. It is the one attribution surface; Settings only diagnoses
@@ -7648,7 +7734,7 @@ async function initBoard(){
   if(inboxBtn && inbox) inboxBtn.addEventListener("click", ()=>{
     const open=inbox.hidden;
     inbox.hidden=!open; inboxBtn.setAttribute("aria-expanded", open?"true":"false");
-    if(open) renderInboxInto(inboxBody, ()=>{ render(); refreshInboxBadge(); });
+    if(open) renderInboxInto(inboxBody, ()=>{ renderBoard("inbox"); refreshInboxBadge(); });
   });
 
   // Freshness on the board rides the ONE live-sync heartbeat (startLiveSync: a single 60s poll that
@@ -7660,19 +7746,24 @@ async function initBoard(){
   // covers it, so no freshness is lost and the board polls once, not twice.
   try{ if(window.__boardPoll){ clearInterval(window.__boardPoll); window.__boardPoll=null; } }catch(_){}
 
-  onThrive("lang","board",render);
-  onThrive("sync","board",render);
-  onThrive("unlock","board",render);
+  // Brief A: every trigger enters through the ONE serialized orchestrator, never the raw render. A late
+  // generation from any of these is dropped by renderBoard's generation guard, so the latest state wins.
+  onThrive("lang","board",()=>renderBoard("lang"));
+  onThrive("sync","board",()=>renderBoard("sync"));
+  onThrive("unlock","board",()=>renderBoard("unlock"));
   /* One way back to a fresh board. A lifecycle move changes what the lanes should say, and
      without this the board kept showing what was true before the click: the record was right,
      the model was right, and the screen was wrong, which is the worst of the three. */
-  window.thriveBoardRefresh=render;
+  window.thriveBoardRefresh=function(){ return renderBoard("thriveBoardRefresh"); };
+  // Brief A (F16): if the board is torn down and re-entered, drop the stale listeners first so a heartbeat
+  // never re-reads through a detached board. Registration is keyed, so this also prevents any stacking.
+  window.__boardTeardown=function(){ __boardTornDown=true; offThrive("lang","board"); offThrive("sync","board"); offThrive("unlock","board"); };
   initIntake();
   renderSyncBand();
   refreshRollup();
   initCardMenu();
   initCardDrag();
-  await render();
+  await renderBoard("init");
 }
 
 /* ---------- two language axes, and they never touch ----------
