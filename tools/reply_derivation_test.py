@@ -89,6 +89,16 @@ with sync_playwright() as p:
       // real mail row m2, not from its declared stage.
       window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits();
     }""")
+    # The board now reads ONE server-computed stage from v_console_board and computes no stage of its own,
+    # so a board lane comes from a view row, not from the client re-deriving the seeded evidence. The SQL
+    # view (docs/supabase-board-view.sql, verified against Postgres in board_view_sql_test) is what maps the
+    # inbound reply to 'replied'; here we hand the board that computed row and assert it buckets by it.
+    # window.effStage is unchanged and still derives from evidence for the non-board surfaces, so the
+    # effStage checks below continue to prove the client derivation directly.
+    pg.evaluate("""()=>window.__boardViewSet([
+      {slug:'intl-schools', stage:'replied', open_count:1, replied:true, idle_days:2, has_page:true, has_email:false, archived:false},
+      {slug:'quiet-co', stage:'sent', open_count:0, replied:false, idle_days:3, has_page:true, has_email:false, archived:false}
+    ])""")
     ck("a reply derives effStage to replied (was sent)", eff(pg, "intl-schools") == "replied", eff(pg, "intl-schools"))
     ck("the board lane is replied", lane(pg, "intl-schools") == "replied", lane(pg, "intl-schools"))
     ck("Replied wins over Opened (the open does not override the reply)", eff(pg, "intl-schools") == "replied")

@@ -103,6 +103,17 @@ with sync_playwright() as p:
     }""")
     ck("the opened card never flickers across repeated reads", stable==["opened"], stable)
 
+    # The board reads the server-computed view now (v_console_board), not local mail/hits/inbound. Hand it a
+    # row per card that belongs in a non-base lane, each with the stage the seeded evidence used to derive.
+    pg.evaluate("""()=>window.__boardViewSet([
+      {slug:'d-good', stage:'sent', open_count:0, replied:false, idle_days:1, has_page:true, has_email:true, archived:false},
+      {slug:'d-self', stage:'sent', open_count:0, replied:false, idle_days:1, has_page:true, has_email:true, archived:false},
+      {slug:'d-preview', stage:'sent', open_count:0, replied:false, idle_days:1, has_page:true, has_email:true, archived:false},
+      {slug:'d-open', stage:'opened', open_count:1, replied:false, idle_days:1, has_page:true, has_email:true, archived:false},
+      {slug:'d-bounce', stage:'bounced', open_count:0, replied:false, idle_days:1, has_page:true, has_email:true, archived:false},
+      {slug:'d-soft', stage:'failed', open_count:0, replied:false, idle_days:1, has_page:true, has_email:true, archived:false}
+    ])""")
+    pg.evaluate("()=>window.thriveBoardRefresh&&window.thriveBoardRefresh()"); pg.wait_for_timeout(400)
     # board: bounced/failed are off the Sent lane, in the tray, counted distinctly
     board=pg.evaluate("""()=>{
       const lane={}; document.querySelectorAll('.tok[data-slug]').forEach(t=>lane[t.getAttribute('data-slug')]=t.getAttribute('data-lane'));

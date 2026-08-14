@@ -166,6 +166,12 @@ with sync_playwright() as p:
       localStorage.setItem('thrive_hits_v1','[]');
       window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits();
     }""", {"me":BASEL})
+    # The board now buckets by the server-computed stage from v_console_board (read through the view map),
+    # not by re-deriving from local mail/inbound. Inject the row the server would return: p1 replied (it has
+    # an inbound reply), so the board's replied lane matches the operator's reply count. p2 needs no row.
+    pg.evaluate("""()=>window.__boardViewSet([
+        {slug:'p1', stage:'replied', open_count:0, replied:true, has_page:true, has_email:true}
+    ])""")
     agree=pg.evaluate("""async ()=>{
       const s=window.operatorStats('uid-basel');
       const opps=await window.mergedOpps();

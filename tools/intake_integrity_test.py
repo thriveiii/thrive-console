@@ -150,6 +150,9 @@ with sync_playwright() as p:
       localStorage.setItem('thrive_mail_v1', JSON.stringify([{mid:'s1m',opp:'s1',to:'x@x',status:'sent',direction:'out',ts:'2026-08-10T10:00:00Z'}]));
       localStorage.setItem('thrive_inbound_v1','[]'); localStorage.setItem('thrive_hits_v1','[]');
       window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits();
+      // The board reads the server-computed view now (v_console_board), not a client re-derivation of the
+      // seeded send. Hand it the sent card's row; d1 (draft), l1/l2 (live) fall to their record-only base.
+      window.__boardViewSet([{slug:'s1', stage:'sent', open_count:0, replied:false, idle_days:1, has_page:true, has_email:true, archived:false}]);
       const opps=await window.mergedOpps();
       const b=window.ThriveBoard.build(opps, { mail: window.getMailLog() });
       const lanes={}, chips={};

@@ -44,7 +44,7 @@ ck("F4: the 3s TTL caches are bypassed under a pin (opens, openTimes, sends)",
    app.count("if(!__boardPin &&")>=3)
 ck("F5: the board reads a recipient view from a DELIVERED send only (boardViews/boardDeliveredSend), pending excluded",
    "function boardDeliveredSend(o)" in app and "function boardViews(o)" in app
-   and "opens[o.slug]=boardViews(o)" in app and "const rv=boardViews(tk.slug)" in app)
+   and "opens[o.slug]=boardViewOpens(o.slug)" in app and "const rv=tk.opens||0" in app)
 ck("F16: a view can drop its own listeners (offThrive) and the orchestrator bails when the board is unmounted",
    "function offThrive(kind, key)" in app and 'if(!document.getElementById("boardLanes")) return;' in app)
 ck("no em dash / zero-Lotus in app.js",

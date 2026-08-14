@@ -825,6 +825,27 @@ function effStage(o, opensOverride, sendOverride){
   return op>0 ? "opened" : "sent";
 }
 
+/* The board's stage, server-computed. The board reads console_board and buckets by the returned stage;
+   it computes no stage of its own (the client-side derivation was the oscillation and the fabrication, so
+   it is retired from the board). When the view holds this card, its stage stands verbatim. When the view
+   does not hold it (signed out, Supabase unreachable, or a manifest card not yet in the view), the board
+   shows the record's OWN state only: a declared terminal stage, else ready if a page or email is prepared,
+   else draft. It NEVER re-derives sent/opened/replied from the mail, hits or inbound stores here, because a
+   second derivation path is exactly how the board and the server would drift apart again. stage-model's
+   laneOf delegates to this for every board card, so the board has one stage authority and only one. */
+function baseStage(o){
+  if(!o || typeof o!=="object") return "draft";
+  var declared=o.stage||"";
+  if(declared && declared!=="sent" && declared!=="replied") return declared;   // a declared terminus stands
+  return isLive(o) ? "live" : "draft";                                          // else ready (page) or draft
+}
+function boardViewStage(o){
+  if(!o || typeof o!=="object") return "draft";
+  var v=boardViewRow(o.slug);
+  return v ? (v.stage||baseStage(o)) : baseStage(o);
+}
+window.boardViewStage=boardViewStage; window.boardViewRow=boardViewRow;
+
 // INVARIANT I1/I2: the exported manifest carries a card's TRUE status at export time, derived from
 // evidence through effStage, never a blind status:"sent" default. A never-sent card (draft or ready)
 // exports no status, so a later re-import can never resurrect a phantom send; a genuinely sent, replied
@@ -1987,6 +2008,9 @@ async function doSyncRound(ep, auth){
   // The relay merge just rewrote localStorage; fold the server-authoritative __supa copy back in so the
   // canonical stays the one reconciled truth of both transports (a no-op until __supa is hydrated).
   try{ reconcileCanonical(); }catch(e){}
+  // Re-read the board's server-computed stage on the sync heartbeat, so a card whose signals changed
+  // server-side (an open or a reply landed) moves forward on the next round without a manual refresh.
+  try{ if(supaReadFlagOn() && supaOn()) await readBoardView(); }catch(e){}
   const p=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
     body:relayBody({ op:"state_put", auth:auth, data:syncSnapshot() }) });
   const pj=noteRelayVersion(await p.json()); if(!pj.ok) throw new Error(pj.error||"sync put");
@@ -2726,6 +2750,32 @@ async function supaVerify(){
 var READ_FLAG="console_sb_read";
 var __supa={ opps:null, mail:null, inbound:null, hits:null, comments:null, hydrated:false, degraded:false, authRequired:false, ts:0 };
 var __supaHydrating=false;
+/* The board reads ONE server-computed stage. console_board computes each opp's canonical stage and its
+   display fields (sent_count, open_count, replied, idle_days, has_page, has_email, archived) in one
+   deterministic Postgres pass over the base tables (docs/supabase-board-view.sql). The board buckets by
+   the returned stage and computes no stage of its own, so it can never compose two answers for one card
+   from a different partial subset per cycle (the oscillation) and can never fabricate a state (a page with
+   opens but zero sends is server-computed as live/draft, never Opened). This map is slug -> the view row,
+   populated by readBoardView during the hydrate and read synchronously by boardViewStage. */
+var __boardView={};
+function boardViewRow(slug){ return (slug && Object.prototype.hasOwnProperty.call(__boardView, slug)) ? __boardView[slug] : null; }
+function boardViewOpens(slug){ var r=boardViewRow(slug); return r ? (Number(r.open_count)||0) : 0; }
+function boardViewIdle(slug){ var r=boardViewRow(slug); return (r && r.idle_days!=null) ? (Number(r.idle_days)||0) : null; }
+/* Read the whole board view in one query and index it by slug. Its own try at the call site: a view read
+   failure never fails the board; the map stays as it was and boardViewStage falls to the record-only base. */
+async function readBoardView(){
+  var S=window.ThriveSupa; if(!S || typeof S.rest!=="function") return false;
+  var rows=await S.rest("console_board",
+    { query:"select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived" });
+  var by={}; (rows||[]).forEach(function(r){ if(r && r.slug) by[r.slug]=r; });
+  __boardView=by; return true;
+}
+window.readBoardView=readBoardView;
+// The board view map, set directly. This is the seam a test uses to place cards in lanes the way the
+// server would (the board computes no stage of its own now, so a lane comes from a view row), and the
+// seam the reference/offline board never needs. Accepts the rows console_board returns.
+window.__boardViewSet=function(rows){ var by={}; (rows||[]).forEach(function(r){ if(r && r.slug) by[r.slug]=r; }); __boardView=by; };
+window.__boardViewClear=function(){ __boardView={}; };
 /* Reads engage on TWO authorities, and being signed in is the one that matters on a real device.
    ROOT A of the "board reads no mail" defect: the mail, opens and replies slices only come from
    Supabase when this predicate is true, and until now it was true only when a manual Settings toggle
@@ -2876,6 +2926,9 @@ async function supaHydrate(){
     // reconciled truth and the two copies cannot fork. supaFlush ran first, so this device's own writes
     // are already up and read back; any local-only pending that did not flush is preserved by unionUp.
     try{ reconcileCanonical(); }catch(_){}
+    // The board's one server-computed stage. Its own try (a view read failure never fails the board; the
+    // map keeps its last value and boardViewStage falls to the record-only base until the next hydrate).
+    try{ await readBoardView(); }catch(_){}
     return true;
   }catch(e){
     // A denial the operator can fix by signing in (a 401/403 once the anon door is closed) is marked
@@ -7470,11 +7523,16 @@ async function initBoard(){
   // never disagree.
   function build(){
     const opps=mergedOppsSync();
-    const opens={}, views={};
-    // Brief A (F5): a recipient view requires a DELIVERED send (boardViews), the same set the lane uses, so
-    // a Ready or pending card never carries a view and the two board derivations agree.
-    opps.forEach(o=>{ opens[o.slug]=boardViews(o); views[o.slug]=opensForSlug(o.slug); });
-    return ThriveBoard.build(opps, { opens:opens, views:views, mail:getMailLog() });
+    const opens={}, views={}, idle={};
+    // The board displays the server-computed open_count and idle_days verbatim from console_board, the
+    // same source that decided the lane, so the count and the lane can never disagree. A card the view does
+    // not hold carries a zero open_count (no client re-derivation), consistent with its base stage.
+    opps.forEach(o=>{
+      opens[o.slug]=boardViewOpens(o.slug);
+      views[o.slug]=opensForSlug(o.slug);                 // raw page traffic, informational only, never a lane signal
+      const id=boardViewIdle(o.slug); if(id!=null) idle[o.slug]=id;
+    });
+    return ThriveBoard.build(opps, { opens:opens, views:views, mail:getMailLog(), idle:idle });
   }
 
   function tokenHtml(tk){
@@ -7490,12 +7548,11 @@ async function initBoard(){
     let meta;
     if(tk.lane==="draft") meta=txt("tok_nopage");
     else if(tk.lane==="live"){
-      // The invariant: a view is a recipient opening a link WE SENT, so a card can carry a recipient view
-      // only if a delivered send exists. outreachOpens is that derivation (zero until a send, and the
-      // owner's own opens are already excluded by allHits), so raw page traffic on a page nobody was
-      // emailed can never read as a view here. A live card has no send, so this is zero and the card reads
-      // "no email yet", never the impossible "no email yet, one view".
-      const rv=boardViews(tk.slug);
+      // A view is a recipient opening a link WE SENT, so a card can carry a recipient view only if a
+      // delivered send exists. The server-computed open_count (tk.opens, from console_board) is already
+      // send-gated, so a live card (no send) reads zero: "no email yet", never the impossible "no email
+      // yet, one view". Read from the same view that set the lane, so the count and the lane cannot disagree.
+      const rv=tk.opens||0;
       meta = rv>0 ? fmtRelative("tok_views", rv) : txt("tok_noemail");
     }
     else if(tk.lane==="replied") meta=txt("tok_answered");

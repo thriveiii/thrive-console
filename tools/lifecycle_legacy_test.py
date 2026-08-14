@@ -123,6 +123,12 @@ with sync_playwright() as p:
     # ---- Legacy parity: a legacy status:sent card derives, clicks, can be closed ----
     # A genuinely sent legacy card carries a real send record, so it earns the Sent lane through evidence,
     # never through the bare status:'sent' stamp (a never-sent card with only that stamp reads Ready).
+    # The board reads the server-computed view now (v_console_board), so hand it the legacy card's row to
+    # land it in Sent, the same lane its real send record used to derive.
+    pg.evaluate("""()=>window.__boardViewSet([
+      {slug:'sent-legacy', stage:'sent', open_count:0, replied:false, idle_days:2, has_page:true, has_email:true, archived:false}
+    ])""")
+    pg.evaluate("()=>window.thriveBoardRefresh()"); pg.wait_for_timeout(400)
     ck("a legacy card with its real send record derives to the Sent lane, not a never-sent Ready", lane_of(pg,"sent-legacy")=="sent", lane_of(pg,"sent-legacy"))
     open_modal(pg,"sent-legacy")
     ck("a legacy card clicks open into its window", pg.evaluate("()=>{const m=document.getElementById('modal');return m && !m.hidden;}"))
@@ -166,6 +172,11 @@ with sync_playwright() as p:
     pg.evaluate("()=>{ const b=document.querySelector('#modalOverview [data-reopen]'); if(b) b.click(); }")
     pg.wait_for_timeout(500)
     close_modal(pg)
+    # The reopen surfaced the after-close reply; the board reads the server-computed view now, so hand it the
+    # reopened card's row as replied (the same lane the reply used to derive) before repainting.
+    pg.evaluate("""()=>window.__boardViewSet([
+      {slug:'won-reply', stage:'replied', open_count:1, replied:true, idle_days:1, has_page:true, has_email:true, archived:false}
+    ])""")
     pg.evaluate("()=>window.thriveBoardRefresh()"); pg.wait_for_timeout(400)
     ck("one-tap reopen moves the card into the Replied lane", lane_of(pg,"won-reply")=="replied", lane_of(pg,"won-reply"))
     ck("the reopened card is no longer in the Closed tray",

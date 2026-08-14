@@ -72,6 +72,13 @@
      same rule instead of a copy of it. The fallback below exists only for the standalone
      reference page, and it is written to give the same answers. */
   function hostEffStage(o, ctx){
+    /* The board reads ONE server-computed stage. When the host exposes boardViewStage (the console does),
+       it is the board's single stage authority: v_console_board's stage for a card it holds, else the
+       record's own base (a declared terminus, else ready or draft). The board computes no stage of its own,
+       so it can never derive two answers for one card from a shifting partial subset (the oscillation), and
+       it never falls through to the evidence path below. The standalone reference page has no boardViewStage,
+       so it keeps the local derivation. */
+    if (typeof global.boardViewStage === "function") return global.boardViewStage(o);
     var op = hostOpens(o.slug, ctx);
     var send = (ctx && ctx.mail) ? sendInfo(o.slug, ctx, o) : undefined;
     /* WO-015 §6: the lane follows the active chapter. activeChapterStage is
@@ -162,6 +169,10 @@
   }
 
   function ageDays(o, ctx){
+    // The board displays the server-computed idle_days verbatim (ctx.idle from v_console_board), the same
+    // source that decided the lane. Only when the view does not hold this card does the local last-touch
+    // clock stand in (a card the view has never seen, e.g. offline or not yet computed server-side).
+    if (ctx && ctx.idle && Object.prototype.hasOwnProperty.call(ctx.idle, o.slug)) return ctx.idle[o.slug] || 0;
     var t = lastTouch(o, ctx);
     return t ? hostDaysSince(t) : 0;
   }
