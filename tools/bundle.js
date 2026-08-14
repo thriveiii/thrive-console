@@ -404,7 +404,12 @@ const rootIndex = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 a{color:#71BFCC}</style></head>
 <body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=${BUILD}">Thrive Opportunity Library</a>…</span></div>
-<script>location.replace("./library/console.html?v=${BUILD}");</script></body></html>
+<script>(function(){/* Carry any incoming query params (and the hash) across the redirect, so a device
+  opened at ?debug=paint reaches the shell WITH the flag rather than losing it at the version bounce. The
+  script wins the redirect race with the meta-refresh, so this is the path that actually runs. */
+  var q=location.search||"";if(q.charAt(0)==="?")q=q.slice(1);
+  var u="./library/console.html?v=${BUILD}"+(q?("&"+q):"")+(location.hash||"");
+  location.replace(u);})();</script></body></html>
 `;
 fs.writeFileSync(path.join(ROOT, "index.html"), rootIndex);
 console.log("wrote index.html  (redirect -> console.html?v=" + BUILD + ")");
