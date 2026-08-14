@@ -2334,4 +2334,40 @@ body.modal-open{
 .pf-stat span{ font-size:var(--fs-xs); color:var(--ink-4) }
 .pf-perf-note{ margin:0; font-size:var(--fs-xs); color:var(--ink-4) }
 
+/* cadence: seven daily columns with the rhythm-of-3 line across the middle */
+.pf-cadence-wrap{ margin-block-start:var(--s-3) }
+.pf-cadence{ position:relative; display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:var(--s-2);
+  align-items:end; height:64px; padding:var(--s-2) 0; border-block-end:1px solid var(--hair) }
+.pf-cad-target{ position:absolute; inset-inline:0; inset-block-end:50%; height:0; border-block-start:1px dashed var(--hair-strong, var(--hair)) }
+.pf-cad-col{ position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:2px; height:100% }
+.pf-cad-bar{ inline-size:100%; max-inline-size:18px; border-radius:var(--r-sm); background:var(--hair-strong, var(--ink-6, var(--ink-4)));
+  opacity:.5; min-block-size:4px }
+.pf-cad-col.is-hit .pf-cad-bar{ background:var(--accent, var(--brand, var(--ink))); opacity:1 }
+.pf-cad-n{ font-size:10px; color:var(--ink-4); font-variant-numeric:tabular-nums; line-height:1 }
+.pf-cadence-cap{ margin:var(--s-2) 0 0; font-size:var(--fs-xs); color:var(--ink-4) }
+
+/* the honest pre-stamp bucket */
+.pf-history{ display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:var(--s-2);
+  margin-block-start:var(--s-4); padding-block-start:var(--s-3); border-block-start:1px solid var(--hair) }
+.pf-history-k{ font-size:var(--fs-xs); color:var(--ink-4) }
+.pf-history-v{ font-size:var(--fs-xs); color:var(--ink-4) }
+.pf-history-v b{ color:var(--ink); font-variant-numeric:tabular-nums }
+
+/* operations ledger: a wide region spanning the row, a filter, and a paged timeline */
+.pf-region-wide{ grid-column:1 / -1 }
+.pf-ops-filter{ display:flex; flex-wrap:wrap; gap:var(--s-2); margin-block-end:var(--s-3) }
+.pf-ops-tab{ appearance:none; border:1px solid var(--hair); background:var(--hair-2); color:var(--ink-4);
+  border-radius:999px; padding:4px var(--s-3); font-size:var(--fs-xs); cursor:pointer; min-height:32px }
+.pf-ops-tab.is-on{ background:var(--ink); color:var(--surface, #fff); border-color:var(--ink) }
+.pf-ops-list{ list-style:none; margin:0; padding:0; display:grid; gap:1px }
+.pf-op-row{ display:flex; align-items:center; gap:var(--s-3); padding:var(--s-2) var(--s-1);
+  border-block-end:1px solid var(--hair-2) }
+.pf-op-ic{ flex:0 0 auto; color:var(--ink-4); display:inline-flex }
+.pf-op-ic svg{ inline-size:15px; block-size:15px }
+.pf-op-main{ flex:1 1 auto; min-inline-size:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s-2) }
+.pf-op-act{ font-size:var(--fs-sm); color:var(--ink) }
+.pf-op-opp{ font-size:var(--fs-xs); color:var(--ink-4); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-inline-size:100% }
+.pf-op-when{ flex:0 0 auto; font-size:var(--fs-xs); color:var(--ink-4); font-variant-numeric:tabular-nums }
+.pf-ops-more-wrap{ margin-block-start:var(--s-3) }
+
 .pf-infra{ margin-block-start:var(--s-5); padding:var(--s-5); border-color:rgba(246,207,91,.28) }
