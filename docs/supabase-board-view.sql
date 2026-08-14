@@ -105,21 +105,43 @@ opens as (
   group by h.slug
 ),
 -- ---- REPLIED ---------------------------------------------------------------
--- app.js hasReply(): a real inbound reply attributed to the opp (kind <> 'auto',
--- which is a bounce notice), OR a hand-recorded reply in the ledger
--- (data->>'direction' = 'in', or status = 'replied').
+-- A reply is attributed to an opportunity through THREE real paths the client uses (the signal census,
+-- docs/board-signal-census.md), and the view must honor all three or a real answer is lost:
+--   (a) an inbound reply row (console_inbound, kind <> 'auto') keyed by opp;
+--   (b) a hand-recorded reply in the mail ledger (data->>'direction' = 'in', or status = 'replied');
+--   (c) a hand-recorded reply move that stamps the opportunity itself (console_opps.stage = 'replied'),
+--       which writes NO inbound or mail row at all -- the client's effStage honors a declared 'replied',
+--       so the view must too, or a manually recorded reply is invisible.
+-- Child-slug attribution: a group reply is re-keyed from the parent to a child slug '<parent>--r-<hash>'
+-- (app.js spawnChildrenFromReplies). When that child is a real console_opps row it is the member's own
+-- card and keeps the reply (the plain opp holds). When the child was never flushed (a stranded child,
+-- the flush race), the child slug matches no console_opps row and the reply would vanish; there we
+-- resolve it back to the parent (split_part before '--r-') so a real reply is never dropped, and without
+-- double counting a child that does exist.
 replied as (
   select slug, bool_or(r) as replied, max(ts) as last_reply_ts
   from (
-    select opp as slug, true as r, max(nullif(ts, '')::timestamptz) as ts
-      from public.console_inbound
-     where coalesce(kind, '') <> 'auto'
-     group by opp
+    select
+      case
+        when i.opp like '%--r-%'
+             and not exists (select 1 from public.console_opps o2 where o2.slug = i.opp)
+        then split_part(i.opp, '--r-', 1)                 -- stranded child: attribute to the parent
+        else i.opp                                        -- normal reply, or a child that has its own card
+      end                                                 as slug,
+      true                                                as r,
+      max(nullif(i.ts, '')::timestamptz)                  as ts
+      from public.console_inbound i
+     where coalesce(i.kind, '') <> 'auto'
+     group by 1
     union all
     select opp as slug, true as r, max(ts) as ts
       from public.console_mail
      where coalesce(data->>'direction', '') = 'in' or status = 'replied'
      group by opp
+    union all
+    select slug, true as r, nullif(data->>'replied_on', '')::timestamptz as ts
+      from public.console_opps
+     where stage = 'replied'                              -- (c) a hand-recorded reply move on the opp itself
   ) x
   group by slug
 ),

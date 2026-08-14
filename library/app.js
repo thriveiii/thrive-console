@@ -1756,7 +1756,10 @@ function getInboundLocal(){ try{ return JSON.parse(localStorage.getItem(INBOUND)
    a truncated or retired local store, and there is no second live copy to fork from). Under a render pin
    it reads the frozen snapshot. Writers use getInboundLocal. */
 function getInbound(){ if(__boardPin) return __boardPin.inbound.slice(); return getInboundLocal(); }
-function setInbound(a){ invalidateRecon(); lsSet(INBOUND, JSON.stringify((a||[]).slice(-800))); try{ supaMirrorInbound(a); }catch(_){} }
+function setInbound(a){ invalidateRecon(); lsSet(INBOUND, JSON.stringify((a||[]).slice(-800)));
+  // A reply must reach console_inbound for the server board view to mark the card Replied; a mirror failure
+  // is recorded on the diverge ledger, never swallowed, so it surfaces on the drift badge (Part 4).
+  try{ supaMirrorInbound(a); }catch(e){ try{ supaRecordDiverge("mirror", "console_inbound", e&&e.message); }catch(_){} } }
 function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
 /* Named on screen rather than counted: a reply nobody could attribute is the one
    most likely to be worth money, because it is the one nobody is expecting. */
@@ -2776,6 +2779,37 @@ window.readBoardView=readBoardView;
 // seam the reference/offline board never needs. Accepts the rows console_board returns.
 window.__boardViewSet=function(rows){ var by={}; (rows||[]).forEach(function(r){ if(r && r.slug) by[r.slug]=r; }); __boardView=by; };
 window.__boardViewClear=function(){ __boardView={}; };
+/* The write-invariant self-check (Part 4). The console_board view is only as complete as the console_mail
+   and console_inbound rows that reached Supabase, and those are mirrored best-effort and signed-in-only, so
+   a send or a reply the operator made can sit in the local ledger while the server view has not caught up.
+   Since the board reads the server view, that gap would silently read as Ready or Draft. This counts the
+   visible cards where the LOCAL ledger holds a delivered send or a reply that the view does NOT yet reflect,
+   so the drift is a number Thyab sees the day it happens rather than weeks later. It is computed only when
+   the view is actually loaded (rows present); with no view there is nothing to be behind, so it is silent. */
+function boardDrift(){
+  var out={ count:0, slugs:[] };
+  try{
+    if(!__boardView || !Object.keys(__boardView).length) return out;   // no view loaded: nothing to drift from
+    var seen={};
+    mergedOppsSync().forEach(function(o){
+      if(!o || o.archived || seen[o.slug]) return; seen[o.slug]=1;
+      var v=boardViewRow(o.slug);
+      var vStage=v ? String(v.stage||"") : "";
+      var vReplied=!!(v && v.replied);
+      var localSent=false, localReply=false;
+      try{ localSent=boardDeliveredSend(o); }catch(_){}
+      try{ localReply=hasReply(o.slug); }catch(_){}
+      // The view is BEHIND the local ledger: a delivered send the view still files as no-send, or a reply
+      // the view has not marked replied. A card the view does not hold at all counts too (its row never
+      // reached the server). base-only cards with no local evidence are not drift.
+      var sendDrift=localSent && (!v || vStage==="live" || vStage==="draft");
+      var replyDrift=localReply && (!v || !vReplied);
+      if(sendDrift || replyDrift){ out.count++; if(out.slugs.length<50) out.slugs.push(o.slug); }
+    });
+  }catch(_){}
+  return out;
+}
+window.boardDrift=boardDrift;
 /* Reads engage on TWO authorities, and being signed in is the one that matters on a real device.
    ROOT A of the "board reads no mail" defect: the mail, opens and replies slices only come from
    Supabase when this predicate is true, and until now it was true only when a manual Settings toggle
@@ -4470,7 +4504,10 @@ function logMail(rec){
   if(r.templateId===undefined) r.templateId="";
   if(r.templateName===undefined) r.templateName="";
   a.push(r); setMailLog(a);   // invalidates the send index: a send changes a lane immediately
-  try{ supaMirrorMail(r); }catch(_){}   // Stage 2 dual-write, fire-and-forget
+  // The ledger row must reach Supabase for the server board view to see the send; the mirror is queued
+  // durably (supaFlush drains on sign-in), but a failure here is recorded on the diverge ledger, never
+  // swallowed, so an incomplete ledger surfaces (the drift badge) instead of vanishing (Part 4).
+  try{ supaMirrorMail(r); }catch(e){ try{ supaRecordDiverge("mirror", "console_mail", e&&e.message); }catch(_){} }
   return r;
 }
 /* Exactly-once send (LAUNCH BLOCKER fix). A send's identity is its intent, not the click: the same
@@ -7513,6 +7550,26 @@ async function initBoard(){
     p.innerHTML=esc(t("sy_last"))+" "+fmtStampHtml(last, {dateStyle:"medium", timeStyle:"short"}); p.className="pill ok";  // the date is direction-isolated so it never reorders in Arabic
   }
 
+  /* Part 4, the drift self-check on screen. boardDrift counts the visible cards whose local ledger holds a
+     send or a reply the server view has not caught up to. When that is nonzero, a small warning badge shows
+     the count next to the sync pill, so an incomplete ledger is visible the day it happens. Created lazily
+     next to #boardSync so it needs no markup in either shell; hidden (and count cleared) when there is no
+     drift. The number is bidi-isolated so it never reorders in Arabic. */
+  function driftBadge(){
+    var anchor=el("boardSync"); if(!anchor || !anchor.parentNode) return;
+    var d; try{ d=boardDrift(); }catch(_){ d={ count:0 }; }
+    var badge=document.getElementById("boardDrift");
+    if(!d || !d.count){ if(badge) badge.hidden=true; return; }
+    if(!badge){
+      badge=document.createElement("span");
+      badge.id="boardDrift"; badge.className="pill drift"; badge.setAttribute("role","status");
+      anchor.parentNode.insertBefore(badge, anchor.nextSibling);
+    }
+    badge.hidden=false;
+    badge.title=txt("board_drift_t", d.count);
+    badge.innerHTML=ic("alert",13)+" "+txt("board_drift", d.count);
+  }
+
   /* Two counts, kept apart on purpose. opens is what answered a message you sent; views is
      every time the page was looked at. A page can be read before anybody was written to, and
      the board says so rather than promoting it into a lane it did not earn. */
@@ -7607,6 +7664,7 @@ async function initBoard(){
 
   function render(trigger, source){
     syncPill();
+    driftBadge();
     const b=build();
     // Sentinel Sweep 5, Layer 1: stamp this paint (no-op unless ?debug=paint or the localStorage switch is on).
     try{ ThrivePaintDebug.stamp("board", b, { trigger:trigger, src:(source&&source.kind) }); }catch(_){}

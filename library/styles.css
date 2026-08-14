@@ -561,6 +561,9 @@ html[dir="rtl"] .elink-url{text-align:start}
 .pill{font-size:11px;font-weight:800;letter-spacing:.04em;padding:4px 10px;border-radius:999px;border:1px solid var(--hair);color:var(--ink-3)}
 .pill.ok{color:#7ee0b8;border-color:rgba(126,224,184,.4);background:rgba(126,224,184,.08)}
 .pill.warn{color:#F6CF5B;border-color:rgba(246,207,91,.35);background:rgba(246,207,91,.08)}
+.pill.drift{color:#F6CF5B;border-color:rgba(246,207,91,.5);background:rgba(246,207,91,.12);display:inline-flex;align-items:center;gap:5px}
+.pill.drift svg{width:13px;height:13px;flex:none}
+.pill.drift[hidden]{display:none}
 /* The week, as days. One line each, the day on one side and what happened on the other, so a
    glance down the left tells you when and a glance down the right tells you what. */
 .story-days{list-style:none;margin:0 0 26px;padding:0;border:1px solid var(--hair);border-radius:var(--r-lg);overflow:hidden}
