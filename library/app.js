@@ -214,6 +214,54 @@ function currentActor(){
   try{ var u=window.ThriveSupa && ThriveSupa.authUid && ThriveSupa.authUid(); return (u && String(u)) || ACTOR; }catch(e){ return ACTOR; }
 }
 window.currentActor = currentActor;
+
+/* ---------- one operator-name resolver (WO-029 Phase B) ------------------------
+   Every surface that shows an actor (a comment author, a discussion reply, the activity ledger, the
+   performance region) resolves the name through this ONE function, so a uid becomes a real name in
+   exactly one place and no surface hardcodes a fallback label. The generic label «زميل» lives here and
+   here only, returned solely for a uid that resolves to nobody (a genuinely deleted or unknown operator),
+   never for a live one.
+
+   The name comes from console_profile_names, a minimal cross-readable projection of console_profiles
+   (uid, display_name, email) that any authenticated operator may read (docs/supabase-profile-phase-b.sql);
+   the base table stays owner-only, so preferences and memory are never exposed. The map hydrates once on
+   sign-in and caches on the device (the Stage-4 pattern). Two floors keep a name on screen even before or
+   without that read: the signed-in operator resolves their OWN name from their loaded profile, and a
+   comment seeds a floor from the display-name snapshot it already carries, so «زميل» appears only when no
+   source anywhere knows the uid. */
+var __opNames=null;                                       // { uid: { name, email } }, cross-operator
+function operatorNames(){ if(__opNames) return __opNames; try{ __opNames=JSON.parse(localStorage.getItem("thrive_op_names_v1")||"null"); }catch(e){ __opNames=null; } return (__opNames=__opNames||{}); }
+function opNamesCacheWrite(m){ try{ localStorage.setItem("thrive_op_names_v1", JSON.stringify(m||{})); }catch(e){} }
+function operatorNameSeed(uid, name, email){              // a floor from a snapshot; never overwrites an authoritative entry
+  uid=String(uid||"").trim(); if(!uid) return;
+  var m=operatorNames(), cur=m[uid]||{};
+  name=String(name||"").trim(); email=String(email||"").trim();
+  if(!cur.name && name) cur.name=name;
+  if(!cur.email && email) cur.email=email;
+  m[uid]=cur; __opNames=m;
+}
+async function hydrateOperatorNames(){
+  if(!supaOn()) return operatorNames();
+  try{
+    var rows=await window.ThriveSupa.rest("console_profile_names", { query:"select=uid,display_name,email" });
+    var m=operatorNames();
+    (rows||[]).forEach(function(r){ if(r && r.uid){ m[String(r.uid)]={ name:String(r.display_name||"").trim(), email:String(r.email||"").trim() }; } });
+    __opNames=m; opNamesCacheWrite(m);
+  }catch(e){}
+  return operatorNames();
+}
+function resolveOperator(uid){
+  uid=String(uid||"").trim();
+  if(!uid) return t("dc_someone");
+  if(uid===ACTOR) return t("op_console_history");         // the pre-stamp bucket is a real thing, not a person
+  var r=operatorNames()[uid];                             // the authoritative map (the view, plus snapshot floors) wins
+  if(r && (r.name||r.email)) return r.name||r.email;
+  try{ if(uid===profileUid()){ var me=(profileNow().display_name||"").trim() || profileEmail(); if(me) return me; } }catch(e){}
+  return t("dc_someone");                                 // a genuinely deleted or unknown uid only
+}
+window.resolveOperator = resolveOperator;
+window.hydrateOperatorNames = hydrateOperatorNames;
+
 function logActivity(action, slug, detail){
   const a=getActivity();
   a.push({ ts:new Date().toISOString(), action:action||"", slug:slug||"", detail:detail||"",
@@ -975,6 +1023,23 @@ function profileWrite(patch){
 function setProfilePref(k, v){ var p=profileNow(); var prefs=Object.assign({}, p.prefs); prefs[k]=v; profileWrite({ prefs:prefs }); }
 function setProfileMem(k, v){ var p=profileNow(); var mem=Object.assign({}, p.memory); mem[k]=v; profileWrite({ memory:mem }); }
 function setProfileField(k, v){ var patch={}; patch[k]=v; profileWrite(patch); }
+
+/* ---------- namespaced, versioned memory and preference keys (WO-029 Phase B) ----------
+   Preferences and memory live under namespaced, versioned keys inside the same two jsonb columns:
+   memory.pins.v1, memory.hints.v1, memory.notes.v1, prefs.signature.v1, and so on. A future need ADDS a
+   key (a new namespace, or a .v2 alongside a .v1), it never migrates a table, so the shape carries
+   whatever comes next without a schema change. The docs/PROFILE.md convention documents this. Reads fall
+   back to the legacy flat key (memory.pins), so nothing an operator already saved is ever lost; writes
+   always land on the versioned key from here on. */
+var PROFILE_KEY_V="v1";
+function nsKey(ns){ return ns+"."+PROFILE_KEY_V; }
+function profileMemNS(ns, dflt){ var m=(profileNow().memory)||{}; var vk=nsKey(ns);
+  if(m[vk]!==undefined) return m[vk]; if(m[ns]!==undefined) return m[ns]; return dflt; }
+function setProfileMemNS(ns, v){ setProfileMem(nsKey(ns), v); }
+function profilePrefNS(ns, dflt){ var pr=(profileNow().prefs)||{}; var vk=nsKey(ns);
+  if(pr[vk]!==undefined) return pr[vk]; if(pr[ns]!==undefined) return pr[ns]; return dflt; }
+function setProfilePrefNS(ns, v){ setProfilePref(nsKey(ns), v); }
+window.ThriveProfileKeys = { mem:profileMemNS, setMem:setProfileMemNS, pref:profilePrefNS, setPref:setProfilePrefNS, ns:nsKey };
 async function loadAdminTier(){
   var uid=profileUid();
   if(!uid || !supaOn()){ __adminTier=false; return false; }
@@ -989,6 +1054,7 @@ function isOwnerTier(){ return __adminTier===true; }
    through outreachOpens / hasReply, exactly as the board reads them, so a person's numbers can never
    disagree with the board. A new operator with no sends of their own reads honest zeros; the fuller
    cadence and outcomes-over-time are Phase B. */
+var CLOSE_ACTIONS={ lc_mark_won:1, lc_mark_lost:1, lc_drop:1 };   // the three terminal moves
 function operatorStats(actor){
   actor=actor||currentActor();
   var mail=getMailLog();
@@ -996,10 +1062,64 @@ function operatorStats(actor){
   var oppSet={}; mine.forEach(function(m){ if(m.opp) oppSet[m.opp]=1; });
   var opps=Object.keys(oppSet), opens=0, replies=0;
   opps.forEach(function(slug){ try{ opens+=outreachOpens(slug)||0; if(hasReply(slug)) replies++; }catch(e){} });
-  var moved=getActivity().filter(function(a){ return a && a.actor===actor && /^lc_/.test(a.action||""); }).length;
-  return { sent:mine.length, opps:opps.length, opens:opens, replies:replies, moved:moved };
+  var acts=getActivity().filter(function(a){ return a && a.actor===actor && /^lc_/.test(a.action||""); });
+  var moved=acts.length;
+  var closed=acts.filter(function(a){ return CLOSE_ACTIONS[a.action]; }).length;
+  // Reply rate is replies over the opportunities this operator actually sent to, the same denominator the
+  // board reasons about, as a whole percent. No sends means no rate, an honest zero, never a divide.
+  var replyRate=mine.length ? Math.round((replies/opps.length)*100) : 0;
+  // Cadence: this operator's own sends per day over the last week, from the SAME stamped ledger, so the
+  // 3-a-day rhythm reads straight off the record. The series is oldest to newest, keyed by ISO day.
+  var byDay={}; mine.forEach(function(m){ var d=String(m.ts||"").slice(0,10); if(d) byDay[d]=(byDay[d]||0)+1; });
+  var cadence=[]; var today=new Date();
+  for(var i=6;i>=0;i--){ var dt=new Date(today.getTime()-i*86400000); var key=dt.toISOString().slice(0,10);
+    cadence.push({ day:key, n:byDay[key]||0 }); }
+  return { sent:mine.length, opps:opps.length, opens:opens, replies:replies, moved:moved,
+           closed:closed, replyRate:replyRate, cadence:cadence };
 }
 window.operatorStats = operatorStats;
+/* The honest pre-stamp bucket: everything recorded before real per-operator stamping began carries the
+   reserved default actor ("thyab"), so it is reported as ONE labeled bucket (console history), never split
+   into or fabricated as any real operator's numbers. Returns null when there is nothing pre-stamp to show. */
+function consoleHistoryStats(){
+  var s=operatorStats(ACTOR);
+  return (s.sent || s.moved) ? s : null;
+}
+window.consoleHistoryStats = consoleHistoryStats;
+
+/* ---------- the operations ledger (WO-029 Phase B) ----------------------------
+   One per-operator timeline, DERIVED from the two stores the system already keeps, never a second copy: a
+   send reads from the stamped mail ledger, every other action from the stamped activity log. Both carry
+   the operator, so the ledger is attribution over existing rows. Kinds: send, move (a lifecycle move, a
+   stage change, a reassign or remove), comment, page (publish, activation, page removal). Anything else is
+   kept honestly under "other" and shows only in the unfiltered view. Newest first, filterable, paged. */
+function opLedgerKind(action){
+  action=String(action||"");
+  if(/^(email|send|sent|resend)$/.test(action)) return null;             // a send is read from the mail ledger, not doubled here
+  if(/^comment/.test(action)) return "comment";                          // comment_add, comment_del
+  if(/^(publish|unpublish|lc_publish|activate|retire_page|tpl_remove|etpl_remove)$/.test(action)) return "page";
+  if(/^lc_/.test(action) || action==="stage" || action==="reassign" || action==="remove") return "move";
+  return "other";
+}
+function operatorLedger(actor, opts){
+  actor=actor||currentActor(); opts=opts||{};
+  var rows=[];
+  getMailLog().forEach(function(m){
+    if(!m || m.actor!==actor || m.direction==="in" || m.status!=="sent") return;
+    rows.push({ kind:"send", ts:m.ts||"", opp:m.opp||"", action:"send", detail:m.to||m.subject||"" });
+  });
+  getActivity().forEach(function(a){
+    if(!a || a.actor!==actor) return;
+    var k=opLedgerKind(a.action); if(!k) return;
+    rows.push({ kind:k, ts:a.ts||"", opp:a.slug||"", action:a.action||"", detail:a.detail||"" });
+  });
+  rows.sort(function(x,y){ return String(y.ts||"").localeCompare(String(x.ts||"")); });   // newest first
+  var kind=opts.kind||"all";
+  if(kind!=="all") rows=rows.filter(function(r){ return r.kind===kind; });
+  var total=rows.length, limit=opts.limit||0;
+  return { rows:(limit>0? rows.slice(0, limit) : rows), total:total };
+}
+window.operatorLedger = operatorLedger;
 window.ThriveProfile = { load:loadProfile, now:profileNow, pref:profilePref, mem:profileMem,
   setPref:setProfilePref, setMem:setProfileMem, setField:setProfileField,
   loadTier:loadAdminTier, isOwner:isOwnerTier, uid:profileUid, email:profileEmail, stats:operatorStats };
@@ -1221,6 +1341,8 @@ window.onGateUnlocked= function(){ fireThrive("unlock"); renderOperatorChip(); }
 // language on change. (Defined earlier as hoisted functions; only the registration must follow __hooks.)
 onThrive("unlock","opprefs", function(){ opPrefsLoad(); });
 onThrive("lang","opprefs", function(){ try{ opPrefRemember("lang", getLang()); }catch(_){} });
+// Sign-in hydrates the cross-operator name map once, so every actor surface resolves a real name.
+onThrive("unlock","opnames", function(){ try{ hydrateOperatorNames(); }catch(_){} });
 // Signing in lands on the LIVE board with no manual refresh. A signed-out boot hydrate leaves the read
 // layer degraded and authRequired (a signed-out empty read is indistinguishable from an RLS denial), and
 // that flag makes supaEnsureHydrated bail, so without this the board would keep showing the sign-in prompt
@@ -2332,8 +2454,11 @@ function supaMirrorTemplates(list, kind){
   supaQueueUpsert("console_templates", rows);
 }
 function supaMailRow(rec){
+  // actor is a first-class column now (docs/supabase-profile-phase-b.sql), mirrored from the record's own
+  // stamp so per-operator sends can be aggregated server-side; it is set only at the write site, never
+  // backfilled, so a record with no actor stays honestly empty.
   return { id:rec.mid||rec.id||"", opp:rec.opp||"", status:rec.status||"", to_addr:rec.to||"",
-    subject:rec.subject||"", ts:rec.ts||new Date().toISOString(), data:rec, up:rec.up||Date.now() };
+    subject:rec.subject||"", ts:rec.ts||new Date().toISOString(), actor:rec.actor||"", data:rec, up:rec.up||Date.now() };
 }
 function supaMirrorMail(rec){
   if(!supaOn() || !rec) return;
@@ -4473,8 +4598,12 @@ function discussionHtml(slug){
   var all=(window.ThriveComments ? ThriveComments.list(slug) : []);
   var roots=all.filter(function(c){ return !c.parent_id; });
   var kids={}; all.forEach(function(c){ if(c.parent_id){ (kids[c.parent_id]=kids[c.parent_id]||[]).push(c); } });
+  // Seed the name floor from the snapshot each comment already carries, so a real name shows even before
+  // (or without) the cross-operator projection hydrates; the authoritative read then refreshes it.
+  all.forEach(function(c){ operatorNameSeed(c.author, c.author_name); });
   function whenHtml(ts){ return fmtWhenHtml(ts) || esc(String(ts==null?"":ts)); }
-  function who(c){ return esc(String(c.author_name||"").trim() || t("dc_someone")); }
+  // The one resolver: a uid becomes a real name here, «زميل» only for a genuinely unknown operator.
+  function who(c){ return esc(resolveOperator(c.author)); }
   function bubble(c, isReply){
     var own=c.author===mine, pend=(window.ThriveComments && ThriveComments.pending(c.id));
     return '<li class="dc-item'+(isReply?" dc-reply":"")+'" data-cid="'+esc(c.id)+'">'+
@@ -4510,6 +4639,7 @@ function discussionHtml(slug){
     '<div class="dc-out" role="status"></div></form>';
   return '<section class="dc-wrap"><h3 class="dc-title">'+esc(t("mw_discussion"))+'</h3>'+list+composer+'</section>';
 }
+window.discussionHtml = discussionHtml;
 
 // The reply composer for a thread: a textarea prefilled with a greeting and closing in the recipient's
 // language, and a Send that answers from hi@thriveiii.com. Empty when there is no address to answer.
@@ -5706,17 +5836,29 @@ async function initProfile(){
     try{ if(typeof setLang==="function") setLang(v); }catch(_){}
   });
 
-  // ---- memory ----
-  var pins=profileMem("pins",[]); if(el("pfMemPins")) el("pfMemPins").textContent=String(Array.isArray(pins)? pins.length : 0);
-  var hints=profileMem("hints",[]); if(el("pfMemHints")) el("pfMemHints").textContent=String(Array.isArray(hints)? hints.length : 0);
-  if(el("pfNotes")){ el("pfNotes").value=profileMem("notes",""); el("pfNotes").addEventListener("input", function(){ setProfileMem("notes", el("pfNotes").value); }); }
+  // ---- memory (namespaced, versioned keys; reads fall back to the legacy flat key) ----
+  var pins=profileMemNS("pins",[]); if(el("pfMemPins")) el("pfMemPins").textContent=String(Array.isArray(pins)? pins.length : 0);
+  var hints=profileMemNS("hints",[]); if(el("pfMemHints")) el("pfMemHints").textContent=String(Array.isArray(hints)? hints.length : 0);
+  if(el("pfNotes")){ el("pfNotes").value=profileMemNS("notes",""); el("pfNotes").addEventListener("input", function(){ setProfileMemNS("notes", el("pfNotes").value); }); }
 
   // ---- performance (the one derivation, filtered to this operator) ----
   var s=operatorStats();
   if(el("pfStSent")) el("pfStSent").textContent=String(s.sent);
   if(el("pfStOpens")) el("pfStOpens").textContent=String(s.opens);
   if(el("pfStReplies")) el("pfStReplies").textContent=String(s.replies);
+  if(el("pfStRate")) el("pfStRate").textContent=String(s.replyRate)+"%";
   if(el("pfStMoved")) el("pfStMoved").textContent=String(s.moved);
+  if(el("pfStClosed")) el("pfStClosed").textContent=String(s.closed);
+  renderCadence(el("pfCadence"), s.cadence);
+  // the honest pre-stamp bucket: one labeled line, never fabricated into a real operator's numbers
+  var hist=consoleHistoryStats();
+  if(el("pfHistory")){ if(hist){ el("pfHistory").hidden=false;
+      if(el("pfHistSent")) el("pfHistSent").textContent=String(hist.sent);
+      if(el("pfHistMoved")) el("pfHistMoved").textContent=String(hist.moved);
+    } else { el("pfHistory").hidden=true; } }
+
+  // ---- operations ledger (derived per-operator timeline, filterable, paged) ----
+  initOpsLedger();
 
   // ---- the owner-only infrastructure zone: present for the owner, ABSENT for everyone else ----
   var infra=el("pfInfra");
@@ -5727,6 +5869,54 @@ var __pfNameT=null;
 function debounceProfileName(){ var e=document.getElementById("pfName"); if(!e) return; if(__pfNameT) clearTimeout(__pfNameT);
   __pfNameT=setTimeout(function(){ setProfileField("display_name", e.value);
     var av=document.getElementById("pfAvatar"); if(av){ var s=(e.value||profileEmail()||"?").trim(); av.textContent=s? s.charAt(0).toUpperCase() : "?"; } }, 400); }
+
+/* The cadence strip: seven columns, one per day, the daily rhythm of 3 marked by a line across the middle.
+   A day that met the rhythm carries the accent. Digits stay Latin inside the isolated .n span. */
+function renderCadence(host, series){
+  if(!host) return; series=series||[];
+  var CAP=6;   // the visual ceiling; the target of 3 sits at the mid mark
+  host.innerHTML='<span class="pf-cad-target" aria-hidden="true"></span>'+series.map(function(d){
+    var n=d.n||0, h=Math.max(6, Math.round(Math.min(n,CAP)/CAP*100)), hit=(n>=3)?" is-hit":"";
+    return '<span class="pf-cad-col'+hit+'"><span class="pf-cad-bar" style="height:'+h+'%"></span>'+
+           '<b class="pf-cad-n n">'+esc(String(n))+'</b></span>';
+  }).join("");
+}
+
+/* The operations ledger render: a derived timeline, one row per action, newest first, filtered by kind and
+   revealed a page at a time. The date rides the one composer (fmtWhenHtml, bdi-isolated), so an Arabic
+   locale reads a right-to-left row with Latin digits and a correctly placed time. */
+var OPS_PAGE=20, __opsKind="all", __opsShown=OPS_PAGE;
+function opsOppTitle(slug){ if(!slug) return ""; try{ var d=(typeof getDraft==="function")? getDraft(slug) : null; return (d && d.business) || slug; }catch(e){ return slug; } }
+function opsRowHtml(r){
+  var icon = r.kind==="send"?"mail" : r.kind==="comment"?"channel" : r.kind==="page"?"globe" : "clock";
+  var head = t("pf_op_"+r.kind) || t("pf_op_other");
+  var opp = r.opp? ' <span class="pf-op-opp" dir="auto">'+esc(opsOppTitle(r.opp))+'</span>' : '';
+  return '<li class="pf-op-row" data-kind="'+esc(r.kind)+'">'+
+    '<span class="pf-op-ic" data-icon="'+icon+'" aria-hidden="true"></span>'+
+    '<span class="pf-op-main"><span class="pf-op-act">'+esc(head)+'</span>'+opp+'</span>'+
+    '<span class="pf-op-when">'+(fmtWhenHtml(r.ts)||esc(String(r.ts||"")))+'</span></li>';
+}
+function renderOpsLedger(){
+  var list=document.getElementById("pfOpsList"); if(!list) return;
+  var res=operatorLedger(null, { kind:__opsKind }), all=res.rows;
+  var show=Math.min(__opsShown, all.length);
+  list.innerHTML=all.slice(0, show).map(opsRowHtml).join("");
+  var more=document.getElementById("pfOpsMore"); if(more) more.hidden=(show>=all.length);
+  var empty=document.getElementById("pfOpsEmpty"); if(empty) empty.hidden=(all.length>0);
+}
+function initOpsLedger(){
+  __opsKind="all"; __opsShown=OPS_PAGE;
+  var filt=document.getElementById("pfOpsFilter");
+  if(filt && !filt.__bound){ filt.__bound=true;
+    filt.addEventListener("click", function(e){ var b=e.target && e.target.closest && e.target.closest("[data-ops-kind]"); if(!b) return;
+      __opsKind=b.getAttribute("data-ops-kind"); __opsShown=OPS_PAGE;
+      var tabs=filt.querySelectorAll(".pf-ops-tab"); for(var i=0;i<tabs.length;i++) tabs[i].classList.toggle("is-on", tabs[i]===b);
+      renderOpsLedger(); });
+  }
+  var more=document.getElementById("pfOpsMore");
+  if(more && !more.__bound){ more.__bound=true; more.addEventListener("click", function(){ __opsShown+=OPS_PAGE; renderOpsLedger(); }); }
+  renderOpsLedger();
+}
 
 function initSettings(){
   renderStorageMeter();

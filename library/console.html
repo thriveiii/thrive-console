@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="452c1c86">
+<meta name="thrive-build" content="95954134">
 <title>Thrive Console</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <script>(function(){var d=document.documentElement;
@@ -23,7 +23,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=f59c864610">
+<link rel="stylesheet" href="styles.css?v=e11aed16d3">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -658,9 +658,36 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
         <div class="pf-stat"><b class="n" id="pfStSent">0</b><span data-i18n="pf_st_sent">Sends</span></div>
         <div class="pf-stat"><b class="n" id="pfStOpens">0</b><span data-i18n="pf_st_opens">Opens</span></div>
         <div class="pf-stat"><b class="n" id="pfStReplies">0</b><span data-i18n="pf_st_replies">Replies</span></div>
+        <div class="pf-stat"><b class="n" id="pfStRate">0%</b><span data-i18n="pf_st_rate">Reply rate</span></div>
         <div class="pf-stat"><b class="n" id="pfStMoved">0</b><span data-i18n="pf_st_moved">Cards moved</span></div>
+        <div class="pf-stat"><b class="n" id="pfStClosed">0</b><span data-i18n="pf_st_closed">Cards closed</span></div>
       </div>
-      <p class="pf-perf-note" data-i18n="pf_perf_note">Cadence and outcomes over time follow next.</p>
+      <div class="pf-cadence-wrap">
+        <div class="pf-cadence" id="pfCadence" aria-hidden="true"></div>
+        <p class="pf-cadence-cap" data-i18n="pf_cadence_cap">Your last seven days. The mark is the daily rhythm of 3.</p>
+      </div>
+      <div class="pf-history" id="pfHistory" hidden>
+        <span class="pf-history-k" data-i18n="pf_history_k">Before per-operator records began: console history</span>
+        <span class="pf-history-v"><b class="n" id="pfHistSent">0</b> <span data-i18n="pf_st_sent">Sends</span> · <b class="n" id="pfHistMoved">0</b> <span data-i18n="pf_st_moved">Cards moved</span></span>
+      </div>
+    </section>
+
+    <!-- Region 4: Operations ledger (derived, per operator, the full record of actions) -->
+    <section class="panel pf-region pf-region-wide" id="pfOps" aria-labelledby="pfOpsH">
+      <h2 class="pf-region-h" id="pfOpsH" data-i18n="pf_ops_h">Your operations</h2>
+      <p class="pf-region-sub" data-i18n="pf_ops_sub">Every action you took, in order, newest first. Derived from the record, never a second copy.</p>
+      <div class="pf-ops-filter" id="pfOpsFilter" role="tablist">
+        <button type="button" class="pf-ops-tab is-on" data-ops-kind="all" data-i18n="pf_ops_all">All</button>
+        <button type="button" class="pf-ops-tab" data-ops-kind="send" data-i18n="pf_ops_sends">Sends</button>
+        <button type="button" class="pf-ops-tab" data-ops-kind="move" data-i18n="pf_ops_moves">Moves</button>
+        <button type="button" class="pf-ops-tab" data-ops-kind="comment" data-i18n="pf_ops_comments">Comments</button>
+        <button type="button" class="pf-ops-tab" data-ops-kind="page" data-i18n="pf_ops_pages">Pages</button>
+      </div>
+      <ol class="pf-ops-list" id="pfOpsList"></ol>
+      <div class="pf-ops-more-wrap">
+        <button type="button" class="btn ghost sm" id="pfOpsMore" hidden data-i18n="pf_ops_more">Show more</button>
+        <p class="pf-ops-empty sub" id="pfOpsEmpty" hidden data-i18n="pf_ops_empty">No actions recorded yet.</p>
+      </div>
     </section>
   </div>
 
@@ -867,7 +894,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
 <script src="config.js?v=806f4221bf"></script>
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=71df1d5e94"></script>
+<script src="i18n.js?v=2c88f4819e"></script>
 <script src="gate.js?v=fec6036cc5"></script>
 <script src="stage-model.js?v=cee83d06a8"></script>
 <script src="lifecycle.js?v=df368247ea"></script>
@@ -879,7 +906,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=88850b4df1"></script>
+<script src="app.js?v=4b4611becc"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with
