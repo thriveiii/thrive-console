@@ -41,8 +41,12 @@ sock = os.path.join(work, "sock")
 data = os.path.join(work, "data")
 
 SEED = r"""
+-- The REAL production column types (docs/supabase-stage1.sql + docs/supabase-mail-migrate.sql):
+-- console_mail.ts is timestamptz; console_inbound.ts and console_hits.ts are TEXT. Seeding these exact
+-- types is what makes this test catch the ''::timestamptz cast bug: a nullif(m.ts,'') on a timestamptz
+-- column fails to install, so the "view applies cleanly" check below is the fails-when-broken guard.
 create table console_opps (slug text primary key, business text, stage text, published boolean, archived boolean, outreach_subject text, outreach_text text, data jsonb, up bigint);
-create table console_mail (id text primary key, opp text, status text, to_addr text, subject text, ts text, actor text, data jsonb, up bigint);
+create table console_mail (id text primary key, opp text, status text, to_addr text, subject text, ts timestamptz, actor text, data jsonb, up bigint);
 create table console_inbound (id text primary key, opp text, kind text, bounce text, ts text, data jsonb, up bigint);
 create table console_hits (id text primary key, slug text, type text, ts text, self boolean, data jsonb);
 create table console_pages (slug text primary key, html text);
@@ -133,6 +137,14 @@ try:
             if len(parts) == 4: got[parts[0]] = (parts[1], int(parts[2]), int(parts[3]))
         for slug, exp in EXPECT.items():
             ck("%s -> stage %s, sent %d, open %d" % (slug, exp[0], exp[1], exp[2]), got.get(slug) == exp, got.get(slug))
+
+        # idle_days is null-safe without nullif: NULL for a card with no activity (no send/reply/open),
+        # a real integer for a card with a send. Computed straight from last_activity_ts, never a string
+        # coalesce and never a fabricated zero.
+        r = sh(env + ' psql -h "$PGHOST" -U postgres -t -A -F "|" -c "select slug, coalesce(idle_days::text, \'NULL\') from console_board where slug in (\'ready\',\'sentco\') order by slug;"')
+        idle = dict(line.split("|") for line in (r.stdout or "").strip().splitlines() if "|" in line)
+        ck("idle_days is NULL for a no-activity card (ready), not a fabricated zero", idle.get("ready") == "NULL", idle)
+        ck("idle_days is a real integer for a card with a send (sentco)", idle.get("sentco", "NULL").lstrip("-").isdigit(), idle)
 
         # determinism + one row per opp (acceptance #4)
         r = sh(env + ' psql -h "$PGHOST" -U postgres -t -A -c "select count(*), count(distinct slug) from console_board;"')
