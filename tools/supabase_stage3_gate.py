@@ -1,14 +1,15 @@
-"""Supabase read contract: read from Supabase (signed in), never a blend, guarded fallback, revert, refusal.
+"""Supabase read contract, under the canonical store: one reconciled truth, guarded fallback, revert, refusal.
 
-WO-026 refresh: this suite already asserts the current read contract; only "a write lands in Supabase"
-carried the retired pre-Stage-4 expectation (that a write reaches Supabase without the operator signed in).
-Under Stage 4 a write is durable and drains on sign-in, so the write case now signs in and reads the row
-back on the next hydrate (no blend). Everything else is the live contract, proven against a faithful fake
-of the PostgREST endpoint (window.fetch wrapped): the board read (getDrafts / mergedOpps) comes from
-Supabase when the switch is on and NEVER blends the local-only record; a forced read failure falls back to
-the current store and is surfaced as degraded (never a blank); the revert flag returns reads to the current
-store with no data change; the switch is refused when the two stores diverge (naming the divergence); and a
-read no longer depends on localStorage capacity. Every Supabase request targets a console_ table only.
+Canonical-store refresh: the board no longer reads Supabase to the EXCLUSION of localStorage (that live
+local-vs-supa choice was the store fork). Supabase (__supa) is now folded INTO the canonical localStorage
+by reconcileCanonical on every hydrate, so getDrafts / mergedOpps read one reconciled model: a
+Supabase-recorded record is present (folded in), and a local-only record is PRESERVED (an unconfirmed
+optimistic write is never dropped) rather than hidden by a store swap. Everything else is the live contract,
+proven against a faithful fake of the PostgREST endpoint (window.fetch wrapped): a signed-in write drains
+to Supabase and reads back on the next hydrate; a forced read failure leaves the canonical intact and is
+surfaced as degraded (never a blank); the revert flag turns the switch off with no data change; the switch
+is refused when the two stores diverge (naming the divergence); and a truncated local store self-heals on
+the next hydrate (Supabase re-folds into the canonical). Every Supabase request targets a console_ table only.
 
 The live Supabase and WebKit are Thyab's device gate. This runs the real app.js read cache."""
 import threading, http.server, socketserver, functools, os
@@ -75,18 +76,18 @@ with sync_playwright() as p:
     # Signed in: reading Supabase is the signed-in state, and a write drains rather than only queueing.
     pg.evaluate("()=>localStorage.setItem('console_sb_session', JSON.stringify({access_token:'jwt', uid:'op', email:'op@x'}))")
 
-    # A. Read source is Supabase. Seed a record ONLY in Supabase and confirm it is read; the local-only
-    #    record is NOT read, proving the source really is Supabase.
+    # A. One reconciled truth. Seed a record ONLY in Supabase; after a hydrate it is folded into the
+    #    canonical AND the local-only record is preserved (a union, not a store swap).
     seed_sb_opp(pg, "sup-vsd", "VSD (from Supabase)", "<b>BIG PAGE</b>")
     pg.evaluate("() => localStorage.setItem('console_sb_read','1')")
     pg.evaluate("async () => await window.supaHydrate()")
     drafts = pg.evaluate("() => window.getDrafts().map(o=>o.slug)")
-    ck("A: getDrafts reads from Supabase (has the Supabase-only record)", "sup-vsd" in drafts, drafts)
-    ck("A: getDrafts does NOT return the localStorage-only record when reading Supabase", "local-only" not in drafts, drafts)
+    ck("A: getDrafts serves the Supabase record (folded into the canonical on hydrate)", "sup-vsd" in drafts, drafts)
+    ck("A: the canonical PRESERVES the local record too (union, not a store swap; unconfirmed local is never dropped)", "local-only" in drafts, drafts)
     ck("A: the page html joins in from console_pages", pg.evaluate("() => { const o=window.getDrafts().find(x=>x.slug==='sup-vsd'); return o && o.html; }") == "<b>BIG PAGE</b>")
     merged = pg.evaluate("async () => (await window.mergedOpps()).map(o=>o.slug)")
-    ck("A: the board (mergedOpps) reads from Supabase too", "sup-vsd" in merged and "local-only" not in merged, merged)
-    ck("A: the read source reports supabase", pg.evaluate("() => window.supaReadStatus().source") == "supabase")
+    ck("A: the board (mergedOpps) reads the same reconciled canonical (server record folded in, local kept)", "sup-vsd" in merged and "local-only" in merged, merged)
+    ck("A: the read source reports supabase (the server copy is in hand)", pg.evaluate("() => window.supaReadStatus().source") == "supabase")
 
     # B. Signed in, a write lands in the current store and DRAINS to Supabase; the next hydrate reads it
     #    back (no blend: the read cache reflects Supabase, and the written row is in Supabase).
@@ -106,10 +107,11 @@ with sync_playwright() as p:
        pg.evaluate("() => window.supaReadStatus().degraded") is True and pg.evaluate("() => window.supaReadStatus().source") == "local")
     pg.evaluate("() => { window.__sb.failGetOpps = false; }")
 
-    # D. The revert flag returns reads to the current store, no data change.
+    # D. The revert flag turns the read switch off with no data change: the canonical still holds every
+    #    record reconcile folded in (reverting stops future hydrates; it never drops reconciled data).
     pg.evaluate("async () => await window.supaSetRead(false)")
     rev = pg.evaluate("() => window.getDrafts().map(o=>o.slug)")
-    ck("D: after revert, reads come from the current store", ("local-only" in rev) and ("sup-vsd" not in rev), rev)
+    ck("D: revert changes no data (the canonical still serves both the local and the folded Supabase record)", ("local-only" in rev) and ("sup-vsd" in rev), rev)
     ck("D: the flag is off after revert", pg.evaluate("() => localStorage.getItem('console_sb_read')") == "0")
 
     # E. The switch is refused when the two stores diverge (a local opp missing in Supabase), named.
@@ -119,15 +121,16 @@ with sync_playwright() as p:
     ck("E: the divergence names the missing record", "diverge-x" in (res.get("verify", {}).get("opps", {}).get("missing", [])), res)
     ck("E: the flag stays off after a refused switch", pg.evaluate("() => localStorage.getItem('console_sb_read')") == "0")
 
-    # F. A read no longer depends on localStorage capacity: with the switch on and the cache hydrated,
-    #    an emptied (full/truncated) local store does not blank the board. First make the stores agree
-    #    with a backfill (copies the current store into Supabase), so the guarded switch is allowed.
+    # F. A truncated local store self-heals on the next hydrate: reconcile re-folds the Supabase copy back
+    #    into the canonical, so a full/truncated Safari store never leaves the board durably blank. First
+    #    make the stores agree with a backfill (copies the current store into Supabase) and switch on.
     pg.evaluate("async () => await window.supaBackfill()")
     r2 = pg.evaluate("async () => await window.supaSetRead(true)")
     ck("F: switch succeeds once the stores agree (after backfill)", r2.get("ok") is True, r2)
     pg.evaluate("() => { localStorage.setItem('thrive_opps_v1', '[]'); }")   # simulate a full/truncated local store
+    pg.evaluate("async () => await window.supaHydrate()")                    # the next hydrate reconciles the server copy back in
     cap = pg.evaluate("() => window.getDrafts().map(o=>o.slug)")
-    ck("F: an emptied local store does not break the board (reads still come from Supabase)", ("local-only" in cap) and ("diverge-x" in cap), cap)
+    ck("F: a truncated local store self-heals on the next hydrate (Supabase re-folds into the canonical, board not left blank)", ("local-only" in cap) and ("diverge-x" in cap), cap)
 
     # G. Isolation: every Supabase request targeted a console_ table only.
     ck("G: every Supabase request targeted a console_ table only",

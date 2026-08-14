@@ -476,7 +476,7 @@ function allHits(opts){
   const seen={}, out=[];
   // Reading from Supabase (Stage 3+): opens come from the migrated console_hits rows so a card's Opened
   // survives a truncated or retired local store. Otherwise the durable local union, exactly as before.
-  const src = __boardPin ? __boardPin.hits : ((supaReadable() && __supa.hits) ? __supa.hits : getRemoteHitsLocal().concat(getHitsLocal()));
+  const src = __boardPin ? __boardPin.hits : getRemoteHitsLocal().concat(getHitsLocal());
   src.forEach(e=>{
     if(!e) return;
     if(!inclSelf && e.self) return;                 // never the sender's own opens or self views
@@ -1730,10 +1730,11 @@ function classifySyncError(msg){
    is a card whose history has a hole in it. */
 const INBOUND="thrive_inbound_v1";
 function getInboundLocal(){ try{ return JSON.parse(localStorage.getItem(INBOUND)||"[]"); }catch(e){ return []; } }
-/* The READ accessor for replies: the migrated console_inbound rows when reads are switched to Supabase
-   (so a reply, the international-schools one included, survives a truncated or retired local store),
-   else the current store. Writers use getInboundLocal. */
-function getInbound(){ if(__boardPin) return __boardPin.inbound.slice(); if(supaReadable() && __supa.inbound) return __supa.inbound.slice(); return getInboundLocal(); }
+/* The READ accessor for replies: the canonical localStorage store, into which reconcileCanonical has
+   folded the migrated console_inbound rows (so a reply, the international-schools one included, survives
+   a truncated or retired local store, and there is no second live copy to fork from). Under a render pin
+   it reads the frozen snapshot. Writers use getInboundLocal. */
+function getInbound(){ if(__boardPin) return __boardPin.inbound.slice(); return getInboundLocal(); }
 function setInbound(a){ invalidateRecon(); lsSet(INBOUND, JSON.stringify((a||[]).slice(-800))); try{ supaMirrorInbound(a); }catch(_){} }
 function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
 /* Named on screen rather than counted: a reply nobody could attribute is the one
@@ -1983,6 +1984,9 @@ async function doSyncRound(ep, auth){
   if(!relayReady()) throw new Error(relayBannerText());
   if(!gj.ok) throw new Error(gj.error||"sync auth");
   if(gj.data) syncMergeApply(gj.data);
+  // The relay merge just rewrote localStorage; fold the server-authoritative __supa copy back in so the
+  // canonical stays the one reconciled truth of both transports (a no-op until __supa is hydrated).
+  try{ reconcileCanonical(); }catch(e){}
   const p=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
     body:relayBody({ op:"state_put", auth:auth, data:syncSnapshot() }) });
   const pj=noteRelayVersion(await p.json()); if(!pj.ok) throw new Error(pj.error||"sync put");
@@ -2365,11 +2369,13 @@ function reconstructChildren(base){
    authority per call (F1), never a live global re-read mid-build (F3), and never a stale TTL cache (F4). */
 var __boardPin=null, __renderGen=0;
 function resolveAuthority(){
-  var useSupa = supaReadable() && !!__supa.opps;
-  if(useSupa) return { kind:"supa",
-    opps:__supa.opps.map(function(d){ return Object.assign({}, d); }),
-    mail:(__supa.mail||[]).slice(), inbound:(__supa.inbound||[]).slice(), hits:(__supa.hits||[]).slice() };
-  return { kind:"local", opps:getDraftsLocal(), mail:getMailLogLocal(),
+  // ONE canonical model, no authority choice. Supabase (__supa) is folded into localStorage by
+  // reconcileCanonical on every hydrate and every sync round, so localStorage IS the reconciled truth
+  // and the board reads exactly it, never picking between two live copies per cycle (the store fork).
+  // Kick the hydrate here so a signed-in board always has a fresh server copy to reconcile from; the
+  // kick is idempotent (no-op once hydrated) and reconcileCanonical + a board refresh run when it lands.
+  try{ if(supaReadFlagOn() && supaOn()) supaEnsureHydrated(); }catch(e){}
+  return { kind:"canonical", opps:getDraftsLocal(), mail:getMailLogLocal(),
     inbound:getInboundLocal(), hits:getRemoteHitsLocal().concat(getHitsLocal()) };
 }
 function getDrafts(){
@@ -2379,10 +2385,11 @@ function getDrafts(){
     var pk=reconstructChildren(base);
     return pk.length ? base.concat(pk) : base;
   }
-  if(supaReadFlagOn() && supaOn()){
-    supaEnsureHydrated();
-    if(__supa.hydrated && !__supa.degraded && __supa.opps) base=__supa.opps.map(function(d){ return Object.assign({}, d); });
-  }
+  // One canonical model: reads come from localStorage, into which reconcileCanonical has folded the
+  // server-authoritative Supabase copy. The __supa read branch is retired (it was the store fork). Still
+  // kick the hydrate so a signed-in device pulls a fresh server copy to reconcile from; the kick is
+  // idempotent and a board refresh runs when it lands.
+  if(supaReadFlagOn() && supaOn()) supaEnsureHydrated();
   if(!base) base=getDraftsLocal();
   var kids=reconstructChildren(base);
   return kids.length ? base.concat(kids) : base;
@@ -2759,6 +2766,67 @@ function supaOppFromRow(r, pageBy){
   if(pageBy && r && pageBy[r.slug]!=null) d.html=pageBy[r.slug];
   return d;
 }
+/* ---------- one canonical store, one reconciled truth ----------
+   The board used to read whichever store was current per cycle: localStorage or Supabase (__supa). Those
+   two copies had FORKED into two disagreeing generations and resolveAuthority picked one per cycle, so the
+   board flipped between two real worlds. Cure: one canonical model. localStorage IS the canonical; __supa
+   is the server-authoritative copy; reconcileCanonical folds __supa INTO localStorage on every hydrate and
+   sync round, so the two can never fork and every reader reads one reconciled truth.
+   unionUp: union two ledgers by a stable id, newest `up` wins. A fact known to EITHER transport survives,
+   a local-only pending the server has not confirmed is kept (local-only key). On an EXACT `up` tie the
+   local record is kept (local is folded first, only a STRICTLY newer server up replaces it), exactly as
+   mergeKeyed keeps the local opp on a tie: a genuinely newer server fact still wins by its higher up, but
+   a device's fresh optimistic edit (an attribution not yet stamped or confirmed) is never clobbered back
+   to a same-generation server copy. Keys are total (JSON fallback), so a record without an id is deduped
+   by full content, exactly as the relay merge does. */
+function unionUp(localArr, serverArr, keyFn){
+  var by={}, order=[];
+  function put(x){
+    if(x==null) return;
+    var k; try{ k=keyFn(x); }catch(_){ k=null; }
+    if(k==null || k===""){ try{ k=" "+JSON.stringify(x); }catch(_){ k=" "+String(x); } }
+    var xu=Number(x&&x.up)||0;
+    if(!(k in by)){ by[k]={ x:x, up:xu }; order.push(k); return; }
+    if(xu > by[k].up) by[k]={ x:x, up:xu };   // only a strictly newer write replaces; a tie keeps the local (folded first)
+  }
+  (localArr||[]).forEach(function(x){ put(x); });
+  (serverArr||[]).forEach(function(x){ put(x); });
+  return order.map(function(k){ return by[k].x; });
+}
+var __reconciling=false;
+/* Fold the server-authoritative __supa copy into the canonical localStorage store, so the board reads
+   exactly one reconciled model and the two copies can never diverge. Opportunities merge per slug by
+   newest `up` (a server-recorded fact carries the newest up once written; a local optimistic edit carries
+   a newer up until the server confirms it, so it is preserved), tombstones honored, a local page html
+   never erased by a winner that arrives without one. The three ledgers (mail, replies, opens) union by
+   their stable id via unionUp. The reconciled state is written STRAIGHT back to localStorage, directly,
+   bypassing the Supabase mirror (setInbound/setRemoteHits would re-enqueue the reconciled rows back up),
+   so localStorage becomes a mirror of the canonical and never a second fork. Guarded by __syncApplying
+   (the writes cannot trigger a sync-push storm) and __reconciling (re-entrancy). A no-op when there is no
+   authoritative server copy in hand (signed out, degraded, or not yet hydrated), so a device with no
+   Supabase keeps pure-localStorage canonical. Returns true when a fold happened. */
+function reconcileCanonical(){
+  if(__reconciling) return false;
+  if(!__supa || !__supa.hydrated || __supa.degraded || !__supa.opps) return false;
+  __reconciling=true;
+  var prevApplying=__syncApplying; __syncApplying=true;
+  try{
+    var allTombs=tombs();
+    var opps=mergeKeyed(getDraftsLocal(), __supa.opps||[], "slug", "opp", allTombs,
+      function(r,l){ return Object.assign({}, r, (!r.html && l.html)?{html:l.html}:{}); });
+    setDrafts(opps);                                     // clean setter: no Supabase mirror, strips reconstructed
+    var mail=unionUp(getMailLogLocal(), __supa.mail||[], function(m){ return m&&m.mid!=null?String(m.mid):null; });
+    mail.sort(function(a,b){ return (a.ts<b.ts?-1:(a.ts>b.ts?1:0)); });
+    setMailLog(mail);                                    // clean setter: no Supabase mirror
+    var inbound=unionUp(getInboundLocal(), __supa.inbound||[], inboundKey);
+    invalidateRecon(); lsSet(INBOUND, JSON.stringify(inbound.slice(-800)));   // direct: skip setInbound's re-mirror
+    var hits=unionUp(getRemoteHitsLocal(), __supa.hits||[], hitKey);
+    try{ localStorage.setItem(RHITS, JSON.stringify(hits.slice(-2000))); }catch(_){}  // direct: skip setRemoteHits's re-mirror
+    try{ invalidateSends(); }catch(_){}
+    try{ invalidateHits(); }catch(_){}
+    return true;
+  } finally { __syncApplying=prevApplying; __reconciling=false; }
+}
 async function supaHydrate(){
   if(!supaOn()){ __supa.hydrated=false; return false; }
   try{
@@ -2804,6 +2872,10 @@ async function supaHydrate(){
     // The send and open indexes are memoized off the old store; rebuild them from the migrated rows.
     try{ invalidateSends(); }catch(_){}
     try{ invalidateHits(); }catch(_){}
+    // Fold this fresh server copy into the canonical localStorage store, so the board reads one
+    // reconciled truth and the two copies cannot fork. supaFlush ran first, so this device's own writes
+    // are already up and read back; any local-only pending that did not flush is preserved by unionUp.
+    try{ reconcileCanonical(); }catch(_){}
     return true;
   }catch(e){
     // A denial the operator can fix by signing in (a 401/403 once the anon door is closed) is marked
@@ -4235,10 +4307,12 @@ function tplUsesMonth(tp){ return !!tp && /\{\{MONTH\}\}/.test((tp.subject||"")+
 /* mail log: every send/copy/reply, per recipient (campaign documentation) */
 const MAILLOG = "thrive_mail_v1";
 function getMailLogLocal(){ try{ return JSON.parse(localStorage.getItem(MAILLOG)||"[]"); }catch(e){ return []; } }
-/* The READ accessor for the ledger: the migrated console_mail rows when reads are switched to Supabase,
-   so Sent, Opened and Replied derive from the complete rows rather than a truncated local store and no
-   card falls back to Ready. Writers (logMail, the sync merge, reassign) use getMailLogLocal. */
-function getMailLog(){ if(__boardPin) return __boardPin.mail.slice(); if(supaReadable() && __supa.mail) return __supa.mail.slice(); return getMailLogLocal(); }
+/* The READ accessor for the ledger: the canonical localStorage store, into which reconcileCanonical has
+   folded the migrated console_mail rows, so Sent, Opened and Replied derive from the complete reconciled
+   ledger rather than a truncated local store and no card falls back to Ready, with no second live copy to
+   fork from. Under a render pin it reads the frozen snapshot. Writers (logMail, the sync merge, reassign)
+   use getMailLogLocal. */
+function getMailLog(){ if(__boardPin) return __boardPin.mail.slice(); return getMailLogLocal(); }
 function setMailLog(a){ const ok=lsSet(MAILLOG, JSON.stringify(a.slice(-800))); invalidateSends(); return ok; }
 
 /* ---------- the open team discussion (console_comments) ----------

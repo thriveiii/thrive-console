@@ -3,10 +3,10 @@ prior green runs never exercised.
 
 Why the prior sandboxes passed while the device stayed broken: every earlier test seeded the LOCAL
 stores (thrive_mail_v1 etc.) and read them back, so the local fallback was always populated. The real
-device is a signed-in operator whose local store is EMPTY and whose data lives in Supabase, gated
-behind a read switch that a fresh device can never flip. This test reproduces THAT: local stores are
-left empty, an operator signs in, and the ONLY source of mail/opps/inbound is the (mocked) Supabase.
-The board must read it. It also checks the two engine-independent halves of Root B in a way a Chromium
+device is a signed-in operator whose local store starts EMPTY and whose data lives in Supabase. This
+test reproduces THAT: local stores are left empty, an operator signs in, and the signed-in hydrate
+reconciles the (mocked) Supabase copy INTO the canonical localStorage (the mirror), which the board
+then reads as one reconciled truth. The board must show it. It also checks the two engine-independent halves of Root B in a way a Chromium
 sandbox can still catch: documentElement.dir at the app root, and Western digits forced via the one
 date formatter. The three-width, Arabic-joined-letters WebKit VISUAL stays Thyab's device gate."""
 import threading, http.server, socketserver, functools, os, re
@@ -99,7 +99,9 @@ with sync_playwright() as p:
     ck("English mirrors it: the app root is LTR",
        pg.evaluate("()=>document.documentElement.getAttribute('dir')")=="ltr")
 
-    # ---- Root A: local stores are EMPTY; the board must read mail from Supabase (the signed-in path) ----
+    # ---- Root A, under the canonical store: the local stores START empty; a signed-in hydrate reconciles
+    #      the Supabase copy INTO the canonical localStorage (the mirror), and the board reads that one
+    #      reconciled truth (no second live copy to fork from). ----
     # Poll until the lazy hydrate lands.
     pg.wait_for_function("()=>window.getMailLog && window.getMailLog().length>0", timeout=15000)
     state = pg.evaluate("""()=>{
@@ -109,23 +111,27 @@ with sync_playwright() as p:
       const s = window.sendsFor(window.getDraft('thrive-july'));
       return { localMail, localOpps, mail, sends: s.count, declared: !!s.declared };
     }""")
-    ck("the local mail and opp stores are genuinely empty (data can only come from Supabase)",
-       state["localMail"]==0 and state["localOpps"]==0, state)
-    ck("a signed-in operator reads the real ledger from Supabase (Sent is a real count, not the declared 1)",
+    ck("the signed-in hydrate folds the Supabase ledger into the canonical localStorage (the mirror is populated, not a second live copy)",
+       state["localMail"]==2 and state["localOpps"]==1, state)
+    ck("a signed-in operator reads the real reconciled ledger (Sent is a real count, not the declared 1)",
        state["mail"]==2 and state["sends"]==2 and state["declared"]==False, state)
     ck("thrive-july shows its recipients with rendered times (a node, not literal text)",
        (lambda h: ('<span class="mono-iso">' in h) and ("&lt;span" not in h) and ("Basel" in h))(
          pg.evaluate("()=>window.recipientsPanelHtml(window.getDraft('thrive-july'))")))
 
-    # ---- Root A, the gate is the switch: sign out (Supabase only), the SAME Supabase mail no longer
-    #      reaches the board, proving the session (not a manual flag) is what engages the read. ----
+    # ---- The session drives the read: clear the canonical mirror and sign out. With no session there is
+    #      no hydrate to reconcile the Supabase copy back in, so the canonical stays empty (the board reads
+    #      nothing). This proves the session, not a manual flag, is what engages the read. ----
     pg.evaluate("()=>window.ThriveSupa && window.ThriveSupa.signOut && window.ThriveSupa.signOut()")
-    pg.wait_for_timeout(150)
+    pg.evaluate("()=>{ localStorage.setItem('thrive_mail_v1','[]'); localStorage.setItem('thrive_opps_v1','[]'); window.invalidateSends&&window.invalidateSends(); }")
+    pg.wait_for_timeout(200)
     signedOutMail = pg.evaluate("()=>{ window.invalidateSends&&window.invalidateSends(); return window.getMailLog().length; }")
-    ck("signed out (and no manual flag), the board reads no mail: the session is the read authority",
+    ck("signed out with an empty canonical, the board reads no mail: with no session there is no hydrate to reconcile Supabase in",
        signedOutMail==0, signedOutMail)
-    # sign back in for the reply-pipeline confirmation
-    pg.evaluate("""async ()=>{ await window.ThriveSupa.signIn('op@thrive.co','right'); }""")
+    # sign back in for the reply-pipeline confirmation. On a real device the gate-unlock hook clears the
+    # stale read state and hydrates; here we call signIn directly, so force the same hydrate, which
+    # reconciles the Supabase copy back into the canonical mirror the cleared board reads.
+    pg.evaluate("""async ()=>{ await window.ThriveSupa.signIn('op@thrive.co','right'); await window.supaHydrate(); }""")
     pg.wait_for_function("()=>window.getMailLog && window.getMailLog().length>0", timeout=15000)
 
     # ---- Root A / section 4: once mail reads, the held Basel reply attributes and spawns in Replied ----
