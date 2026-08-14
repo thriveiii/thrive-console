@@ -34,8 +34,12 @@ create or replace view public.console_board
 with (security_invoker = true)
 as
 with
--- A timestamp text column can be a plain date (length 10) or a full ISO stamp.
--- Parse both safely; an unparseable or empty value becomes NULL, never an error.
+-- TIMESTAMP TYPES (the schema, docs/supabase-stage1.sql + docs/supabase-mail-migrate.sql):
+--   console_mail.ts is timestamptz          -> used directly; a nullif(ts,'') here would force ''::timestamptz
+--                                              and fail at parse time before any row is read.
+--   console_inbound.ts / console_hits.ts are TEXT -> nullif(ts,'')::timestamptz guards an empty string
+--                                              before the cast, which is correct and stays.
+--   manual_contacts[].sent_on is TEXT (jsonb) -> same nullif-before-cast guard.
 -- ---- SEND EVIDENCE ---------------------------------------------------------
 -- app.js sendIndex(): a send is a console_mail row linked by opp = slug, that is
 -- NOT a reply (data->>'direction' <> 'in'), whose status is a dispatched one
@@ -45,8 +49,8 @@ mail_sends as (
   select
     m.opp                                                as slug,
     count(*)                                             as n,
-    min(nullif(m.ts, '')::timestamptz)                   as first_ts,
-    max(nullif(m.ts, '')::timestamptz)                   as last_ts
+    min(m.ts)                                            as first_ts,
+    max(m.ts)                                            as last_ts
   from public.console_mail m
   where coalesce(m.data->>'direction', '') <> 'in'
     and (m.status is null or m.status in ('', 'sent', 'copied', 'pending'))
@@ -112,7 +116,7 @@ replied as (
      where coalesce(kind, '') <> 'auto'
      group by opp
     union all
-    select opp as slug, true as r, max(nullif(ts, '')::timestamptz) as ts
+    select opp as slug, true as r, max(ts) as ts
       from public.console_mail
      where coalesce(data->>'direction', '') = 'in' or status = 'replied'
      group by opp
@@ -147,12 +151,11 @@ select
   -- last_activity_ts: the most recent thing that actually happened (last send,
   -- last reply, last open-after-send). NULL when nothing has happened yet.
   greatest(s.last_ts, r.last_reply_ts, op.last_open_ts)                      as last_activity_ts,
-  -- idle_days: whole days since the last activity, else since the record's own
-  -- update stamp, else 0. A card with no history at all cannot be stale.
-  greatest(0, extract(day from (now() - coalesce(
-      greatest(s.last_ts, r.last_reply_ts, op.last_open_ts),
-      to_timestamp(coalesce(o.up, 0) / 1000.0),
-      now())))::int)                                                         as idle_days,
+  -- idle_days: whole days since the last activity, computed straight from last_activity_ts. A card with
+  -- no send/reply/open has a NULL last_activity_ts, so idle_days is NULL by normal timestamp arithmetic
+  -- (now() minus NULL is NULL), never a fabricated zero and never a string coalesce. The client treats a
+  -- NULL idle_days as "no idle clock yet" and falls back to its own last-touch, so nothing breaks.
+  extract(day from (now() - greatest(s.last_ts, r.last_reply_ts, op.last_open_ts)))::int as idle_days,
   -- ---- THE STAGE LADDER (app.js effStage, first match wins) ----------------
   -- coalesce(manual_override, computed): a declared terminal stage on the record
   -- (anything other than the derived 'sent'/'replied') stands as the override,
