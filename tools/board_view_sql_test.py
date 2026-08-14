@@ -60,7 +60,14 @@ insert into console_opps(slug,business,stage,published,archived,outreach_subject
  ('replyco','Reply Co','',true,false,'','', '{}'::jsonb, 1000),
  ('bounceco','Bounce Co','',true,false,'','', '{}'::jsonb, 1000),
  ('wonco','Won Co','won',true,false,'','', '{}'::jsonb, 1000),
- ('manualco','Manual Co','',true,false,'','', '{"manual_contacts":[{"sent_on":"2026-08-01"}]}'::jsonb, 1000);
+ ('manualco','Manual Co','',true,false,'','', '{"manual_contacts":[{"sent_on":"2026-08-01"}]}'::jsonb, 1000),
+ -- reply completeness: a parent whose only reply is on a STRANDED child slug (no such console_opps row),
+ -- a group parent whose child card DOES exist (the child keeps the reply), and a hand-recorded reply move
+ -- that stamps stage='replied' with no inbound/mail row at all.
+ ('basel','Basel Issa','',true,false,'','', '{}'::jsonb, 1000),
+ ('grp','Group Co','',true,false,'','', '{}'::jsonb, 1000),
+ ('grp--r-kid','Group Member','',true,false,'','', '{"spawned_from":"grp"}'::jsonb, 1000),
+ ('manualrep','Manual Reply Co','replied',true,false,'','', '{"replied_on":"2026-08-04T09:00:00Z"}'::jsonb, 1000);
 insert into console_mail(id,opp,status,ts,data) values
  ('m_sent','sentco','sent','2026-08-01T10:00:00Z','{}'),
  ('m_open','openco','sent','2026-08-01T10:00:00Z','{}'),
@@ -77,7 +84,9 @@ insert into console_hits(id,slug,type,ts,self) values
  ('h_self','openco','open','2026-08-02T11:00:00Z',true);
 insert into console_inbound(id,opp,kind,bounce,ts,data) values
  ('i_reply','replyco','reply','', '2026-08-03T09:00:00Z','{}'),
- ('i_bounce','bounceco','auto','hard','2026-08-02T09:00:00Z','{}');
+ ('i_bounce','bounceco','auto','hard','2026-08-02T09:00:00Z','{}'),
+ ('i_stray','basel--r-9a9','reply','', '2026-08-03T09:00:00Z','{}'),   -- stranded child: no basel--r-9a9 opp -> resolves to basel
+ ('i_kid','grp--r-kid','reply','', '2026-08-03T09:00:00Z','{}');       -- child card exists -> the child keeps the reply
 insert into console_pages(slug,html) values ('ready','<b>x</b>');
 """
 
@@ -92,6 +101,10 @@ EXPECT = {
     "bounceco": ("bounced", 1, 0),
     "wonco": ("won", 0, 0),      # a declared terminus stands
     "manualco": ("sent", 1, 0),  # a hand-recorded manual contact counts as a send
+    "basel": ("replied", 0, 0),  # reply on a stranded child slug resolves back to the parent (Basel returns to Replied)
+    "grp": ("live", 0, 0),       # the group parent has no direct reply; the reply lives on the child card
+    "grp--r-kid": ("replied", 0, 0),  # the child card that exists keeps its own reply (no double count onto the parent)
+    "manualrep": ("replied", 0, 0),   # a hand-recorded reply move (stage='replied', no inbound row) is honored
 }
 
 fails = []
@@ -148,7 +161,7 @@ try:
 
         # determinism + one row per opp (acceptance #4)
         r = sh(env + ' psql -h "$PGHOST" -U postgres -t -A -c "select count(*), count(distinct slug) from console_board;"')
-        ck("one row per opportunity (10 rows, 10 distinct slugs)", (r.stdout or "").strip() == "10|10", r.stdout)
+        ck("one row per opportunity (14 rows, 14 distinct slugs)", (r.stdout or "").strip() == "14|14", r.stdout)
         h = 'psql -h "$PGHOST" -U postgres -t -A -c "select md5(string_agg(slug||stage||sent_count::text||open_count::text||replied::text, chr(10) order by slug)) from console_board;"'
         r1 = sh(env + " " + h); r2 = sh(env + " " + h)
         ck("the view is deterministic (two runs return byte-identical rows)",

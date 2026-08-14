@@ -2464,6 +2464,9 @@ var I18N_BOARD = {
     tok_days:       { zero:"today", one:"{n} day",      other:"{n} days" },
     tok_idle:       { one:"{n} day idle", other:"{n} days idle" },
     tok_opens:      { one:"{n} open",     other:"{n} opens" },
+    board_drift:    { one:"{n} unsynced", other:"{n} unsynced" },
+    board_drift_t:  { one:"{n} card holds a send or reply the server ledger has not caught up to yet",
+                      other:"{n} cards hold a send or reply the server ledger has not caught up to yet" },
     /* ---- sentences that carry a count ----
        A flat "{n}" template holding a count is a defect, and these were the last of them.
        English needs two forms, Arabic needs five, and boardText chooses. tools/verify.js
@@ -2658,6 +2661,17 @@ var I18N_BOARD = {
     tok_opens: {
       one:"مرة واحدة", two:"مرتين",
       few:"{n} مرات", many:"{n} مرة", other:"{n} مرة"
+    },
+    board_drift: {
+      one:"غير متزامنة", two:"غير متزامنتين",
+      few:"{n} غير متزامنة", many:"{n} غير متزامنة", other:"{n} غير متزامنة"
+    },
+    board_drift_t: {
+      one:"بطاقة تحمل رسالة أو ردًا لم يصل بعد إلى سجل الخادم",
+      two:"بطاقتان تحملان رسالة أو ردًا لم يصل بعد إلى سجل الخادم",
+      few:"{n} بطاقات تحمل رسالة أو ردًا لم يصل بعد إلى سجل الخادم",
+      many:"{n} بطاقة تحمل رسالة أو ردًا لم يصل بعد إلى سجل الخادم",
+      other:"{n} بطاقة تحمل رسالة أو ردًا لم يصل بعد إلى سجل الخادم"
     },
     story_sent: {
       zero:"لم تكتب إلى أحد بعد.",
