@@ -270,6 +270,72 @@ function logActivity(action, slug, detail){
 }
 window.logActivity = logActivity;
 
+/* ---------- paint instrumentation (Sentinel Sweep 5, Layer 1) -------------------
+   The count/lane oscillation is a ghost: it has survived three targeted fixes, which means the root is
+   systemic, not one bug. This turns the ghost into evidence. Behind a flag (?debug=paint in the URL, or
+   localStorage thrive_debug_paint="1"), every board paint is STAMPED with a sequence number, a timestamp,
+   the trigger that caused it (read from the call stack), the source stores it read (local vs the hydrated
+   Supabase base), the per-lane counts, and a content hash of the derived model. Two consecutive paints
+   with different hashes print DIVERGED, naming which trigger produced which counts, so the two paints
+   Thyab captures on the iPad say exactly which reader disagreed. It is cheap (a no-op when the flag is
+   off), permanent, and it writes nothing to any store: it only observes the one derived model the board
+   already built. This is the ONLY behavioural code in this audit. */
+var ThrivePaintDebug=(function(){
+  var last=null, seq=0, box=null;
+  function enabled(){
+    try{ if(/(?:^|[?&])debug=paint(?:&|=|$)/.test(location.search||"")) return true; }catch(e){}
+    try{ return localStorage.getItem("thrive_debug_paint")==="1"; }catch(e){ return false; }
+  }
+  function hashStr(s){ var h=0,i; for(i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; } return (h>>>0).toString(16); }
+  function trigger(){
+    try{ var st=((new Error()).stack||"").split("\n").slice(2,9), i, m;
+      for(i=0;i<st.length;i++){ m=/at\s+([A-Za-z0-9_.$<>]+)/.exec(st[i]);
+        if(m && !/render|build|stamp|trigger|ThrivePaintDebug|Object\.</.test(m[1])) return m[1]; }
+      return (st[0]||"?").trim().replace(/^at\s+/,"");
+    }catch(e){ return "?"; }
+  }
+  function sources(){
+    var s="local";
+    try{ if(typeof supaReadFlagOn==="function" && supaReadFlagOn()) s="supa(flag)"; }catch(e){}
+    try{ if(window.__supa && window.__supa.hydrated && !window.__supa.degraded && window.__supa.opps) s="supa(hydrated)+local"; }catch(e){}
+    return s;
+  }
+  function overlay(rec, prev, diverged){
+    try{
+      if(!box){ box=document.createElement("div"); box.id="paintDebugOverlay";
+        box.setAttribute("style","position:fixed;inset-block-end:8px;inset-inline-start:8px;z-index:2147483647;max-inline-size:min(92vw,520px);max-block-size:40vh;overflow:auto;background:rgba(12,12,16,.92);color:#e8e8ea;font:11px/1.4 ui-monospace,Menlo,monospace;padding:8px 10px;border-radius:8px;pointer-events:none;white-space:pre-wrap;box-shadow:0 4px 24px rgba(0,0,0,.4)");
+        document.body.appendChild(box); }
+      var line="#"+rec.seq+"  "+rec.kind+"  ["+rec.trigger+"]  src="+rec.src+"  hash="+rec.hash+"\n"+
+               "     lanes "+JSON.stringify(rec.lanes)+(diverged? ("\n     DIVERGED from #"+prev.seq+" ("+prev.trigger+", "+prev.hash+")") : "");
+      var head=box.firstChild && box.firstChild.nodeType===1 && box.firstChild.__stamp ? null : null;
+      var row=document.createElement("div"); row.__stamp=1;
+      row.setAttribute("style","padding:3px 0;border-block-end:1px solid rgba(255,255,255,.08)"+(diverged?";color:#ff9db0":""));
+      row.textContent=line;
+      box.insertBefore(row, box.firstChild);
+      while(box.childNodes.length>8) box.removeChild(box.lastChild);
+    }catch(e){}
+  }
+  function stamp(kind, b){
+    if(!enabled() || !b || !b.lanes) return;
+    seq++;
+    var LANES=(window.ThriveBoard && ThriveBoard.LANES) || Object.keys(b.lanes);
+    var lanes={}, model=[];
+    LANES.forEach(function(k){ var arr=b.lanes[k]||[]; lanes[k]=arr.length;
+      model.push(k+":"+arr.map(function(t){ return t.slug; }).sort().join(",")); });
+    var counts=(b.summary && b.summary.counts) || {};
+    var hash=hashStr(model.join("|")+"#"+JSON.stringify(counts));
+    var rec={ seq:seq, t:new Date().toISOString(), kind:kind, trigger:trigger(), src:sources(), lanes:lanes, hash:hash };
+    var diverged=!!(last && last.hash!==hash);
+    try{ console.log("%c[paint#"+rec.seq+"]","color:#c2185b;font-weight:bold",
+        rec.kind, "trigger="+rec.trigger, "src="+rec.src, "lanes="+JSON.stringify(rec.lanes), "hash="+rec.hash,
+        diverged? ("DIVERGED from #"+last.seq+" (was "+last.hash+", trigger "+last.trigger+")") : ""); }catch(e){}
+    overlay(rec, last, diverged);
+    last=rec;
+  }
+  return { enabled:enabled, stamp:stamp, get last(){ return last; } };
+})();
+window.ThrivePaintDebug=ThrivePaintDebug;
+
 /* ---------- one way to move around ----------
    The console is one document in the shell and a set of documents on its own pages, and a link
    has to mean the same thing in both. It did not.
@@ -7322,6 +7388,8 @@ async function initBoard(){
   async function render(){
     syncPill();
     const b=await build();
+    // Sentinel Sweep 5, Layer 1: stamp this paint (no-op unless ?debug=paint or the localStorage switch is on).
+    try{ ThrivePaintDebug.stamp("board", b); }catch(_){}
 
     ThriveBoard.LANES.forEach(k=>{
       const body=document.querySelector('[data-body="'+k+'"]');
