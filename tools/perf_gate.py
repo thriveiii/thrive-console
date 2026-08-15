@@ -21,7 +21,8 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 620_000     # library/app.js today ~604 KB (grew across merged briefs; canonical-store fold added ~4 KB)
+APP_JS_MAX   = 624_000     # library/app.js today ~621 KB (grew across merged briefs; the board one-read refactor
+                           # added the settle's view-read helpers while deleting the client stage/opens path)
 DIST_MAX     = 1_600_000   # dist/thrive-console.html today ~1.51 MB
 HYDRATE_MAX  = 10          # one hydrate today reads 8 tables, each once
 
