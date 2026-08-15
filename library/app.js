@@ -791,9 +791,39 @@ function bounceFor(o){
 function hasReply(o){
   const slug=(typeof o==="string")? o : ((o&&o.slug)||"");
   if(!slug) return false;
-  if(inboundFor(slug).some(function(r){ return r && r.kind!=="auto"; })) return true;
+  // A reply attaches to its parent opp (Part 2): a stranded child slug resolves back to the parent, exactly
+  // as the server view does, so the client and the view agree on which card is Replied.
+  if(getInbound().some(function(r){ return r && r.kind!=="auto" && r.opp && replyParentOf(r.opp)===slug; })) return true;
   return getMailLog().some(function(m){ return m && m.opp===slug && (m.direction==="in" || m.status==="replied"); });
 }
+// Part 2: the ONE client resolver of a reply's opp key to its parent opportunity. A reply may be keyed to a
+// child slug parentSlug--r-<hash> (spawnChildrenFromReplies). When that child has its own card it keeps the
+// reply (a group member's card); when the child is stranded (no such card) the reply belongs to the parent,
+// the same rule docs/supabase-board-view.sql applies, so the client count and the server view never disagree.
+function replyParentOf(oppKey){
+  var k=String(oppKey||""); var i=k.indexOf("--r-");
+  if(i<0) return k;
+  return getDraft(k) ? k : k.slice(0, i);
+}
+// Part 3: an opportunity's replies, resolved to it, as distinct repliers in arrival order, numbered 1..N.
+// Reads the confirmed console_inbound rows (server-hydrated); it never invents a reply. The card badge, the
+// inbox numbering and the card's reply list all read THIS, so a reply's number agrees everywhere.
+function repliesForOpp(slug){
+  slug=(typeof slug==="string")? slug : ((slug&&slug.slug)||"");
+  if(!slug) return [];
+  var by={};
+  getInbound().forEach(function(r){
+    if(!r || r.kind==="auto" || !r.opp || replyParentOf(r.opp)!==slug) return;
+    var who=String(r.from||"").trim().toLowerCase(); if(!who) return;
+    var ts=String(r.ts||"");
+    if(!by[who] || ts<by[who].ts) by[who]={ from:r.from||who, addr:who, ts:ts, subject:r.subject||"", gid:inboundKey(r) };
+  });
+  return Object.keys(by).map(function(w){ return by[w]; })
+    .sort(function(a,b){ return a.ts<b.ts?-1:(a.ts>b.ts?1:0); })
+    .map(function(x,i){ x.num=i+1; return x; });
+}
+function replyCountFor(slug){ return repliesForOpp(slug).length; }
+window.repliesForOpp=repliesForOpp; window.replyCountFor=replyCountFor; window.replyParentOf=replyParentOf;
 /* Every reply the board attributes, counted once, so the Overview header agrees with the board and the
    campaign and person tables (the "tiles say 0, tables say 1" divergence): an attributed inbound reply
    (kind not "auto", an opp set) lived only in console_inbound, so a header that read the mail ledger alone
@@ -2000,6 +2030,13 @@ async function pullInbound(ep, auth){
   merged.forEach(r=>{ if(r && r.opp && r.chapter==null){ try{ r.chapter=activeChapter(r.opp); }catch(e){ r.chapter=1; } } });
   if(merged.length===before.length && JSON.stringify(merged)===JSON.stringify(before)) return 0;
   setInbound(merged);
+  // Part 1: confirm the newly-arrived human replies reached the server, so the board (which reads the server
+  // view) counts them; a failure is recorded on the diverge ledger and retried by the durable queue.
+  try{
+    var beforeIds={}; before.forEach(function(r){ var k=inboundKey(r); if(k) beforeIds[k]=1; });
+    var fresh=merged.filter(function(r){ return r && r.kind!=="auto" && r.opp && !beforeIds[inboundKey(r)]; });
+    if(fresh.length) await supaConfirmInbound(fresh);
+  }catch(_){}
   try{ if(j.scan) __inboxScan=j.scan; }catch(e){}
   /* The pull-time "replied" stamp is retired. The board derives Replied from the inbound records
      themselves (effStage -> hasReply), so a reply lands wherever the rows live, migrated or backfilled
@@ -2661,13 +2698,13 @@ async function supaConfirmMail(rec){
     return { confirmed:false, error:(e&&e.message)||"write failed" };
   }
 }
-/* Drop a confirmed console_mail row from the durable queue by id (its direct upsert landed), so the next
-   flush does not write it twice. A now-empty entry drops. */
-function dequeueMail(id){
+/* Drop a confirmed row from the durable queue by table + id (its direct upsert landed), so the next flush
+   does not write it twice. A now-empty entry drops. Shared by the mail and inbound confirm paths. */
+function dequeueRow(table, id){
   try{
     var a=supaPending(), out=[];
     for(var i=0;i<a.length;i++){ var e=a[i];
-      if(e && e.t==="console_mail" && e.op==="upsert"){
+      if(e && e.t===table && e.op==="upsert"){
         var rows=(e.rows||[]).filter(function(x){ return !(x && x.id===id); });
         if(rows.length) out.push(Object.assign({}, e, { rows:rows }));
       } else out.push(e);
@@ -2675,6 +2712,7 @@ function dequeueMail(id){
     supaSetPending(out);
   }catch(_){}
 }
+function dequeueMail(id){ dequeueRow("console_mail", id); }
 /* A 'sending' mail row is a send whose email is out but whose server write had not confirmed. Once its
    queued console_mail upsert has flushed (no longer in the pending queue), the server holds it, so the row
    graduates to 'sent' and the card reaches Sent on its own. Runs after every flush; writes only on change. */
@@ -2724,6 +2762,27 @@ function supaInboundRow(r){
 function supaMirrorInbound(list){
   if(!supaOn() || !list || !list.length) return;
   supaQueueUpsert("console_inbound", list.map(supaInboundRow));
+}
+/* Part 1: a reply is not counted until the SERVER holds the console_inbound row (the send-path rule). New
+   human replies are written and AWAITED, durable-first (retried by the next flush); a failure is recorded
+   on the diverge ledger, never swallowed. Closes the Replies-11, lane-0 gap where replies never landed. */
+async function supaConfirmInbound(list){
+  list=(list||[]).filter(function(r){ return r && r.opp && r.kind!=="auto"; });
+  if(!list.length) return { confirmed:true, empty:true };
+  if(!supaOn()) return { confirmed:false, noServer:true };
+  var rows=list.map(supaInboundRow);
+  rows.forEach(function(row){ supaEnqueue({ op:"upsert", t:"console_inbound", rows:[row] }); });   // durable
+  if(!supaSignedIn()) return { confirmed:false, signedOut:true };    // RLS refuses anon; flushes on sign-in
+  try{
+    await window.ThriveSupa.upsert("console_inbound", rows);         // the server now holds these replies
+    rows.forEach(function(row){ dequeueRow("console_inbound", row.id); });
+    supaFlush().catch(function(){});
+    return { confirmed:true, n:rows.length };
+  }catch(e){
+    supaRecordDiverge("write", "console_inbound", e&&e.message);
+    supaFlush().catch(function(){});
+    return { confirmed:false, error:(e&&e.message)||"write failed" };
+  }
 }
 /* An open (hit) becomes one console_hits row, keyed on hitKey (type|slug|ts|vid), the same key allHits
    dedupes on, so a re-mirror or a re-backfill updates in place and never doubles an open. */
@@ -4935,9 +4994,14 @@ function threadListHtml(slug){
       (detail? '<span class="th-detail" dir="auto">'+detail+'</span>':'')+
       '<span class="th-when">'+when(ts)+'</span></li>';
   }
+  // Part 3: each reply carries its per-opportunity number (arrival order), the same number the card badge
+  // and the inbox show, so a reply is the same "#N" everywhere.
+  var __repNumByWho={}; repliesForOpp(slug).forEach(function(x){ __repNumByWho[x.addr]=x.num; });
   function replyCard(r){
+    var rn=__repNumByWho[String(r.from||"").trim().toLowerCase()];
     return '<li class="th-reply"'+(r.id? ' data-rid="'+esc(r.id)+'"' : '')+'><div class="rp-card">'+
-      '<div class="rp-top"><span class="rp-who" dir="auto">'+esc(r.from||t("th_someone"))+'</span>'+
+      '<div class="rp-top">'+(rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
+      '<span class="rp-who" dir="auto">'+esc(r.from||t("th_someone"))+'</span>'+
       '<span class="rp-when">'+when(r.ts)+'</span></div>'+
       (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
       (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>':'')+
@@ -7733,10 +7797,16 @@ async function initBoard(){
     const sendMark = sending
       ? '<span class="tok-sending" role="status" title="'+esc(t("tok_sending_t"))+'">'+esc(t("tok_sending"))+'</span>'
       : '';
+    // Part 3: the reply-count badge. Reads the confirmed, server-hydrated replies resolved to this parent
+    // (repliesForOpp), so its number is the same one the inbox and the card's reply list show.
+    const repN = replyCountFor(tk.slug);
+    const repMark = repN>0
+      ? '<span class="tok-replies" title="'+esc(txt("tok_replies", repN))+'">'+ic("mail",11)+txt("tok_replies", repN)+'</span>'
+      : '';
     return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
       '<button class="tok-open" type="button">'+
         '<span class="tok-name">'+(tk.offer? ic("spark",13) : "")+esc(tk.biz)+'</span>'+
-        '<span class="tok-meta">'+meta+sendMark+chMark+'</span>'+
+        '<span class="tok-meta">'+meta+repMark+sendMark+chMark+'</span>'+
       '</button>'+
       '<button class="tok-more" type="button" aria-haspopup="menu" aria-label="'+esc(t("mv_menu"))+'">'+ic("chevron")+'</button>'+
       '<span class="tok-grip" aria-hidden="true">'+ic("drag")+'</span>'+
@@ -8330,6 +8400,22 @@ function renderInboxInto(host, after){
         esc(t("rp_of_which"))+' <span class="n">'+humanUn.length+'</span> '+esc(t("rp_unmatched_n"))+
         (noiseUn.length? ' · <span class="n">'+noiseUn.length+'</span> '+esc(t("rp_noise_n")) : '')+'</p>';
   h+='<div class="bar"><button class="btn sm" id="rpRematch" type="button">'+esc(t("rp_rematch_btn"))+'</button></div>';
+  // Part 3: the attached replies, grouped by parent opportunity and numbered in arrival order. Each number
+  // is the same one on the parent card's badge and in the card's reply list (repliesForOpp is the one
+  // numbering), and each row opens its parent card, so the inbox and the card are explicitly linked.
+  var oppsWithReplies=getDraftsLocal().filter(function(o){ return o && o.slug && !o.archived && replyCountFor(o.slug)>0; })
+    .sort(function(a,b){ return String(a.business||a.slug).localeCompare(String(b.business||b.slug)); });
+  if(oppsWithReplies.length){
+    h+='<p class="st-line"><b>'+esc(t("rp_by_opp"))+'</b></p><ul class="rp-byopp">'+
+      oppsWithReplies.map(function(o){
+        return repliesForOpp(o.slug).map(function(x){
+          return '<li class="rp-byopp-row" data-open-slug="'+esc(o.slug)+'" data-open-name="'+esc(o.business||o.slug)+'" tabindex="0" role="button">'+
+            '<span class="rp-num">#'+esc(String(x.num))+'</span>'+
+            '<span class="rp-byopp-who mono-iso">'+ltr(esc(x.from))+'</span>'+
+            '<span class="rp-byopp-opp" dir="auto">'+esc(o.business||o.slug)+'</span></li>';
+        }).join("");
+      }).join("")+'</ul>';
+  }
   if(humanUn.length){
     const opps=getDraftsLocal().filter(o=>o&&o.slug).slice()
       .sort((a,b)=>String(a.business||a.slug).localeCompare(String(b.business||b.slug)));
@@ -8367,6 +8453,14 @@ function renderInboxInto(host, after){
       o.textContent=line;
     }
     done();
+  });
+  host.querySelectorAll(".rp-byopp-row").forEach(function(row){
+    var open=function(){ var slug=row.getAttribute("data-open-slug"); if(!slug) return;
+      var name=row.getAttribute("data-open-name")||slug;
+      if(window.thriveModal) window.thriveModal.open(slug, "history", name);
+      else goTo("compose","slug="+encodeURIComponent(slug)); };
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } });
   });
   host.querySelectorAll(".rp-attach-btn").forEach(btn=>btn.addEventListener("click", ()=>{
     const gid=btn.getAttribute("data-gid");
