@@ -1129,6 +1129,19 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   }
 }
 
+/* Part 4: the Replied column reads as its own kind, using the board's own lane tokens (no new chrome). A
+   faint replied-green wash on the column body and the lane's own accent on its title and tab tell a reply
+   apart from a first-contact opportunity; the label already reads "Replied". The dashed boundary above stays
+   the separator, so this only tints and accents, never a wall. */
+.lane[data-lane="replied"] .lane-title{ color:var(--lane-replied); }
+.lane[data-lane="replied"] .lane-body{ background:var(--lane-replied-t); border-radius:var(--r-md); padding:var(--s-1); }
+.btab[data-tab="replied"] .btab-l{ color:var(--lane-replied); }
+/* The reply-count badge on a card (Part 3): a compact replied-green marker, the same token the lane uses,
+   so the number on the card matches the inbox and the card's reply list. */
+.tok-replies{ display:inline-flex; align-items:center; gap:3px; margin-inline-start:var(--s-1);
+  font-size:var(--fs-micro); font-weight:var(--w-head); color:var(--lane-replied); letter-spacing:0; }
+.tok-replies svg{ width:11px; height:11px; flex:none; }
+
 .lane-empty{
   border:1px dashed var(--hair); border-radius:var(--r-md);
   padding:var(--s-4) var(--s-3); text-align:center;
@@ -1390,6 +1403,17 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 /* Held human replies, each named with a one-tap attach picker. Wraps on narrow widths, aligned on one axis. */
 /* The replies inbox rows: each held reply on its own line, its who/subject on the start, its attach
    control on the end, aligned and never touching. Every control the same height, one gap value. */
+/* Part 3: replies grouped by opportunity, each numbered #N (the one number the card badge and card list
+   also show). A quiet row, the number in the lane's replied-green, the parent named, the whole row a target
+   that opens its card. No new chrome: the same list idiom the attachment rows use. */
+.rp-byopp{ list-style:none; margin:var(--s-2) 0 var(--s-3); padding:0; display:flex; flex-direction:column }
+.rp-byopp-row{ display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap; cursor:pointer;
+  padding:var(--s-2) 0; border-block-end:1px solid var(--hair) }
+.rp-byopp-row:last-child{ border-block-end:0 }
+.rp-byopp-row:hover,.rp-byopp-row:focus-visible{ background:var(--lane-replied-t); border-radius:var(--r-md); outline:none }
+.rp-byopp-who{ min-width:0; overflow:hidden; text-overflow:ellipsis }
+.rp-byopp-opp{ margin-inline-start:auto; font-size:var(--fs-micro); color:var(--ink-4); unicode-bidi:isolate }
+.rp-num{ font-weight:var(--w-head); color:var(--lane-replied); unicode-bidi:isolate; flex:none }
 .rp-held{ list-style:none; margin:var(--s-3) 0 0; padding:0; display:flex; flex-direction:column; gap:var(--s-3) }
 .rp-held-row{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--s-3);
   padding:var(--s-2) 0; border-block-end:1px solid var(--hair) }

@@ -27,7 +27,9 @@ ins_site = "byOpp[k].sent=cs.sent" in app and "const cs=campaignStats(k)" in app
 ck("the card header and Insights both read campaignStats (one derivation, two call sites)", card_site and ins_site)
 # the Settings replies panel no longer renders the attach picker or the held list
 settings_fn = app[app.index("function renderRepliesPanel("):app.index("function renderInboxInto(") if "function renderInboxInto(" in app else len(app)]
-inbox_fn = app[app.index("function renderInboxInto("):app.index("function renderInboxInto(")+2000]
+_ib0 = app.index("function renderInboxInto(")
+_ib1 = app.find("\nfunction ", _ib0 + 10)
+inbox_fn = app[_ib0:(_ib1 if _ib1 > 0 else _ib0 + 4000)]
 # renderInboxInto holds the attribution UI; renderRepliesPanel (Settings) does not
 ck("the reply attribution UI lives in the board inbox, not in the Settings panel",
    ("rp-attach-sel" in inbox_fn) and ("rp-attach-sel" not in settings_fn) and ("rp-held" not in settings_fn))
