@@ -1193,6 +1193,20 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 }
 .tok-chapter.is-offer{ color:var(--spark, var(--teal)) }
 
+/* The visible outbox: a send is out but the server ledger has not confirmed the row yet. An amber pill on the
+   card, the same amber the drift badge uses, so an unconfirmed send is never mistaken for a settled Sent. */
+.tok-sending{
+  display:inline-flex; align-items:center; gap:5px; margin-top:var(--s-1); margin-inline-start:var(--s-1);
+  font-size:var(--fs-micro); font-weight:var(--w-head); letter-spacing:0;
+  color:#F6CF5B;
+}
+.tok-sending::before{
+  content:""; width:6px; height:6px; border-radius:50%; background:#F6CF5B; flex:none;
+  animation:tok-send-pulse 1.6s ease-in-out infinite;
+}
+@keyframes tok-send-pulse{ 0%,100%{ opacity:.4 } 50%{ opacity:1 } }
+@media(prefers-reduced-motion:reduce){ .tok-sending::before{ animation:none; opacity:.8 } }
+
 /* stalled: amber ring, and always an age in text beside it. IDENTITY §4.4 */
 .tok.is-stalled{
   border-color:var(--state-stall-b);

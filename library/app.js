@@ -641,6 +641,17 @@ function boardDeliveredSend(o){
 }
 function boardViews(o){ return boardDeliveredSend(o) ? outreachOpens(o) : 0; }
 window.boardViews=boardViews; window.boardDeliveredSend=boardDeliveredSend;
+/* The visible outbox: a card with a 'sending' send (email out, server row not confirmed). It is NOT a
+   delivered send (sendIndex and boardDeliveredSend exclude it), so the card shows a marker, not Sent. */
+function cardSending(o){
+  var slug=(typeof o==="string")? o : ((o&&o.slug)||"");
+  if(!slug) return false;
+  var log=getMailLog();
+  for(var i=log.length-1;i>=0;i--){ var m=log[i];
+    if(m && m.opp===slug && m.direction!=="in" && m.status==="sending") return true;
+  }
+  return false;
+}
 function invalidateSends(){ __sendCache=null; invalidateRecon(); }
 /* Every hand contact recorded through somebody else's channel: their contact form, an
    Instagram message, a phone call. Most of a batch has no email address at all, so without
@@ -2540,6 +2551,7 @@ async function supaFlush(){
       }
     }
   } finally { __supaFlushing=false; }
+  try{ reconcileSendingMail(); }catch(_){}   // a landed send graduates 'sending' -> 'sent' (recovery half)
   return { flushed:flushed, left:supaPending().length };
 }
 function supaQueueUpsert(table, rows){
@@ -2617,9 +2629,69 @@ function supaMailRow(rec){
   return { id:rec.mid||rec.id||"", opp:rec.opp||"", status:rec.status||"", to_addr:rec.to||"",
     subject:rec.subject||"", ts:rec.ts||new Date().toISOString(), actor:rec.actor||"", data:rec, up:rec.up||Date.now() };
 }
+function mailOppOk(rec){ return !!String((rec&&rec.opp)||"").trim(); }
 function supaMirrorMail(rec){
   if(!supaOn() || !rec) return;
+  // Part 2: every console_mail row must carry its opp slug; an empty-opp row has no lane to land on (the two
+  // empty-opp rows in production prove this was unguarded), so it is refused and recorded, never written.
+  if(!mailOppOk(rec)){ supaRecordDiverge("write", "console_mail", "refused: empty opp"); return; }
+  // 'pending'/'sending' are transient LOCAL outbox states: the server row is minted only when the relay
+  // accepted the email, via supaConfirmMail. Skipping them keeps a failed/in-flight send off the server.
+  if(rec.status==="pending" || rec.status==="sending") return;
   supaQueueUpsert("console_mail", supaMailRow(rec));
+}
+/* The write invariant: a send is not "sent" until the SERVER has the row. The row is queued durably (retried
+   by supaFlush on the next write or sign-in), then a direct upsert is AWAITED so the caller learns if the
+   server holds it before reporting Sent; a failure is recorded on the diverge ledger, never swallowed. This
+   closes the gap where a fire-and-forget mirror dropped the row while the board (server view) showed Sent. */
+async function supaConfirmMail(rec){
+  if(!mailOppOk(rec)){ supaRecordDiverge("write", "console_mail", "refused: empty opp"); return { confirmed:false, refused:true }; }
+  if(!supaOn()) return { confirmed:false, noServer:true };          // no server configured: the local store IS the truth
+  var row=supaMailRow(rec);
+  supaEnqueue({ op:"upsert", t:"console_mail", rows:[row] });        // durable: survives the direct attempt failing
+  if(!supaSignedIn()) return { confirmed:false, signedOut:true };    // RLS refuses an anon write; it flushes on sign-in
+  try{
+    await window.ThriveSupa.upsert("console_mail", [row]);           // the server now holds THIS row
+    dequeueMail(row.id);                                             // confirmed: drop it from the durable queue
+    supaFlush().catch(function(){});                                 // opportunistically drain anything else queued
+    return { confirmed:true };
+  }catch(e){
+    supaRecordDiverge("write", "console_mail", e&&e.message);
+    supaFlush().catch(function(){});                                 // leave it queued; the durable retry keeps trying
+    return { confirmed:false, error:(e&&e.message)||"write failed" };
+  }
+}
+/* Drop a confirmed console_mail row from the durable queue by id (its direct upsert landed), so the next
+   flush does not write it twice. A now-empty entry drops. */
+function dequeueMail(id){
+  try{
+    var a=supaPending(), out=[];
+    for(var i=0;i<a.length;i++){ var e=a[i];
+      if(e && e.t==="console_mail" && e.op==="upsert"){
+        var rows=(e.rows||[]).filter(function(x){ return !(x && x.id===id); });
+        if(rows.length) out.push(Object.assign({}, e, { rows:rows }));
+      } else out.push(e);
+    }
+    supaSetPending(out);
+  }catch(_){}
+}
+/* A 'sending' mail row is a send whose email is out but whose server write had not confirmed. Once its
+   queued console_mail upsert has flushed (no longer in the pending queue), the server holds it, so the row
+   graduates to 'sent' and the card reaches Sent on its own. Runs after every flush; writes only on change. */
+function reconcileSendingMail(){
+  try{
+    var a=getMailLogLocal(), changed=false, queuedIds={};
+    supaPending().forEach(function(e){
+      if(e && e.t==="console_mail" && e.op==="upsert") (e.rows||[]).forEach(function(x){ if(x&&x.id) queuedIds[x.id]=1; });
+    });
+    for(var i=0;i<a.length;i++){ var m=a[i];
+      if(m && m.status==="sending" && String(m.opp||"").trim()){
+        var id=m.mid||m.id||"";
+        if(id && !queuedIds[id]){ a[i]=Object.assign({}, m, { status:"sent", confirmPending:false }); changed=true; }
+      }
+    }
+    if(changed){ setMailLog(a); try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} }
+  }catch(e){}
 }
 /* A team-discussion comment becomes one console_comments row. Unlike the ledger, the shape is discrete
    columns (not a data jsonb): the RLS ownership check reads `author` and the open read selects the same
@@ -3951,6 +4023,7 @@ function initActivity(){
     if(m.status==="copied") return t("mst_copied");
     if(m.status==="sent") return t("mst_sent");
     if(m.status==="pending") return t("mst_pending");     // dispatched, delivery being confirmed
+    if(m.status==="sending") return t("mst_sending");     // email out, waiting on the server ledger confirm
     if(m.status==="unsent") return t("mst_unsent");       // a known failure: it did not leave
     return esc(m.status||"–");
   }
@@ -4527,20 +4600,21 @@ function findMailRowByIdem(idem){
   for(var i=a.length-1;i>=0;i--){ if(a[i] && a[i].idem===idem) return a[i]; }       // newest match
   return null;
 }
-// Update the intent's row in place (pending -> sent | unsent), so the ONE row moves through its lifecycle
-// and the ledger never grows a second row for the same send. Mirrors the updated row to Supabase.
-function updateMailByIdem(idem, patch){
+// Update the intent's row in place WITHOUT mirroring. On the send path the one awaited server write is owned
+// by supaConfirmMail, so a pending/sending/unsent row stays local and a confirmed 'sent' is not re-mirrored.
+function updateMailByIdemLocal(idem, patch){
   if(!idem) return null;
   var a=getMailLogLocal();
   for(var i=a.length-1;i>=0;i--){
-    if(a[i] && a[i].idem===idem){
-      a[i]=Object.assign({}, a[i], patch||{});
-      setMailLog(a);
-      try{ supaMirrorMail(a[i]); }catch(_){}
-      return a[i];
-    }
+    if(a[i] && a[i].idem===idem){ a[i]=Object.assign({}, a[i], patch||{}); setMailLog(a); return a[i]; }
   }
   return null;
+}
+// As updateMailByIdemLocal, but also mirrors the row (the mirror itself skips pending/sending and empty opp).
+function updateMailByIdem(idem, patch){
+  var row=updateMailByIdemLocal(idem, patch);
+  if(row){ try{ supaMirrorMail(row); }catch(_){} }
+  return row;
 }
 // Roll the flat mail log up into thread objects, newest activity first.
 function getThreads(){
@@ -4957,9 +5031,11 @@ function replyComposerHtml(slug){
    durable row was left to reconcile, which means a retry could double-send. This is that core, extracted
    into ONE function both entry points call. It owns the mail-row lifecycle only; the DOM, the quota and
    the toasts stay with the caller. Returns { status, idem, msgid, id?, error?, banner? }, where status
-   is "sent" (confirmed), "unsent" (a true, retryable failure, the card does not advance), "pending" (in
-   flight after a timeout, reconciled on the next re-tap under the same key), or "duplicate" (a completed
-   send, refused by name, no second POST). */
+   is "sent" (the relay accepted the email AND the server holds the ledger row - the write invariant),
+   "sending" (the email is out but the server has not confirmed the row yet: a visible outbox, durably
+   queued, reconciled to Sent the moment the write lands), "unsent" (a true, retryable failure, the card
+   does not advance), "pending" (in flight after a timeout, reconciled on the next re-tap under the same
+   key), or "duplicate" (a completed send, refused by name, no second POST). */
 async function relaySend(intent){
   intent=intent||{};
   const ep=getEmailEndpoint();
@@ -4990,17 +5066,30 @@ async function relaySend(intent){
     const txt=await r.text();
     let parsed=null; try{ parsed=JSON.parse(txt); }catch(_){}
     noteRelayVersion(parsed);
-    if(!r.ok){ updateMailByIdem(idem, { status:"unsent", error:(r.status+" "+txt.slice(0,120)) }); return { status:"unsent", idem:idem, msgid:msgid, error:(r.status+" "+String(txt).slice(0,140)) }; }
-    if(parsed && !relayReady()){ updateMailByIdem(idem, { status:"unsent", error:"relay behind" }); return { status:"unsent", idem:idem, msgid:msgid, error:relayBannerText(), banner:true }; }
-    if(parsed && parsed.ok===false){ updateMailByIdem(idem, { status:"unsent", error:(parsed.error||"send failed") }); return { status:"unsent", idem:idem, msgid:msgid, error:(parsed.error||"send failed") }; }
+    // A failed send never leaves and never touches the server ledger (updateMailByIdemLocal, no mirror), so
+    // the board can never show a phantom Sent for a send that did not go out.
+    if(!r.ok){ updateMailByIdemLocal(idem, { status:"unsent", error:(r.status+" "+txt.slice(0,120)) }); return { status:"unsent", idem:idem, msgid:msgid, error:(r.status+" "+String(txt).slice(0,140)) }; }
+    if(parsed && !relayReady()){ updateMailByIdemLocal(idem, { status:"unsent", error:"relay behind" }); return { status:"unsent", idem:idem, msgid:msgid, error:relayBannerText(), banner:true }; }
+    if(parsed && parsed.ok===false){ updateMailByIdemLocal(idem, { status:"unsent", error:(parsed.error||"send failed") }); return { status:"unsent", idem:idem, msgid:msgid, error:(parsed.error||"send failed") }; }
     const id=parsed? (parsed.id||"") : "";
-    updateMailByIdem(idem, { status:"sent", id:id, error:"" });
-    return { status:"sent", idem:idem, msgid:msgid, id:id };
+    // THE WRITE INVARIANT. The relay accepted the email; it is not "sent" until the SERVER holds the row.
+    // Write it and AWAIT. An empty opp is refused at the write, so an unlinked self-test mints no phantom row.
+    const confRow=Object.assign({}, findMailRowByIdem(idem)||{}, { status:"sent", id:id, error:"", opp:opp, idem:idem });
+    const conf=await supaConfirmMail(confRow);
+    if(conf.refused){ updateMailByIdemLocal(idem, { status:"unsent", error:"missing opp" }); return { status:"unsent", idem:idem, msgid:msgid, id:id, error:"missing opp" }; }
+    // Reported sent when the server confirmed, OR no server is configured (local store IS the truth), OR the
+    // operator is signed out (local mode: the board is not shown signed out, the row is durably queued and
+    // confirms on the next sign-in). The 'sending' outbox is reserved for the production bug - a SIGNED-IN
+    // operator whose confirmed write failed (offline / server error) - where the board reads the server view
+    // and would otherwise show a phantom Sent; it graduates to Sent the moment the write lands.
+    if(conf.confirmed || conf.noServer || conf.signedOut){ updateMailByIdemLocal(idem, { status:"sent", id:id, error:"" }); return { status:"sent", idem:idem, msgid:msgid, id:id }; }
+    updateMailByIdemLocal(idem, { status:"sending", id:id, error:"", confirmPending:true });
+    return { status:"sending", idem:idem, msgid:msgid, id:id, unconfirmed:true, reason:(conf.error||"unconfirmed") };
   }catch(e){
     // A timeout was in flight and MAY have delivered: leave it pending, never assert failure, never
     // blind-retry. Any other throw is a known failure: mark it unsent so the card does not advance.
     if(e && e.timeout) return { status:"pending", idem:idem, msgid:msgid, timeout:true };
-    const row=findMailRowByIdem(idem); if(row && row.status==="pending"){ updateMailByIdem(idem, { status:"unsent", error:(e && e.message)||"send failed" }); }
+    const row=findMailRowByIdem(idem); if(row && row.status==="pending"){ updateMailByIdemLocal(idem, { status:"unsent", error:(e && e.message)||"send failed" }); }
     return { status:"unsent", idem:idem, msgid:msgid, error:(e && e.message)||"send failed" };
   }
 }
@@ -5027,9 +5116,11 @@ async function sendThreadReply(slug, bodyText){
     headers:replyHeaders, preview:body, chapter:activeChapter(slug) });
   if(res.status==="duplicate") return { ok:true, duplicate:true, to:tgt.addr, msgid:res.msgid, subject:subject };
   if(res.status==="pending")   return { ok:true, pending:true, to:tgt.addr, msgid:res.msgid, subject:subject };
-  if(res.status!=="sent")      throw new Error(res.error||"send failed");
+  // 'sending' is a real dispatch (email out, server not yet confirmed), so it belongs in the thread like a
+  // sent reply; the card's outbox marker carries the not-yet-confirmed state.
+  if(res.status!=="sent" && res.status!=="sending") throw new Error(res.error||"send failed");
   logActivity("email", slug, tgt.addr+" · "+subject);
-  return { ok:true, to:tgt.addr, msgid:res.msgid, subject:subject };
+  return { ok:true, sending:(res.status==="sending"), to:tgt.addr, msgid:res.msgid, subject:subject };
 }
 /* WO-015 §6: the lane reflects the furthest state of the ACTIVE chapter. For the
    only chapter that exists today, chapter one, this is exactly effStage, so the
@@ -5904,12 +5995,14 @@ async function initCompose(slugArg, opts){
     // confirming" and a later re-tap reconciles under the same key, never a second delivery.
     if(res.status==="pending"){ toast(t("cmp_sent_confirming")); return; }
     // A known failure: the intent is unsent (the card did not advance) and the true error is shown.
-    if(res.status!=="sent"){ toast(t("cmp_send_err")+": "+(res.error||"")); return; }
-    // Confirmed sent. Quota is counted here, once per confirmed delivery, not per attempt.
+    if(res.status!=="sent" && res.status!=="sending"){ toast(t("cmp_send_err")+": "+(res.error||"")); return; }
+    // Dispatched: the relay accepted the email. 'sent' means the server also holds the row; 'sending' means
+    // not yet (a signed-in write that failed), so the card sits in a visible outbox and graduates to Sent on
+    // its own. Quota counts the delivery either way (once, not per attempt); the working draft is done.
     recordSend(); renderQuota();
     logActivity("email", slug||"", to+" · "+subjectOut);
     clearComposeDraft();                                  // the message went out, so the working draft is done
-    toast(t("cmp_sent"));
+    toast(res.status==="sent" ? t("cmp_sent") : t("cmp_sent_queued"));
     if(replyCtx){
       // The reply is in the thread now: re-read the target and open a fresh greeting for the next reply,
       // so the composer is ready rather than showing a message already sent.
@@ -7600,6 +7693,8 @@ async function initBoard(){
     // A card that carries a conversation breathes the calm green glow. Derivation-driven (cardHasConversation
     // reads the reply derivation), so a group parent whose child replied glows too, not only Replied-lane cards.
     if(cardHasConversation(tk.slug)) cls.push("has-reply");
+    const sending = cardSending(tk.slug);   // the visible outbox marker for an unconfirmed send
+    if(sending) cls.push("is-sending");
     // The meta line stays in the paragraph direction so the words read correctly; only the
     // digits inside it are isolated, by .n, never the whole line.
     let meta;
@@ -7627,10 +7722,13 @@ async function initBoard(){
     const chMark = aCh>=1
       ? '<span class="tok-chapter'+(aCh>=2?" is-offer":"")+'">'+esc(t(aCh>=2?"th_ch_offer":"th_ch_first"))+'</span>'
       : '';
+    const sendMark = sending
+      ? '<span class="tok-sending" role="status" title="'+esc(t("tok_sending_t"))+'">'+esc(t("tok_sending"))+'</span>'
+      : '';
     return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
       '<button class="tok-open" type="button">'+
         '<span class="tok-name">'+(tk.offer? ic("spark",13) : "")+esc(tk.biz)+'</span>'+
-        '<span class="tok-meta">'+meta+chMark+'</span>'+
+        '<span class="tok-meta">'+meta+sendMark+chMark+'</span>'+
       '</button>'+
       '<button class="tok-more" type="button" aria-haspopup="menu" aria-label="'+esc(t("mv_menu"))+'">'+ic("chevron")+'</button>'+
       '<span class="tok-grip" aria-hidden="true">'+ic("drag")+'</span>'+

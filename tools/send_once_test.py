@@ -41,7 +41,10 @@ relay = open(f"{ROOT}/relay/thrive-relay.gs").read()
 ck("the send path carries a per-intent idempotency key (not per-click)",
    "function sendIdem(" in app and "idempotencyKey:idem" in app)
 ck("a durable pending row is written BEFORE the response resolves it",
-   'status:"pending", idem:idem' in app and "updateMailByIdem(idem, { status:\"sent\"" in app)
+   'status:"pending", idem:idem' in app and 'updateMailByIdemLocal(idem, { status:"sent"' in app)
+ck("the send is not reported sent until the SERVER confirms the row (the write invariant)",
+   "async function supaConfirmMail(" in app and "const conf=await supaConfirmMail(" in app
+   and 'status:"sending"' in app)
 ck("an unknown outcome (timeout) stays pending and is not reported as a failure",
    "e.timeout" in app and 'toast(t("cmp_sent_confirming"))' in app)
 ck("a known failure marks the row unsent so the card does not advance",
