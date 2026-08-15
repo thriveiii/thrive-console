@@ -2832,25 +2832,37 @@ var __supaHydrating=false;
    from a different partial subset per cycle (the oscillation) and can never fabricate a state (a page with
    opens but zero sends is server-computed as live/draft, never Opened). This map is slug -> the view row,
    populated by readBoardView during the hydrate and read synchronously by boardViewStage. */
-var __boardView={};
+var __boardView={}, __boardViewReady=false;
 function boardViewRow(slug){ return (slug && Object.prototype.hasOwnProperty.call(__boardView, slug)) ? __boardView[slug] : null; }
 function boardViewOpens(slug){ var r=boardViewRow(slug); return r ? (Number(r.open_count)||0) : 0; }
 function boardViewIdle(slug){ var r=boardViewRow(slug); return (r && r.idle_days!=null) ? (Number(r.idle_days)||0) : null; }
-/* Read the whole board view in one query and index it by slug. Its own try at the call site: a view read
-   failure never fails the board; the map stays as it was and boardViewStage falls to the record-only base. */
-async function readBoardView(){
-  var S=window.ThriveSupa; if(!S || typeof S.rest!=="function") return false;
-  var rows=await S.rest("console_board",
-    { query:"select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived" });
-  var by={}; (rows||[]).forEach(function(r){ if(r && r.slug) by[r.slug]=r; });
-  __boardView=by; return true;
+// The view is the board's stage authority when a signed-in operator reads it; signed out or offline, the
+// manifest list paints each card's inert base only (the one allowed non-view path).
+function boardViewIsAuthority(){ return supaReadFlagOn() && supaOn(); }
+var BOARD_VIEW_COLS="select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived";
+function indexBySlug(rows){ var by={}; (rows||[]).forEach(function(r){ if(r && r.slug) by[r.slug]=r; }); return by; }
+// Read the whole board view in one query and RETURN the rows (no assignment), so the render settle can adopt
+// them under its own generation guard. Throws on a read failure so the caller keeps the last-good map.
+async function readBoardViewRows(){
+  var S=window.ThriveSupa; if(!S || typeof S.rest!=="function") return null;
+  return await S.rest("console_board", { query:BOARD_VIEW_COLS });
 }
+// Adopt view rows. A transient empty result never blanks a map that already loaded (adopt empty only before
+// the first successful read, a genuinely empty account), so a momentary [] cannot read the board as empty.
+function adoptBoardView(rows){
+  if(rows==null) return false;
+  var by=indexBySlug(rows);
+  if(Object.keys(by).length || !__boardViewReady) __boardView=by;
+  __boardViewReady=true; return true;
+}
+// Read and adopt in one step. Used by the sync round; a read failure never fails the board (its own try).
+async function readBoardView(){ var rows=await readBoardViewRows(); return adoptBoardView(rows); }
 window.readBoardView=readBoardView;
 // The board view map, set directly. This is the seam a test uses to place cards in lanes the way the
 // server would (the board computes no stage of its own now, so a lane comes from a view row), and the
 // seam the reference/offline board never needs. Accepts the rows console_board returns.
-window.__boardViewSet=function(rows){ var by={}; (rows||[]).forEach(function(r){ if(r && r.slug) by[r.slug]=r; }); __boardView=by; };
-window.__boardViewClear=function(){ __boardView={}; };
+window.__boardViewSet=function(rows){ __boardView=indexBySlug(rows); __boardViewReady=true; };
+window.__boardViewClear=function(){ __boardView={}; __boardViewReady=false; };
 /* The write-invariant self-check (Part 4). The console_board view is only as complete as the console_mail
    and console_inbound rows that reached Supabase, and those are mirrored best-effort and signed-in-only, so
    a send or a reply the operator made can sit in the local ledger while the server view has not caught up.
@@ -3032,9 +3044,8 @@ async function supaHydrate(){
     // reconciled truth and the two copies cannot fork. supaFlush ran first, so this device's own writes
     // are already up and read back; any local-only pending that did not flush is preserved by unionUp.
     try{ reconcileCanonical(); }catch(_){}
-    // The board's one server-computed stage. Its own try (a view read failure never fails the board; the
-    // map keeps its last value and boardViewStage falls to the record-only base until the next hydrate).
-    try{ await readBoardView(); }catch(_){}
+    // console_board is read by the render settle (renderBoard's first-load read) and refreshed on the sync
+    // heartbeat, so the hydrate does not read it too: one read per settle, no duplicate.
     return true;
   }catch(e){
     // A denial the operator can fix by signing in (a 401/403 once the anon door is closed) is marked
@@ -7673,16 +7684,13 @@ async function initBoard(){
   // never disagree.
   function build(){
     const opps=mergedOppsSync();
-    const opens={}, views={}, idle={};
-    // The board displays the server-computed open_count and idle_days verbatim from console_board, the
-    // same source that decided the lane, so the count and the lane can never disagree. A card the view does
-    // not hold carries a zero open_count (no client re-derivation), consistent with its base stage.
-    opps.forEach(o=>{
-      opens[o.slug]=boardViewOpens(o.slug);
-      views[o.slug]=opensForSlug(o.slug);                 // raw page traffic, informational only, never a lane signal
-      const id=boardViewIdle(o.slug); if(id!=null) idle[o.slug]=id;
-    });
-    return ThriveBoard.build(opps, { opens:opens, views:views, mail:getMailLog(), idle:idle });
+    const opens={}, idle={};
+    // ONE source. Stage, opens and idle all come from console_board, so a count and its lane never disagree.
+    // A card the view does not hold reads zero opens and zero idle (its base stage is inert). This ctx
+    // carries NO mail ledger and NO client opens: the client stage/opens/idle path that raced the view is
+    // deleted, not gated, so nothing here re-derives a lane from the local stores.
+    opps.forEach(o=>{ opens[o.slug]=boardViewOpens(o.slug); idle[o.slug]=boardViewIdle(o.slug)||0; });
+    return ThriveBoard.build(opps, { opens:opens, idle:idle });
   }
 
   function tokenHtml(tk){
@@ -7753,6 +7761,15 @@ async function initBoard(){
     try{ await ensureManifest(); }catch(_){}
     if(myGen!==__renderGen || __boardTornDown) return;              // superseded by a newer paint, or the board left
     if(!document.getElementById("boardLanes")) return;              // not mounted: a sync heartbeat on another screen
+    // Never paint the empty base wholesale while the view is still loading (the racing loser that read Sent
+    // 0). When the view is authority (a signed-in operator) but has NOT loaded, this settle reads and adopts
+    // it BEFORE painting, generation-guarded so a read resolving after a newer settle is dropped. Once
+    // loaded, the sync/hydrate rounds refresh it; renders paint the warm map with no network read.
+    if(boardViewIsAuthority() && !__boardViewReady){
+      var rows=null; try{ rows=await readBoardViewRows(); }catch(_){ rows=null; }
+      if(myGen!==__renderGen || __boardTornDown) return;           // a newer settle started while we read: drop this one
+      adoptBoardView(rows);
+    }
     const source=resolveAuthority();
     __boardPin=source;
     try{
