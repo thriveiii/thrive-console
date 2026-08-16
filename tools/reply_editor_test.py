@@ -72,11 +72,13 @@ with sync_playwright() as p:
     ck("replyTarget answers the address that replied, in its language, threaded onto its wire id",
        tgt["addr"]=="basel.personal@gmail.com" and tgt["lang"]=="ar" and tgt["inReplyTo"]=="wire-basel-1@gmail.com", tgt)
 
-    # ---- the composer exists, dir-auto, greets in the recipient's language, from hi@thriveiii.com ----
-    comp = pg.evaluate("()=>window.replyComposerHtml('thrive-july')")
-    ck("a reply composer renders for the thread (textarea, dir=auto, from hi@thriveiii.com)",
-       'th-reply-text' in comp and 'dir="auto"' in comp and 'hi@thriveiii.com' in comp)
-    ck("the composer greets in the recipient's language (Arabic here)", "مرحبًا" in comp, comp[:200])
+    # ---- (Audit S4) the bare-textarea composer (replyComposerHtml) is retired: the thread reply is the same
+    #      full send editor in reply mode. replyTarget (who/lang) is still the source of the greeting, and the
+    #      mounted editor's Arabic greeting is covered by thread_editor_reuse_test. ----
+    ck("the orphaned bare-textarea reply composer (replyComposerHtml) is retired: one composer for one job",
+       pg.evaluate("()=>typeof window.replyComposerHtml")=="undefined")
+    ck("the reply greeting still speaks the recipient's language (Arabic) via replyTarget/replyGreeting",
+       "مرحبًا" in pg.evaluate("()=>{ const tg=window.replyTarget('thrive-july'); return window.replyGreeting?window.replyGreeting(tg):''; }"))
 
     # ---- the thread render escapes hostile bodies (no XSS sink) and isolates direction ----
     thtml = pg.evaluate("()=>window.threadListHtml('thrive-july')")

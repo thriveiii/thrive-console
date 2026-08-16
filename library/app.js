@@ -5297,18 +5297,10 @@ function discussionHtml(slug){
 }
 window.discussionHtml = discussionHtml;
 
-// The reply composer for a thread: a textarea prefilled with a greeting and closing in the recipient's
-// language, and a Send that answers from hi@thriveiii.com. Empty when there is no address to answer.
-function replyComposerHtml(slug){
-  const tgt=replyTarget(slug);
-  if(!tgt.addr) return '';
-  return '<form class="th-reply-box" autocomplete="off" data-slug="'+esc(slug)+'">'+
-    '<div class="th-reply-to">'+esc(t("th_reply_to"))+' <span class="mono-iso">'+ltr(esc(tgt.addr))+'</span></div>'+
-    '<textarea class="input th-reply-text" dir="auto" rows="5" placeholder="'+esc(t("th_reply_ph"))+'">'+esc(replyGreeting(tgt))+'</textarea>'+
-    '<div class="th-reply-bar"><span class="th-reply-from">'+esc(t("th_reply_from"))+' <span class="mono-iso">'+ltr("hi@thriveiii.com")+'</span></span>'+
-    '<button class="btn sm th-reply-send" type="submit">'+esc(t("th_reply_send"))+'</button></div>'+
-    '<div class="th-reply-out" role="status"></div></form>';
-}
+// (Audit S4) The bare-textarea reply composer (replyComposerHtml / .th-reply-box) was retired: the thread
+// reply is the SAME full send editor mounted in reply mode (initCompose), so there is one composer for one
+// job. The orphaned builder and its CSS are removed. replyTarget + replyGreeting (its only real logic) stay
+// and are exercised through the mounted editor and sendThreadReply.
 
 // Send a reply into the thread through the relay. From hi@thriveiii.com, threaded by In-Reply-To /
 // References and a fresh Message-ID, logged as an outbound send so buildThread shows it in order.

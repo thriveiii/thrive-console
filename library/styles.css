@@ -2171,13 +2171,8 @@ body.modal-open{
 .rp-quoted-body{ margin-block-start:var(--s-2); color:var(--ink-4); font-size:13px; line-height:1.6; }
 
 /* The reply composer: answer the prospect in this thread, dark and aligned, mirrored in RTL. */
-.th-reply-box{ margin-block-start:var(--s-4); padding-block-start:var(--s-3); border-block-start:1px solid var(--hair);
-  display:flex; flex-direction:column; gap:var(--s-2) }
-.th-reply-to{ font-size:var(--fs-micro); color:var(--ink-4) }
-.th-reply-text{ min-height:6em; resize:vertical; line-height:1.6 }
-.th-reply-bar{ display:flex; align-items:center; justify-content:space-between; gap:var(--s-2); flex-wrap:wrap }
-.th-reply-from{ font-size:var(--fs-micro); color:var(--ink-4) }
-.th-reply-out{ font-size:var(--fs-micro); color:var(--ink-3); min-height:1.2em }
+/* (Audit S4) The bare-textarea reply composer (.th-reply-box and its parts) was retired with its builder:
+   the thread reply is the same full send editor in reply mode. Its CSS is removed so no dead style remains. */
 .rp-foot{
   display:flex; align-items:center; justify-content:space-between;
   gap:var(--s-2); margin-block-start:var(--s-3); flex-wrap:wrap;
