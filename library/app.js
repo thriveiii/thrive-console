@@ -1835,6 +1835,14 @@ function inboundIsNoise(r){
   if(!r) return true;
   if(r.kind==="auto") return true;                                  // the relay already flags mailer-daemon and auto-submitted
   var from=String(r.from||"").toLowerCase();
+  // Confirmed on the server: console_inbound ingests everything that arrives, so the 59 rows are mostly
+  // machinery, not campaign replies. A DMARC aggregate sender (noreply-dmarc-support@google.com) carries
+  // the keyword in the MIDDLE of the local part, so the adjacent-to-@ pattern below misses it; catch DMARC
+  // wherever it sits. And the platform report/invite domains google.com and github.com are machinery whole
+  // (gmail.com and a prospect's own host are a different host, so they stay OUT and a real person is safe).
+  if(/dmarc/.test(from)) return true;
+  var host0=(from.split("@")[1]||"");
+  if(/^(google|github)\.com$/.test(host0)) return true;
   // Local parts that never belong to a person answering an outreach page. Kept to automated words only:
   // info/support/team/hello stay OUT, since a prospect may genuinely reply from one of those.
   if(/(^|[.+_-])(no-?reply|noreply|do-?not-?reply|donotreply|no_reply|no-?return|noreturn|no_return|mailer-daemon|postmaster|bounces?|dmarc|abuse|notifications?|notify|alerts?|newsletter|digest|automated|mailer|system|updates?)@/.test(from)) return true;
@@ -1852,6 +1860,37 @@ function inboundIsNoise(r){
   return false;
 }
 
+/* The reply-to-opportunity LINK is the normalized subject, matched to a send we made, and nothing else.
+   Proven on the server: threadId does not join (a Gmail thread id, unrelated to the send), and the sender
+   address must not be the link (a prospect answers from a personal address that never received the send).
+   subjLinkKey strips a leading Re:/Fwd:/رد:/إعادة توجيه: then lower-trims, the same normalization the view
+   (docs/supabase-board-view.sql) applies, so the client link and the server view resolve one reply to the
+   same opportunity. This path reads the send ledger only; it knows nothing of users, permissions, or
+   platform roles (a reply is a "reply to a campaign", never a person's identity). */
+function subjLinkKey(s){
+  return String(s||"")
+    .replace(/^\s*(re|fwd|fw|رد|إعادة\s*توجيه)\s*:\s*/i,"")
+    .replace(/^\s*(re|fwd|fw|رد)\s*:\s*/i,"")
+    .trim().toLowerCase();
+}
+// The opportunity a reply links to: the opp of the send whose subject the reply answers. Linked ONLY when
+// every send sharing the reply's normalized subject resolves to ONE opportunity; a subject that went out
+// from two campaigns is ambiguous and stays unlinked (never attached to a random opp). Returns "" when no
+// send subject matches, so a reply to nothing we sent is retained as unlinked noise, never guessed.
+function subjectLinkOpp(r, sends){
+  if(!r) return "";
+  var root=subjLinkKey(r.subject||""); if(!root) return "";
+  sends=sends||outboundSends();
+  var opps={};
+  for(var i=0;i<sends.length;i++){
+    var m=sends[i];
+    if(!m || !m.opp || m.direction==="in") continue;
+    if(subjLinkKey(m.subject||"")===root) opps[m.opp]=1;
+  }
+  var keys=Object.keys(opps);
+  return keys.length===1 ? keys[0] : "";
+}
+window.subjLinkKey=subjLinkKey; window.subjectLinkOpp=subjectLinkOpp;
 // The send ledger rows a reply could answer: outbound only, carrying an opportunity.
 function outboundSends(){
   return getMailLog().filter(function(m){ return m && m.opp && m.direction!=="in" &&
@@ -2022,6 +2061,18 @@ async function pullInbound(ep, auth){
 
   const before=getInboundLocal();   // merge the pull against the current store, not the read cache
   const merged=ThriveInbound.mergeInbound(before, j.records);
+  /* Part 2: link each real reply to its opportunity by normalized subject, on write. The relay writes an
+     inbound row with no opp (confirmed: opp is empty for every row), so nothing attaches until we compute
+     it here. A real reply is a non-auto, non-noise row; its opp is the send whose subject it answers. A
+     subject match fills opp; no match leaves it unlinked (retained noise), never attached to a random opp;
+     a header or hand attach that already set opp is never overwritten. This is a superset backfill: it also
+     links older rows the relay wrote before this path existed. Never reads sender address or threadId. */
+  var __sends=outboundSends();
+  merged.forEach(function(r){
+    if(!r || r.kind==="auto" || r.opp || inboundIsNoise(r)) return;
+    var opp=subjectLinkOpp(r, __sends);
+    if(opp){ r.opp=opp; r.match_tier="subject"; r.match_mode="auto"; r.match_id=subjLinkKey(r.subject||""); }
+  });
   /* WO-015 Phase D: attribute each reply to the chapter that was live when it
      arrived. The relay knows the slug from the reply-to tag but not the chapter,
      so a reply with no chapter reads as the opportunity's active chapter, which is
@@ -2033,8 +2084,16 @@ async function pullInbound(ep, auth){
   // Part 1: confirm the newly-arrived human replies reached the server, so the board (which reads the server
   // view) counts them; a failure is recorded on the diverge ledger and retried by the durable queue.
   try{
-    var beforeIds={}; before.forEach(function(r){ var k=inboundKey(r); if(k) beforeIds[k]=1; });
-    var fresh=merged.filter(function(r){ return r && r.kind!=="auto" && r.opp && !beforeIds[inboundKey(r)]; });
+    // Confirm every reply now carrying an opp that the server does not yet hold with one: a brand-new row,
+    // or an older row this pull just linked by subject (its opp was empty before). Same confirmed-write
+    // discipline as the send path: supaConfirmInbound is durable-first, awaited, and records a failure on
+    // the diverge ledger, so a linked reply the board must count is never dropped silently.
+    var beforeOpp={}; before.forEach(function(r){ var k=inboundKey(r); if(k) beforeOpp[k]=String(r.opp||""); });
+    var fresh=merged.filter(function(r){
+      if(!r || r.kind==="auto" || !r.opp) return false;
+      var k=inboundKey(r), prev=beforeOpp[k];
+      return prev===undefined || prev==="";   // newly present, or newly linked (opp was empty before)
+    });
     if(fresh.length) await supaConfirmInbound(fresh);
   }catch(_){}
   try{ if(j.scan) __inboxScan=j.scan; }catch(e){}
