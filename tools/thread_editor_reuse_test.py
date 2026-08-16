@@ -84,18 +84,29 @@ with sync_playwright() as p:
       const vis=id=>{ const e=document.getElementById(id); return !!(e && e.checkVisibility()); };
       return {
         inHost: v.parentNode===h,
-        toolbar: ['tbBold','tbItalic','tbUnder','tbList','tbLink'].every(vis),
-        templates: vis('etpl'),
-        preview: !!document.getElementById('cmpPreview'),
-        undo: !!document.getElementById('cmpUndo'),
-        send: vis('eSend')
+        lean: v.classList.contains('reply-lean'),
+        toolbarHidden: !['tbBold','tbItalic','tbUnder','tbList','tbLink'].some(vis),
+        tplHidden: !vis('etpl'),
+        optionsShown: vis('cmpReplyOptions'),
+        send: vis('eSend'), to: vis('eto'), subject: vis('esubject'), body: !!document.getElementById('ebody')
       }; }""")
     ck("the History tab borrows the SAME send editor node (#view-compose) into the modal host",
        mount["inHost"] is True, mount)
-    ck("the borrowed editor exposes the send editor's formatting toolbar (bold, italic, underline, list, link)",
-       mount["toolbar"] is True, mount)
-    ck("it exposes template selection, live preview and undo, the full editing surface, not a bare textarea",
-       mount["templates"] is True and mount["preview"] is True and mount["undo"] is True and mount["send"] is True, mount)
+    # Finding 2: the reply composer is calm by default -- template picker and formatting toolbar tucked away.
+    ck("the reply composer is calm by default: template picker and formatting toolbar are tucked away",
+       mount["lean"] is True and mount["toolbarHidden"] is True and mount["tplHidden"] is True, mount)
+    ck("the essentials stay in view: recipient, subject, body, one Send, and a single Options affordance",
+       mount["send"] and mount["to"] and mount["subject"] and mount["body"] and mount["optionsShown"], mount)
+
+    # clicking Options reveals the FULL editing surface (same editor, one disclosure, nothing removed).
+    reveal = pg.evaluate("""()=>{
+      const btn=document.getElementById('cmpReplyOptions'); if(btn) btn.click();
+      const vis=id=>{ const e=document.getElementById(id); return !!(e && e.checkVisibility()); };
+      return { toolbar: ['tbBold','tbItalic','tbUnder','tbList','tbLink'].every(vis),
+               templates: vis('etpl'), preview: !!document.getElementById('cmpPreview'),
+               undo: !!document.getElementById('cmpUndo') }; }""")
+    ck("Options reveals the full editing surface (formatting toolbar, template picker, preview, undo), not a bare textarea",
+       reveal["toolbar"] is True and reveal["templates"] is True and reveal["preview"] is True and reveal["undo"] is True, reveal)
 
     # ---- scoped to the thread: recipient locked to the replier, subject Re:, greeting in Arabic, RTL body ----
     scope = pg.evaluate("""()=>{

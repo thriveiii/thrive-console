@@ -5664,6 +5664,12 @@ async function initCompose(slugArg, opts){
   let tplCache=getEmailTemplates();                       // parse localStorage once, not on every keystroke
   const refreshTplCache=()=>{ tplCache=getEmailTemplates(); };
   let subjectDirty=false;                                 // writer edited the subject by hand, so stop recomputing it
+  // The shared editor serves both outreach and reply. Clear any reply-lean state a prior reply mount left on
+  // the node, so outreach always starts from the full editor; reply mode re-applies it below.
+  var __composeRoot=document.getElementById("view-compose");
+  if(__composeRoot){ __composeRoot.classList.remove("reply-lean","reply-show-options"); }
+  { var __roPrev=el("cmpReplyOptions"); if(__roPrev) __roPrev.hidden=true; }
+
   if(opts && opts.reply && slug){
     replyCtx=replyTarget(slug);
     const toEl=el("eto"), suEl=el("esubject"), nmEl=el("ename"), bd=el("ebody");
@@ -5675,6 +5681,27 @@ async function initCompose(slugArg, opts){
     if(bd && !(bd.textContent||"").trim()){                            // open on the greeting, in the recipient's language
       const g=replyGreeting(replyCtx);
       bd.innerHTML='<div dir="'+(replyCtx.lang==="ar"?"rtl":"auto")+'">'+esc(g).split("\n").join("<br>")+'</div>';
+    }
+    // Finding 2: a reply is calm by default. Mark the editor lean (CSS tucks the template picker, the
+    // formatting toolbar, the closing/plain/preview blocks and the alternate send buttons behind one toggle)
+    // and offer a single "Options" affordance that reveals the full surface. Recipient, subject, body and
+    // Send stay in view; nothing is removed, only tucked. The toggle is injected once and reused.
+    if(__composeRoot){
+      __composeRoot.classList.add("reply-lean");
+      var ob=el("cmpReplyOptions");
+      if(!ob){
+        ob=document.createElement("button");
+        ob.type="button"; ob.id="cmpReplyOptions"; ob.className="btn ghost sm cmp-reply-options";
+        ob.setAttribute("aria-expanded","false");
+        ob.addEventListener("click", function(){
+          var on=__composeRoot.classList.toggle("reply-show-options");
+          ob.setAttribute("aria-expanded", on?"true":"false");
+        });
+        var suAnchor=el("esubject"), fld=suAnchor && suAnchor.closest ? suAnchor.closest(".field") : null;
+        if(fld && fld.parentNode) fld.parentNode.insertBefore(ob, fld.nextSibling);
+        else __composeRoot.insertBefore(ob, __composeRoot.firstChild);
+      }
+      ob.hidden=false; ob.textContent=t("cmp_options"); ob.setAttribute("aria-expanded","false");
     }
   }
   function recipientName(){

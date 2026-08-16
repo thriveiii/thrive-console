@@ -222,12 +222,17 @@
      arrives as 2faces.html. NEVER by position: two files in the wrong order
      would send one prospect another prospect's page, and nothing downstream
      would ever notice. */
+  // "&" is a word, not a separator: it always reads as "and", so "Gift & Gather" derives one slug,
+  // gift-and-gather, and never a second phantom (gift-gather) that drops the ampersand. Both the match key
+  // and the slug apply this rule, so a page and its manifest entry resolve to the SAME identity and merge
+  // into one row instead of splitting into two. Deterministic: the same input always yields the same slug.
   function keyOf(name) {
     return String(name || "").replace(/^.*\//, "").replace(/\.html?$/i, "")
-      .toLowerCase().replace(/[^a-z0-9]/g, "");
+      .toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
   }
   function slugify(s) {
     return String(s || "").toLowerCase().replace(/['’]/g, "")
+      .replace(/&/g, " and ")
       .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
   }
 
