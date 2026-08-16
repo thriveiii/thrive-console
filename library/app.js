@@ -10016,20 +10016,25 @@ function initModal(){
   function renderHistory(o){
     const box=el("modalHistory"); if(!box) return;
     const slug=(o&&o.slug)||current;
-    // The thread only: each message escaped and direction-isolated. The reply composer is no longer a bare
-    // textarea rendered here; it is the full send editor, borrowed into #modalHost beneath this list by
-    // switchTo (reply mode), so a reply has the same formatting, templates and preview as an outreach send.
-    // When there is no address to answer, a gentle line stands in for the composer.
-    let html=threadListHtml(slug);
-    if(!(replyTarget(slug)||{}).addr) html+='<p class="th-noreply sub">'+esc(t("th_reply_no_addr"))+'</p>';
-    // The renderer self-identifies: a low-contrast corner marker naming the mounted renderer, so on device it
-    // is obvious WHICH conversation renderer is on screen (the proof that ends fixing a blind copy). The
-    // container also carries a data-renderer attribute, and threadRendererReport() walks the rendered DOM to
-    // name the exact container that holds the reply text - so a second render path, if one ever exists, is
-    // caught at runtime rather than guessed at from source. Prepended here, in the one History renderer, so it
-    // shows even on an empty thread. aria-hidden: a diagnostic tag, not content read to a screen reader.
+    // The renderer self-identifies, and it does so ROBUSTLY. The marker is built first and written
+    // unconditionally, BEFORE the thread body: if threadListHtml were to throw on some engine (a WebKit-only
+    // failure, say), one combined assignment would fail and leave the OLD DOM in place with no marker -
+    // indistinguishable from a stale build that never loaded the new code. Writing the marker first makes its
+    // meaning exact: PRESENT means this app.js is executing this renderer; ABSENT means the new asset never
+    // loaded (a deploy/cache fault), not that a different component is mounted. The body render is wrapped, so
+    // a failure still shows the marker plus the error rather than reverting to the old content. The container
+    // carries data-renderer, and threadRendererReport() walks the rendered DOM to name the exact container
+    // that holds the reply text, so a second render path, if one ever existed, is caught at runtime.
     box.setAttribute("data-history-renderer", "renderHistory>threadListHtml@library/app.js");
-    box.innerHTML='<div class="th-ver" aria-hidden="true" data-renderer="renderHistory">'+esc(threadRendererTag())+' · renderHistory</div>'+html;
+    var marker='<div class="th-ver" aria-hidden="true" data-renderer="renderHistory">'+esc(threadRendererTag())+' · renderHistory</div>';
+    var body="";
+    try{
+      body=threadListHtml(slug);
+      if(!(replyTarget(slug)||{}).addr) body+='<p class="th-noreply sub">'+esc(t("th_reply_no_addr"))+'</p>';
+    }catch(e){
+      body='<pre class="th-render-error" dir="auto">'+esc(String((e&&e.message)||e))+'</pre>';
+    }
+    box.innerHTML=marker+body;
     try{ if(window.console && console.info) console.info("[thread-renderer]", JSON.stringify(threadRendererReport())); }catch(_){}
   }
 

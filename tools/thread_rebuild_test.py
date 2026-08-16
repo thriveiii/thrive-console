@@ -256,6 +256,24 @@ with sync_playwright() as p:
        rep.get("mounted") is True and rep.get("replyTextOwner")=="threadListHtml"
        and rep.get("bubbles",0) >= 1 and "threadListHtml" in (rep.get("listRenderer") or ""), rep)
 
+    # ---- the marker is written FIRST: it survives a thread-render throw, so its ABSENCE on device means the
+    #      new asset never loaded (a deploy/cache fault), never a mystery about which component is mounted ----
+    throwSafe = pg.evaluate("""()=>{
+      const orig=window.threadListHtml;
+      window.threadListHtml=function(){ throw new Error('BOOM-render'); };
+      try{ window.thriveModal.open('co','history','Co'); }catch(e){}
+      return new Promise(res=>setTimeout(()=>{
+        const box=document.getElementById('modalHistory');
+        const m=box && box.querySelector('.th-ver');
+        const err=box && box.querySelector('.th-render-error');
+        window.threadListHtml=orig;
+        res({ markerStill: !!(m && m.textContent.indexOf('thread v2')>=0),
+              errShown: !!(err && err.textContent.indexOf('BOOM-render')>=0) });
+      }, 450));
+    }""")
+    ck("robustness: the marker is written first, so it survives a thread-render failure (its absence = stale asset, not wrong component)",
+       throwSafe["markerStill"] and throwSafe["errShown"], throwSafe)
+
     ctx.close(); b.close()
 httpd.shutdown()
 print("\n%d failed" % len(fails))
