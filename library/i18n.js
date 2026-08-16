@@ -2477,6 +2477,7 @@ var I18N_BOARD = {
     tok_idle:       { one:"{n} day idle", other:"{n} days idle" },
     tok_opens:      { one:"{n} open",     other:"{n} opens" },
     tok_replies:    { one:"{n} reply",    other:"{n} replies" },
+    reply_earlier:  { one:"show {n} earlier reply", other:"show {n} earlier replies" },
     reply_card_a11y: "Open the reply from",
     rp_by_opp:      "Replies, by opportunity",
     board_drift:    { one:"{n} unsynced", other:"{n} unsynced" },
@@ -2682,6 +2683,10 @@ var I18N_BOARD = {
     tok_replies: {
       one:"ردّ واحد", two:"ردّين",
       few:"{n} ردود", many:"{n} ردًا", other:"{n} رد"
+    },
+    reply_earlier: {
+      one:"أظهر ردًّا سابقًا", two:"أظهر ردّين سابقين",
+      few:"أظهر {n} ردود سابقة", many:"أظهر {n} ردًّا سابقًا", other:"أظهر {n} رد سابق"
     },
     reply_card_a11y: "افتح الرد من",
     rp_by_opp:   "الردود، حسب الفرصة",

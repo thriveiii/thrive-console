@@ -17,7 +17,10 @@ SEED="""()=>{
   {slug:'a',business:'Alpha Co',published:true,up:1}]));
  localStorage.setItem('thrive_inbound_v1',JSON.stringify([
   {gid:'i1',opp:'madar',kind:'reply',from:'basel@issa.example',name:'Basel Issa',subject:'Re: من جد وجد',snippet:'نعم يسعدني ذلك، والرابط واضح، نتواصل قريبًا',ts:'2026-08-03T09:00:00Z'},
-  {gid:'i2',opp:'echo',kind:'reply',from:'ceo@echo.example',name:'Dana Echo',subject:'Re: hello',snippet:'Thanks, this looks great. Happy to talk next week.',ts:'2026-08-04T09:00:00Z'}]));
+  {gid:'e1',opp:'echo',kind:'reply',from:'ann@echo.example',name:'Ann Reed',subject:'Re: hello',snippet:'Looks interesting, tell me more.',ts:'2026-08-02T09:00:00Z'},
+  {gid:'e2',opp:'echo',kind:'reply',from:'omar@echo.example',name:'عمر حسن',subject:'Re: hello',snippet:'شكرًا، سنراجع الصفحة ونعود إليكم',ts:'2026-08-03T09:00:00Z'},
+  {gid:'e3',opp:'echo',kind:'reply',from:'lee@echo.example',name:'Lee Park',subject:'Re: hello',snippet:'Can we schedule a call next week?',ts:'2026-08-04T09:00:00Z'},
+  {gid:'e4',opp:'echo',kind:'reply',from:'dana@echo.example',name:'Dana Echo',subject:'Re: hello',snippet:'Great, this looks perfect. Happy to talk.',ts:'2026-08-05T09:00:00Z'}]));
  localStorage.setItem('thrive_mail_v1',JSON.stringify([
   {mid:'s1',opp:'madar',to:'head@madar.example',toName:'Head',subject:'من جد وجد',status:'sent',direction:'out',ts:'2026-08-01T10:00:00Z'},
   {mid:'s2',opp:'echo',to:'ceo@echo.example',toName:'Dana',subject:'hello',status:'sent',direction:'out',ts:'2026-08-01T10:00:00Z'}]));

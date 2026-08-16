@@ -27,7 +27,9 @@ APP_JS_MAX   = 642_000     # library/app.js today ~638 KB (grew across merged br
                            # brief added subjLinkKey / subjectLinkOpp, the write-time subject link, and the
                            # extended noise filter; the reply-card brief added the distinct Replied-lane reply
                            # card + tap-to-thread and the two-sided conversation bubbles)
-DIST_MAX     = 1_600_000   # dist/thrive-console.html today ~1.51 MB
+DIST_MAX     = 1_650_000   # dist/thrive-console.html today ~1.61 MB (the offline single file inlines app.js,
+                           # which grew with the reply card, the grouped/bounded reply card + expander, and
+                           # the two-sided thread bubbles across the reply briefs)
 HYDRATE_MAX  = 10          # one hydrate today reads 8 tables, each once
 
 fails=[]

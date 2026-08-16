@@ -1146,9 +1146,27 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
    reply itself surfaced with its sender and a snippet, inset and quieter than the opportunity token so the
    operator reads two things, the opportunity and the reply tied to it. The lane's own replied-green accent
    and existing tokens, no new colour and no new chrome. */
+/* Finding 2: one bounded grouped reply card per parent. Inset under its parent and CONTAINED inside the
+   column: as a flex item in the lane-body column it stretches to the column width MINUS its own inline
+   inset, so it never bleeds past the lane edge. Its own children stretch to it in turn, so nothing spills. */
+.reply-group{
+  margin-inline-start:var(--s-3);                       /* nested under the parent, still inside the column */
+  min-width:0; display:flex; flex-direction:column; gap:var(--s-1);
+}
+.reply-group-head{ display:flex; align-items:center; gap:4px; padding-inline:var(--s-1);
+  font-size:var(--fs-micro); font-weight:var(--w-head); color:var(--lane-replied); }
+.reply-group-head svg{ width:12px; height:12px; flex:none; }
+/* The expander: a single native <details>, opens in place and collapses; the earlier list is bounded
+   (max-height + scroll) so the lane height stays bounded no matter how many replies there are. */
+.reply-group-more > summary{ cursor:pointer; list-style:none; font-size:var(--fs-xs); color:var(--ink-3);
+  padding:var(--s-1) var(--s-2); border-radius:var(--r-sm); }
+.reply-group-more > summary::-webkit-details-marker{ display:none; }
+.reply-group-more > summary:hover,.reply-group-more[open] > summary{ color:var(--lane-replied); }
+.reply-group-list{ display:flex; flex-direction:column; gap:var(--s-1); margin-block-start:var(--s-1);
+  max-height:196px; overflow-y:auto; }
+/* One reply row. No own width and no own inset: it stretches inside .reply-group, so it is always contained. */
 .reply-card{
-  display:flex; align-items:flex-start; gap:var(--s-2); width:100%; text-align:start;
-  margin-inline-start:var(--s-4);                       /* inset under the parent, so it reads as tied to it */
+  display:flex; align-items:flex-start; gap:var(--s-2); text-align:start; min-width:0;
   padding:var(--s-2) var(--s-3);
   background:var(--panel); border:1px solid var(--lane-replied-t);
   border-inline-start:2px solid var(--lane-replied);
@@ -1159,9 +1177,11 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .reply-card-mark{ flex:none; color:var(--lane-replied); margin-block-start:2px; display:inline-flex; }
 .reply-card-mark svg{ width:13px; height:13px; }
 .reply-card-body{ display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 auto; }
-.reply-card-top{ display:flex; align-items:baseline; gap:var(--s-2); }
+.reply-card-top{ display:flex; align-items:baseline; gap:var(--s-2); flex-wrap:wrap; }
 .reply-card-num{ flex:none; font-size:var(--fs-micro); font-weight:var(--w-head);
   color:var(--lane-replied); unicode-bidi:isolate; }
+.reply-card-latest{ flex:none; font-size:var(--fs-micro); font-weight:var(--w-head); color:var(--lane-replied);
+  background:var(--lane-replied-t); border-radius:var(--r-sm); padding:0 var(--s-2); unicode-bidi:isolate; }
 .reply-card-who{ font-weight:600; unicode-bidi:isolate; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .reply-card-snip{ color:var(--ink-3); font-size:var(--fs-sm); unicode-bidi:isolate;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1942,14 +1962,17 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .th-detail{ font-size:var(--fs-xs); color:var(--ink-4); min-width:0; word-break:break-word; flex:1 1 auto }
 .th-when{ font-size:var(--fs-micro); color:var(--ink-4); flex:0 0 auto; margin-inline-start:auto }
 .th-chan{ color:var(--ink-4) }
-/* Part 3: the conversation reads as two sides. A reply (incoming) sits at the reading-start edge; our send
-   (outgoing) sits at the far edge in its own quiet bubble, so send / reply / next reply alternate down one
-   timeline. Both cap their width so neither spans the whole column. Existing tokens, no new colour. */
-.th-reply{ margin-block:var(--s-2); display:flex; justify-content:flex-start }
+/* Part 3 / Finding 3: the conversation reads as two sides of separated bubbles. A reply (incoming) sits at
+   the reading-start edge with the replied-green accent; our send (outgoing) sits at the far edge with a
+   neutral accent, so send / reply / next reply alternate down one timeline with an even vertical rhythm.
+   Each bubble's HEADER (sender, address, timestamp) is its own row, ruled off from the body below, so
+   sender, date and text never crowd one line. Both cap their width so neither spans the whole column. */
+.th-list{ gap:var(--s-3) }                                  /* even breathing room between bubbles */
+.th-reply{ margin-block:0; display:flex; justify-content:flex-start }
 .th-reply .rp-card{ max-width:88% }
 .th-sent{ display:flex; justify-content:flex-end }
 .msg-out{
-  max-width:88%; padding:var(--s-2) var(--s-3);
+  max-width:88%; padding:var(--s-3);
   background:var(--panel); border:1px solid var(--hair);
   border-inline-end:2px solid var(--ink-4);
   border-radius:var(--r-md);
@@ -1957,6 +1980,10 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .msg-out .rp-top{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s-2) }
 .msg-out .rp-who{ font-weight:600; unicode-bidi:isolate }
 .msg-to{ color:var(--ink-3); font-weight:400 }
+/* the header block, ruled off from the body, in either bubble kind */
+.rp-head{ padding-block-end:var(--s-2); margin-block-end:var(--s-2); border-block-end:1px solid var(--hair); }
+.rp-body{ display:flex; flex-direction:column; gap:var(--s-2); }
+.rp-body > *{ margin-block-start:0; margin-block-end:0; }   /* spacing comes from the flex gap, not stacked margins */
 /* The chapter divider marks where the offer began. One quiet rule with a word, not a banner. */
 .th-chapter{
   display:flex; align-items:center; gap:var(--s-3);
