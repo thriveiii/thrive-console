@@ -1,7 +1,7 @@
 {
   "site": "console.thriveiii.com",
   "base_path": "/opp/",
-  "updated": "2026-08-13",
+  "updated": "2026-08-16",
   "opportunities": [
     {
       "slug": "ludic-lillian",
@@ -137,6 +137,15 @@
       "location": "Old Town Alexandria, VA",
       "phone": "",
       "status": "sent"
+    },
+    {
+      "slug": "fleurs-de-lea",
+      "business": "Fleurs-de-Lea",
+      "template": "custom",
+      "sent_on": "2026-08-16",
+      "location": "Fairfax, VA",
+      "phone": "",
+      "status": ""
     }
   ]
 }
