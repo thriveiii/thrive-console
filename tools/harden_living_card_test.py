@@ -48,7 +48,10 @@ INIT = r"""
       {mid:'j1',opp:'thrive-july',to:'basel.personal@gmail.com',toName:'Basel',subject:'من جد وجد',status:'sent',direction:'out',ts:'2026-07-31T17:02:00Z'},
       {mid:'j2',opp:'thrive-july',to:'lina@school.com',toName:'Lina',subject:'A page',status:'sent',direction:'out',ts:'2026-07-31T17:03:00Z'}]));
     localStorage.setItem('thrive_inbound_v1', JSON.stringify([
-      {gid:'g1',opp:'',kind:'reply',from:'basel.personal@gmail.com',name:'Basel',subject:'Re: من جد وجد',snippet:'yes',ts:'2026-08-03T09:00:00Z'},
+      // Basel's reply subject was stripped, so it matches NO send subject: the subject link cannot attach it
+      // and it stays genuinely held (sender-only) until the re-match below. A subject that DID match a send
+      // auto-resolves at read time now (reply_link_test), so this fixture keeps testing the held->rematch path.
+      {gid:'g1',opp:'',kind:'reply',from:'basel.personal@gmail.com',name:'Basel',subject:'Following up',snippet:'yes',ts:'2026-08-03T09:00:00Z'},
       {gid:'gn',opp:'',kind:'reply',from:'notifications@instagram.com',subject:'New login',snippet:'x',ts:'2026-08-03T02:00:00Z'}]));
     localStorage.setItem('thrive_hits_v1','[]');
   } catch(e){}
