@@ -5092,6 +5092,41 @@ function renderReplyBodyStructured(text){
       '</summary><div class="rp-quoted-body">'+renderReplyBody(bk.text)+'</div></details>';
   }).join("");
 }
+/* The rendered thread self-identifies. This marker is painted in a corner of the History conversation the
+   moment it opens, analogous to the build stamp but scoped to THIS component, so it is obvious on device
+   whether the current renderer is the one on screen. It exists because the conversation view once appeared
+   unchanged across fixes and the only way to be certain WHICH renderer is mounted is to have it announce
+   itself. There is exactly one card-History renderer (threadListHtml, mounted by renderHistory into
+   #modalHistory); bump this string whenever the thread renderer is rebuilt, so a stale copy is unmissable. */
+var THREAD_RENDERER_VERSION="v2";
+function threadRendererTag(){ return "thread "+THREAD_RENDERER_VERSION; }
+/* Runtime proof of the mounted renderer. Walks the OPEN History DOM (#modalHistory) and reports: the marker
+   text, the container's declared renderer, the count of msgBubble bubbles, and - the decisive check - which
+   leaf element actually holds the reply's on-screen text ("Open in Gmail" / "matched by the subject") and
+   which data-renderer owns it. If a second render path ever mounts, the reply text will resolve to a
+   container this renderer did not stamp, and that shows here instead of being guessed from source. Exposed as
+   a global and logged on every History render, so the truth is one console line on device. Pure read. */
+function threadRendererReport(){
+  var box=(typeof document!=="undefined") && document.getElementById("modalHistory");
+  if(!box) return { mounted:false };
+  var needles=[]; try{ needles=[t("rp_open_gmail"), t("rp_rule_subject")].filter(Boolean); }catch(e){}
+  var holder=null, all=box.querySelectorAll("*");
+  for(var i=0;i<all.length && !holder;i++){
+    var elx=all[i]; if(elx.childElementCount!==0) continue;             // leaf elements only
+    var txt=elx.textContent||"";
+    for(var k=0;k<needles.length;k++){ if(txt.indexOf(needles[k])>=0){ holder=elx; break; } }
+  }
+  var owner="(none)"; if(holder){ var p=holder.closest("[data-renderer]"); owner=p? p.getAttribute("data-renderer") : "(no data-renderer ancestor)"; }
+  return {
+    mounted:true,
+    marker: ((box.querySelector(".th-ver")||{}).textContent||"").trim(),
+    historyRenderer: box.getAttribute("data-history-renderer")||"(unstamped)",
+    listRenderer: box.querySelector('[data-renderer="threadListHtml"]') ? "threadListHtml@library/app.js" : "(no threadListHtml container)",
+    bubbles: box.querySelectorAll('[data-bubble="msgBubble"]').length,
+    replyTextOwner: owner
+  };
+}
+if(typeof window!=="undefined") window.threadRendererReport=threadRendererReport;
 function threadListHtml(slug){
   const entries=buildThread(slug);
   const when=ts=> fmtWhenHtml(ts) || esc(String(ts==null?"":ts));   // isolated date markup (bdi), never LTR-forced
@@ -5113,7 +5148,7 @@ function threadListHtml(slug){
     var isOut=o.side==="out";
     var cardCls=isOut ? "msg-out" : ("rp-card"+(o.latest?" is-latest":""));
     var bodyInner=(o.subjHtml||"")+(o.bodyHtml||"");
-    return '<li class="'+(isOut?"th-sent":"th-reply")+'"'+(o.rid? ' data-rid="'+esc(o.rid)+'"' : '')+'>'+
+    return '<li class="'+(isOut?"th-sent":"th-reply")+'" data-bubble="msgBubble"'+(o.rid? ' data-rid="'+esc(o.rid)+'"' : '')+'>'+
       '<div class="'+cardCls+'">'+
         '<div class="rp-head">'+
           '<div class="rp-top">'+(o.leadHtml||"")+
@@ -5156,7 +5191,9 @@ function threadListHtml(slug){
                 (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>' : '')+
                 (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+ic("link")+esc(t("rp_open_gmail"))+'</a>' : '') });
   }
-  let html='<ol class="th-list">', lastCh=0;
+  // Runtime self-identification: the conversation list names the exact function and file that built it, so
+  // the mounted renderer can be read straight off the DOM on device (the proof that ends fixing a blind copy).
+  let html='<ol class="th-list" data-renderer="threadListHtml" data-file="library/app.js">', lastCh=0;
   entries.forEach(e=>{
     const ch=e.chapter||1;
     if(lastCh && ch>lastCh) html+='<li class="th-chapter"><span>'+esc(t("th_chapter_"+(ch===2?"offer":"more")))+'</span></li>';
@@ -9985,7 +10022,15 @@ function initModal(){
     // When there is no address to answer, a gentle line stands in for the composer.
     let html=threadListHtml(slug);
     if(!(replyTarget(slug)||{}).addr) html+='<p class="th-noreply sub">'+esc(t("th_reply_no_addr"))+'</p>';
-    box.innerHTML=html;
+    // The renderer self-identifies: a low-contrast corner marker naming the mounted renderer, so on device it
+    // is obvious WHICH conversation renderer is on screen (the proof that ends fixing a blind copy). The
+    // container also carries a data-renderer attribute, and threadRendererReport() walks the rendered DOM to
+    // name the exact container that holds the reply text - so a second render path, if one ever exists, is
+    // caught at runtime rather than guessed at from source. Prepended here, in the one History renderer, so it
+    // shows even on an empty thread. aria-hidden: a diagnostic tag, not content read to a screen reader.
+    box.setAttribute("data-history-renderer", "renderHistory>threadListHtml@library/app.js");
+    box.innerHTML='<div class="th-ver" aria-hidden="true" data-renderer="renderHistory">'+esc(threadRendererTag())+' · renderHistory</div>'+html;
+    try{ if(window.console && console.info) console.info("[thread-renderer]", JSON.stringify(threadRendererReport())); }catch(_){}
   }
 
   /* The open team discussion. The list and composer are drawn by discussionHtml (a pure builder); this

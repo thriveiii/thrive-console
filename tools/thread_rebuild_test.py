@@ -55,6 +55,16 @@ ck("a broadened quote-boundary detector exists (Outlook block + separators), so 
    "function quoteStartIndex(" in app and "original message" in app.lower())
 ck("the optimistic reply and scroll-to-newest helpers exist",
    "function threadOptimisticReply(" in app and "function scrollThreadToNewest(" in app)
+# Step 1/2: there is ONE card-History renderer and it self-identifies with a version marker.
+ck("exactly one card-History renderer (threadListHtml) and one mount (renderHistory), no second path",
+   app.count("function threadListHtml(")==1 and app.count("function renderHistory(")==1)
+ck("the thread renderer carries a self-identifying version marker (threadRendererTag / THREAD_RENDERER_VERSION)",
+   "THREAD_RENDERER_VERSION" in app and "function threadRendererTag(" in app and 'class="th-ver"' in app)
+# Runtime instrumentation: every History writer stamps itself, and a probe names the mounted renderer.
+ck("every History writer self-identifies at runtime (data-renderer on the list, data-bubble on each message)",
+   'data-renderer="threadListHtml"' in app and 'data-bubble="msgBubble"' in app and 'data-history-renderer' in app)
+ck("a runtime probe (threadRendererReport) walks the open History DOM to name the mounted renderer",
+   "function threadRendererReport(" in app and "window.threadRendererReport" in app)
 
 # A long Arabic sender name, so the header row is stressed at phone width. A bare-domain (no scheme) inside
 # the Arabic answer, so the isolation is exercised on the exact collision case.
@@ -225,6 +235,26 @@ with sync_playwright() as p:
         ck(f"[{lang}] the thread holds the phone: no horizontal overflow, every bubble inside its box",
            over["over"] <= 1 and over["bubOver"] is False, over)
     pg.evaluate("()=>document.documentElement.setAttribute('dir','ltr')")
+
+    # ---- Step 2: the rendered thread self-identifies with a VISIBLE version marker, so it is unmistakable
+    #      on device which renderer is mounted (the fix for fixing an unrendered copy) ----
+    marker = pg.evaluate("""()=>{
+      window.thriveModal.open('co','history','Co');
+      return new Promise(res=>setTimeout(()=>{
+        const box=document.getElementById('modalHistory');
+        const m=box && box.querySelector('.th-ver');
+        const cs=m?getComputedStyle(m):null;
+        res({ present:!!m, text:m?m.textContent.trim():'',
+              visible:!!(m && m.offsetParent!==null && cs.display!=='none' && parseFloat(cs.opacity)>0),
+              report: (typeof window.threadRendererReport==='function') ? window.threadRendererReport() : null });
+      }, 500));
+    }""")
+    ck("Step 2: the History thread renders a VISIBLE marker naming the mounted renderer (self-identifies on device)",
+       marker["present"] and marker["text"].startswith("thread v2") and "renderHistory" in marker["text"] and marker["visible"], marker)
+    rep = marker.get("report") or {}
+    ck("runtime probe: the reply's on-screen text is owned by threadListHtml (the mounted renderer, proven at runtime)",
+       rep.get("mounted") is True and rep.get("replyTextOwner")=="threadListHtml"
+       and rep.get("bubbles",0) >= 1 and "threadListHtml" in (rep.get("listRenderer") or ""), rep)
 
     ctx.close(); b.close()
 httpd.shutdown()
