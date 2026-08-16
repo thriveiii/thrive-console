@@ -434,6 +434,22 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100
 
 /* email composer */
 .compose-panel{max-width:820px}
+/* The thread reply is calm by default: recipient (locked), subject (Re:), body, and one Send. The template
+   picker, the formatting toolbar, the closing/plain/preview blocks and the alternate send buttons are the
+   full editing surface an outreach send needs but a quick reply rarely does, so in reply mode they wait
+   behind one "Options" toggle. Same editor, same controls, one disclosure, no new chrome. The :not() means
+   revealing is just removing the hide, so each element returns to its own natural display. */
+.reply-lean:not(.reply-show-options) .etpl-bar,
+.reply-lean:not(.reply-show-options) .etpl-quick,
+.reply-lean:not(.reply-show-options) .etoolbar,
+.reply-lean:not(.reply-show-options) #cmpMore,
+.reply-lean:not(.reply-show-options) #sigWrap,
+.reply-lean:not(.reply-show-options) #plainWrap,
+.reply-lean:not(.reply-show-options) #prevWrap{ display:none !important }
+.reply-lean #eSelf,
+.reply-lean #eCopy,
+.reply-lean #eMail{ display:none !important }            /* a reply is one Send; the outreach conveniences stay out */
+.cmp-reply-options{ margin-block:0 var(--s-2) }
 .etpl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--hair-2)}
 .etpl-label{font-size:12.5px;font-weight:800;color:var(--ink-2)}
 .etpl-bar select{max-width:240px}
@@ -1727,17 +1743,27 @@ body.is-dragging{ cursor:grabbing; user-select:none }
    stays a left to right identifier in both directions. */
 .bt-wrap{ overflow-x:auto; border:1px solid var(--hair-2); border-radius:var(--r-sm);
   margin-block-end:var(--s-3) }
-.bt{ border-collapse:collapse; width:100%; font-size:var(--fs-xs) }
-.bt th,.bt td{ padding:7px 7px; text-align:start; border-block-end:1px solid var(--hair) }
+/* A min-width keeps the seven columns readable: on a wide screen the table fills its frame, and on a phone
+   the frame (.bt-wrap) scrolls rather than squeezing a slug into one letter per line. So columns stay
+   legible at every width and the page never overflows. */
+.bt{ border-collapse:collapse; width:100%; min-width:32rem; font-size:var(--fs-xs); table-layout:auto }
+/* One padding and one line-height on every cell, top-aligned, so a row is only as tall as its content and a
+   wrapped verdict lines up with the checks beside it rather than floating on the baseline. */
+.bt th,.bt td{ padding:8px 8px; text-align:start; vertical-align:top; line-height:1.45; border-block-end:1px solid var(--hair) }
 .bt th{ font-size:var(--fs-micro); font-weight:var(--w-head); color:var(--ink-4); white-space:nowrap }
 .bt tr:last-child td{ border-block-end:0 }
-.bt td.mono-iso{ font-family:var(--font-lat); direction:ltr; unicode-bidi:isolate }
-.bt td.bt-c{ text-align:center; width:1% }
+.bt td.mono-iso{ font-family:var(--font-lat); direction:ltr; unicode-bidi:isolate; overflow-wrap:break-word }
+/* The five check columns (HTML, MFST, SUBJ, BODY, SEND) share ONE even, tight width and centre, header and
+   cell aligned on the same axis, so the ticks read as a clean grid. */
+.bt th:nth-child(n+2):nth-child(-n+6){ text-align:center; width:2.7rem }
+.bt td.bt-c{ text-align:center; width:2.7rem }
 .bt-y{ display:inline-flex; color:var(--lane-live) }
 .bt-y svg{ width:14px; height:14px }
 .bt-n{ color:var(--ink-4) }
 .bt tr.is-warned{ background:var(--state-stall-t) }
-.bt-ok{ color:var(--lane-live); font-weight:var(--w-head); white-space:nowrap }
+/* The verdict reads clearly and wraps within its own column, never forcing the table wider than its frame. */
+.bt td:last-child{ overflow-wrap:anywhere }
+.bt-ok{ color:var(--lane-live); font-weight:var(--w-head) }
 .bt-warn{ color:var(--state-stall); font-weight:var(--w-strong) }
 
 /* --- the symbol set -------------------------------------------------------
