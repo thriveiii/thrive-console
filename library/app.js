@@ -4933,7 +4933,12 @@ function replyGreeting(tgt){
    addresses are wrapped in <bdi> so they stay left-to-right inside an Arabic line and wrap instead of
    overflowing, and a leading bracket or the trailing one sits outside the isolated run, on the correct
    side. A quoted line (a leading ">" or a "wrote:" header) renders as a quieter block. */
-var RE_REPLY_TOKEN=/(https?:\/\/[^\s]+|www\.[^\s]+|[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+)/g;
+/* A "left-to-right run" is a URL, an email address, OR a bare domain (a host with a real TLD, with an
+   optional path): each is a Latin run that MUST be isolated, because a bare "console.thriveiii.com" inside
+   an Arabic line reorders and collides exactly as a full URL does. The scheme URL, the www URL and the email
+   are tried first so they win; the bare-domain alternative is last, so it only catches what the earlier ones
+   did not. Ordinary Latin words carry no dot and no @, so they are left to the line's own dir="auto". */
+var RE_REPLY_TOKEN=/(https?:\/\/[^\s]+|www\.[^\s]+|[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+|[a-zA-Z0-9][a-zA-Z0-9\-]*(?:\.[a-zA-Z0-9\-]+)*\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/g;
 function renderReplyLine(raw){
   var out="", last=0, m; RE_REPLY_TOKEN.lastIndex=0;
   while((m=RE_REPLY_TOKEN.exec(raw))){
@@ -5003,30 +5008,53 @@ function parseQuoteHeader(line){
   if(m) return { lang:"ar", lead:m[1], verb:"كتب", date:m[2].trim(), name:m[3].trim(), address:m[4].trim() };
   return null;
 }
+/* The first line that begins the quoted original, or -1 when the body is all new text. Beyond the classic
+   ">" prefix and the Gmail/Arabic "wrote:" / "كتب:" header, this recognises the two quote styles that carry
+   NEITHER marker and were the "full original dumped" break: the Outlook field block (a From: / المرسل: line
+   immediately leading a Sent/To/Subject field, and their Arabic equivalents) and the separator rules
+   ("-----Original Message-----", a forwarded-message banner, a long dash or underscore rule). Finding the
+   boundary is what lets the original always land in the collapsed block instead of flat under the answer. */
+function quoteStartIndex(lines){
+  for(var i=0;i<lines.length;i++){
+    var s=String(lines[i]==null?"":lines[i]);
+    if(/^\s*>/.test(s)) return i;                                   // a classic quoted line
+    if(isQuoteHeaderLine(s)) return i;                              // "On <date> ... wrote:" / "في <date> ... كتب"
+    if(/^\s*-{3,}\s*(?:original message|forwarded message|الرسالة الأصلية|رسالة (?:معاد|مُعاد))/i.test(s)) return i;
+    if(/^\s*[-_]{5,}\s*$/.test(s)) return i;                        // a long dash or underscore rule (Outlook)
+    // The Outlook field block: a From: / المرسل: line that immediately leads a Sent/To/Subject field.
+    if(/^\s*(?:from|من|المرسل)\s*:\s*\S/i.test(s)){
+      for(var j=i+1;j<Math.min(lines.length,i+5);j++){
+        if(/^\s*(?:sent|date|to|cc|subject|أُرسلت|أرسلت|التاريخ|إلى|نسخة|الموضوع)\s*:/i.test(String(lines[j]==null?"":lines[j]))) return i;
+      }
+    }
+  }
+  return -1;
+}
 /* Parse a reply body into ordered typed blocks. Returns null unless it produced a real quote structure
    (a parsed header or quoted history), so a plain single-direction message renders exactly as before. */
 function parseReplyBody(text){
-  var lines=String(text==null?"":text).split(/\r?\n/), n=lines.length, i=0, blocks=[];
-  // 1) the new message: everything before the first quote header or the first quoted (>) line.
-  var msg=[];
-  for(; i<n; i++){ if(isQuoteHeaderLine(lines[i]) || /^\s*>/.test(lines[i])) break; msg.push(lines[i]); }
+  var lines=String(text==null?"":text).split(/\r?\n/), n=lines.length, blocks=[];
+  var qs=quoteStartIndex(lines); if(qs<0) qs=n;
+  // 1) the new message: everything before the quoted original begins.
+  var msg=lines.slice(0, qs);
   while(msg.length && !msg[msg.length-1].trim()) msg.pop();
   // A signature block (an "-- " sig delimiter inside the message) is split off and muted.
   var sig=null, sd=-1;
   for(var k=0;k<msg.length;k++){ if(/^\s*--\s*$/.test(msg[k])){ sd=k; break; } }
   if(sd>=0){ sig=msg.slice(sd+1).join("\n"); msg=msg.slice(0,sd); while(msg.length && !msg[msg.length-1].trim()) msg.pop(); }
   if(msg.join("\n").trim()) blocks.push({ type:"message", text:msg.join("\n") });
-  var structured=false;
-  // 2) the quote header line, recomposed from parts. An unparsable header shape is NOT an abort: it is left
-  //    for the quoted-history block below, so the answer still reads first and the original is still visually
-  //    separated in the collapsible quote, never rendered as one flat tangle of answer + header + quote.
+  var structured=false, i=qs;
+  // 2) a recomposable Gmail/Arabic header at the boundary, rebuilt from isolated parts. An unparsable header
+  //    shape (or an Outlook/separator boundary) is NOT an abort: it is left for the quoted-history block
+  //    below, so the answer still reads first and the original is still separated in the collapsible quote,
+  //    never rendered as one flat tangle of answer + header + quote.
   if(i<n && isQuoteHeaderLine(lines[i])){
     var hp=parseQuoteHeader(lines[i]);
     if(hp){ blocks.push({ type:"quoteHeader", parts:hp }); structured=true; i++; }
   }
   // 3) the quoted history: the remaining lines, one leading "> " stripped, as a quiet collapsible block.
   var hist=[];
-  for(; i<n; i++){ hist.push(lines[i].replace(/^\s?>\s?/, "")); }
+  for(; i<n; i++){ hist.push(String(lines[i]==null?"":lines[i]).replace(/^\s?>\s?/, "")); }
   while(hist.length && !hist[0].trim()) hist.shift();
   while(hist.length && !hist[hist.length-1].trim()) hist.pop();
   if(hist.length){ blocks.push({ type:"quote", text:hist.join("\n") }); structured=true; }
@@ -5075,53 +5103,58 @@ function threadListHtml(slug){
       (detail? '<span class="th-detail" dir="auto">'+detail+'</span>':'')+
       '<span class="th-when">'+when(ts)+'</span></li>';
   }
-  // Part 3: a send is our side of the conversation, rendered as its OWN outgoing bubble (aligned to the far
-  // edge, its own quiet treatment) so the thread reads as two sides: our send, their reply, our next reply.
-  // Recipient name and address (LTR-isolated), subject, timestamp. Opens and stage notes stay quiet event
-  // lines, because they are facts about the thread, not messages in it.
+  // Part 1: ONE bubble component, used for every message. Our send and their reply route through the SAME
+  // builder, so the two sides share one header/body/foot skeleton and differ only by side. The header is its
+  // own ruled-off row: a lead (a #number and the latest mark, or nothing), the sender name taking the width,
+  // and the timestamp pinned to the opposite edge so the two never collide. The address sits on its own line
+  // beneath the header; the body follows with even spacing. Our-send and their-reply are told apart by
+  // opposite alignment AND a distinct surface tint, both set in CSS from the side alone.
+  function msgBubble(o){
+    var isOut=o.side==="out";
+    var cardCls=isOut ? "msg-out" : ("rp-card"+(o.latest?" is-latest":""));
+    var bodyInner=(o.subjHtml||"")+(o.bodyHtml||"");
+    return '<li class="'+(isOut?"th-sent":"th-reply")+'"'+(o.rid? ' data-rid="'+esc(o.rid)+'"' : '')+'>'+
+      '<div class="'+cardCls+'">'+
+        '<div class="rp-head">'+
+          '<div class="rp-top">'+(o.leadHtml||"")+
+            '<span class="rp-who" dir="auto">'+o.whoHtml+'</span>'+
+            '<span class="rp-when">'+when(o.ts)+'</span>'+
+          '</div>'+
+          (o.addr? '<div class="rp-from mono">'+ltr(esc(o.addr))+'</div>' : '')+
+        '</div>'+
+        (bodyInner ? '<div class="rp-body">'+bodyInner+'</div>' : '')+
+        (o.footHtml ? '<div class="rp-foot">'+o.footHtml+'</div>' : '')+
+      '</div></li>';
+  }
+  // A send is our side: the far-edge outgoing bubble. "Sent" and the recipient are the who, the address is on
+  // its own line, the subject is the body. Opens and stage notes stay quiet event lines, not messages.
   function sentCard(e){
     var to=e.toName||e.to||"";
-    // Finding 3: the header (who + address + timestamp) sits on its own row, separated by a rule from the
-    // body below, so sender, date and text never run together on one crowded line.
-    return '<li class="th-sent"><div class="msg-out">'+
-      '<div class="rp-head">'+
-        '<div class="rp-top"><span class="rp-who">'+esc(t("th_sent"))+(to? ' <span class="msg-to" dir="auto">'+esc(to)+'</span>':'')+'</span>'+
-        '<span class="rp-when">'+when(e.ts)+'</span></div>'+
-        (e.to? '<div class="rp-from mono">'+ltr(esc(e.to))+'</div>':'')+
-      '</div>'+
-      ((e.subject||e.channel)? '<div class="rp-body">'+
-        (e.subject? '<div class="rp-subj" dir="auto">'+esc(e.subject)+'</div>':'')+
-        (e.channel? '<div class="rp-foot"><span class="th-chan">'+esc(e.channel)+'</span></div>':'')+
-      '</div>' : '')+
-      '</div></li>';
+    return msgBubble({ side:"out", ts:e.ts, addr:e.to||"",
+      whoHtml: esc(t("th_sent"))+(to? ' <span class="msg-to" dir="auto">'+esc(to)+'</span>' : ''),
+      subjHtml: (e.subject? '<div class="rp-subj" dir="auto">'+esc(e.subject)+'</div>' : ''),
+      bodyHtml: (e.channel? '<div class="rp-chan"><span class="th-chan">'+esc(e.channel)+'</span></div>' : '') });
   }
   // Part 3: each reply carries its per-opportunity number (arrival order), the same number the card badge
   // and the inbox show, so a reply is the same "#N" everywhere.
   var __repNumByWho={}, __repMax=0; repliesForOpp(slug).forEach(function(x){ __repNumByWho[x.addr]=x.num; if(x.num>__repMax) __repMax=x.num; });
+  // Their reply is the reading-start incoming bubble, routed through the SAME msgBubble: its lead is the #N
+  // and the latest mark, the who is the sender, the body is the subject then the structured answer (the new
+  // text first and full, the quoted original in a collapsed block), the foot carries the rule and Gmail link.
   function replyCard(r){
     var rn=__repNumByWho[String(r.from||"").trim().toLowerCase()];
-    // Part 4: the newest reply (the highest per-opportunity number) is marked, so a multi-reply card reads at
-    // a glance which reply is the latest. Only when there is more than one, since a lone reply is trivially it.
+    // Part 4: the newest reply (the highest per-opportunity number) is marked, only when there is more than
+    // one (a lone reply is trivially the latest).
     var latest=(rn && __repMax>1 && rn===__repMax);
-    // Finding 3: the header (number, sender, timestamp, address) is its own row, separated by a rule from
-    // the body (subject, the answer, the collapsed quote), so nothing runs together on one crowded line.
-    return '<li class="th-reply"'+(r.id? ' data-rid="'+esc(r.id)+'"' : '')+'><div class="rp-card'+(latest?' is-latest':'')+'">'+
-      '<div class="rp-head">'+
-        '<div class="rp-top">'+(rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
-        (latest? '<span class="rp-latest">'+esc(t("rp_latest"))+'</span>' : '')+
-        '<span class="rp-who" dir="auto">'+esc(r.from||t("th_someone"))+'</span>'+
-        '<span class="rp-when">'+when(r.ts)+'</span></div>'+
-        (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
-      '</div>'+
-      '<div class="rp-body">'+
-        (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>':'')+
-        (r.snippet? '<div class="rp-snip" dir="auto">'+renderReplyBodyStructured(r.snippet)+'</div>':'')+
-      '</div>'+
-      '<div class="rp-foot">'+
-        (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>':'')+
-        (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>':'')+
-        (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+ic("link")+esc(t("rp_open_gmail"))+'</a>':'')+
-      '</div></div></li>';
+    return msgBubble({ side:"in", rid:r.id||"", latest:latest, ts:r.ts, addr:r.fromAddr||"",
+      leadHtml: (rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
+                (latest? '<span class="rp-latest">'+esc(t("rp_latest"))+'</span>' : ''),
+      whoHtml: esc(r.from||t("th_someone")),
+      subjHtml: (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>' : ''),
+      bodyHtml: (r.snippet? '<div class="rp-snip" dir="auto">'+renderReplyBodyStructured(r.snippet)+'</div>' : ''),
+      footHtml: (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>' : '')+
+                (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>' : '')+
+                (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+ic("link")+esc(t("rp_open_gmail"))+'</a>' : '') });
   }
   let html='<ol class="th-list">', lastCh=0;
   entries.forEach(e=>{
@@ -5135,6 +5168,41 @@ function threadListHtml(slug){
     else if(e.kind==="act") html+=line("clock", label(e.action), e.detail? '<span dir="auto">'+esc(e.detail)+'</span>':"", e.ts);
   });
   return html+'</ol>';
+}
+
+/* Part 2: smooth reading. Scroll the thread to its newest message, so opening the conversation (or sending
+   a reply) lands on the latest exchange rather than the first contact. Pulse it optionally, the same guiding
+   flash a badge uses, so a fresh reply announces itself. Reduced motion is respected: the pulse degrades to a
+   static outline (the .th-flash CSS), and the scroll drops its smooth easing. Pure DOM, safe when absent. */
+function scrollThreadToNewest(pulse){
+  var box=document.getElementById("modalHistory"); if(!box) return;
+  var msgs=box.querySelectorAll(".th-sent, .th-reply");
+  var last=msgs.length ? msgs[msgs.length-1] : null; if(!last) return;
+  var reduce=false; try{ reduce=window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){}
+  try{ last.scrollIntoView({ block:"nearest", behavior:(reduce?"auto":"smooth") }); }catch(e){ try{ last.scrollIntoView(); }catch(_){} }
+  if(pulse){ last.classList.add("th-flash"); setTimeout(function(){ try{ last.classList.remove("th-flash"); }catch(_){} }, 2200); }
+}
+/* Part 2: one-tap inline reply. The instant Send is pressed, our reply appears at the foot of the thread as
+   an outgoing bubble with a quiet "sending" marker, so the operator sees it land immediately without leaving
+   the view. The confirmed-write path then re-renders the thread from the durable ledger (renderHistory),
+   replacing this optimistic bubble with the real row (pending or sent) - or dropping it when the send truly
+   failed, because buildThread excludes an unsent row, so a failure is never a phantom sent reply (the error
+   is surfaced by the caller's toast, never swallowed). Pure DOM; returns the node or null. */
+function threadOptimisticReply(text){
+  var box=document.getElementById("modalHistory"); if(!box) return null;
+  var list=box.querySelector(".th-list"); if(!list) return null;
+  var li=document.createElement("li");
+  li.className="th-sent th-opti";
+  var bodyHtml=esc(String(text==null?"":text).trim()).split("\n").join("<br>");
+  li.innerHTML='<div class="msg-out">'+
+    '<div class="rp-head"><div class="rp-top">'+
+      '<span class="rp-who" dir="auto">'+esc(t("cmp_sending"))+'</span>'+
+    '</div></div>'+
+    '<div class="rp-body"><div class="rp-snip" dir="auto">'+bodyHtml+'</div></div>'+
+  '</div>';
+  list.appendChild(li);
+  scrollThreadToNewest(true);
+  return li;
 }
 
 /* ---- the open discussion, rendered inside the card ----------------------------
@@ -6168,6 +6236,12 @@ async function initCompose(slugArg, opts){
     // state, the quota count, the working draft, and the reply greeting reset.
     const m=tplMeta();
     el("eSend").disabled=true; const old=el("eSend").textContent; el("eSend").textContent=t("cmp_sending");
+    // Part 2: in reply mode the reply appears in the thread IMMEDIATELY (optimistic), the instant Send is
+    // pressed, before the network round trip. Every outcome below reconciles it against the durable ledger
+    // (reconcileReply -> renderHistory), so the optimistic bubble becomes the true row or is dropped on a
+    // real failure - never a phantom. The confirmed-write path (relaySend) is unchanged.
+    if(replyCtx){ try{ threadOptimisticReply(sb.text); }catch(_){} }
+    const reconcileReply=function(){ if(replyCtx && onSent) try{ onSent(); }catch(_){} };
     let res;
     try{
       res=await relaySend({ opp:oppOf(), to:to, toName:recName(), subject:subjectOut,
@@ -6176,12 +6250,13 @@ async function initCompose(slugArg, opts){
         mailExtra:{ templateId:m.templateId, templateName:m.templateName, branded:isBranded() } });
     } finally { el("eSend").disabled=false; el("eSend").textContent=old; }
     // A completed send, refused by name: no second delivery.
-    if(res.status==="duplicate"){ toast(t("cmp_dupe_block")); return; }
+    if(res.status==="duplicate"){ toast(t("cmp_dupe_block")); reconcileReply(); return; }
     // A timeout: in flight and MAY have delivered. The pending row already advanced the card; say "sent,
     // confirming" and a later re-tap reconciles under the same key, never a second delivery.
-    if(res.status==="pending"){ toast(t("cmp_sent_confirming")); return; }
-    // A known failure: the intent is unsent (the card did not advance) and the true error is shown.
-    if(res.status!=="sent" && res.status!=="sending"){ toast(t("cmp_send_err")+": "+(res.error||"")); return; }
+    if(res.status==="pending"){ toast(t("cmp_sent_confirming")); reconcileReply(); return; }
+    // A known failure: the intent is unsent (the card did not advance) and the true error is shown. The
+    // optimistic bubble is dropped by the reconcile (buildThread excludes an unsent row), so no phantom.
+    if(res.status!=="sent" && res.status!=="sending"){ toast(t("cmp_send_err")+": "+(res.error||"")); reconcileReply(); return; }
     // Dispatched: the relay accepted the email. 'sent' means the server also holds the row; 'sending' means
     // not yet (a signed-in write that failed), so the card sits in a visible outbox and graduates to Sent on
     // its own. Quota counts the delivery either way (once, not per attempt); the working draft is done.
@@ -10035,10 +10110,13 @@ function initModal(){
         if(typeof window.thriveViewReset==="function") window.thriveViewReset("compose");  // boot state, so init re-wires once
         show(tab);
         renderHistory(rec);                            // the thread list, above the editor
-        try{ await initCompose(current, { reply:true, onSent:()=>renderHistory(rec) }); }
+        scrollThreadToNewest(false);                   // land on the latest exchange (a tab switch: modal already visible)
+        // Part 2: a sent reply reconciles from the durable ledger AND re-lands on the newest, pulsing it, so
+        // the just-sent reply confirms itself in place.
+        try{ await initCompose(current, { reply:true, onSent:()=>{ renderHistory(rec); scrollThreadToNewest(true); } }); }
         catch(e){ if(typeof actionStatus==="function") actionStatus("err", t("act_mount_fail")+" "+errText(e)); }
       } else {
-        giveBack(); show(tab); renderHistory(rec);     // no one to answer: just the thread
+        giveBack(); show(tab); renderHistory(rec); scrollThreadToNewest(false); // no one to answer: just the thread
       }
       if(__restored) applyDraftFields(__restored);
       return;
