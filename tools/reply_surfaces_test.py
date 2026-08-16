@@ -62,7 +62,10 @@ with sync_playwright() as p:
         {mid:'j2',opp:'thrive-july',to:'lina@school.com',toName:'Lina',subject:'A page',status:'sent',direction:'out',ts:'2026-08-01T10:01:00Z'},
         {mid:'j3',opp:'thrive-july',to:'omar@co.com',toName:'Omar',subject:'A page',status:'sent',direction:'out',ts:'2026-08-01T10:02:00Z'}]));
       localStorage.setItem('thrive_inbound_v1', JSON.stringify([
-        {gid:'g1',opp:'',kind:'reply',from:'basel.personal@gmail.com',name:'Basel',subject:'Re: من جد وجد',snippet:'yes',ts:'2026-08-03T09:00:00Z'},
+        // Basel's reply subject was stripped, so it matches NO send subject: the subject link (resolvedReplyOpp)
+        // cannot attach it, and it stays genuinely held until the sender re-match (below) attaches it. This is
+        // the case the held/attach flow exists for; a subject that DID match a send auto-resolves (reply_link_test).
+        {gid:'g1',opp:'',kind:'reply',from:'basel.personal@gmail.com',name:'Basel',subject:'Following up',snippet:'yes',ts:'2026-08-03T09:00:00Z'},
         {gid:'gn',opp:'',kind:'reply',from:'noreply@dmarc.google.com',subject:'Report Domain',snippet:'xml',ts:'2026-08-03T02:00:00Z'}]));
       localStorage.setItem('thrive_hits_v1', JSON.stringify([{type:'open',slug:'thrive-july',ts:'2026-08-02T10:00:00Z',vid:'v1'}]));
       localStorage.removeItem('thrive_card_seen_v1');

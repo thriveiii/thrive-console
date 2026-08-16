@@ -793,7 +793,7 @@ function hasReply(o){
   if(!slug) return false;
   // A reply attaches to its parent opp (Part 2): a stranded child slug resolves back to the parent, exactly
   // as the server view does, so the client and the view agree on which card is Replied.
-  if(getInbound().some(function(r){ return r && r.kind!=="auto" && r.opp && replyParentOf(r.opp)===slug; })) return true;
+  if(getInbound().some(function(r){ return r && r.kind!=="auto" && resolvedReplyOpp(r)===slug; })) return true;
   return getMailLog().some(function(m){ return m && m.opp===slug && (m.direction==="in" || m.status==="replied"); });
 }
 // Part 2: the ONE client resolver of a reply's opp key to its parent opportunity. A reply may be keyed to a
@@ -805,6 +805,20 @@ function replyParentOf(oppKey){
   if(i<0) return k;
   return getDraft(k) ? k : k.slice(0, i);
 }
+/* THE ONE resolver of a reply row to the opportunity it is attached to, read the same way on every surface
+   (the board lane, the card badge, the History row, the Replies inbox, the count). A stored opp resolves
+   through replyParentOf (child slug to parent); an EMPTY opp resolves by normalized subject the way the
+   server view does (subjectLinkOpp), so a reply the relay wrote with no opp is attached at read time and a
+   surface never has to trust the raw, possibly-empty inbound.opp. After this, a reply is linked everywhere
+   or unlinked everywhere, never both. An auto notice (a bounce) keeps its own opp and never subject-matches. */
+function resolvedReplyOpp(r){
+  if(!r) return "";
+  var raw=String(r.opp||"");
+  if(raw) return replyParentOf(raw);                 // a stored link is trusted (child slug -> parent)
+  if(r.kind==="auto" || inboundIsNoise(r)) return ""; // noise never subject-resolves, even if a subject coincides
+  return subjectLinkOpp(r);                           // a real reply with no stored opp: resolve by subject
+}
+window.resolvedReplyOpp=resolvedReplyOpp;
 // Part 3: an opportunity's replies, resolved to it, as distinct repliers in arrival order, numbered 1..N.
 // Reads the confirmed console_inbound rows (server-hydrated); it never invents a reply. The card badge, the
 // inbox numbering and the card's reply list all read THIS, so a reply's number agrees everywhere.
@@ -813,7 +827,7 @@ function repliesForOpp(slug){
   if(!slug) return [];
   var by={};
   getInbound().forEach(function(r){
-    if(!r || r.kind==="auto" || !r.opp || replyParentOf(r.opp)!==slug) return;
+    if(!r || r.kind==="auto" || resolvedReplyOpp(r)!==slug) return;
     var who=String(r.from||"").trim().toLowerCase(); if(!who) return;
     var ts=String(r.ts||"");
     if(!by[who] || ts<by[who].ts) by[who]={ from:r.from||who, addr:who, ts:ts, subject:r.subject||"", gid:inboundKey(r) };
@@ -833,8 +847,9 @@ window.repliesForOpp=repliesForOpp; window.replyCountFor=replyCountFor; window.r
 function repliesReceived(){
   var seen={}, n=0;
   getInbound().forEach(function(r){
-    if(!r || r.kind==="auto" || !r.opp) return;
-    var k=String(r.opp)+"|"+String(r.from||"").trim().toLowerCase();
+    if(!r || r.kind==="auto") return;
+    var op=resolvedReplyOpp(r); if(!op) return;   // the one resolved link, so the header agrees with the board
+    var k=op+"|"+String(r.from||"").trim().toLowerCase();
     if(!seen[k]){ seen[k]=1; n++; }
   });
   getMailLog().forEach(function(m){
@@ -1801,10 +1816,10 @@ function setInbound(a){ invalidateRecon(); lsSet(INBOUND, JSON.stringify((a||[])
   // A reply must reach console_inbound for the server board view to mark the card Replied; a mirror failure
   // is recorded on the diverge ledger, never swallowed, so it surfaces on the drift badge (Part 4).
   try{ supaMirrorInbound(a); }catch(e){ try{ supaRecordDiverge("mirror", "console_inbound", e&&e.message); }catch(_){} } }
-function inboundFor(slug){ return getInbound().filter(r=> r && r.opp===slug); }
+function inboundFor(slug){ return getInbound().filter(r=> r && resolvedReplyOpp(r)===slug); }
 /* Named on screen rather than counted: a reply nobody could attribute is the one
    most likely to be worth money, because it is the one nobody is expecting. */
-function inboundUnmatched(){ return getInbound().filter(r=> r && r.kind!=="auto" && !r.opp); }
+function inboundUnmatched(){ return getInbound().filter(r=> r && r.kind!=="auto" && !resolvedReplyOpp(r)); }
 // The ONE derivation of the unmatched-human set, read by both the board badge and the inbox header, so the
 // number cannot drift. Automated mail (kind auto, plus the no-reply and platform senders inboundIsNoise
 // catches) is excluded here and folded into the collapsed noise group, never counted as human.
@@ -4811,9 +4826,15 @@ function buildThread(slug){
     if(r.kind==="auto"){
       out.push({ kind:"auto", ts:r.ts, bounce:r.bounce||"", from:r.from||"" });
     }else{
+      // The attachment label reflects the RESOLVED match, not the raw relay r.rule (which is empty for a
+      // subject-linked reply and made the History row read "not matched" while the board showed it attached).
+      // Every reply reaching here belongs to this slug (inboundFor resolves it), so it is matched: prefer the
+      // console match_tier (subject/header/manual/sender), else the relay rule, else "subject" (it resolved by
+      // subject). "not matched" (rule none) can only surface for a genuinely unattached reply, never here.
+      var etier=r.match_tier || (r.rule && r.rule!=="none" ? r.rule : "") || "subject";
       out.push({ kind:"reply", ts:r.ts, source:"inbox", id:inboundKey(r), from:(r.name||r.from||""),
                  fromAddr:r.from||"", subject:r.subject||"", snippet:(r.snippet||"").slice(0,600),
-                 rule:r.rule||"none", tier:r.match_tier||"", ambiguous:!!r.match_ambiguous,
+                 rule:etier, tier:etier, ambiguous:!!r.match_ambiguous,
                  chapter:r.chapter||1, gmail:(typeof ThriveInbound!=="undefined"&&ThriveInbound.gmailLink)?ThriveInbound.gmailLink(r):"" });
     }
   });
@@ -4996,11 +5017,12 @@ function parseReplyBody(text){
   if(sd>=0){ sig=msg.slice(sd+1).join("\n"); msg=msg.slice(0,sd); while(msg.length && !msg[msg.length-1].trim()) msg.pop(); }
   if(msg.join("\n").trim()) blocks.push({ type:"message", text:msg.join("\n") });
   var structured=false;
-  // 2) the quote header line, recomposed from parts (an unparsable header shape aborts to fallback).
+  // 2) the quote header line, recomposed from parts. An unparsable header shape is NOT an abort: it is left
+  //    for the quoted-history block below, so the answer still reads first and the original is still visually
+  //    separated in the collapsible quote, never rendered as one flat tangle of answer + header + quote.
   if(i<n && isQuoteHeaderLine(lines[i])){
     var hp=parseQuoteHeader(lines[i]);
-    if(!hp) return null;
-    blocks.push({ type:"quoteHeader", parts:hp }); structured=true; i++;
+    if(hp){ blocks.push({ type:"quoteHeader", parts:hp }); structured=true; i++; }
   }
   // 3) the quoted history: the remaining lines, one leading "> " stripped, as a quiet collapsible block.
   var hist=[];
