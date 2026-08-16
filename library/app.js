@@ -4996,11 +4996,15 @@ function threadListHtml(slug){
   }
   // Part 3: each reply carries its per-opportunity number (arrival order), the same number the card badge
   // and the inbox show, so a reply is the same "#N" everywhere.
-  var __repNumByWho={}; repliesForOpp(slug).forEach(function(x){ __repNumByWho[x.addr]=x.num; });
+  var __repNumByWho={}, __repMax=0; repliesForOpp(slug).forEach(function(x){ __repNumByWho[x.addr]=x.num; if(x.num>__repMax) __repMax=x.num; });
   function replyCard(r){
     var rn=__repNumByWho[String(r.from||"").trim().toLowerCase()];
-    return '<li class="th-reply"'+(r.id? ' data-rid="'+esc(r.id)+'"' : '')+'><div class="rp-card">'+
+    // Part 4: the newest reply (the highest per-opportunity number) is marked, so a multi-reply card reads at
+    // a glance which reply is the latest. Only when there is more than one, since a lone reply is trivially it.
+    var latest=(rn && __repMax>1 && rn===__repMax);
+    return '<li class="th-reply"'+(r.id? ' data-rid="'+esc(r.id)+'"' : '')+'><div class="rp-card'+(latest?' is-latest':'')+'">'+
       '<div class="rp-top">'+(rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
+      (latest? '<span class="rp-latest">'+esc(t("rp_latest"))+'</span>' : '')+
       '<span class="rp-who" dir="auto">'+esc(r.from||t("th_someone"))+'</span>'+
       '<span class="rp-when">'+when(r.ts)+'</span></div>'+
       (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+

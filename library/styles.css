@@ -2018,7 +2018,16 @@ body.modal-open{
   padding:var(--s-3); margin-block-end:var(--s-2);
   background:var(--panel);
 }
-.rp-top{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s-2) }
+.rp-top{ display:flex; align-items:baseline; justify-content:flex-start; gap:var(--s-2); flex-wrap:wrap }
+.rp-top .rp-when{ margin-inline-start:auto }   /* the timestamp keeps the far edge; the number and mark cluster at the start */
+/* Part 4: the newest reply on a multi-reply card, marked with the lane's own green so it reads as the
+   latest at a glance. A quiet label plus a left accent on the card, no new chrome (existing tokens only). */
+.rp-latest{
+  font-size:var(--fs-micro); font-weight:var(--w-head); color:var(--lane-replied);
+  background:var(--lane-replied-t); border-radius:var(--r-sm);
+  padding:0 var(--s-2); unicode-bidi:isolate; flex:none;
+}
+.rp-card.is-latest{ border-inline-start:2px solid var(--lane-replied) }
 .rp-who{ font-weight:600 }
 .rp-when,.rp-from{ font-size:12px; color:var(--ink-4) }
 .rp-subj{ margin-block-start:var(--s-2); color:var(--ink-2); unicode-bidi:isolate }
