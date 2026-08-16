@@ -2477,6 +2477,7 @@ var I18N_BOARD = {
     tok_idle:       { one:"{n} day idle", other:"{n} days idle" },
     tok_opens:      { one:"{n} open",     other:"{n} opens" },
     tok_replies:    { one:"{n} reply",    other:"{n} replies" },
+    reply_card_a11y: "Open the reply from",
     rp_by_opp:      "Replies, by opportunity",
     board_drift:    { one:"{n} unsynced", other:"{n} unsynced" },
     board_drift_t:  { one:"{n} card holds a send or reply the server ledger has not caught up to yet",
@@ -2682,6 +2683,7 @@ var I18N_BOARD = {
       one:"ردّ واحد", two:"ردّين",
       few:"{n} ردود", many:"{n} ردًا", other:"{n} رد"
     },
+    reply_card_a11y: "افتح الرد من",
     rp_by_opp:   "الردود، حسب الفرصة",
     board_drift: {
       one:"غير متزامنة", two:"غير متزامنتين",

@@ -5075,6 +5075,20 @@ function threadListHtml(slug){
       (detail? '<span class="th-detail" dir="auto">'+detail+'</span>':'')+
       '<span class="th-when">'+when(ts)+'</span></li>';
   }
+  // Part 3: a send is our side of the conversation, rendered as its OWN outgoing bubble (aligned to the far
+  // edge, its own quiet treatment) so the thread reads as two sides: our send, their reply, our next reply.
+  // Recipient name and address (LTR-isolated), subject, timestamp. Opens and stage notes stay quiet event
+  // lines, because they are facts about the thread, not messages in it.
+  function sentCard(e){
+    var to=e.toName||e.to||"";
+    return '<li class="th-sent"><div class="msg-out">'+
+      '<div class="rp-top"><span class="rp-who">'+esc(t("th_sent"))+(to? ' <span class="msg-to" dir="auto">'+esc(to)+'</span>':'')+'</span>'+
+      '<span class="rp-when">'+when(e.ts)+'</span></div>'+
+      (e.to? '<div class="rp-from mono">'+ltr(esc(e.to))+'</div>':'')+
+      (e.subject? '<div class="rp-subj" dir="auto">'+esc(e.subject)+'</div>':'')+
+      (e.channel? '<div class="rp-foot"><span class="th-chan">'+esc(e.channel)+'</span></div>':'')+
+      '</div></li>';
+  }
   // Part 3: each reply carries its per-opportunity number (arrival order), the same number the card badge
   // and the inbox show, so a reply is the same "#N" everywhere.
   var __repNumByWho={}, __repMax=0; repliesForOpp(slug).forEach(function(x){ __repNumByWho[x.addr]=x.num; if(x.num>__repMax) __repMax=x.num; });
@@ -5102,7 +5116,7 @@ function threadListHtml(slug){
     const ch=e.chapter||1;
     if(lastCh && ch>lastCh) html+='<li class="th-chapter"><span>'+esc(t("th_chapter_"+(ch===2?"offer":"more")))+'</span></li>';
     if(ch>lastCh) lastCh=ch;
-    if(e.kind==="sent") html+=line("mail", t("th_sent"), (e.subject? '<span dir="auto">'+esc(e.subject)+'</span>':"")+(e.channel? ' <span class="th-chan">'+esc(e.channel)+'</span>':''), e.ts);
+    if(e.kind==="sent") html+=sentCard(e);
     else if(e.kind==="open") html+=line("globe", t("th_opened"), "", e.ts);
     else if(e.kind==="reply") html+=replyCard(e);
     else if(e.kind==="auto") html+=line("alert", t(e.bounce==="hard"?"rp_bounce_hard":e.bounce==="soft"?"rp_bounce_soft":"rp_auto"), "", e.ts);
@@ -7839,7 +7853,22 @@ async function initBoard(){
     // carries NO mail ledger and NO client opens: the client stage/opens/idle path that raced the view is
     // deleted, not gated, so nothing here re-derives a lane from the local stores.
     opps.forEach(o=>{ opens[o.slug]=boardViewOpens(o.slug); idle[o.slug]=boardViewIdle(o.slug)||0; });
-    return ThriveBoard.build(opps, { opens:opens, idle:idle });
+    const model=ThriveBoard.build(opps, { opens:opens, idle:idle });
+    /* Part 1: the reply itself surfaces as its OWN card in the Replied lane, beside its parent opportunity.
+       These are a presentation of the confirmed replies (repliesForOpp -> resolvedReplyOpp, the one link)
+       attached to a parent the SERVER view already placed in Replied; they derive no stage and are NOT
+       counted as opportunities, so the lane count stays the parent cards and chips = lane header = count.
+       Each carries a snippet and its Gmail key (gid) so a tap opens the thread straight at that reply. */
+    try{
+      (model.lanes.replied||[]).forEach(function(tk){
+        tk.replies=repliesForOpp(tk.slug).map(function(x){
+          var row=getInbound().filter(function(r){ return inboundKey(r)===x.gid; })[0];
+          return { gid:x.gid, from:x.from, name:(row&&row.name)||x.from, num:x.num,
+                   snippet:row ? String(row.snippet||row.subject||"").replace(/\s+/g," ").trim().slice(0,110) : String(x.subject||"") };
+        });
+      });
+    }catch(_){}
+    return model;
   }
 
   function tokenHtml(tk){
@@ -7896,6 +7925,24 @@ async function initBoard(){
       '<button class="tok-more" type="button" aria-haspopup="menu" aria-label="'+esc(t("mv_menu"))+'">'+ic("chevron")+'</button>'+
       '<span class="tok-grip" aria-hidden="true">'+ic("drag")+'</span>'+
       '</div>';
+  }
+
+  /* Part 1: the reply card. A distinct element (not a .tok, so it never enters the opportunity count, the
+     drag order, or the .tok selectors), placed under its parent in the Replied lane. It carries the sender
+     and a snippet, and data-rid so a tap opens the thread straight at this reply (Part 2). Its look is the
+     lane's own replied-green, quieter and inset, so the operator reads the opportunity and, tied to it, the
+     actual reply as its own card. */
+  function replyLaneCardHtml(tk, rep){
+    var who=esc(rep.name||rep.from||t("th_someone"));
+    var snip=rep.snippet ? '<span class="reply-card-snip" dir="auto">'+esc(rep.snippet)+'</span>' : '';
+    var num=rep.num ? '<span class="reply-card-num" aria-hidden="true">#'+esc(String(rep.num))+'</span>' : '';
+    return '<button type="button" class="reply-card" data-slug="'+esc(tk.slug)+'" data-rid="'+esc(rep.gid||"")+'" '+
+      'aria-label="'+esc(t("reply_card_a11y")+" "+(rep.name||rep.from||""))+'">'+
+      '<span class="reply-card-mark" aria-hidden="true">'+ic("channel",13)+'</span>'+
+      '<span class="reply-card-body">'+
+        '<span class="reply-card-top">'+num+'<span class="reply-card-who" dir="auto">'+who+'</span></span>'+
+        snip+
+      '</span></button>';
   }
 
   /* The board paints in place, stable. A card is placed by the render exactly where it belongs and
@@ -7972,7 +8019,12 @@ async function initBoard(){
             if(k==="replied") gcls="is-glow "+(gnew?"is-glow-new ":"");
             else if(k==="live" && gnew) gcls="is-glow-new ";
             const enter=i<3 ? "enter enter-"+(i+1)+" " : "";
-            return tokenHtml(tk).replace('class="tok ', 'class="tok '+enter+gcls);
+            var out=tokenHtml(tk).replace('class="tok ', 'class="tok '+enter+gcls);
+            // Part 1: in Replied, each reply follows its parent as its own distinct card (not counted, not a .tok).
+            if(k==="replied" && tk.replies && tk.replies.length){
+              out+=tk.replies.map(function(rep){ return replyLaneCardHtml(tk, rep); }).join("");
+            }
+            return out;
           }).join("")
         /* Law 4: an icon, a sentence, and at most one action. A bare sentence in
            the middle of a field is the shrug this law exists to stop. */
@@ -8129,6 +8181,19 @@ async function initBoard(){
         var tgt=null; try{ if(cardNewActivity(slug)>0) tgt=cardNewTarget(slug); }catch(_){}
         if(tgt){ window.thriveModal.open(slug, tgt.tab, name, { kind:tgt.kind, id:tgt.id }); }
         else window.thriveModal.open(slug, "overview", name);
+        try{ markCardSeen(slug); paintCardBadges(); }catch(_){}
+      } else goTo("compose","slug="+encodeURIComponent(slug));
+    }));
+
+    // Part 2: tapping a reply card opens the conversation thread scrolled STRAIGHT to that reply (not the
+    // cold overview), with the guiding pulse (highlightTarget -> .th-flash, reduced-motion respected), so
+    // reading and answering is one smooth motion. It opens the parent's thread, keyed by the reply's gid.
+    document.querySelectorAll(".reply-card").forEach(btn=>btn.addEventListener("click",()=>{
+      const slug=btn.getAttribute("data-slug"); if(!slug) return;
+      const rid=btn.getAttribute("data-rid")||"";
+      let name=slug; try{ const pr=getDraft(slug); if(pr&&pr.business) name=pr.business; }catch(_){}
+      if(window.thriveModal){
+        window.thriveModal.open(slug, "history", name, { kind:"reply", id:rid });
         try{ markCardSeen(slug); paintCardBadges(); }catch(_){}
       } else goTo("compose","slug="+encodeURIComponent(slug));
     }));

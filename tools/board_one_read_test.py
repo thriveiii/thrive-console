@@ -34,7 +34,11 @@ def ck(n, c, d=None):
 
 # ============================ source guards ============================
 app = open(f"{ROOT}/library/app.js").read()
-build_body = app.split("function build(){")[1].split("return ThriveBoard.build")[0]
+# The whole build() body (it now derives the model, then attaches reply-card presentation data for the
+# Replied lane, then returns it). The racing path stays deleted: no mail-ledger read, no client opens read.
+# Reading inbound to present a replied parent's reply cards is not stage derivation (the server view alone
+# decides the lane), so getInbound() for the reply cards is allowed; getMailLog()/opensForSlug are not.
+build_body = app.split("function build(){")[1].split("\n  function ")[0]
 ck("the board build carries NO client mail ledger and NO client opens (the racing path is deleted)",
    "getMailLog()" not in build_body and "opensForSlug" not in build_body)
 ck("opens and idle come from the view, and idle is always supplied (never a client last-touch fallback)",
