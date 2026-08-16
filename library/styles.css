@@ -1962,26 +1962,34 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .th-detail{ font-size:var(--fs-xs); color:var(--ink-4); min-width:0; word-break:break-word; flex:1 1 auto }
 .th-when{ font-size:var(--fs-micro); color:var(--ink-4); flex:0 0 auto; margin-inline-start:auto }
 .th-chan{ color:var(--ink-4) }
-/* Part 3 / Finding 3: the conversation reads as two sides of separated bubbles. A reply (incoming) sits at
-   the reading-start edge with the replied-green accent; our send (outgoing) sits at the far edge with a
-   neutral accent, so send / reply / next reply alternate down one timeline with an even vertical rhythm.
-   Each bubble's HEADER (sender, address, timestamp) is its own row, ruled off from the body below, so
-   sender, date and text never crowd one line. Both cap their width so neither spans the whole column. */
+/* Part 1: the thread is a list of message bubbles, ONE component for every message. Our send and their
+   reply share the same header/body skeleton and are told apart by TWO signals at once: opposite alignment
+   (our send at the far edge, their reply at the reading-start edge) AND a distinct surface tint (our send on
+   a neutral raised panel, their reply on the replied-green wash). So send / reply / next reply alternate down
+   one timeline, each an unmistakable side, without reading a word. Every bubble is bounded (border, radius,
+   padding); the header is a ruled-off row whose name takes the width and whose timestamp is pinned to the
+   opposite edge, so sender and date never collide; the address is on its own line; the body follows with an
+   even vertical rhythm from one gap token. */
 .th-list{ gap:var(--s-3) }                                  /* even breathing room between bubbles */
-.th-reply{ margin-block:0; display:flex; justify-content:flex-start }
-.th-reply .rp-card{ max-width:88% }
 .th-sent{ display:flex; justify-content:flex-end }
-.msg-out{
-  max-width:88%; padding:var(--s-3);
-  background:var(--panel); border:1px solid var(--hair);
-  border-inline-end:2px solid var(--ink-4);
-  border-radius:var(--r-md);
+.th-reply{ display:flex; justify-content:flex-start }
+.msg-out,.rp-card{
+  max-width:88%; min-width:0; box-sizing:border-box;
+  padding:var(--s-3); border:1px solid var(--hair); border-radius:var(--r-lg);
 }
-.msg-out .rp-top{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s-2) }
-.msg-out .rp-who{ font-weight:600; unicode-bidi:isolate }
-.msg-to{ color:var(--ink-3); font-weight:400 }
-/* the header block, ruled off from the body, in either bubble kind */
+.msg-out{ background:var(--panel-2); border-inline-end:3px solid var(--ink-4); }    /* ours: neutral, far edge */
+.rp-card{ background:var(--lane-replied-t); border-inline-start:3px solid var(--lane-replied); }  /* theirs: green, start edge */
+/* the header: a ruled-off row; the name takes the width, the timestamp is pinned to the opposite edge */
 .rp-head{ padding-block-end:var(--s-2); margin-block-end:var(--s-2); border-block-end:1px solid var(--hair); }
+.rp-head:last-child{ padding-block-end:0; margin-block-end:0; border-block-end:0; }   /* no dangling rule when the bubble has no body */
+.rp-top{ display:flex; align-items:baseline; gap:var(--s-2) var(--s-3); flex-wrap:wrap }
+.rp-who{ font-weight:600; unicode-bidi:isolate; min-width:0; flex:1 1 auto; overflow-wrap:anywhere }
+.rp-when{ flex:0 0 auto; margin-inline-start:auto; white-space:nowrap }
+.rp-from{ margin-block-start:2px; unicode-bidi:isolate; overflow-wrap:anywhere; max-width:100% }
+.rp-when,.rp-from{ font-size:12px; color:var(--ink-4) }
+.msg-to{ color:var(--ink-3); font-weight:400 }
+.rp-chan{ font-size:12px; color:var(--ink-4) }
+.th-opti{ opacity:.72 }   /* the optimistic reply, dimmed until the confirmed-write reconciles it in place */
 .rp-body{ display:flex; flex-direction:column; gap:var(--s-2); }
 .rp-body > *{ margin-block-start:0; margin-block-end:0; }   /* spacing comes from the flex gap, not stacked margins */
 /* The chapter divider marks where the offer began. One quiet rule with a word, not a banner. */
@@ -2078,25 +2086,16 @@ body.modal-open{
   display:flex; align-items:center; gap:var(--s-2);
   margin:0 0 var(--s-3); font-size:14px; color:var(--ink-2);
 }
-.rp-card{
-  border:1px solid var(--hair); border-radius:var(--r-md);
-  padding:var(--s-3); margin-block-end:var(--s-2);
-  background:var(--panel);
-}
-.rp-top{ display:flex; align-items:baseline; justify-content:flex-start; gap:var(--s-2); flex-wrap:wrap }
-.rp-top .rp-when{ margin-inline-start:auto }   /* the timestamp keeps the far edge; the number and mark cluster at the start */
-/* Part 4: the newest reply on a multi-reply card, marked with the lane's own green so it reads as the
-   latest at a glance. A quiet label plus a left accent on the card, no new chrome (existing tokens only). */
+/* Part 4: the newest reply on a multi-reply thread, marked with the lane's own green so it reads as the
+   latest at a glance. The bubble already carries the start accent; the latest gets a bordered chip that
+   stays legible on the green wash, plus a faint inset ring. No new chrome (existing tokens only). */
 .rp-latest{
   font-size:var(--fs-micro); font-weight:var(--w-head); color:var(--lane-replied);
-  background:var(--lane-replied-t); border-radius:var(--r-sm);
+  border:1px solid var(--lane-replied); border-radius:var(--r-sm);
   padding:0 var(--s-2); unicode-bidi:isolate; flex:none;
 }
-.rp-card.is-latest{ border-inline-start:2px solid var(--lane-replied) }
-.rp-who{ font-weight:600 }
-.rp-when,.rp-from{ font-size:12px; color:var(--ink-4) }
-.rp-subj{ margin-block-start:var(--s-2); color:var(--ink-2); unicode-bidi:isolate }
-.rp-who{ unicode-bidi:isolate }
+.rp-card.is-latest{ box-shadow:inset 0 0 0 1px var(--lane-replied) }
+.rp-subj{ color:var(--ink-2); unicode-bidi:isolate }
 /* The snippet is 300 characters by design: the full body stays in Gmail, so
    private correspondence never enters a blob that syncs to every device.
    dir="auto" in the markup plus unicode-bidi:isolate here gives each message its own reading
