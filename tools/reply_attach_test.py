@@ -42,7 +42,8 @@ ck("Part 2: the one client resolver maps a stranded child slug to its parent (re
    and "function resolvedReplyOpp(" in app and "resolvedReplyOpp(r)===slug" in app)
 ck("Part 3: per-opp reply numbering + count (repliesForOpp, replyCountFor) and the card badge",
    "function repliesForOpp(" in app and "function replyCountFor(" in app
-   and 'class="tok-replies"' in app and "const repN = replyCountFor(tk.slug)" in app)
+   and 'class="tok-replies"' in app
+   and 'tk.lane!=="draft" && tk.lane!=="live") ? replyCountFor(tk.slug) : 0' in app)
 ck("Part 3: the inbox groups replies by opportunity and numbers them, opening the parent card",
    'class="rp-byopp"' in app and "repliesForOpp(o.slug)" in app and 'data-open-slug=' in app
    and 'window.thriveModal.open(slug, "history"' in app)
