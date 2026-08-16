@@ -21,11 +21,12 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 636_000     # library/app.js today ~632 KB (grew across merged briefs; the replies-attach brief
+APP_JS_MAX   = 642_000     # library/app.js today ~638 KB (grew across merged briefs; the replies-attach brief
                            # added the confirmed-inbound path, the reply parent resolver + per-opp numbering,
                            # the card reply badge, and the inbox by-opportunity section; the replies-are-linked
                            # brief added subjLinkKey / subjectLinkOpp, the write-time subject link, and the
-                           # extended noise filter)
+                           # extended noise filter; the reply-card brief added the distinct Replied-lane reply
+                           # card + tap-to-thread and the two-sided conversation bubbles)
 DIST_MAX     = 1_600_000   # dist/thrive-console.html today ~1.51 MB
 HYDRATE_MAX  = 10          # one hydrate today reads 8 tables, each once
 

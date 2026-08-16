@@ -1142,6 +1142,30 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   font-size:var(--fs-micro); font-weight:var(--w-head); color:var(--lane-replied); letter-spacing:0; }
 .tok-replies svg{ width:11px; height:11px; flex:none; }
 
+/* Part 1: the reply card. A distinct card placed under its parent opportunity in the Replied lane: the
+   reply itself surfaced with its sender and a snippet, inset and quieter than the opportunity token so the
+   operator reads two things, the opportunity and the reply tied to it. The lane's own replied-green accent
+   and existing tokens, no new colour and no new chrome. */
+.reply-card{
+  display:flex; align-items:flex-start; gap:var(--s-2); width:100%; text-align:start;
+  margin-inline-start:var(--s-4);                       /* inset under the parent, so it reads as tied to it */
+  padding:var(--s-2) var(--s-3);
+  background:var(--panel); border:1px solid var(--lane-replied-t);
+  border-inline-start:2px solid var(--lane-replied);
+  border-radius:var(--r-md); cursor:pointer; color:var(--ink-2); font:inherit;
+}
+.reply-card:hover,.reply-card:focus-visible{ border-color:var(--lane-replied); outline:none;
+  box-shadow:0 0 0 1px var(--lane-replied); }
+.reply-card-mark{ flex:none; color:var(--lane-replied); margin-block-start:2px; display:inline-flex; }
+.reply-card-mark svg{ width:13px; height:13px; }
+.reply-card-body{ display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 auto; }
+.reply-card-top{ display:flex; align-items:baseline; gap:var(--s-2); }
+.reply-card-num{ flex:none; font-size:var(--fs-micro); font-weight:var(--w-head);
+  color:var(--lane-replied); unicode-bidi:isolate; }
+.reply-card-who{ font-weight:600; unicode-bidi:isolate; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.reply-card-snip{ color:var(--ink-3); font-size:var(--fs-sm); unicode-bidi:isolate;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
 .lane-empty{
   border:1px dashed var(--hair); border-radius:var(--r-md);
   padding:var(--s-4) var(--s-3); text-align:center;
@@ -1918,7 +1942,21 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .th-detail{ font-size:var(--fs-xs); color:var(--ink-4); min-width:0; word-break:break-word; flex:1 1 auto }
 .th-when{ font-size:var(--fs-micro); color:var(--ink-4); flex:0 0 auto; margin-inline-start:auto }
 .th-chan{ color:var(--ink-4) }
-.th-reply{ margin-block:var(--s-2) }
+/* Part 3: the conversation reads as two sides. A reply (incoming) sits at the reading-start edge; our send
+   (outgoing) sits at the far edge in its own quiet bubble, so send / reply / next reply alternate down one
+   timeline. Both cap their width so neither spans the whole column. Existing tokens, no new colour. */
+.th-reply{ margin-block:var(--s-2); display:flex; justify-content:flex-start }
+.th-reply .rp-card{ max-width:88% }
+.th-sent{ display:flex; justify-content:flex-end }
+.msg-out{
+  max-width:88%; padding:var(--s-2) var(--s-3);
+  background:var(--panel); border:1px solid var(--hair);
+  border-inline-end:2px solid var(--ink-4);
+  border-radius:var(--r-md);
+}
+.msg-out .rp-top{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s-2) }
+.msg-out .rp-who{ font-weight:600; unicode-bidi:isolate }
+.msg-to{ color:var(--ink-3); font-weight:400 }
 /* The chapter divider marks where the offer began. One quiet rule with a word, not a banner. */
 .th-chapter{
   display:flex; align-items:center; gap:var(--s-3);
