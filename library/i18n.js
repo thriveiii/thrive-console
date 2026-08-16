@@ -2523,6 +2523,10 @@ var I18N_BOARD = {
     tok_noemail:    "no email yet",
     tok_sending:    "sending",
     tok_sending_t:  "The email is out. The server has not confirmed the record yet, and it will confirm on its own.",
+    tok_unrecorded: "sent, not recorded",
+    mw_unrecorded_h: "Sent, not recorded",
+    mw_unrecorded_b: "The email was delivered, but its record never reached the server. Retry to write the record; the email is not sent again.",
+    mw_retry_record: "Retry the record",
     /* Read by somebody who was never written to. Real, and not an open. */
     tok_views:      { one:"no email yet, {n} view", other:"no email yet, {n} views" },
     tok_answered:   "answered",
@@ -2809,6 +2813,10 @@ var I18N_BOARD = {
     tok_noemail:  "بلا رسالة بعد",
     tok_sending:  "قيد الإرسال",
     tok_sending_t: "خرجت الرسالة. لم يؤكّد الخادم السجل بعد، وسيؤكّده تلقائيًا.",
+    tok_unrecorded: "خرجت، بلا تسجيل",
+    mw_unrecorded_h: "خرجت، بلا تسجيل",
+    mw_unrecorded_b: "خرجت الرسالة، لكن سجلّها لم يصل إلى الخادم. أعد المحاولة لكتابة السجل؛ بلا إرسال جديد.",
+    mw_retry_record: "أعد محاولة التسجيل",
     tok_views: {
       one:"بلا رسالة، مشاهدة واحدة", two:"بلا رسالة، مشاهدتان",
       few:"بلا رسالة، {n} مشاهدات", many:"بلا رسالة، {n} مشاهدة", other:"بلا رسالة، {n} مشاهدة"

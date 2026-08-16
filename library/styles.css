@@ -17,6 +17,9 @@
   --ops-rose:#C98B8B; --ops-rose-fill:rgba(201,139,139,.16); --ops-rose-bd:rgba(201,139,139,.34);
   /* ---- states ---- */
   --state-stall:#F6CF5B; --state-stall-t:rgba(246,207,91,.11); --state-stall-b:rgba(246,207,91,.55);
+  /* failed: a delivered send whose row was never recorded. A warmer red than the pink lane accent, so a real
+     failure never reads as a routine stall or an Opened-lane tint. */
+  --state-err:#E0736F; --state-err-t:rgba(224,115,111,.20); --state-err-b:rgba(224,115,111,.55);
   --state-good:#7EE0B8; --state-bad:#EE8C9D;
   /* ---- T4 glow: one calm accent for the value that earned attention ---- */
   --glow:#7EE0B8; --glow-1:rgba(126,224,184,.42); --glow-0:rgba(126,224,184,0); --glow-t:rgba(126,224,184,.10);
@@ -678,8 +681,9 @@ html[dir="rtl"] .logtable td.mono{direction:ltr;text-align:start}
 @keyframes glow-swell{ 0%{box-shadow:0 0 0 0 var(--glow-0)} 35%{box-shadow:0 0 0 4px var(--glow-1)} 100%{box-shadow:0 0 0 0 var(--glow-0)} }
 @keyframes glow-fill{ 0%{background-color:var(--glow-0)} 35%{background-color:var(--glow-1)} 100%{background-color:var(--glow-t)} }
 .is-glow-new{ animation:glow-swell var(--t-glow) var(--e-standard) 1 both }
-/* a card in an actionable state rests with a hair-thin accent ring */
-.tok.is-glow{ box-shadow:0 0 0 1px var(--glow-1) }
+/* (Part 2) the board-token accent ring (.tok.is-glow) is retired: card emphasis is the one visual-state law
+   (cardState -> data-state) now, not a lane-literal ring. The .is-glow-new swell and the .logtable td.is-glow
+   wash below remain, used only by the Insights column-max highlight, which is a table cell, not a card. */
 /* the top cell of a column rests with a faint accent wash and its figure in accent */
 .logtable td.is-glow{ background:var(--glow-t) }
 .logtable td.is-glow b,.logtable td.is-glow .ok-n{ color:var(--glow) }
@@ -693,7 +697,6 @@ html[dir="rtl"] .logtable td.mono{direction:ltr;text-align:start}
   /* the one slow cycle is removed; the resting accent (.is-glow) stays as a static emphasis, and a
      card that just changed shows the same static ring in place of the cycle it would have played */
   .is-glow-new,.logtable td.is-glow-new{ animation:none!important }
-  .tok.is-glow-new{ box-shadow:0 0 0 1px var(--glow-1) }
 }
 html.tab-hidden .brand img,html.tab-hidden .gate-logo{animation-play-state:paused}
 
@@ -1280,19 +1283,28 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 @keyframes tok-send-pulse{ 0%,100%{ opacity:.4 } 50%{ opacity:1 } }
 @media(prefers-reduced-motion:reduce){ .tok-sending::before{ animation:none; opacity:.8 } }
 
-/* stalled: amber ring, and always an age in text beside it. IDENTITY §4.4 */
+/* THE VISUAL-STATE LAW (Part 2). Each treatment below is the ONE emphasis for exactly one card state, set
+   by cardState in app.js as data-state and the matching class. awaiting-action -> is-stalled (amber ring);
+   failed -> is-failed (red ring); new-activity -> has-reply (green breathe, defined near the top); in-flight
+   -> the .tok-sending pill. settled has no emphasis. The retired treatments (is-hot lane-fill, is-provisional
+   dashed-dim, the board is-glow lane-literal ring) are gone: a card wears emphasis only through a state. */
+
+/* awaiting-action: a contacted card idle past the stall clock. Amber ring, and always an age in text beside
+   it. IDENTITY §4.4. A nudge is due; the treatment is calm, not alarming. */
 .tok.is-stalled{
   border-color:var(--state-stall-b);
   box-shadow:0 0 0 3px var(--state-stall-t);
 }
 .tok.is-stalled .tok-meta{ color:var(--state-stall) }
 
-/* opened with repeat opens: the only token that carries lane tint as fill */
-.tok.is-hot{ border-color:var(--lane-c); background:var(--lane-t) }
-
-/* a draft that was never published reads as provisional */
-.tok.is-provisional{ border-style:dashed; opacity:.68 }
-.tok.is-provisional:hover{ opacity:1 }
+/* failed: a delivered send whose row was never recorded (the write-gap state). A red warning ring, static
+   (no animation, so it needs no reduced-motion variant), distinct from the amber nudge so a real failure is
+   never mistaken for a routine stall. */
+.tok.is-failed{
+  border-color:var(--state-err-b);
+  box-shadow:0 0 0 3px var(--state-err-t);
+}
+.tok.is-failed .tok-meta{ color:var(--state-err) }
 
 /* --- summary chips under the board ---------------------------------------- */
 
@@ -1393,6 +1405,16 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
   background:rgba(126,224,184,.06);
 }
 .mw-reopen-txt{ flex:1 1 auto; min-width:0; font-size:var(--fs-xs); color:var(--ink-2) }
+
+/* The 'failed' banner in the card: a delivered send whose record never landed, with the one retry. Uses the
+   failed accent so it reads as the same state the board token wears. */
+.mw-unrec{
+  margin-block-end:var(--s-4); padding:var(--s-2) var(--s-3);
+  border:1px solid var(--state-err-b); border-radius:var(--r-sm);
+  background:var(--state-err-t);
+}
+.mw-unrec-h{ font-weight:600; color:var(--state-err) }
+.mw-unrec-b{ font-size:var(--fs-xs); color:var(--ink-2); margin-block:var(--s-1) var(--s-2) }
 
 /* Only the legal moves, and they are buttons rather than a menu of greyed rules. */
 .mw-moves{ display:flex; flex-wrap:wrap; gap:var(--s-2) }

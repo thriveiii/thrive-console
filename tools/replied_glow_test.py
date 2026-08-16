@@ -26,9 +26,10 @@ def ck(n, c, d=None):
 # ---- source-level guards: derivation-driven, no new colour, no hardcoded card/address --------------------
 appjs = open(os.path.join(ROOT, "library/app.js"), encoding="utf-8").read()
 css = open(os.path.join(ROOT, "library/styles.css"), encoding="utf-8").read()
-ck("the glow class is derivation-driven and gated on the resolved lane: has-reply is added from cardHasConversation, never on a card the board places at draft or ready, not a per-card literal",
-   'cardHasConversation(tk.slug) && tk.lane!=="draft" && tk.lane!=="live"' in appjs
-   and 'cls.push("has-reply")' in appjs and "function cardHasConversation(" in appjs)
+ck("the glow (new-activity) is derivation-driven and gated on the resolved lane via the one state law: has-reply comes from cardHasConversation through cardState, never on a card the board places at draft or ready",
+   'cardHasConversation(slug) && !cardSeenHas(slug)) return "new-activity"' in appjs
+   and 'var preSend = tk && (tk.lane==="draft" || tk.lane==="live")' in appjs
+   and '"new-activity":"has-reply"' in appjs and "function cardHasConversation(" in appjs)
 ck("cardHasConversation reads the existing reply derivation only (hasReply / groupHasAnyReply), no address literal",
    "hasReply(slug)" in appjs and "groupHasAnyReply(o)" in appjs)
 # the glow reuses the Replied green via --glow-1; it must not introduce a new colour token or a raw green hex

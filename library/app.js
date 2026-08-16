@@ -652,6 +652,22 @@ function cardSending(o){
   }
   return false;
 }
+/* The bounded lifetime of 'sending': a send unconfirmed past this window is a delivered send the server never
+   recorded, so the card says so (failed + retry) rather than wait forever. 90s: long enough for a slow round
+   trip, short enough that a stuck send never hangs. */
+var SEND_CONFIRM_TIMEOUT_MS=90*1000;
+/* A card whose send is delivered-but-unrecorded (status 'unrecorded'): the 'failed' visual state. It never
+   advances to Sent on its own, shows a retry, and counts as unsynced until the record is written. */
+function cardUnrecorded(o){
+  var slug=(typeof o==="string")? o : ((o&&o.slug)||"");
+  if(!slug) return false;
+  var log=getMailLog();
+  for(var i=log.length-1;i>=0;i--){ var m=log[i];
+    if(m && m.opp===slug && m.direction!=="in" && m.status==="unrecorded") return true;
+  }
+  return false;
+}
+window.cardSending=cardSending; window.cardUnrecorded=cardUnrecorded;
 function invalidateSends(){ __sendCache=null; invalidateRecon(); }
 /* Every hand contact recorded through somebody else's channel: their contact form, an
    Instagram message, a phone call. Most of a batch has no email address at all, so without
@@ -980,6 +996,28 @@ function cardHasConversation(slug){
   var o=getDraft(slug);
   return !!(o && isGroupOpp(o) && groupHasAnyReply(o));
 }
+function cardSeenHas(slug){ try{ return !!cardSeen()[slug]; }catch(e){ return false; } }
+/* THE ONE VISUAL-STATE LAW. Exactly ONE state per card, by priority, each from one named source; every card
+   emphasis (and only these) maps to one state. failed (cardUnrecorded, the write-gap) > in-flight
+   (cardSending) > new-activity (an unseen reply/open, or an unopened conversation; clears on open) >
+   awaiting-action (tk.stalled, a nudge due) > settled (neutral, no emphasis). */
+function cardState(tk){
+  var slug=(tk&&tk.slug)||"";
+  if(!slug) return "settled";
+  if(cardUnrecorded(slug)) return "failed";
+  if(cardSending(slug))    return "in-flight";
+  // new-activity is gated on the resolved lane, the same authority the board read: a card the board places
+  // at draft or ready has, by that authority, nothing sent and so nothing answered, so a second store's
+  // reply or open never lifts it to new-activity (this is the one-stage-source guarantee, kept here).
+  var preSend = tk && (tk.lane==="draft" || tk.lane==="live");
+  if(!preSend){
+    if(cardNewActivity(slug) > 0) return "new-activity";
+    if(cardHasConversation(slug) && !cardSeenHas(slug)) return "new-activity";
+  }
+  if(tk && tk.stalled) return "awaiting-action";
+  return "settled";
+}
+window.cardState=cardState;
 
 // One child opportunity per replying recipient per campaign, addressed by a deterministic slug so the same
 // recipient never spawns twice.
@@ -2677,6 +2715,7 @@ async function supaFlush(){
     }
   } finally { __supaFlushing=false; }
   try{ reconcileSendingMail(); }catch(_){}   // a landed send graduates 'sending' -> 'sent' (recovery half)
+  try{ reconcileStuckSending(); }catch(_){}  // a send that never confirmed within the timeout -> 'unrecorded' (visible failed)
   return { flushed:flushed, left:supaPending().length };
 }
 function supaQueueUpsert(table, rows){
@@ -2762,7 +2801,7 @@ function supaMirrorMail(rec){
   if(!mailOppOk(rec)){ supaRecordDiverge("write", "console_mail", "refused: empty opp"); return; }
   // 'pending'/'sending' are transient LOCAL outbox states: the server row is minted only when the relay
   // accepted the email, via supaConfirmMail. Skipping them keeps a failed/in-flight send off the server.
-  if(rec.status==="pending" || rec.status==="sending") return;
+  if(rec.status==="pending" || rec.status==="sending" || rec.status==="unrecorded") return;   // transient/failed LOCAL states are never a server row
   supaQueueUpsert("console_mail", supaMailRow(rec));
 }
 /* The write invariant: a send is not "sent" until the SERVER has the row. The row is queued durably (retried
@@ -2819,6 +2858,54 @@ function reconcileSendingMail(){
     if(changed){ setMailLog(a); try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} }
   }catch(e){}
 }
+/* The bounded lifetime enforcer. A 'sending' row not confirmed within SEND_CONFIRM_TIMEOUT_MS is no longer
+   in-flight: the email left but the row never recorded, so it moves to 'unrecorded' (the visible failed
+   state) and the divergence is recorded, never swallowed. This is the timeout that stops a card hanging on
+   'sending' forever. Time is injectable (nowMs) so the rule is testable; runs on the sync cadence and paint. */
+function reconcileStuckSending(nowMs, silent){
+  var now=(typeof nowMs==="number")? nowMs : Date.now();
+  var changed=false;
+  try{
+    var a=getMailLogLocal();
+    for(var i=0;i<a.length;i++){ var m=a[i];
+      if(m && m.status==="sending" && m.direction!=="in" && String(m.opp||"").trim()){
+        var since=Number(m.sending_since||0);
+        // No stamp (a legacy sending row, e.g. Fleurs before this fix) is treated as already overdue, so it
+        // cannot hang: it surfaces as unrecorded immediately and the operator can retry the record.
+        if(!since || (now-since) > SEND_CONFIRM_TIMEOUT_MS){
+          a[i]=Object.assign({}, m, { status:"unrecorded", confirmPending:false, error:"delivered, not recorded" });
+          changed=true;
+          try{ supaRecordDiverge("write", "console_mail", "unrecorded: send delivered, server row not confirmed within timeout ("+String(m.opp)+")"); }catch(_){}
+        }
+      }
+    }
+    // silent: the caller is the paint itself and will read the fresh log on this same pass, so do not trigger
+    // a nested refresh (which would re-enter the render). Otherwise repaint so the failed state shows at once.
+    if(changed){ setMailLog(a); if(!silent){ try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} } }
+  }catch(e){}
+  return changed;
+}
+window.reconcileStuckSending=reconcileStuckSending;
+/* Retry the RECORD (not the relay POST): the email already left, so the fix is to get its row onto the server.
+   Move the failed row back to 'sending' with a fresh stamp, re-enqueue its confirmed write durably, and flush.
+   On success reconcileSendingMail graduates it to 'sent'; if the server is still unreachable it re-ages and
+   surfaces as unrecorded again, so retry never hides a real failure. */
+function retryRecord(slug){
+  slug=(typeof slug==="string")? slug : ((slug&&slug.slug)||"");
+  if(!slug) return false;
+  try{
+    var a=getMailLogLocal(), row=null;
+    for(var i=a.length-1;i>=0;i--){ var m=a[i];
+      if(m && m.opp===slug && m.direction!=="in" && m.status==="unrecorded"){ row=Object.assign({}, m, { status:"sending", confirmPending:true, sending_since:Date.now(), error:"" }); a[i]=row; break; }
+    }
+    if(!row) return false;
+    setMailLog(a);
+    try{ supaConfirmMail(Object.assign({}, row, { status:"sent" })).then(function(){ try{ reconcileSendingMail(); }catch(_){} }); }catch(_){}
+    try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){}
+    return true;
+  }catch(e){ return false; }
+}
+window.retryRecord=retryRecord;
 /* A team-discussion comment becomes one console_comments row. Unlike the ledger, the shape is discrete
    columns (not a data jsonb): the RLS ownership check reads `author` and the open read selects the same
    named columns back, so the schema and the client speak one vocabulary. The row travels through the SAME
@@ -3018,12 +3105,24 @@ window.__boardViewClear=function(){ __boardView={}; __boardViewReady=false; };
    so the drift is a number Thyab sees the day it happens rather than weeks later. It is computed only when
    the view is actually loaded (rows present); with no view there is nothing to be behind, so it is silent. */
 function boardDrift(){
-  var out={ count:0, slugs:[] };
+  var out={ count:0, slugs:[], stuck:0 };
   try{
-    if(!__boardView || !Object.keys(__boardView).length) return out;   // no view loaded: nothing to drift from
+    // A stuck outbox is a LOCAL failure independent of the server view: a send in flight ('sending') or one
+    // that timed out ('unrecorded') is a write the server does not hold, so it is unsynced by definition and
+    // is counted even with no view loaded. It drains to zero the moment the row records (-> 'sent') or is
+    // retired, so the indicator tracks exactly the outstanding failures.
+    var stuckSlugs={};
+    try{
+      getMailLogLocal().forEach(function(m){
+        if(m && m.direction!=="in" && (m.status==="sending" || m.status==="unrecorded") && String(m.opp||"").trim()) stuckSlugs[m.opp]=1;
+      });
+    }catch(_){}
+    Object.keys(stuckSlugs).forEach(function(slug){ out.stuck++; out.count++; if(out.slugs.length<50) out.slugs.push(slug); });
+    if(!__boardView || !Object.keys(__boardView).length) return out;   // no view: only the stuck outbox is unsynced
     var seen={};
     mergedOppsSync().forEach(function(o){
       if(!o || o.archived || seen[o.slug]) return; seen[o.slug]=1;
+      if(stuckSlugs[o.slug]) return;                                    // already counted as a stuck outbox
       var v=boardViewRow(o.slug);
       var vStage=v ? String(v.stage||"") : "";
       var vReplied=!!(v && v.replied);
@@ -5380,7 +5479,7 @@ async function relaySend(intent){
     // operator whose confirmed write failed (offline / server error) - where the board reads the server view
     // and would otherwise show a phantom Sent; it graduates to Sent the moment the write lands.
     if(conf.confirmed || conf.noServer || conf.signedOut){ updateMailByIdemLocal(idem, { status:"sent", id:id, error:"" }); return { status:"sent", idem:idem, msgid:msgid, id:id }; }
-    updateMailByIdemLocal(idem, { status:"sending", id:id, error:"", confirmPending:true });
+    updateMailByIdemLocal(idem, { status:"sending", id:id, error:"", confirmPending:true, sending_since:Date.now() });
     return { status:"sending", idem:idem, msgid:msgid, id:id, unconfirmed:true, reason:(conf.error||"unconfirmed") };
   }catch(e){
     // A timeout was in flight and MAY have delivered: leave it pending, never assert failure, never
@@ -8030,20 +8129,20 @@ async function initBoard(){
 
   function tokenHtml(tk){
     const cls=["tok"];
-    if(tk.stalled) cls.push("is-stalled");
-    if(tk.hot) cls.push("is-hot");
-    if(tk.provisional) cls.push("is-provisional");
-    // A card that carries a conversation breathes the calm green glow. Gated on the RESOLVED lane (the same
-    // server-view stage that placed the card), so a card the board calls draft or ready never wears a reply
-    // glow a second store invented: the glow shows only at or past a send. A group parent whose child replied
-    // sits in a contacted lane, so it still glows.
-    if(cardHasConversation(tk.slug) && tk.lane!=="draft" && tk.lane!=="live") cls.push("has-reply");
-    const sending = cardSending(tk.slug);   // the visible outbox marker for an unconfirmed send
-    if(sending) cls.push("is-sending");
+    // THE ONE VISUAL-STATE LAW (Part 2). cardState gives one state; the token wears at most one emphasis class
+    // plus data-state (the single hook every surface reads). The lane-literal glow (is-glow) and the
+    // standalone is-hot / is-provisional treatments are retired, so emphasis never fires without a state.
+    const state = cardState(tk);
+    const STATE_CLASS = { "failed":"is-failed", "in-flight":"is-sending", "new-activity":"has-reply", "awaiting-action":"is-stalled" };
+    if(STATE_CLASS[state]) cls.push(STATE_CLASS[state]);
+    const sending = (state==="in-flight");   // the visible outbox marker for an unconfirmed send
     // The meta line stays in the paragraph direction so the words read correctly; only the
     // digits inside it are isolated, by .n, never the whole line.
     let meta;
-    if(tk.lane==="draft") meta=txt("tok_nopage");
+    // The failed state speaks first: a delivered send whose row was never recorded says so plainly, with the
+    // retry offered in the card (see renderOverview). This is the one meta that overrides the lane text.
+    if(state==="failed") meta=txt("tok_unrecorded");
+    else if(tk.lane==="draft") meta=txt("tok_nopage");
     else if(tk.lane==="live"){
       // A view is a recipient opening a link WE SENT, so a card can carry a recipient view only if a
       // delivered send exists. The server-computed open_count (tk.opens, from console_board) is already
@@ -8078,7 +8177,7 @@ async function initBoard(){
     const repMark = repN>0
       ? '<span class="tok-replies" title="'+esc(txt("tok_replies", repN))+'">'+ic("mail",11)+txt("tok_replies", repN)+'</span>'
       : '';
-    return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'">'+
+    return '<div class="tok '+cls.slice(1).join(" ")+'" data-slug="'+esc(tk.slug)+'" data-lane="'+esc(tk.lane)+'" data-state="'+esc(state)+'">'+
       '<button class="tok-open" type="button">'+
         '<span class="tok-name">'+(tk.offer? ic("spark",13) : "")+esc(tk.biz)+'</span>'+
         '<span class="tok-meta">'+meta+repMark+sendMark+chMark+'</span>'+
@@ -8142,6 +8241,7 @@ async function initBoard(){
   async function renderBoard(trigger){
     const myGen=++__renderGen;
     try{ await ensureManifest(); }catch(_){}
+    try{ reconcileStuckSending(undefined, true); }catch(_){}          // enforce the sending timeout before painting (silent: this paint reads the fresh state)
     if(myGen!==__renderGen || __boardTornDown) return;              // superseded by a newer paint, or the board left
     if(!document.getElementById("boardLanes")) return;              // not mounted: a sync heartbeat on another screen
     // Never paint the empty base wholesale while the view is still loading (the racing loser that read Sent
@@ -8191,16 +8291,13 @@ async function initBoard(){
            record the card's position and show no glow. It reads the lane the causal
            status put the card in, so it marks a fact, not a guess. */
         ? b.lanes[k].map((tk,i)=>{
-            const gnew=glowChanged("card:"+tk.slug, k);
-            // replied is a standing call to action, a reply waiting for you: a resting accent, and
-            // one cycle when it arrives. live (ready to send) is a moment: one cycle when it becomes
-            // ready, then rest, because ready cards are many and a field of rings is the failure the
-            // rule forbids. Both read the lane the causal status put the card in, so it marks a fact.
-            let gcls="";
-            if(k==="replied") gcls="is-glow "+(gnew?"is-glow-new ":"");
-            else if(k==="live" && gnew) gcls="is-glow-new ";
+            // Part 2: the parallel lane-literal glow (is-glow / is-glow-new, driven by the lane key and a
+            // position signature, not by a named card state) is RETIRED here. All card emphasis now comes from
+            // the one visual-state law in tokenHtml (cardState -> data-state), so a reply waiting for you is
+            // 'new-activity' (the green glow) and nothing fires on a bare lane change. Only the arrival fade
+            // (opacity, not emphasis) is spliced in for the first three cards.
             const enter=i<3 ? "enter enter-"+(i+1)+" " : "";
-            var out=tokenHtml(tk).replace('class="tok ', 'class="tok '+enter+gcls);
+            var out=tokenHtml(tk).replace('class="tok ', 'class="tok '+enter);
             // Part 1 + Finding 2: in Replied, the parent is followed by ONE bounded grouped reply card (the
             // latest reply plus an expander for the rest), not a stack (not counted, not a .tok).
             if(k==="replied" && tk.replies && tk.replies.length){ out+=replyGroupHtml(tk); }
@@ -9672,6 +9769,18 @@ function initModal(){
       '<button type="button" class="btn sm" data-reopen="'+esc(o.slug)+'">'+esc(t("lc_reopen"))+'</button>'+
       '</div>';
   }
+  /* The 'failed' visual state, spelled out: a send whose email left but whose row was never recorded within
+     the timeout. It offers the one retry (retry the RECORD, not the relay POST), so the operator is never
+     stuck watching an endless 'sending'. It uses the failed accent, so the card modal reads the same state
+     the board token wears. */
+  function unrecordedNotice(o){
+    if(!o || !cardUnrecorded(o.slug)) return "";
+    return '<div class="mw-unrec" role="alert">'+
+      '<div class="mw-unrec-h">'+esc(t("mw_unrecorded_h"))+'</div>'+
+      '<div class="mw-unrec-b">'+esc(t("mw_unrecorded_b"))+'</div>'+
+      '<button type="button" class="btn sm" data-retryrec="'+esc(o.slug)+'">'+esc(t("mw_retry_record"))+'</button>'+
+      '</div>';
+  }
 
   /* ---- the moves bar -----------------------------------------------------
      Only the moves that are legal from where this record actually stands. Illegal ones are
@@ -10024,9 +10133,15 @@ function initModal(){
     var extra="";
     if(isGroupOpp(o)) extra+=recipientsPanelHtml(o);
     if(o.spawned_from && o.spawned_from.parent) extra+=spawnedFromHtml(o);
-    box.innerHTML=prohibitionBand(o)+recordNotes(o)+closedReplyNotice(o)+
+    box.innerHTML=prohibitionBand(o)+recordNotes(o)+unrecordedNotice(o)+closedReplyNotice(o)+
       '<dl class="mw-rows">'+rows.join("")+'</dl>'+extra+movesBar(o);
     try{ markCardSeen(o.slug); }catch(_){}                 // opening the card clears its badge (local only)
+    // The one retry for a failed send: retry the RECORD (not the relay POST). It re-enqueues the confirmed
+    // write and flushes; the modal re-renders so the state reflects the outcome.
+    box.querySelectorAll("[data-retryrec]").forEach(b=>b.addEventListener("click", ()=>{
+      try{ retryRecord(b.getAttribute("data-retryrec")); }catch(_){}
+      try{ if(window.thriveModal && window.thriveModal.reread) window.thriveModal.reread(); }catch(_){}
+    }));
     box.querySelectorAll("[data-ovcopy]").forEach(b=>b.addEventListener("click", async ()=>{
       var okc=await copyToClipboard(liveUrl(b.getAttribute("data-ovcopy")));
       var old=b.textContent; b.textContent=t("ac_copied"); setTimeout(()=>{ b.textContent=old; }, 1600);

@@ -21,7 +21,13 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 655_000     # library/app.js today ~650 KB (grew across merged briefs; the replies-attach brief
+APP_JS_MAX   = 665_000     # library/app.js today ~662 KB. Raised from 655K by the state-law brief, which added
+                           # a genuine subsystem: the bounded-sending timeout (reconcileStuckSending + the
+                           # 'unrecorded' failed state + retryRecord), the one visual-state law (cardState ->
+                           # data-state, replacing the scattered is-glow/is-hot/is-provisional treatments), and
+                           # the drift indicator counting stuck sends. The file sat at 99.8% of the old ceiling,
+                           # so any real feature breached it; comments were trimmed first, then the ceiling was
+                           # lifted the minimum to fit. Earlier growth history:  (grew across merged briefs; the replies-attach brief
                            # added the confirmed-inbound path, the reply parent resolver + per-opp numbering,
                            # the card reply badge, and the inbox by-opportunity section; the replies-are-linked
                            # brief added subjLinkKey / subjectLinkOpp, the write-time subject link, and the
