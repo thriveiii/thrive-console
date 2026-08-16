@@ -5081,12 +5081,18 @@ function threadListHtml(slug){
   // lines, because they are facts about the thread, not messages in it.
   function sentCard(e){
     var to=e.toName||e.to||"";
+    // Finding 3: the header (who + address + timestamp) sits on its own row, separated by a rule from the
+    // body below, so sender, date and text never run together on one crowded line.
     return '<li class="th-sent"><div class="msg-out">'+
-      '<div class="rp-top"><span class="rp-who">'+esc(t("th_sent"))+(to? ' <span class="msg-to" dir="auto">'+esc(to)+'</span>':'')+'</span>'+
-      '<span class="rp-when">'+when(e.ts)+'</span></div>'+
-      (e.to? '<div class="rp-from mono">'+ltr(esc(e.to))+'</div>':'')+
-      (e.subject? '<div class="rp-subj" dir="auto">'+esc(e.subject)+'</div>':'')+
-      (e.channel? '<div class="rp-foot"><span class="th-chan">'+esc(e.channel)+'</span></div>':'')+
+      '<div class="rp-head">'+
+        '<div class="rp-top"><span class="rp-who">'+esc(t("th_sent"))+(to? ' <span class="msg-to" dir="auto">'+esc(to)+'</span>':'')+'</span>'+
+        '<span class="rp-when">'+when(e.ts)+'</span></div>'+
+        (e.to? '<div class="rp-from mono">'+ltr(esc(e.to))+'</div>':'')+
+      '</div>'+
+      ((e.subject||e.channel)? '<div class="rp-body">'+
+        (e.subject? '<div class="rp-subj" dir="auto">'+esc(e.subject)+'</div>':'')+
+        (e.channel? '<div class="rp-foot"><span class="th-chan">'+esc(e.channel)+'</span></div>':'')+
+      '</div>' : '')+
       '</div></li>';
   }
   // Part 3: each reply carries its per-opportunity number (arrival order), the same number the card badge
@@ -5097,14 +5103,20 @@ function threadListHtml(slug){
     // Part 4: the newest reply (the highest per-opportunity number) is marked, so a multi-reply card reads at
     // a glance which reply is the latest. Only when there is more than one, since a lone reply is trivially it.
     var latest=(rn && __repMax>1 && rn===__repMax);
+    // Finding 3: the header (number, sender, timestamp, address) is its own row, separated by a rule from
+    // the body (subject, the answer, the collapsed quote), so nothing runs together on one crowded line.
     return '<li class="th-reply"'+(r.id? ' data-rid="'+esc(r.id)+'"' : '')+'><div class="rp-card'+(latest?' is-latest':'')+'">'+
-      '<div class="rp-top">'+(rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
-      (latest? '<span class="rp-latest">'+esc(t("rp_latest"))+'</span>' : '')+
-      '<span class="rp-who" dir="auto">'+esc(r.from||t("th_someone"))+'</span>'+
-      '<span class="rp-when">'+when(r.ts)+'</span></div>'+
-      (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
-      (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>':'')+
-      (r.snippet? '<div class="rp-snip" dir="auto">'+renderReplyBodyStructured(r.snippet)+'</div>':'')+
+      '<div class="rp-head">'+
+        '<div class="rp-top">'+(rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
+        (latest? '<span class="rp-latest">'+esc(t("rp_latest"))+'</span>' : '')+
+        '<span class="rp-who" dir="auto">'+esc(r.from||t("th_someone"))+'</span>'+
+        '<span class="rp-when">'+when(r.ts)+'</span></div>'+
+        (r.fromAddr? '<div class="rp-from mono">'+ltr(esc(r.fromAddr))+'</div>':'')+
+      '</div>'+
+      '<div class="rp-body">'+
+        (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>':'')+
+        (r.snippet? '<div class="rp-snip" dir="auto">'+renderReplyBodyStructured(r.snippet)+'</div>':'')+
+      '</div>'+
       '<div class="rp-foot">'+
         (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>':'')+
         (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>':'')+
@@ -7927,22 +7939,42 @@ async function initBoard(){
       '</div>';
   }
 
-  /* Part 1: the reply card. A distinct element (not a .tok, so it never enters the opportunity count, the
-     drag order, or the .tok selectors), placed under its parent in the Replied lane. It carries the sender
-     and a snippet, and data-rid so a tap opens the thread straight at this reply (Part 2). Its look is the
-     lane's own replied-green, quieter and inset, so the operator reads the opportunity and, tied to it, the
-     actual reply as its own card. */
-  function replyLaneCardHtml(tk, rep){
+  /* Part 1: one reply row. A distinct element (not a .tok, so it never enters the opportunity count, the
+     drag order, or the .tok selectors), carrying the sender, its per-opportunity number and a one-line
+     snippet, and data-rid so a tap opens the thread straight at this reply. The latest carries a mark.
+     It never sets its own width or inset: it stretches inside its .reply-group column, so it is always
+     contained within the Replied lane, never bleeding past the edge. */
+  function replyLaneCardHtml(tk, rep, markLatest){
     var who=esc(rep.name||rep.from||t("th_someone"));
     var snip=rep.snippet ? '<span class="reply-card-snip" dir="auto">'+esc(rep.snippet)+'</span>' : '';
     var num=rep.num ? '<span class="reply-card-num" aria-hidden="true">#'+esc(String(rep.num))+'</span>' : '';
-    return '<button type="button" class="reply-card" data-slug="'+esc(tk.slug)+'" data-rid="'+esc(rep.gid||"")+'" '+
+    var mark=markLatest ? '<span class="reply-card-latest">'+esc(t("rp_latest"))+'</span>' : '';
+    return '<button type="button" class="reply-card'+(markLatest?" is-latest":"")+'" data-slug="'+esc(tk.slug)+'" data-rid="'+esc(rep.gid||"")+'" '+
       'aria-label="'+esc(t("reply_card_a11y")+" "+(rep.name||rep.from||""))+'">'+
       '<span class="reply-card-mark" aria-hidden="true">'+ic("channel",13)+'</span>'+
       '<span class="reply-card-body">'+
-        '<span class="reply-card-top">'+num+'<span class="reply-card-who" dir="auto">'+who+'</span></span>'+
+        '<span class="reply-card-top">'+num+mark+'<span class="reply-card-who" dir="auto">'+who+'</span></span>'+
         snip+
       '</span></button>';
+  }
+  /* Finding 2: ONE grouped reply card per parent, bounded regardless of reply count, so twenty replies never
+     stack twenty cards down the lane. It shows a header count and the LATEST reply in full; the earlier
+     replies fold behind a single native <details> expander ("show N earlier replies") that opens in place
+     and collapses again, with the earlier list bounded (max-height + scroll). One reply shows just that
+     reply, no expander. Per-opportunity numbering (#1..#N) with the latest marked, the same numbers the
+     inbox shows. The whole group is inset under its parent and contained inside the column. */
+  function replyGroupHtml(tk){
+    var reps=(tk.replies||[]); if(!reps.length) return "";
+    var latest=reps[reps.length-1], earlier=reps.slice(0, reps.length-1);
+    var head='<div class="reply-group-head">'+ic("channel",12)+'<span>'+esc(txt("tok_replies", reps.length))+'</span></div>';
+    var featured=replyLaneCardHtml(tk, latest, earlier.length>0);
+    var more="";
+    if(earlier.length){
+      more='<details class="reply-group-more"><summary>'+esc(txt("reply_earlier", earlier.length))+'</summary>'+
+        '<div class="reply-group-list">'+earlier.map(function(rep){ return replyLaneCardHtml(tk, rep, false); }).join("")+'</div>'+
+        '</details>';
+    }
+    return '<div class="reply-group" data-slug="'+esc(tk.slug)+'">'+head+featured+more+'</div>';
   }
 
   /* The board paints in place, stable. A card is placed by the render exactly where it belongs and
@@ -8020,10 +8052,9 @@ async function initBoard(){
             else if(k==="live" && gnew) gcls="is-glow-new ";
             const enter=i<3 ? "enter enter-"+(i+1)+" " : "";
             var out=tokenHtml(tk).replace('class="tok ', 'class="tok '+enter+gcls);
-            // Part 1: in Replied, each reply follows its parent as its own distinct card (not counted, not a .tok).
-            if(k==="replied" && tk.replies && tk.replies.length){
-              out+=tk.replies.map(function(rep){ return replyLaneCardHtml(tk, rep); }).join("");
-            }
+            // Part 1 + Finding 2: in Replied, the parent is followed by ONE bounded grouped reply card (the
+            // latest reply plus an expander for the rest), not a stack (not counted, not a .tok).
+            if(k==="replied" && tk.replies && tk.replies.length){ out+=replyGroupHtml(tk); }
             return out;
           }).join("")
         /* Law 4: an icon, a sentence, and at most one action. A bare sentence in
