@@ -902,6 +902,20 @@ function boardViewStage(o){
 }
 window.boardViewStage=boardViewStage; window.boardViewRow=boardViewRow;
 
+/* THE ONE STAGE AUTHORITY, read on every surface. The board (laneOf -> hostEffStage) and the card detail
+   (the Overview State row, the modal header pill, the closed-reply check) resolve a card's stage through
+   THIS and only this: the server view's stage for a card the view holds, else the record's OWN base (a
+   declared terminus, else ready or draft). No surface re-derives sent, opened or replied from the local
+   mail, hits or inbound stores, so the board lane and the detail badge can never name two different stages
+   for one card. This closes the structural gap in "list from the manifest, stage from the view": a manifest
+   card absent from the view (it has no console_opps row, so no console_board row) reads draft or ready from
+   its own has_page/has_email here, the SAME answer the board's lane gives it, instead of a second reading
+   from effStage that the board would contradict. effStage (the local derivation) stays for the standalone
+   reference page, the manifest export, and the insights/library grid; the operator-facing DETAIL stage is
+   this. */
+function resolvedStage(o){ return boardViewStage(o); }
+window.resolvedStage=resolvedStage;
+
 // INVARIANT I1/I2: the exported manifest carries a card's TRUE status at export time, derived from
 // evidence through effStage, never a blind status:"sent" default. A never-sent card (draft or ready)
 // exports no status, so a later re-import can never resurrect a phantom send; a genuinely sent, replied
@@ -8019,9 +8033,11 @@ async function initBoard(){
     if(tk.stalled) cls.push("is-stalled");
     if(tk.hot) cls.push("is-hot");
     if(tk.provisional) cls.push("is-provisional");
-    // A card that carries a conversation breathes the calm green glow. Derivation-driven (cardHasConversation
-    // reads the reply derivation), so a group parent whose child replied glows too, not only Replied-lane cards.
-    if(cardHasConversation(tk.slug)) cls.push("has-reply");
+    // A card that carries a conversation breathes the calm green glow. Gated on the RESOLVED lane (the same
+    // server-view stage that placed the card), so a card the board calls draft or ready never wears a reply
+    // glow a second store invented: the glow shows only at or past a send. A group parent whose child replied
+    // sits in a contacted lane, so it still glows.
+    if(cardHasConversation(tk.slug) && tk.lane!=="draft" && tk.lane!=="live") cls.push("has-reply");
     const sending = cardSending(tk.slug);   // the visible outbox marker for an unconfirmed send
     if(sending) cls.push("is-sending");
     // The meta line stays in the paragraph direction so the words read correctly; only the
@@ -8055,8 +8071,10 @@ async function initBoard(){
       ? '<span class="tok-sending" role="status" title="'+esc(t("tok_sending_t"))+'">'+esc(t("tok_sending"))+'</span>'
       : '';
     // Part 3: the reply-count badge. Reads the confirmed, server-hydrated replies resolved to this parent
-    // (repliesForOpp), so its number is the same one the inbox and the card's reply list show.
-    const repN = replyCountFor(tk.slug);
+    // (repliesForOpp), so its number is the same one the inbox and the card's reply list show. Gated on the
+    // resolved lane: a card the board places at draft or ready shows no reply badge, so the badge never
+    // contradicts the lane that the one authority assigned.
+    const repN = (tk.lane!=="draft" && tk.lane!=="live") ? replyCountFor(tk.slug) : 0;
     const repMark = repN>0
       ? '<span class="tok-replies" title="'+esc(txt("tok_replies", repN))+'">'+ic("mail",11)+txt("tok_replies", repN)+'</span>'
       : '';
@@ -9646,7 +9664,7 @@ function initModal(){
      performs passes confirmed:true rather than raising a second dialog on top of it. */
   function closedReplyNotice(o){
     if(!o) return "";
-    var st=effStage(o);
+    var st=resolvedStage(o);                               // the one authority: the same stage the board lane read
     var closed=ThriveLifecycle.CLOSED_STAGES.indexOf(st)>=0;
     if(!closed || !cardHasConversation(o.slug)) return "";
     return '<div class="mw-reopen" role="status">'+
@@ -9973,7 +9991,7 @@ function initModal(){
   function renderOverview(o){
     const box=el("modalOverview"); if(!box) return;
     if(!o){ box.innerHTML=""; return; }
-    const st=effStage(o);
+    const st=resolvedStage(o);                             // the one authority: the Overview State row equals the board lane
     const age=(typeof ThriveBoard!=="undefined" && ThriveBoard.ageDays)
       ? ThriveBoard.ageDays(o, { mail:getMailLog() })
       : daysSince(o.sent_on);
@@ -10239,7 +10257,7 @@ function initModal(){
   function stamp(){
     const pill=el("modalState");
     if(pill){
-      const st=rec? effStage(rec) : "";
+      const st=rec? resolvedStage(rec) : "";               // the one authority: the header pill equals the board lane
       const arch=rec && rec.archived;
       pill.textContent=arch? t("badge_archived") : (st? stageName(st) : "");
       pill.className="pill"+(arch? "" : (st? " mw-state-"+st : ""));
