@@ -1940,15 +1940,17 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .mw-empty-i{ color:var(--ink-3); opacity:.4 }
 .mw-empty p{ margin:0; font-size:var(--fs-sm); color:var(--ink-4) }
 
-.mw-hist{ list-style:none; margin:0; padding:0; display:grid; gap:var(--s-2) }
-.mw-hist li{
-  display:flex; gap:var(--s-3); flex-wrap:wrap; align-items:baseline;
-  padding:var(--s-2) var(--s-3);
-  border:1px solid var(--hair-2); border-radius:var(--r-sm);
+/* The card-History conversation has ONE renderer: threadListHtml, mounted by renderHistory into
+   #modalHistory; its styles are the .th-list / .th-sent / .th-reply bubbles below. The old .mw-hist list
+   renderer was retired long ago; its fossil CSS is removed here, so there is a single conversation component
+   in code AND in style, with no dead copy for a future fix to drift into. */
+/* The rendered thread self-identifies: a low-contrast marker painted in a corner of the History view the
+   moment it opens (analogous to the build stamp, scoped to this component), so it is unmistakable on device
+   which renderer is mounted. Non-interactive, aria-hidden in the markup. */
+.th-ver{
+  font-size:var(--fs-micro); color:var(--ink-4); opacity:.55;
+  text-align:end; margin:0 0 var(--s-2); user-select:none; pointer-events:none;
 }
-.mw-hist-when{ font-size:var(--fs-micro); color:var(--ink-4); flex:0 0 auto }
-.mw-hist-what{ font-size:var(--fs-xs); color:var(--ink); font-weight:var(--w-head) }
-.mw-hist-detail{ font-size:var(--fs-xs); color:var(--ink-4); min-width:0; word-break:break-word }
 
 /* WO-015 Phase A: the thread, one continuous record oldest to newest. */
 .th-list{ list-style:none; margin:0; padding:0; display:grid; gap:var(--s-2) }
