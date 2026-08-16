@@ -112,29 +112,71 @@ opens as (
 --   (c) a hand-recorded reply move that stamps the opportunity itself (console_opps.stage = 'replied'),
 --       which writes NO inbound or mail row at all -- the client's effStage honors a declared 'replied',
 --       so the view must too, or a manually recorded reply is invisible.
--- Child-slug attribution: a group reply is re-keyed from the parent to a child slug '<parent>--r-<hash>'
--- (app.js spawnChildrenFromReplies). When that child is a real console_opps row it is the member's own
--- card and keeps the reply (the plain opp holds). When the child was never flushed (a stranded child,
--- the flush race), the child slug matches no console_opps row and the reply would vanish; there we
--- resolve it back to the parent (split_part before '--r-') so a real reply is never dropped, and without
--- double counting a child that does exist.
+-- THE LINK IS THE NORMALIZED SUBJECT. Proven read-only on the server: console_inbound.opp is empty for
+-- every row; threadId does not join to console_mail; and the sender address must not be the link (a
+-- prospect answers from a personal address that never received the send). So a reply attaches to the send
+-- it answers by SUBJECT: strip a leading Re:/Fwd:/رد:/إعادة توجيه:, lower-trim, and match
+-- console_mail.subject, resolving to that send's opp. This is the same normalization app.js subjLinkKey
+-- applies on write, so the client link and the view agree. A subject that matches no send we made is not a
+-- campaign reply and does not count.
+--
+-- NOISE FILTER (the exact exclusion list): console_inbound ingests everything that arrives, so most of the
+-- 59 rows are machinery. A real reply is a non-auto row whose sender is not one of: any DMARC sender
+-- (dmarc anywhere in the address), no-reply / notifications / mailer-daemon / postmaster / bounce local
+-- parts, or the google.com / github.com report and invite domains. (kind = 'auto' already drops
+-- mailer-daemon bounces.) gmail.com and a prospect's own host are different hosts, so a real person is safe.
+inbound_real as (
+  select
+    i.opp                                                                 as row_opp,
+    lower(trim(regexp_replace(coalesce(i.data->>'subject',''),
+      '^\s*(re|fwd|fw|رد|إعادة\s*توجيه)\s*:\s*', '', 'i')))                as subj_key,
+    nullif(i.ts, '')::timestamptz                                         as ts
+  from public.console_inbound i
+  where coalesce(i.kind, '') <> 'auto'
+    and lower(coalesce(i.data->>'from','')) !~ '(dmarc|(^|[.+_-])(no-?reply|noreply|notifications?|notify|mailer-daemon|postmaster|bounces?)@)'
+    and split_part(lower(coalesce(i.data->>'from','')), '@', 2) not in ('google.com', 'github.com')
+),
+-- The send subjects we could be answering: outbound, opp-bearing, normalized the same way. Distinct
+-- (subject, opp) pairs, so a subject sent to two campaigns is visible as two rows and reads as ambiguous.
+mail_subj as (
+  select
+    lower(trim(regexp_replace(coalesce(subject,''),
+      '^\s*(re|fwd|fw|رد|إعادة\s*توجيه)\s*:\s*', '', 'i')))                as subj_key,
+    opp
+  from public.console_mail
+  where coalesce(data->>'direction', '') <> 'in'
+    and coalesce(opp, '') <> ''
+    and coalesce(subject, '') <> ''
+  group by 1, 2
+),
+-- Each real reply's linked opportunity: the single opp whose send subject it answers (unambiguous only;
+-- a subject that went out from more than one campaign stays unlinked, never guessed), else the row's own
+-- opp when one was already set by hand or by header (a stranded child resolved back to its parent). A
+-- reply with neither is unlinked noise and does not appear here, so it can never reach a card.
+inbound_linked as (
+  select
+    coalesce(
+      (select case when count(distinct ms.opp) = 1 then min(ms.opp) end
+         from mail_subj ms where r.subj_key <> '' and ms.subj_key = r.subj_key),
+      case
+        when coalesce(r.row_opp,'') <> '' and r.row_opp like '%--r-%'
+             and not exists (select 1 from public.console_opps o2 where o2.slug = r.row_opp)
+          then split_part(r.row_opp, '--r-', 1)          -- stranded child: attribute to the parent
+        when coalesce(r.row_opp,'') <> '' then r.row_opp  -- a manual attach or header match already set
+        else null end
+    )                                                                     as slug,
+    r.ts
+  from inbound_real r
+),
 replied as (
   select slug, bool_or(r) as replied, max(ts) as last_reply_ts
   from (
-    select
-      case
-        when i.opp like '%--r-%'
-             and not exists (select 1 from public.console_opps o2 where o2.slug = i.opp)
-        then split_part(i.opp, '--r-', 1)                 -- stranded child: attribute to the parent
-        else i.opp                                        -- normal reply, or a child that has its own card
-      end                                                 as slug,
-      true                                                as r,
-      max(nullif(i.ts, '')::timestamptz)                  as ts
-      from public.console_inbound i
-     where coalesce(i.kind, '') <> 'auto'
-     group by 1
+    select slug, true as r, max(ts) as ts                -- (a) a real, subject-linked inbound reply
+      from inbound_linked
+     where slug is not null
+     group by slug
     union all
-    select opp as slug, true as r, max(ts) as ts
+    select opp as slug, true as r, max(ts) as ts         -- (b) a hand-recorded reply in the mail ledger
       from public.console_mail
      where coalesce(data->>'direction', '') = 'in' or status = 'replied'
      group by opp

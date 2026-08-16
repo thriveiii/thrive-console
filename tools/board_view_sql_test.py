@@ -88,6 +88,29 @@ insert into console_inbound(id,opp,kind,bounce,ts,data) values
  ('i_stray','basel--r-9a9','reply','', '2026-08-03T09:00:00Z','{}'),   -- stranded child: no basel--r-9a9 opp -> resolves to basel
  ('i_kid','grp--r-kid','reply','', '2026-08-03T09:00:00Z','{}');       -- child card exists -> the child keeps the reply
 insert into console_pages(slug,html) values ('ready','<b>x</b>');
+-- Subject-link + noise filter (replies-are-linked brief): a real reply with an EMPTY opp links to the send
+-- it answers by NORMALIZED SUBJECT (strip Re:/Fwd:, lower-trim, match console_mail.subject -> that send's
+-- opp), never by sender or threadId. Basel's reply comes from a personal gmail that never received the
+-- send, so only the subject links it. Automated senders (github.com / google.com / dmarc / no-reply) never
+-- link; an unmatched subject stays unlinked; an ambiguous subject (sent from two campaigns) stays unlinked.
+insert into console_opps(slug,business,stage,published,archived,outreach_subject,outreach_text,data,up) values
+ ('madar','International Schools','',true,false,'','', '{}'::jsonb, 1000),
+ ('ghonly','GH Only Co','',true,false,'','', '{}'::jsonb, 1000),
+ ('nomatchco','No Match Co','',true,false,'','', '{}'::jsonb, 1000),
+ ('ambi1','Ambi One','',true,false,'','', '{}'::jsonb, 1000),
+ ('ambi2','Ambi Two','',true,false,'','', '{}'::jsonb, 1000);
+insert into console_mail(id,opp,status,subject,ts,data) values
+ ('m_madar','madar','sent','من جد وجد','2026-08-01T10:00:00Z','{}'),
+ ('m_gh','ghonly','sent','GH Topic','2026-08-01T10:00:00Z','{}'),
+ ('m_nomatch','nomatchco','sent','Alpha','2026-08-01T10:00:00Z','{}'),
+ ('m_ambi1','ambi1','sent','Shared Offer','2026-08-01T10:00:00Z','{}'),
+ ('m_ambi2','ambi2','sent','Shared Offer','2026-08-01T10:00:00Z','{}');
+insert into console_inbound(id,opp,kind,bounce,ts,data) values
+ ('i_basel',  '','reply','', '2026-08-03T09:18:00Z','{"from":"alnajjarjawad97@gmail.com","subject":"Re: من جد وجد"}'),
+ ('i_ghnoise','','reply','', '2026-08-03T09:00:00Z','{"from":"notifications@github.com","subject":"Re: GH Topic"}'),
+ ('i_dmarc',  '','reply','', '2026-08-03T02:00:00Z','{"from":"noreply-dmarc-support@google.com","subject":"Report Domain: x"}'),
+ ('i_nomatch','','reply','', '2026-08-03T09:00:00Z','{"from":"friend@gmail.com","subject":"Re: Zeta"}'),
+ ('i_ambi',   '','reply','', '2026-08-03T09:00:00Z','{"from":"buyer@gmail.com","subject":"Re: Shared Offer"}');
 """
 
 EXPECT = {
@@ -105,6 +128,12 @@ EXPECT = {
     "grp": ("live", 0, 0),       # the group parent has no direct reply; the reply lives on the child card
     "grp--r-kid": ("replied", 0, 0),  # the child card that exists keeps its own reply (no double count onto the parent)
     "manualrep": ("replied", 0, 0),   # a hand-recorded reply move (stage='replied', no inbound row) is honored
+    # subject-link + noise filter (this brief):
+    "madar": ("replied", 1, 0),   # empty-opp reply linked by normalized subject to the send it answers
+    "ghonly": ("sent", 1, 0),     # a github.com reply whose subject DOES match a send is excluded as noise
+    "nomatchco": ("sent", 1, 0),  # a real reply whose subject matches no send stays unlinked (not a campaign reply)
+    "ambi1": ("sent", 1, 0),      # a subject sent from two campaigns is ambiguous -> unlinked, neither card moves
+    "ambi2": ("sent", 1, 0),
 }
 
 fails = []
@@ -161,7 +190,7 @@ try:
 
         # determinism + one row per opp (acceptance #4)
         r = sh(env + ' psql -h "$PGHOST" -U postgres -t -A -c "select count(*), count(distinct slug) from console_board;"')
-        ck("one row per opportunity (14 rows, 14 distinct slugs)", (r.stdout or "").strip() == "14|14", r.stdout)
+        ck("one row per opportunity (19 rows, 19 distinct slugs)", (r.stdout or "").strip() == "19|19", r.stdout)
         h = 'psql -h "$PGHOST" -U postgres -t -A -c "select md5(string_agg(slug||stage||sent_count::text||open_count::text||replied::text, chr(10) order by slug)) from console_board;"'
         r1 = sh(env + " " + h); r2 = sh(env + " " + h)
         ck("the view is deterministic (two runs return byte-identical rows)",
