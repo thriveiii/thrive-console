@@ -1560,6 +1560,44 @@ function campaignAggHtml(slug){
   return '<div class="cg-agg">'+tile(t("cg_sent"),s.sent)+tile(t("cg_opens"),s.opens)+tile(t("cg_unique"),s.unique)+
     tile(t("cg_replies"),s.replies)+tile(t("cg_rate"),s.replyRate+"%")+'</div>';
 }
+/* ---------- P5 roster ingest (D3): paste-first recipient parsing ----------
+   One parser for all three inputs (paste, CSV, add-one). Splits, trims, dedupes, validates, extracts names,
+   preserves Arabic names exactly (no case change, no mangling), and flags malformed / duplicate / typo-domain
+   rows for the operator to decide. It writes nothing; the roster editor commits valid rows to the opp record. */
+var ROSTER_TYPO = { "gmial.com":1,"gmai.com":1,"gmal.com":1,"gnail.com":1,"gmail.co":1,"gmil.com":1,
+  "hotmial.com":1,"hotmal.com":1,"hotmai.com":1,"yaho.com":1,"yahooo.com":1,"outlok.com":1,"iclod.com":1 };
+function rosterValidEmail(a){ return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(a||"").trim()); }
+function rosterCleanName(s){ return String(s==null?"":s).replace(/^\s+|\s+$/g,"").replace(/^["']+|["']+$/g,"").replace(/^\s+|\s+$/g,""); }
+function rosterLang(name){ return /[\u0600-\u06FF]/.test(String(name||"")) ? "ar" : "en"; }
+// One line -> zero or more { name, addr }. Handles "Name <email>", a bare email, a CSV row (name+email in
+// either order, header rows fall out because neither field is an email), and a comma/semicolon list of emails.
+function parseRosterLine(line){
+  var out=[], s=rosterCleanName(line); if(!s) return out;
+  var m=s.match(/^(.*?)[<]\s*([^<>\s]+@[^<>\s]+)\s*[>]\s*$/);
+  if(m){ out.push({ name:rosterCleanName(m[1]), addr:m[2].trim() }); return out; }
+  var fields=s.split(/[;\t,]+/).map(function(f){ return rosterCleanName(f); }).filter(Boolean);
+  var emails=fields.filter(function(f){ return f.indexOf("@")>=0; });
+  if(emails.length===1 && fields.length>1){                 // a CSV row: the @ field is the email, order-free
+    var nm=fields.filter(function(f){ return f.indexOf("@")<0; }).join(" ");
+    out.push({ name:rosterCleanName(nm), addr:emails[0] }); return out;
+  }
+  emails.forEach(function(e){ out.push({ name:"", addr:e }); });   // a list of bare emails, or one email
+  return out;
+}
+function parseRoster(text){
+  var rows=[], seen={};
+  String(text==null?"":text).split(/\r?\n/).forEach(function(ln){
+    parseRosterLine(ln).forEach(function(e){
+      var addr=String(e.addr||"").trim(), key=addr.toLowerCase(), flags=[], valid=rosterValidEmail(addr);
+      if(!valid) flags.push("invalid");
+      else { if(seen[key]) flags.push("dup"); var dom=addr.slice(addr.indexOf("@")+1).toLowerCase(); if(ROSTER_TYPO[dom]) flags.push("typo"); seen[key]=1; }
+      rows.push({ name:e.name||"", addr:addr, lang:rosterLang(e.name), valid:valid, flags:flags });
+    });
+  });
+  return rows;
+}
+window.parseRoster=parseRoster;
+
 function recipientsPanelHtml(o){
   var recips=campaignRecipients(o);
   var rows=recips.map(function(r){
@@ -1575,6 +1613,88 @@ function recipientsPanelHtml(o){
   return '<section class="cg-panel"><h4 class="cg-h">'+esc(t("cg_recipients"))+' <span class="n">'+recips.length+'</span></h4>'+
     campaignAggHtml(o.slug)+'<ul class="rc-list">'+rows+'</ul></section>';
 }
+// P5 roster editor (D3): paste / CSV / add-one, editable rows, flags. Writes nothing but the roster on the
+// opp record (additive); sending is a separate surface (P6). The stored roster is the single name source (D4).
+function rosterFlagText(flags){ return (flags||[]).map(function(f){ return t("rst_flag_"+f); }).filter(Boolean).join(" · "); }
+function rosterFlagsFor(addr, list, i){
+  if(!rosterValidEmail(addr)) return ["invalid"];
+  var flags=[], dom=addr.slice(addr.indexOf("@")+1).toLowerCase(); if(ROSTER_TYPO[dom]) flags.push("typo");
+  var k=String(addr).toLowerCase();
+  for(var j=0;j<list.length;j++){ if(j!==i && list[j] && String(list[j].addr||"").toLowerCase()===k){ flags.push("dup"); break; } }
+  return flags;
+}
+function rosterRowHtml(r,i){
+  var f=(r.flags||[]).filter(function(x){ return x!=="dup"; });
+  var warn=f.length? ' <span class="tag tag-warn rst-flag" title="'+esc(rosterFlagText(f))+'">'+esc(rosterFlagText(f))+'</span>' : '';
+  return '<div class="rst-row" data-i="'+i+'">'+
+    '<input class="rst-name" type="text" dir="auto" value="'+esc(r.name||"")+'" placeholder="'+esc(t("rst_name"))+'" aria-label="'+esc(t("rst_name"))+'">'+
+    '<input class="rst-email mono-iso" type="text" dir="ltr" value="'+esc(r.addr||"")+'" placeholder="'+esc(t("rst_email"))+'" aria-label="'+esc(t("rst_email"))+'">'+
+    warn+'<button type="button" class="btn ghost sm rst-del" aria-label="'+esc(t("rst_remove"))+'">×</button></div>';
+}
+function rosterEditorHtml(o){
+  var recips=(o && Array.isArray(o.recipients))? o.recipients : [];
+  var rows=recips.map(rosterRowHtml).join("");
+  return '<details class="cg-panel roster-ed"'+(isGroupOpp(o)?" open":"")+' data-roster="'+esc(o.slug)+'">'+
+    '<summary class="cg-h">'+esc(t("rst_h"))+' <span class="n">'+recips.length+'</span></summary>'+
+    '<div class="rst-rows">'+(rows||'<p class="mw-muted rst-empty">'+esc(t("rst_empty"))+'</p>')+'</div>'+
+    '<textarea class="rst-paste" rows="3" placeholder="'+esc(t("rst_paste_ph"))+'"></textarea>'+
+    '<div class="rst-acts"><button type="button" class="btn sm rst-parse">'+esc(t("rst_parse"))+'</button>'+
+      '<label class="btn ghost sm rst-csv-l">'+esc(t("rst_csv"))+'<input type="file" class="rst-csv" accept=".csv,text/csv,text/plain" hidden></label>'+
+      '<button type="button" class="btn ghost sm rst-addone">'+esc(t("rst_addone"))+'</button></div>'+
+    '<div class="rst-review" hidden></div>'+
+    '<p class="mw-muted rst-note">'+esc(t("rst_note"))+'</p></details>';
+}
+function wireRosterEditor(box, o){
+  var ed=box && box.querySelector('.roster-ed[data-roster]'); if(!ed || !o) return;
+  var slug=o.slug;
+  function recips(){ var d=getDraft(slug); return (d && Array.isArray(d.recipients))? d.recipients.slice() : []; }
+  function persist(list){ saveDraft({ slug:slug, recipients:list }); try{ if(window.thriveModal && window.thriveModal.reread) window.thriveModal.reread(); }catch(_){} }
+  ed.querySelectorAll('.rst-row').forEach(function(rowEl){
+    var i=parseInt(rowEl.getAttribute('data-i'),10);
+    var nm=rowEl.querySelector('.rst-name'), em=rowEl.querySelector('.rst-email');
+    function upd(){ var list=recips(); if(!list[i]) return; var addr=String(em.value||"").trim();
+      list[i]=Object.assign({}, list[i], { name:String(nm.value||""), addr:addr, lang:rosterLang(nm.value),
+        valid:rosterValidEmail(addr), flags:rosterFlagsFor(addr, list, i) }); persist(list); }
+    if(nm) nm.addEventListener('change', upd);
+    if(em) em.addEventListener('change', upd);
+  });
+  ed.querySelectorAll('.rst-del').forEach(function(btn){ btn.addEventListener('click', function(){
+    var i=parseInt(btn.closest('.rst-row').getAttribute('data-i'),10); var list=recips(); list.splice(i,1); persist(list); }); });
+  var addone=ed.querySelector('.rst-addone');
+  if(addone) addone.addEventListener('click', function(){ var list=recips(); list.push({ name:"", addr:"", lang:"en", valid:false, flags:[] }); persist(list); });
+  var parseBtn=ed.querySelector('.rst-parse'), pasteEl=ed.querySelector('.rst-paste'), review=ed.querySelector('.rst-review');
+  function showReview(text){
+    var parsed=parseRoster(text);
+    if(!parsed.length){ review.hidden=true; review.innerHTML=""; return; }
+    var have={}; recips().forEach(function(r){ if(r.addr) have[String(r.addr).toLowerCase()]=1; });
+    var addable=parsed.filter(function(p){ return p.valid && p.flags.indexOf("dup")<0 && !have[p.addr.toLowerCase()]; });
+    var bad=parsed.filter(function(p){ return !p.valid; }).length, dups=parsed.length-addable.length-bad;
+    review.hidden=false;
+    review.innerHTML='<ul class="rst-rev-list">'+parsed.map(function(p){
+        var isdup=(p.flags.indexOf("dup")>=0 || have[p.addr.toLowerCase()]);
+        var cls=!p.valid?"is-bad":(isdup?"is-dup":(p.flags.indexOf("typo")>=0?"is-typo":""));
+        var fl=!p.valid?["invalid"]:(isdup?["dup"]:p.flags);
+        return '<li class="rst-rev '+cls+'"><span class="rst-rev-nm" dir="auto">'+esc(p.name||t("rst_no_name"))+'</span>'+
+          '<span class="rst-rev-em mono-iso" dir="ltr">'+esc(p.addr)+'</span>'+
+          (fl.length? ' <span class="tag tag-warn">'+esc(rosterFlagText(fl))+'</span>':'')+'</li>';
+      }).join("")+'</ul>'+
+      '<button type="button" class="btn sm rst-addvalid"'+(addable.length?'':' disabled')+'>'+esc(t("rst_add_valid"))+' <bdi class="n">'+addable.length+'</bdi></button>'+
+      ' <span class="mw-muted">'+(dups?'<bdi class="n">'+dups+'</bdi> '+esc(t("rst_flag_dup")):'')+(bad?(dups?' · ':'')+'<bdi class="n">'+bad+'</bdi> '+esc(t("rst_flag_invalid")):'')+'</span>';
+    var addBtn=review.querySelector('.rst-addvalid');
+    if(addBtn) addBtn.addEventListener('click', function(){
+      var list=recips(), seen={}; list.forEach(function(r){ if(r.addr) seen[String(r.addr).toLowerCase()]=1; });
+      addable.forEach(function(p){ var k=p.addr.toLowerCase(); if(seen[k]) return; seen[k]=1;
+        list.push({ name:p.name||"", addr:p.addr, lang:p.lang, valid:true, flags:p.flags.filter(function(f){ return f==="typo"; }) }); });
+      persist(list);
+    });
+  }
+  if(parseBtn && pasteEl) parseBtn.addEventListener('click', function(){ showReview(pasteEl.value); });
+  var csv=ed.querySelector('.rst-csv');
+  if(csv) csv.addEventListener('change', function(){ var f=csv.files && csv.files[0]; if(!f) return;
+    var rd=new FileReader(); rd.onload=function(){ if(pasteEl) pasteEl.value=String(rd.result||""); showReview(String(rd.result||"")); };
+    try{ rd.readAsText(f); }catch(_){} });
+}
+window.wireRosterEditor=wireRosterEditor;
 function spawnedFromHtml(o){
   return '<section class="cg-panel"><p class="st-line">'+esc(t("cg_spawned_from"))+
     ' <button class="btn ghost sm open-parent" type="button" data-parent="'+esc(o.spawned_from.parent)+'">'+esc(o.spawned_from.parent)+'</button></p></section>';
@@ -5238,7 +5358,7 @@ function replyTarget(slug){
   if(!addr){ const recs=campaignRecipients(o); if(recs && recs.length){ addr=String(recs[0].addr||"").trim(); if(!name) name=String(recs[0].name||"").trim(); } }
   const rec=(campaignRecipients(o)||[]).find(x=> String(x.addr||"").trim().toLowerCase()===addr.toLowerCase());
   if(rec && rec.lang){ lang=(rec.lang==="ar"?"ar":"en"); }
-  else if(/[؀-ۿ]/.test(subject)) lang="ar";
+  else if(/[\u0600-\u06FF]/.test(subject)) lang="ar";
   if(!inReplyTo){
     const sends=getMailLog().filter(m=> m && m.opp===slug && m.direction!=="in" && m.msgid)
       .sort((a,b)=> String(a.ts)<String(b.ts)?1:-1);
@@ -10379,9 +10499,11 @@ function initModal(){
     var extra="";
     if(isGroupOpp(o)) extra+=recipientsPanelHtml(o);
     if(o.spawned_from && o.spawned_from.parent) extra+=spawnedFromHtml(o);
+    else extra+=rosterEditorHtml(o);                        // P5: the roster editor (D3), any non-child opp can build a campaign
     box.innerHTML=prohibitionBand(o)+recordNotes(o)+unrecordedNotice(o)+closedReplyNotice(o)+
       '<dl class="mw-rows">'+rows.join("")+'</dl>'+extra+movesBar(o);
     try{ markCardSeen(o.slug); }catch(_){}                 // opening the card clears its badge (local only)
+    try{ wireRosterEditor(box, o); }catch(_){}              // P5 roster editor handlers (paste / CSV / add / edit / remove)
     // The one retry for a failed send: retry the RECORD (not the relay POST). It re-enqueues the confirmed
     // write and flushes; the modal re-renders so the state reflects the outcome.
     box.querySelectorAll("[data-retryrec]").forEach(b=>b.addEventListener("click", ()=>{

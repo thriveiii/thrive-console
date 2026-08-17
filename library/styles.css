@@ -1544,6 +1544,23 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .rc-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--s-2) }
 .rc-row{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) }
 .rc-name{ font-weight:600; flex:1 1 8rem; min-width:0 }
+/* P5 roster editor (D3) */
+.roster-ed{ margin-block-start:var(--s-4); border:1px solid var(--line); border-radius:var(--r-2); padding:var(--s-3) }
+.roster-ed > summary{ cursor:pointer; list-style:revert }
+.rst-rows{ display:flex; flex-direction:column; gap:var(--s-2); margin-block:var(--s-2) }
+.rst-row{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) }
+.rst-row .rst-name{ flex:1 1 8rem; min-width:0 }
+.rst-row .rst-email{ flex:1 1 12rem; min-width:0 }
+.rst-row input{ background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:var(--r-1); padding:var(--s-1) var(--s-2) }
+.rst-paste{ width:100%; box-sizing:border-box; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:var(--r-1); padding:var(--s-2); resize:vertical }
+.rst-acts{ display:flex; flex-wrap:wrap; gap:var(--s-2); margin-block-start:var(--s-2) }
+.rst-review{ margin-block-start:var(--s-2) }
+.rst-rev-list{ list-style:none; margin:0 0 var(--s-2); padding:0; display:flex; flex-direction:column; gap:var(--s-1) }
+.rst-rev{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) }
+.rst-rev-nm{ flex:1 1 8rem; min-width:0 }
+.rst-rev.is-bad .rst-rev-em{ color:#EE8C9D; text-decoration:line-through }
+.rst-rev.is-dup{ opacity:.6 }
+.rst-note{ margin-block-start:var(--s-2) }
 .rc-addr{ flex:1 1 10rem; min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--ink-4); font-size:var(--fs-micro) }
 .rc-last{ font-size:var(--fs-micro); color:var(--ink-4) }
 /* One status chip, one state logic. Every status chip - the recipient list, and anywhere else a recipient
