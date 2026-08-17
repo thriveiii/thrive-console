@@ -872,6 +872,8 @@ a.conn-d{color:var(--teal);text-decoration:underline;text-underline-offset:3px}
 .tag-st-warm_cold{background:rgba(238,140,157,.14);color:#EE8C9D;border-color:rgba(238,140,157,.35)}
 .tag-st-sent{background:var(--panel-2);color:var(--ink-3)}
 .tag-st-cold{background:var(--panel-2);color:var(--ink-3);opacity:.75}
+.tag-st-pretrack{background:var(--panel-2);color:var(--ink-3);opacity:.7;font-style:italic}
+.tag-warn{background:rgba(224,178,74,.14);color:#e0b24a;border-color:rgba(224,178,74,.35)}
 
 /* The one sentence that reads the numbers back to you. Warmth is a sentence, not a colour. */
 .lede{font-size:16.5px;line-height:1.7;color:var(--ink);margin:14px 0 18px;max-width:70ch;font-weight:600}

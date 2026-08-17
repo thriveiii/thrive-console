@@ -1096,6 +1096,50 @@ function campaignStats(slug){
 }
 window.campaignStats=campaignStats;
 
+/* P4 Insights truth: near-duplicate address detection. FLAG ONLY, never merge - the merge is P10, by hand.
+   Two addresses are a possible duplicate when they share a local part and differ only by a known typo domain
+   or a domain one edit away, or when the whole address is within one edit of another. */
+var TYPO_DOMAINS = { "gmial.com":"gmail.com","gmai.com":"gmail.com","gmal.com":"gmail.com","gnail.com":"gmail.com",
+  "gmail.co":"gmail.com","hotmial.com":"hotmail.com","hotmal.com":"hotmail.com","yaho.com":"yahoo.com",
+  "outlok.com":"outlook.com","iclod.com":"icloud.com" };
+function addrDomain(a){ var i=String(a||"").indexOf("@"); return i<0?"":String(a).slice(i+1).toLowerCase(); }
+function addrLocal(a){ var i=String(a||"").indexOf("@"); return i<0?String(a||"").toLowerCase():String(a).slice(0,i).toLowerCase(); }
+function editDist(a,b){ a=String(a); b=String(b); var m=a.length,n=b.length,d=[],i,j;
+  for(i=0;i<=m;i++){ d[i]=[i]; } for(j=0;j<=n;j++){ d[0][j]=j; }
+  for(i=1;i<=m;i++) for(j=1;j<=n;j++){ var c=a.charCodeAt(i-1)===b.charCodeAt(j-1)?0:1;
+    d[i][j]=Math.min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+c); } return d[m][n]; }
+function nearDupAddrs(addrs){
+  var out={}; addrs=(addrs||[]).filter(Boolean).map(function(a){ return String(a).toLowerCase(); });
+  for(var i=0;i<addrs.length;i++) for(var j=i+1;j<addrs.length;j++){
+    var A=addrs[i], B=addrs[j]; if(A===B) continue; var near=false;
+    if(addrLocal(A)===addrLocal(B)){
+      var dA=addrDomain(A), dB=addrDomain(B);
+      if(TYPO_DOMAINS[dA]===dB || TYPO_DOMAINS[dB]===dA || editDist(dA,dB)<=1) near=true;
+    }
+    if(!near && editDist(A,B)<=1) near=true;
+    if(near){ out[A]=1; out[B]=1; }
+  }
+  return out;
+}
+window.nearDupAddrs=nearDupAddrs;
+
+/* P4 metric dictionary: every number shown on Insights names its definition and its ONE source, so no
+   surface can invent a definition. Opens-by-person and anonymous page views are separate metrics and never
+   merge. Documented in docs/insights-metrics.md. */
+var INSIGHTS_METRICS = {
+  sent:         { def:"messages sent (status sent or copied)",                 source:"console_mail rows, status in (sent,copied)" },
+  opens:        { def:"page opens at or after the first send, campaign level",  source:"campaignStats.opens (console_hits)" },
+  unique:       { def:"distinct visitor ids that opened the page",              source:"campaignStats.unique (console_hits.vid)" },
+  replies:      { def:"distinct replying people, incl. an extracted child",     source:"campaignStats.replies (console_inbound + recipientState)" },
+  person_opens: { def:"a person's own token-bearing opens (P2), never the page total", source:"console_hits where data.r is one of the person's send ids" },
+  anon_views:   { def:"page opens carrying no token; nobody is named",          source:"campaignStats.viewsAnon (console_hits, no r)" },
+  bounces:      { def:"hard/soft delivery failures naming the recipient",       source:"console_inbound kind=auto with bounce" }
+};
+window.INSIGHTS_METRICS=INSIGHTS_METRICS;
+// P4: a campaign whose reply extracted to a child (D2) shows the reply count AND a note that the
+// conversation lives on an individual card, so the campaign row and the person row tell one story.
+function campaignChildCount(slug){ return getDrafts().filter(function(o){ return o && o.spawned_from && o.spawned_from.parent===slug; }).length; }
+
 // Per-recipient companion read (D1/D7): one row per campaign recipient carrying only the signals tied to a
 // single address - sent_at, opens, the reply (with its thread link: the extracted child, or the reply still
 // on the parent), and a bounce naming them. Reads console_mail / console_hits / console_inbound only; no new
@@ -7937,7 +7981,7 @@ async function initHome(){
           (r.live?'':' <span class="tag tag-plain">'+t("draft")+'</span>')+'</td>'+
           '<td'+gc("sent",r)+'>'+num(r.sent)+'</td><td'+gc("views",r)+'>'+num(r.views)+'</td><td'+gc("opens",r)+'>'+num(r.opens)+'</td><td'+gc("uniq",r)+'>'+num(r.uniq)+'</td>'+
           '<td'+gc("dwell",r)+'>'+(r.dwellN?fmtMs(r.dwellMs/r.dwellN):'<span class="zero">–</span>')+'</td>'+
-          '<td'+gc("replies",r)+'>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
+          '<td'+gc("replies",r)+'>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>'+(campaignChildCount(r.slug)?' <span class="mprev" data-tip="'+esc(t("ins_reply_child"))+'" title="'+esc(t("ins_reply_child"))+'">&#8627;</span>':''):'<span class="zero">0</span>')+'</td>'+
           '<td class="mono">'+(r.lastOpen?fmtWhen(r.lastOpen):'<span class="zero">–</span>')+'</td></tr>').join("")+
         '</tbody></table></div>'
       : '<div class="empty">'+t("home_no_campaigns")+'</div>';
@@ -7994,9 +8038,12 @@ async function initHome(){
     const byPerson={};
     mail.forEach(m=>{
       const who=String(m.to||"").toLowerCase(); if(!who) return;
-      const r=byPerson[who]||(byPerson[who]={ to:m.to, name:m.toName||"", sent:0, replies:0, opens:0, opps:new Set(), rk:new Set(), last:"" });
+      const r=byPerson[who]||(byPerson[who]={ to:m.to, name:m.toName||"", sent:0, replies:0, opens:0, opps:new Set(), rk:new Set(), last:"", trackable:false, tokens:new Set(), lastOpen:"" });
       if(m.toName && !r.name) r.name=m.toName;
       if(m.status==="sent"||m.status==="copied") r.sent++;
+      // P4: a P2 send carries a per-person open token (its mid, "snd_..."); such sends make this person's
+      // opens trackable. A person with no token send is pre-token history, never guessed a zero.
+      if(m.direction!=="in"){ const id=String(m.mid||m.id||""); if(/^snd_/.test(id)){ r.trackable=true; r.tokens.add(id); } }
       if(m.direction==="in"||m.status==="replied"){ const k=String(m.opp||"")+"|"+who; if(!r.rk.has(k)){ r.rk.add(k); r.replies++; } }
       if(m.opp) r.opps.add(m.opp);
       if(m.ts>r.last) r.last=m.ts;
@@ -8010,21 +8057,34 @@ async function initHome(){
       const k=String(r0.opp)+"|"+who; if(!r.rk.has(k)){ r.rk.add(k); r.replies++; }
       if(r0.ts && String(r0.ts)>String(r.last||"")) r.last=String(r0.ts);
     });
-    Object.values(byPerson).forEach(r=>{ r.opps.forEach(slug=>{ r.opens+=outOpens(slug); }); });
+    // P4: opens are per PERSON, token-bearing (P2) ONLY. The page-level total is NEVER copied onto a person,
+    // and an anonymous view (no token) has no person. This is the "opens 4 for fourteen people" fix.
+    var tokOwner={}; Object.values(byPerson).forEach(function(r){ r.tokens.forEach(function(tk){ tokOwner[tk]=r; }); });
+    allHits().forEach(function(e){
+      if(!e || (e.type && e.type!=="open") || e.self || !e.r) return;
+      var r=tokOwner[String(e.r)]; if(!r) return;
+      r.opens++; var ts=String(e.ts||""); if(ts>r.lastOpen) r.lastOpen=ts; if(ts>String(r.last||"")) r.last=ts;
+    });
     const DAY=86400000;
     const peopleRows=Object.values(byPerson).map(r=>{
       const age=r.last? (Date.now()-new Date(r.last).getTime())/DAY : 0;
-      // The state is a decision, not a decoration: replied, opened but silent, or gone quiet.
-      r.state = r.replies? "replied" : (r.opens? (age>3? "warm_cold":"warm") : (age>3? "cold":"sent"));
+      // The state is a decision from PERSONAL signals only: answered you, read it (and went quiet), sent but
+      // not opened, or no sign of life. A person we could never track (pre-token) is stated as such, not guessed.
+      r.state = r.replies? "replied" : (!r.trackable? "pretrack" : (r.opens? (age>3? "warm_cold":"warm") : (age>3? "cold":"sent")));
       return r;
     }).sort((a,b)=> b.replies-a.replies || b.opens-a.opens || (a.last<b.last?1:-1));
+    // Flag near-duplicate addresses (typo domains, one-edit) for review in the Contact Book (P10). No merge.
+    var dupSet=nearDupAddrs(peopleRows.map(function(r){ return r.to; }));
     el("homePeople").innerHTML = peopleRows.length
       ? '<div class="logwrap"><table class="logtable"><thead><tr>'+
         '<th>'+t("home_p_who")+'</th>'+hth(t("cmp_sent_n"),t("tip_tpl_sent"))+hth(t("ins_opens"),t("tip_opens"))+
         hth(t("cmp_replied_n"),t("tip_replies"))+'<th>'+t("home_p_state")+'</th>'+
         hth(t("ins_last"),t("tip_c_last"))+'</tr></thead><tbody>'+
-        peopleRows.map(r=>'<tr><td><b>'+esc(r.name||r.to)+'</b>'+(r.name?'<div class="mprev mono">'+esc(r.to)+'</div>':"")+'</td>'+
-          '<td>'+num(r.sent)+'</td><td>'+num(r.opens)+'</td>'+
+        peopleRows.map(r=>'<tr><td><b>'+esc(r.name||r.to)+'</b>'+
+          (dupSet[String(r.to).toLowerCase()]?' <span class="tag tag-warn" data-tip="'+esc(t("home_p_dup"))+'" title="'+esc(t("home_p_dup"))+'">'+esc(t("home_p_dup_short"))+'</span>':"")+
+          (r.name?'<div class="mprev mono">'+esc(r.to)+'</div>':"")+'</td>'+
+          '<td>'+num(r.sent)+'</td>'+
+          '<td>'+(r.opens? num(r.opens) : (r.trackable? '<span class="zero">0</span>' : '<span class="mprev">'+esc(t("ins_pre_token"))+'</span>'))+'</td>'+
           '<td>'+(r.replies?'<b class="ok-n">'+r.replies+'</b>':'<span class="zero">0</span>')+'</td>'+
           '<td><span class="tag tag-st-'+r.state+'">'+esc(t("home_p_"+r.state))+'</span></td>'+
           '<td class="mono">'+(r.last?fmtWhen(r.last):'<span class="zero">–</span>')+'</td></tr>').join("")+
