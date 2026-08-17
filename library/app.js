@@ -916,7 +916,7 @@ function boardViewStage(o){
   var v=boardViewRow(o.slug);
   return v ? (v.stage||baseStage(o)) : baseStage(o);
 }
-window.boardViewStage=boardViewStage; window.boardViewRow=boardViewRow;
+window.boardViewStage=boardViewStage; window.boardViewRow=boardViewRow; window.effStage=effStage;
 
 /* THE ONE STAGE AUTHORITY, read on every surface. The board (laneOf -> hostEffStage) and the card detail
    (the Overview State row, the modal header pill, the closed-reply check) resolve a card's stage through
@@ -1068,6 +1068,33 @@ function campaignStats(slug){
   return { recipients:recips.length, sent:sent, opens:opens, unique:Object.keys(uniq).length,
            replies:replies, replyRate: sent? Math.round((replies/sent)*100) : 0 };
 }
+
+// Per-recipient companion read (Phase 1 - D1/D7): one row per campaign recipient carrying only the signals
+// tied to a single address - sent_at, the reply (with its thread link: the extracted child, or the reply
+// still on the parent), and a bounce naming them. Reads console_mail / console_inbound only; no new store;
+// the campaign aggregate is untouched and a reply here never lifts the campaign (D2). Opens are page-level,
+// not per recipient: a campaign is one page (one slug) and console_hits carry an anonymous visitor id with
+// no recipient token, so an open cannot be tied to an address without inventing it. Opens stay the campaign
+// number (campaignStats.opens); per-recipient opens would need a per-recipient link token, a later additive
+// phase. See docs/campaign-phase1.md.
+function campaignRecipientLedger(slug){
+  slug=String(slug||"");
+  return campaignRecipients(slug).map(function(r){
+    var a=String(r.addr||"").trim().toLowerCase();
+    var sends=getMailLog().filter(function(m){ return m && m.opp===slug && m.direction!=="in" && String(m.to||"").trim().toLowerCase()===a; });
+    var sentAt=""; sends.forEach(function(m){ var ts=String(m.ts||""); if(ts && (!sentAt || ts<sentAt)) sentAt=ts; }); // first send to this address
+    var st=recipientState(slug, a), child=st.child||"";
+    // the reply from this address, on the parent (pre-extraction) or the extracted child (post), latest first
+    var reps=inboundFor(slug).concat(child? inboundFor(child) : [])
+      .filter(function(x){ return x && x.kind!=="auto" && String(x.from||"").trim().toLowerCase()===a; })
+      .sort(function(x,y){ return String(y.ts||"").localeCompare(String(x.ts||"")); });
+    var link=child? { child:child } : (reps[0]? { inbound:inboundKey(reps[0]) } : null);
+    return { addr:a, name:r.name||"", sent:sends.length>0, sent_at:sentAt,
+             replied:st.replied, reply_at:(reps[0]? String(reps[0].ts||"") : ""), reply_link:link,
+             bounced:st.bounced, child:child };
+  });
+}
+window.campaignRecipientLedger=campaignRecipientLedger;
 
 // A recipient of a group campaign who replies gets exactly one individual child opportunity, linked both
 // ways: spawned_from on the child, and the parent's recipient row finds the child by that link. The
