@@ -44,7 +44,8 @@ SURFACES = [("board","#board"), ("library","#library"), ("insights","#insights")
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
-    for (w, h, tag, langs) in [(1440,900,"desktop",("en","ar")), (390,860,"phone",("en",))]:
+    # phone, iPad, desktop - each in EN and AR - so every surface is proven at every width in both directions
+    for (w, h, tag, langs) in [(1440,900,"desktop",("en","ar")), (834,1112,"ipad",("en","ar")), (390,860,"phone",("en","ar"))]:
         for lang in langs:
             ctx = b.new_context(viewport={"width": w, "height": h}, has_touch=(w<=834), is_mobile=(w<=430))
             ctx.route("https://api.github.com/**", lambda r: r.abort())
