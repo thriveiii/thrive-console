@@ -1,14 +1,13 @@
-"""Compile parity (the P8 gate for the two-path window).
+"""Compile parity, on the ONE compile path (P9 / D8).
 
-P7's single-send composer (compileArtifact) and P8's campaign composer (compileCampaignRow) are two entry
-points that coexist BY DESIGN until P9 collapses them into one. This test is the hard gate on that window: it
-proves the two paths do NOT duplicate the compose logic -- for the SAME recipient and the SAME authored
-content they produce BYTE-IDENTICAL output (subject, html, text, token), because both compose through the one
-shared composeArtifactCore (the single place the footer, the tokenized page link, the open pixel and the
-deterministic open token are attached).
+P9 collapsed the two P8-era compile entry points into a single compile(recipient, content). This test proves
+the collapse did not regress the property that mattered: a single send and a campaign row still produce
+BYTE-IDENTICAL output (subject, html, text, open token) for the same recipient and content -- now because
+there is literally one compile function, fed by two content builders (the composer's editorContent for a
+single send, the queue's campaignContent for a campaign row). Both builders are exercised here against the
+real, live editor; if they diverge, the byte comparison reds.
 
-Engine-independent; WebKit is Thyab's device gate. If this test fails, the two paths have diverged and P8 must
-not merge.
+Engine-independent; WebKit is Thyab's device gate.
 """
 import threading, http.server, socketserver, functools, os
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
@@ -21,6 +20,14 @@ def ck(n, c, d=None):
     if not c:
         fails.append(n)
         if d is not None: print("      " + str(d)[:400])
+
+# ---- source: there is exactly ONE compile function, and the P8 second path is gone --------------------
+app = open(os.path.join(ROOT, "library/app.js")).read()
+ck("exactly ONE compile function exists (compile), P8's second entry points are deleted",
+   app.count("function compile(") == 1
+   and "function compileCampaignRow(" not in app and "function composeArtifactCore(" not in app)
+ck("the footer/pixel/token live in that one place only (P7's count==1 restored)",
+   app.count("ThriveStore.footerHtml") == 1 and app.count("ThriveStore.footerText") == 1)
 
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 socketserver.TCPServer.allow_reuse_address = True
@@ -42,10 +49,6 @@ with sync_playwright() as p:
     pg = b.new_page(viewport={"width": 1280, "height": 1000})
     pg.route("**relay.example**", lambda r: r.fulfill(status=200, content_type="image/gif", body=b"GIF89a"))
 
-    # A campaign opp with an English-named recipient and a nameless one. Compile lang is the composer's
-    # direction (EN here), so we compare recipients whose language matches the composer -- the honest
-    # "same recipient and content" scenario. (A recipient's own language only changes which footer the
-    # campaign path selects; that is a by-design INPUT to the shared core, not duplicated logic.)
     pg.goto(f"{base}/library/compose.html")
     unlock(pg)
     pg.evaluate("""(relay)=>{
@@ -56,46 +59,42 @@ with sync_playwright() as p:
     pg.goto(f"{base}/library/compose.html?slug=camp1")
     unlock(pg)
     pg.wait_for_function("()=>window.__composeReady && typeof window.__cmpCompile==='function' "
-                         "&& typeof window.compileCampaignRow==='function' && typeof window.__campaignTpl==='function'",
-                         timeout=15000)
-    # Author a body that greets by name and carries the opportunity's own link (so the tokenized ?r= link and
-    # the pixel have something to bind to), plus a subject.
+                         "&& typeof window.__compile==='function' && typeof window.__campaignContent==='function' "
+                         "&& typeof window.__campaignTpl==='function'", timeout=15000)
     pg.evaluate("""()=>{ document.getElementById('ebody').innerHTML='Hi {{NAME}}, welcome. See https://console.thriveiii.com/opp/camp1 for details.';
       document.getElementById('esubject').value='A note for you'; }""")
 
-    # The REAL campaign template the #eCampaign handler would capture (one builder, shared with the queue).
     OPP = {"slug": "camp1", "business": "Campaign One"}
 
     def both(addr, name):
+        # single send: the composer's editorContent -> the one compile
         single = pg.evaluate("(r)=>window.__cmpCompile({addr:r.addr,name:r.name},{track:true})",
                              {"addr": addr, "name": name})
-        campaign = pg.evaluate("(a)=>window.compileCampaignRow(a.opp, {addr:a.addr,name:a.name}, window.__campaignTpl())",
+        # campaign row: the queue's REAL campaignContent(o, __campaignTpl()) -> the same one compile
+        campaign = pg.evaluate("(a)=>window.__compile({addr:a.addr,name:a.name}, window.__campaignContent(a.opp, window.__campaignTpl()))",
                               {"opp": OPP, "addr": addr, "name": name})
         return single, campaign
 
-    # ---- named recipient: the two paths are byte-identical ----
     s, c = both("basel@shop.example", "Basel Haddad")
-    ck("named: the single send and the campaign row carry a real artifact (footer + pixel + tokenized link + token)",
+    ck("named: a real artifact is produced (footer + pixel + tokenized link + token)",
        ("op=hit" in s["html"]) and (s["token"] != "") and (("r="+s["token"]) in s["html"]) and ("opp/camp1" in s["html"]),
        s["html"][:200])
-    ck("named: SUBJECT is byte-identical", s["subject"] == c["subject"], (s["subject"], c["subject"]))
-    ck("named: HTML is byte-identical (footer, tokenized link, open pixel, merged name all match)",
-       s["html"] == c["html"], {"single_tail": s["html"][-160:], "camp_tail": c["html"][-160:]})
-    ck("named: plain-text alternative is byte-identical", s["text"] == c["text"],
-       {"single_tail": s["text"][-120:], "camp_tail": c["text"][-120:]})
+    ck("named: SUBJECT is byte-identical (single vs campaign)", s["subject"] == c["subject"], (s["subject"], c["subject"]))
+    ck("named: HTML is byte-identical (single vs campaign)", s["html"] == c["html"],
+       {"single_tail": s["html"][-160:], "camp_tail": c["html"][-160:]})
+    ck("named: plain-text is byte-identical (single vs campaign)", s["text"] == c["text"])
     ck("named: the deterministic open token is identical", s["token"] == c["token"], (s["token"], c["token"]))
 
-    # ---- nameless recipient: the clean fallback is byte-identical too ----
     s0, c0 = both("no@name.example", "")
     ck("nameless: the fallback greeting is clean (Hi, not 'Hi ,' and no {{NAME}})",
        ("Hi," in s0["html"]) and ("Hi ," not in s0["html"]) and ("{{NAME}}" not in s0["html"]), s0["html"][:200])
-    ck("nameless: HTML is byte-identical across the two paths", s0["html"] == c0["html"],
+    ck("nameless: HTML is byte-identical (single vs campaign)", s0["html"] == c0["html"],
        {"single_tail": s0["html"][-160:], "camp_tail": c0["html"][-160:]})
-    ck("nameless: plain-text is byte-identical across the two paths", s0["text"] == c0["text"])
+    ck("nameless: plain-text is byte-identical (single vs campaign)", s0["text"] == c0["text"])
     ck("nameless: the token is identical", s0["token"] == c0["token"], (s0["token"], c0["token"]))
 
-    # ---- sensitivity (the comparison is real, not comparing constants): a different recipient DIFFERS ----
-    ck("a different recipient produces different bytes (named vs nameless html differ)", s["html"] != s0["html"])
+    # sensitivity: the comparison is real, not comparing constants
+    ck("a different recipient produces different bytes", s["html"] != s0["html"])
     ck("a different recipient produces a different token", s["token"] != s0["token"])
 
     b.close()

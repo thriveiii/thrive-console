@@ -1221,14 +1221,13 @@ function campaignSchedule(o, recipients, quota, nowMs){
   }
   return { rows:rows, todayCap:todayCap, warmCap:warmCap, deferred:rows.filter(function(r){return r.day>0;}).length };
 }
-// ── The ONE shared composition core, read by BOTH compile paths ─────────────────────────────────────
-// P7's single-send/preview compileArtifact and P8's campaign compileCampaignRow both compose their body
-// HERE, so neither re-implements the field merge, the POSTAL footer, the tokenized page link, the open
-// pixel, or the deterministic idem/open token. For the same recipient and content the two paths are
-// BYTE-IDENTICAL (proven by tools/compile_parity_test.py).
-//   TWO compile paths coexist BY DESIGN until P9 collapses them into one and re-proves preview==send with a
-//   single composer (see docs/durable-queue-phase8.md). This duplication of the *entry points* is tracked and
-//   deliberate; the *logic* below is shared, never copied.
+// ── THE compile function: one home for the whole outgoing artifact ──────────────────────────────────
+// P9 (D8) collapsed the two P8-era compile entry points (single-send compileArtifact + campaign
+// compileCampaignRow) into this ONE `compile(recipient, content)`. Every send and the preview call it, so the
+// field merge, the POSTAL footer, the closing block, the tokenized page link, the P2 open pixel, and the
+// deterministic idem/open token exist in exactly ONE place. Preview equals sent by construction, not by
+// assertion. The composer builds `content` from the live editor (editorContent); the campaign queue builds it
+// once from the captured template (buildCampaignTpl). There is no second compile path.
 function mergeFieldsInto(str, name, ctx){
   var out=String(str==null?"":str);
   if(name){ out=out.replace(/\{\{\s*NAME\s*\}\}/g, name); }
@@ -1238,44 +1237,45 @@ function mergeFieldsInto(str, name, ctx){
   out=out.split("{{MONTH}}").join((ctx&&ctx.month)||"");
   return out.replace(/<span data-m="[^"]*"[^>]*>([\s\S]*?)<\/span>/g,"$1");   // the sent body carries clean text, never editor spans
 }
-function composeArtifactCore(inp){
-  var lang=(inp.lang==="ar")?"ar":"en";
-  var addr=bareAddress(inp.addr||"");
-  var ctx={ business:inp.business||"", link:inp.link||"", month:inp.month||"" };
-  var inner=mergeFieldsInto(inp.innerTpl, inp.name, ctx);
-  var subject=mergeFieldsInto(inp.subjectTpl, inp.name, ctx).replace(/^\s+|\s+$/g,"");
-  var sig=inp.sig||"";
-  var html=brandWrap(inner, !!inp.branded, sig)+ThriveStore.footerHtml(lang);
-  // The footer (POSTAL) is attached in exactly ONE place, here, so no compile path can omit or diverge it.
-  var rawText=(inp.rawText!=null)? inp.rawText : toPlainText(inner, sig);
+// recipient: { addr, name, lang } (name is the FULL name; first-name-only is applied here from content).
+// content:   { innerTpl, subjectTpl, business, link, month, sig, branded, slug, track, tokenSlug, firstName,
+//              lang, rawText } -- the authored message, gathered from the live editor for a send/preview or
+//              from the captured template for the campaign queue. compile owns everything downstream of that.
+function compile(recipient, content){
+  recipient=recipient||{}; content=content||{};
+  var full=String(recipient.name==null?"":recipient.name).trim();
+  var name=(content.firstName && full)? full.split(/\s+/)[0] : full;   // first-name-only, one place
+  var lang=(recipient.lang==="ar" || content.lang==="ar")?"ar":"en";
+  var addr=bareAddress(recipient.addr||"");
+  var ctx={ business:content.business||"", link:content.link||"", month:content.month||"" };
+  var inner=mergeFieldsInto(content.innerTpl, name, ctx);
+  var subject=mergeFieldsInto(content.subjectTpl, name, ctx).replace(/^\s+|\s+$/g,"");
+  var sig=content.sig||"";
+  var html=brandWrap(inner, !!content.branded, sig)+ThriveStore.footerHtml(lang);
+  // The footer (POSTAL) is attached in exactly ONE place, here, so no send can omit or diverge it.
+  var rawText=(content.rawText!=null)? content.rawText : toPlainText(inner, sig);
   var text=rawText+ThriveStore.footerText(lang);
-  var tokenSlug=(inp.tokenSlug!=null)? inp.tokenSlug : (inp.slug||"");
-  var token=inp.track ? recipientOpenToken(tokenSlug, addr, subject) : "";
-  if(token && inp.slug){
-    var base=liveUrl(inp.slug), tokd=base+(base.indexOf("?")<0?"?":"&")+"r="+encodeURIComponent(token);
+  var tokenSlug=(content.tokenSlug!=null)? content.tokenSlug : (content.slug||"");
+  var token=content.track ? recipientOpenToken(tokenSlug, addr, subject) : "";
+  if(token && content.slug){
+    var base=liveUrl(content.slug), tokd=base+(base.indexOf("?")<0?"?":"&")+"r="+encodeURIComponent(token);
     html=html.split(base).join(tokd); text=text.split(base).join(tokd);   // channel 2: the page link carries the token
-    html=html+openPixelHtml(inp.slug, token, getSyncEndpoint());           // channel 1: one open pixel
+    html=html+openPixelHtml(content.slug, token, getSyncEndpoint());       // channel 1: one open pixel
   }
-  return { to:addr, name:inp.name||"", subject:subject, html:html, text:text, token:token, lang:lang, inner:inner };
+  return { to:addr, name:name, subject:subject, html:html, text:text, token:token, lang:lang, inner:inner };
 }
-try{ window.__composeCore=composeArtifactCore; window.mergeFieldsInto=mergeFieldsInto; }catch(_){}
-
-// One recipient's compiled artifact for the campaign queue (subject, html, text, token): the SAME shape and
-// SAME bytes a single send builds, via the ONE composeArtifactCore above (no duplicated footer/link/pixel/
-// token logic). tpl carries the authored message {subject, html, branded, sig, firstName, month, lang}.
-//   Second compile entry point BY DESIGN until P9 unifies to one; see composeArtifactCore's note.
-function compileCampaignRow(o, r, tpl){
+try{ window.__compile=compile; window.mergeFieldsInto=mergeFieldsInto; }catch(_){}
+// The campaign's authored content, shaped for the ONE compile(recipient, content) -- the same content shape
+// the composer's editorContent builds for a single send, so a campaign row and a single send compile to the
+// exact same bytes for the same recipient (proven by tools/compile_parity_test.py).
+function campaignContent(o, tpl){
   tpl=tpl||{};
-  var name=String(r.name||"").trim();
-  if(tpl.firstName && name) name=name.split(/\s+/)[0];
-  var lang=(r.lang==="ar" || tpl.lang==="ar")? "ar" : "en";
-  return composeArtifactCore({
-    innerTpl:tpl.html||"", subjectTpl:tpl.subject||"", name:name,
-    business:(o&&o.business)||"", link:liveUrl((o&&o.slug)||""), month:tpl.month||"",
-    sig:tpl.sig||"", branded:!!tpl.branded, lang:lang, addr:r.addr||"",
-    slug:(o&&o.slug)||"", track:true
-  });
+  return { innerTpl:tpl.html||"", subjectTpl:tpl.subject||"",
+           business:(o&&o.business)||"", link:liveUrl((o&&o.slug)||""), month:tpl.month||"",
+           sig:tpl.sig||"", branded:!!tpl.branded, slug:(o&&o.slug)||"",
+           track:true, firstName:!!tpl.firstName, lang:tpl.lang||"en" };
 }
+try{ window.__campaignContent=campaignContent; }catch(_){}
 // Start (or top up) a campaign: write the queued ledger rows, record the day's committed sends against the
 // budget, stamp the campaign control state on the opp, and hand the compiled batch to the relay. Returns a
 // summary; never sends here.
@@ -1285,9 +1285,12 @@ function startCampaignQueue(slug, tpl){
   if(!recips.length) return { ok:false, error:"no recipients" };
   var quota=(typeof quotaUsage==="function")? quotaUsage() : { dayLeft:recips.length };
   var sched=campaignSchedule(o, recips, quota);
+  // Build the authored content ONCE (it is identical for every recipient); compile() merges it per person.
+  // Same content shape the composer's editorContent builds, so a campaign row and a single send are one path.
+  var content=campaignContent(o, tpl);
   var batch=[], committedToday=0;
   sched.rows.forEach(function(sr){
-    var art=compileCampaignRow(o, sr, tpl||{});
+    var art=compile(sr, content);
     var dueIso=new Date(sr.dueMs).toISOString();
     logMail({ opp:slug, to:sr.addr, toName:sr.name, subject:art.subject, status:"queued",
               mid:art.token, direction:"out", provider:"queue", due:dueIso, campaign:slug,
@@ -1361,8 +1364,7 @@ function campaignProgress(slug){
 }
 try{ window.startCampaignQueue=startCampaignQueue; window.pauseCampaign=pauseCampaign;
      window.resumeCampaign=resumeCampaign; window.reconcileOutbox=reconcileOutbox;
-     window.campaignProgress=campaignProgress; window.campaignSchedule=campaignSchedule;
-     window.compileCampaignRow=compileCampaignRow; }catch(_){}
+     window.campaignProgress=campaignProgress; window.campaignSchedule=campaignSchedule; }catch(_){}
 
 // A recipient of a group campaign who replies gets exactly one individual child opportunity, linked both
 // ways: spawned_from on the child, and the parent's recipient row finds the child by that link. The
@@ -6843,25 +6845,24 @@ async function initCompose(slugArg, opts){
   // The one compile. opts.track adds the per-recipient open token (pixel + tokenized link); a proof copy
   // and the preview-with-blocked-pixel both still carry it so the artifact is truthful, but eSelf passes
   // track:false so a copy to the operator never tokenizes.
-  // P7 / D5: the single-send + preview composer. Its body/footer/link/pixel/token all come from the ONE
-  // shared composeArtifactCore, the same source the campaign path (compileCampaignRow) reads, so preview==send
-  // AND single==campaign are byte-identical. (Two compile entry points by design until P9; see the core.)
-  function compileArtifact(recipient, opts){
+  // P9 / D8: the composer gathers the authored message from the LIVE editor into a `content` object; the one
+  // top-level compile(recipient, content) turns it into the exact artifact that lands. Preview and every send
+  // build content the same way and call the same compile, so preview equals sent by construction. (The
+  // campaign queue builds the same content shape from the captured template -- one compile path, no fork.)
+  function editorContent(opts){
     opts=opts||{};
-    var rec=recipient||fieldRecipient();
     var pbox=el("plainBox");
-    return composeArtifactCore({
+    return {
       innerTpl:bodyTemplateHtml(), subjectTpl:(el("esubject")?el("esubject").value:""),
-      name:mergeNameFor(rec),
       business:(oppObj&&oppObj.business)||"", link:oppUrl||"", month:(monthEl?monthEl.value:"")||"",
       sig:sigBox?sigBox.value:"", branded:isBranded(),
-      lang:(docLoc()==="AR"?"ar":"en"), addr:rec.addr||"",
       slug:(oppObj&&oppObj.slug)||"", tokenSlug:oppOf(),
+      firstName:!!(firstEl && firstEl.checked), lang:(docLoc()==="AR"?"ar":"en"),
       track:!!(opts.track && !replyCtx),
       rawText:(pbox && pbox.dataset.dirty==="1") ? pbox.value : null
-    });
+    };
   }
-  try{ window.__cmpCompile=compileArtifact; }catch(_){}
+  try{ window.__cmpCompile=function(rec, opts){ return compile(rec||fieldRecipient(), editorContent(opts||{})); }; }catch(_){}
 
   const plainBox=el("plainBox");
   if(plainBox) plainBox.addEventListener("input", ()=>{ plainBox.dataset.dirty="1"; });
@@ -6918,7 +6919,7 @@ async function initCompose(slugArg, opts){
     renderPreSend();
     renderRecipSwitch();
     if(!prevFrame) return;
-    var art=compileArtifact(currentPreviewRecipient(), {track:true});
+    var art=compile(currentPreviewRecipient(), editorContent({track:true}));
     // Dev-only divergence hook (see the true-preview test): when set, the preview bypasses compile and the
     // pixel/token vanish, so the match breaks. Undefined in production.
     var bodyHtml = (typeof window!=="undefined" && window.__previewBypassCompile) ? composedHtml() : art.html;
@@ -7134,7 +7135,7 @@ async function initCompose(slugArg, opts){
     if(!ep){ toast(t("cmp_no_ep")); return; }
     selfBtn.disabled=true;
     try{
-      const sb=compileArtifact(fieldRecipient(), {track:false});   // same finished body as a real send, footer included; a proof copy to the operator never tokenizes
+      const sb=compile(fieldRecipient(), editorContent({track:false}));   // same finished body as a real send, footer included; a proof copy to the operator never tokenizes
       const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
         body:JSON.stringify({ from:FROM_EMAIL, fromName:getFromName(), to:FROM_EMAIL,
           subject:"["+t("cmp_self_tag")+"] "+sb.subject,
@@ -7219,7 +7220,7 @@ async function initCompose(slugArg, opts){
     const left=unresolvedTokens(resolveTokens(htmlOut()+" "+el("esubject").value));
     if(left.length){ toast(t("ps_tokens_block")+" "+left.join(", ")); renderPreSend(); return; }
     /* The physical address and the one line opt out are required by US law for commercial email, and
-       both are already true of Thrive. The footer is attached by compileArtifact, the one composer, from the
+       both are already true of Thrive. The footer is attached by compile(), the one composer, from the
        single POSTAL source, so this send carries the exact footer the self-send proof copy showed.
        List-Unsubscribe is not required at this volume and costs nothing, and it converts a spam
        complaint into an unsubscribe. The relay sends this body verbatim and adds nothing. */
@@ -7227,7 +7228,7 @@ async function initCompose(slugArg, opts){
     // person's opens attribute to them. The token is this send's console_mail row id, set BEFORE the body
     // is compiled so the open pixel and the tokenized page link both carry it, then cleared in finally.
     // The one compile: the send submits byte-for-byte what the preview showed for this recipient.
-    const art=compileArtifact(fieldRecipient(), {track:true});
+    const art=compile(fieldRecipient(), editorContent({track:true}));
     const subjectOut=art.subject, sb={ html:art.html, text:art.text }, sendToken=art.token;
     // A stable Message-ID the reply's In-Reply-To will carry back, recorded on the row so the reply
     // threads by header (the strongest tier). Passed through the relay to Resend; whether Resend keeps it

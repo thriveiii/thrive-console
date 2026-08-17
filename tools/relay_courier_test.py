@@ -41,22 +41,20 @@ ck("the relay composes no footer or address in code (no Egypt, no address string
    send_code[:200])
 
 app = open(os.path.join(ROOT, "library/app.js")).read()
-# P7 gave the console one compile(recipient)=compileArtifact for single send + preview; P8 added a campaign
-# entry point, compileCampaignRow. Both now route their body through the ONE shared composeArtifactCore, which
-# is the SINGLE place the POSTAL footer, the tokenized page link, the open pixel, and the idem/open token are
-# attached. So the footer is composed in EXACTLY ONE place (composeArtifactCore) and neither entry point
-# re-implements it -- no hand-written footer or address string anywhere. (Two entry points coexist by design
-# until P9 collapses them into one; the compile logic is already shared, proven byte-identical by
-# tools/compile_parity_test.py.)
-ck("the console composes the outgoing body through the one shared core, attaching the POSTAL footer",
-   "function composeArtifactCore(" in app and "ThriveStore.footerHtml(lang)" in app and "ThriveStore.footerText(lang)" in app)
-ck("both single-send payloads build their body from compileArtifact (self-send and real send)",
-   len(re.findall(r"compileArtifact\(fieldRecipient\(\)", app)) >= 2 and app.count("html:sb.html") >= 1)
-ck("the footer is attached in EXACTLY ONE place (only composeArtifactCore appends it)",
+# P9 (D8) collapsed the compile path to ONE function, compile(recipient, content). Every single send, the
+# preview, and every campaign row call it, so the POSTAL footer, the tokenized page link, the open pixel, and
+# the idem/open token are attached in EXACTLY ONE place -- no second compile path, no hand-written footer or
+# address string anywhere. The old compileArtifact / compileCampaignRow / composeArtifactCore entry points are
+# gone.
+ck("there is exactly ONE compile function (compile), and the dead second paths are gone",
+   app.count("function compile(") == 1
+   and "function compileCampaignRow(" not in app and "function composeArtifactCore(" not in app)
+ck("the one compile attaches the POSTAL footer",
+   "ThriveStore.footerHtml(lang)" in app and "ThriveStore.footerText(lang)" in app)
+ck("both single-send payloads build their body from compile (self-send and real send)",
+   len(re.findall(r"compile\(fieldRecipient\(\)", app)) >= 2 and app.count("html:sb.html") >= 1)
+ck("the footer is attached in EXACTLY ONE place (only compile appends it) -- P7's count==1 restored",
    app.count("ThriveStore.footerHtml") == 1 and app.count("ThriveStore.footerText") == 1)
-ck("both compile entry points route through the one shared core (no duplicated footer/link/pixel/token logic)",
-   "function compileArtifact(" in app and "function compileCampaignRow(" in app
-   and len(re.findall(r"composeArtifactCore\(\{", app)) >= 2)
 
 # ---- Part 2: the real self-send body, in Chromium ---------------------------
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
