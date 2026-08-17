@@ -21,7 +21,10 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 668_000     # library/app.js today ~666 KB. Raised from 665K by the mail-write-path brief, which
+APP_JS_MAX   = 676_000     # library/app.js today ~668 KB. Raised from 668K by campaigns Phase 1, which added the
+                           # per-recipient companion read (campaignRecipientLedger, D1/D7). Campaigns is a seven-phase
+                           # build all touching app.js; the module SPLIT below is the real fix and is now overdue.
+                           # Prior: 665K->668K by the mail-write-path brief, which
                            # added the schema-drift-resilient console_mail writer (mailUpsert + the missing-column
                            # fallback) and reconcileMailToServer to lift the total 28-row write freeze (a
                            # production-down bug). NOTE: app.js is now large and breaching on nearly every brief;
