@@ -1198,26 +1198,65 @@ function groupSendPlan(recipients, template){
    per device, never a stored stage: it decides only whether a small badge shows, not what a card IS. */
 var CARD_SEEN="thrive_card_seen_v1";
 function cardSeen(){ try{ return JSON.parse(localStorage.getItem(CARD_SEEN)||"{}"); }catch(e){ return {}; } }
-function markCardSeen(slug){ if(!slug) return; try{ var m=cardSeen(); m[slug]=new Date().toISOString(); localStorage.setItem(CARD_SEEN, JSON.stringify(m)); }catch(e){} }
+
+// P3/R6: ONE recency clock, imported by every lane sort. A timestamp field (console_hits.ts and the rest)
+// is TEXT; parse it explicitly, and a malformed value sorts LAST (0) rather than throwing.
+function parseTs(ts){ var ms=Date.parse(String(ts==null?"":ts)); return isNaN(ms)? 0 : ms; }
+// The card's most recent meaningful activity, as ms: the latest of our sends, a token-bearing open (a real
+// person, P2), an inbound reply or bounce, and a stage change (the activity log). No per-card special case.
+function lastActivityAt(o){
+  var slug=(typeof o==="string")? o : ((o&&o.slug)||"");
+  if(!slug) return 0;
+  var latest=0; function bump(ts){ var ms=parseTs(ts); if(ms>latest) latest=ms; }
+  getMailLog().forEach(function(m){ if(m && m.opp===slug) bump(m.ts); });
+  inboundFor(slug).forEach(function(r){ if(r) bump(r.ts); });
+  allHits().forEach(function(e){ if(e && e.slug===slug && (!e.type||e.type==="open") && e.r) bump(e.ts); });
+  getActivity().forEach(function(a){ if(a && a.slug===slug) bump(a.ts); });
+  return latest;
+}
+window.lastActivityAt=lastActivityAt;
+
+// P3/R5: the acknowledgment is SERVER-held. last_viewed_at rides the opp record (data, additive), so a card
+// seen on one device is seen on all. The local cardSeen map is only a fast offline mirror; whichever ack is
+// newer wins, so the record is authoritative once it syncs.
+function lastViewedAt(slug){
+  var rec=getDraft(slug), srv=(rec && rec.last_viewed_at)? String(rec.last_viewed_at) : "";
+  var loc=""; try{ loc=cardSeen()[slug]||""; }catch(e){}
+  return srv>loc ? srv : loc;
+}
+window.lastViewedAt=lastViewedAt;
+// Opening the card advances the view timestamp; that, by definition, clears the badge (no stored badge flag
+// anywhere). It writes the local mirror always, and the opp record so the ack holds across devices.
+function markCardSeen(slug){ if(!slug) return; var now=new Date().toISOString();
+  try{ var m=cardSeen(); m[slug]=now; localStorage.setItem(CARD_SEEN, JSON.stringify(m)); }catch(e){}
+  try{ if(getDraft(slug)) saveDraft({ slug:slug, last_viewed_at:now }); }catch(e){}   // server-held, cross-device
+}
+window.markCardSeen=markCardSeen;
 // How many opens and replies a card has seen since it was last opened. A child counts its own recipient's
 // slice; a normal or group card counts its slug's inbound replies and page opens.
 function cardNewActivity(slug){
-  var since=cardSeen()[slug]||"";
+  var sinceMs=parseTs(lastViewedAt(slug));
   var n=0;
-  inboundFor(slug).forEach(function(r){ if(r && r.kind!=="auto" && String(r.ts||"")>since) n++; });
-  allHits().forEach(function(e){ if(e && e.slug===slug && (!e.type||e.type==="open") && String(e.ts||"")>since) n++; });
+  // distinct new events since the owner last viewed: replies, bounces, and opens BY A PERSON (a token-
+  // bearing hit whose r is one of this card's send ids, P2). An anonymous page view never lights the badge.
+  // Compared on the parsed ms clock (parseTs), so a malformed timestamp is never counted as newer.
+  inboundFor(slug).forEach(function(r){ if(r && r.kind!=="auto" && parseTs(r.ts)>sinceMs) n++; });
+  inboundFor(slug).forEach(function(r){ if(r && r.kind==="auto" && r.bounce && parseTs(r.ts)>sinceMs) n++; });
+  var toks={}; getMailLog().forEach(function(m){ if(m && m.opp===slug && m.direction!=="in"){ var id=m.mid||m.id; if(id) toks[id]=1; } });
+  allHits().forEach(function(e){ if(e && (!e.type||e.type==="open") && !e.self && e.r && toks[e.r] && parseTs(e.ts)>sinceMs) n++; });
   var self=getDraft(slug);
   if(self && self.spawned_from && self.spawned_from.parent){
     var pa=String(self.spawned_from.addr||"").trim().toLowerCase();
-    inboundFor(self.spawned_from.parent).forEach(function(r){ if(r && r.kind!=="auto" && String(r.from||"").trim().toLowerCase()===pa && String(r.ts||"")>since) n++; });
+    inboundFor(self.spawned_from.parent).forEach(function(r){ if(r && r.kind!=="auto" && String(r.from||"").trim().toLowerCase()===pa && parseTs(r.ts)>sinceMs) n++; });
   }
   return n;
 }
+window.cardNewActivity=cardNewActivity;
 // The most recent new item on a card since it was last opened, so the badge can land ON it: a reply opens
 // the thread scrolled to that reply, an open opens the overview scrolled to the opens summary. Reply wins a
 // tie because it is the higher call to action.
 function cardNewTarget(slug){
-  var since=cardSeen()[slug]||"", newest=null;
+  var since=lastViewedAt(slug), newest=null;
   function consider(t){ if(!newest || t.ts>newest.ts) newest=t; }
   function scanReplies(s){ inboundFor(s).forEach(function(r){ if(r && r.kind!=="auto" && String(r.ts||"")>since) consider({ kind:"reply", tab:"history", id:inboundKey(r), ts:String(r.ts) }); }); }
   scanReplies(slug);
@@ -1226,8 +1265,9 @@ function cardNewTarget(slug){
     var pa=String(self.spawned_from.addr||"").trim().toLowerCase();
     inboundFor(self.spawned_from.parent).forEach(function(r){ if(r && r.kind!=="auto" && String(r.from||"").trim().toLowerCase()===pa && String(r.ts||"")>since) consider({ kind:"reply", tab:"history", id:inboundKey(r), ts:String(r.ts) }); });
   }
+  var toks={}; getMailLog().forEach(function(m){ if(m && m.opp===slug && m.direction!=="in"){ var id=m.mid||m.id; if(id) toks[id]=1; } });
   var lastOpen="";
-  allHits().forEach(function(e){ if(e && e.slug===slug && (!e.type||e.type==="open") && String(e.ts||"")>since && String(e.ts)>lastOpen) lastOpen=String(e.ts); });
+  allHits().forEach(function(e){ if(e && (!e.type||e.type==="open") && !e.self && e.r && toks[e.r] && String(e.ts||"")>since && String(e.ts)>lastOpen) lastOpen=String(e.ts); });
   if(lastOpen && (!newest || lastOpen>newest.ts)) consider({ kind:"open", tab:"overview", id:"", ts:lastOpen });
   return newest;
 }
@@ -2678,6 +2718,7 @@ function saveDraft(rec){
   try{ supaMirrorOpp(merged); }catch(_){}
 }
 function removeDraft(slug){ markRemoved("opp", slug); setDrafts(getDraftsLocal().filter(x=>x.slug!==slug)); try{ supaCacheDrop(slug); }catch(_){} try{ supaDeleteOpp(slug); }catch(_){} }
+window.saveDraft=saveDraft;
 /* INVARIANT I3, atomic batch commit: apply MANY records to the store as ONE transition. saveDraft writes
    the store once per record, so a batch of N leaves N intermediate store states, each visible to any
    repaint that races the loop; that is the scatter and the oscillation. This merges every record against
@@ -8423,16 +8464,12 @@ async function initBoard(){
       const tabCount=document.querySelector('[data-count-tab="'+k+'"]');
       if(tabCount) tabCount.textContent=b.lanes[k].length;
       if(!body) return;
-      /* The order somebody arranged on this device, applied on top of the lane's own sort.
-         Anything not in the stored order keeps its place after the ones that are. */
-      const ord=(cardOrder()[k]||[]);
-      if(ord.length) b.lanes[k].sort((x,y)=>{
-        const i=ord.indexOf(x.slug), j=ord.indexOf(y.slug);
-        if(i<0 && j<0) return 0;
-        if(i<0) return 1;
-        if(j<0) return -1;
-        return i-j;
-      });
+      /* P3/R6: every lane sorts by recency, newest activity on top, from the one shared clock
+         (lastActivityAt). No lane-specific sort, no manual pinning, no exceptions: the device-stored manual
+         order is retired so a card with new activity always rises rather than being held down by an old
+         arrangement. A malformed timestamp sorts last (lastActivityAt returns 0), never throws. */
+      var __la={}; b.lanes[k].forEach(function(t){ __la[t.slug]=lastActivityAt(t.slug); });
+      b.lanes[k].sort(function(x,y){ return (__la[y.slug]||0)-(__la[x.slug]||0); });
       body.innerHTML = b.lanes[k].length
         /* T4: a card in an actionable lane (a reply just in, or ready to send) carries
            the glow. glowChanged is called for every card in every lane so a later move

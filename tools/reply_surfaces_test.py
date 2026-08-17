@@ -67,7 +67,8 @@ with sync_playwright() as p:
         // the case the held/attach flow exists for; a subject that DID match a send auto-resolves (reply_link_test).
         {gid:'g1',opp:'',kind:'reply',from:'basel.personal@gmail.com',name:'Basel',subject:'Following up',snippet:'yes',ts:'2026-08-03T09:00:00Z'},
         {gid:'gn',opp:'',kind:'reply',from:'noreply@dmarc.google.com',subject:'Report Domain',snippet:'xml',ts:'2026-08-03T02:00:00Z'}]));
-      localStorage.setItem('thrive_hits_v1', JSON.stringify([{type:'open',slug:'thrive-july',ts:'2026-08-02T10:00:00Z',vid:'v1'}]));
+      // P3: a token-bearing open (r = a send id) is a real person opening; only that lights the badge.
+      localStorage.setItem('thrive_hits_v1', JSON.stringify([{type:'open',slug:'thrive-july',ts:'2026-08-02T10:00:00Z',vid:'v1',r:'j1'}]));
       localStorage.removeItem('thrive_card_seen_v1');
       window.invalidateSends&&window.invalidateSends(); window.invalidateHits&&window.invalidateHits();
     }""")
@@ -108,11 +109,12 @@ with sync_playwright() as p:
     ck("campaignStats reports 3 sent, 1 open, 1 reply for the card and Insights alike",
        agg["sent"]==3 and agg["opens"]==1 and agg["replies"]==1, agg)
 
-    # ---- the quiet badge: new activity since last opened, cleared on open, local only ----
+    # ---- the quiet badge (P3): a token-bearing (person) open since last view lights it; opening the card
+    #      advances last_viewed_at (server-held on the record + local mirror), which clears it by definition ----
     seen = pg.evaluate("""()=>{ const before=window.cardNewActivity('thrive-july');
       window.markCardSeen('thrive-july'); const after=window.cardNewActivity('thrive-july');
       return { before, after, local: localStorage.getItem('thrive_card_seen_v1')!=null }; }""")
-    ck("a card shows new activity, and opening it (mark seen) clears the badge, local only",
+    ck("a person open lights the badge, and opening the card (mark seen) clears it",
        seen["before"]>0 and seen["after"]==0 and seen["local"], seen)
 
     # ---- group send pre-send review: every recipient, blocked only where a name is missing ----
