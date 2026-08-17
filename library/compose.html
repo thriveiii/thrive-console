@@ -137,10 +137,16 @@
       <button class="btn ghost sm" type="button" id="plainRegen" data-i18n="pt_regen">Generate it again from the message</button>
     </details>
 
-    <!-- A live preview of the whole message as the recipient will see it,
-         including the link card and the closing block. -->
+    <!-- A live preview of the exact message that lands, per recipient (P7/D5): the one compiled
+         artifact a send submits, rendered email-safe, pixel and tokenized link included. The switcher
+         steps the actual roster so the operator sees each person's exact email in turn. -->
     <details class="mw-more" id="prevWrap">
       <summary data-i18n="cmp_preview_h">Preview as the recipient sees it</summary>
+      <div id="cmpRecipSwitch" class="recip-switch" hidden>
+        <button type="button" class="btn ghost sm rec-nav" id="cmpPrevRecip" data-i18n-aria="tp_prev" aria-label="Previous recipient">&lsaquo;</button>
+        <span id="cmpRecipLabel" class="recip-label"></span>
+        <button type="button" class="btn ghost sm rec-nav" id="cmpNextRecip" data-i18n-aria="tp_next" aria-label="Next recipient">&rsaquo;</button>
+      </div>
       <div class="cmp-preview"><iframe id="cmpPreview" title="preview" sandbox=""></iframe></div>
     </details>
 

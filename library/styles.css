@@ -2415,6 +2415,13 @@ body.modal-open{
   overflow:hidden; block-size:360px; background:#fff;
 }
 .cmp-preview iframe{ inline-size:100%; block-size:100%; border:0 }
+/* P7/D5: the recipient switcher above the preview */
+.recip-switch{display:flex;align-items:center;gap:var(--s-2);margin:0 0 var(--s-2);flex-wrap:wrap}
+.recip-switch .rec-nav{min-inline-size:2rem;text-align:center;font-size:16px;line-height:1;padding:4px 10px}
+.recip-label{flex:1 1 auto;min-inline-size:0;font-size:var(--fs-micro);color:var(--ink-3);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.recip-label .mono-iso{color:var(--ink-4);overflow:hidden;text-overflow:ellipsis}
+.recip-label .tp-noname{color:var(--warn,#b26a00)}
+[dir="rtl"] .recip-label{letter-spacing:normal}
 /* Three lines, shown once, before it leaves. */
 .pre-send{ margin-block:var(--s-3) }
 .ps-list{ list-style:none; margin:0; padding:0 }

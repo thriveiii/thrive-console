@@ -71,7 +71,7 @@ def body_of(src, name):
 
 LEAK = re.compile(r"comment|discussion|ThriveComments|__supa\.comments|console_comments", re.I)
 composers = { "brandWrap":app, "toPlainText":app, "composedHtml":app, "composedText":app,
-              "sendBody":app, "relaySend":app, "sendThreadReply":app,
+              "compileArtifact":app, "relaySend":app, "sendThreadReply":app,
               "footerHtml":store, "footerText":store }
 missing, leaking = [], []
 for fn, src in composers.items():
