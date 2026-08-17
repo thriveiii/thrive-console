@@ -94,6 +94,9 @@ with sync_playwright() as p:
     pg.evaluate("() => localStorage.setItem('thrive_email_ep','https://relay.example/exec')")
     pg.click("#ebody"); pg.keyboard.type("Hi Deborah, congratulations on the new shop.")
     pg.wait_for_timeout(200)
+    # Send-to-self lives in the calm-chrome overflow (P9); reveal it before clicking.
+    if not pg.eval_on_selector("#eSelf", "e=>!!(e && e.checkVisibility && e.checkVisibility())"):
+        pg.click("#cmpOverflowBtn"); pg.wait_for_timeout(150)
     pg.click("#eSelf")
     pg.wait_for_function("() => window.__sent !== null", timeout=8000)
     sent = pg.evaluate("() => window.__sent")

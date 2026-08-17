@@ -21,7 +21,12 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 730_000     # library/app.js today ~727 KB. Raised by P9 (the calm composer): Part A COLLAPSED
+APP_JS_MAX   = 750_000     # library/app.js today ~747 KB. Raised by P10 (the Contact Book): the shared person
+                           # derivation (derivePeople, extracted so Insights and the Book reconcile), the
+                           # curation overlay model (buildContacts / contactReviewItems / merge / tags),
+                           # bounced-address hygiene, and the Contacts surface (initContacts). app.js is one
+                           # large file; the module SPLIT is well overdue.
+                           # Raised by P9 (the calm composer): Part A COLLAPSED
                            # three compile paths (composeArtifactCore + compileArtifact + compileCampaignRow) into
                            # one compile(recipient, content) plus editorContent/campaignContent builders (a net
                            # simplification, footer/pixel/token now in one place), and Part B added the calm-chrome
@@ -62,12 +67,14 @@ APP_JS_MAX   = 730_000     # library/app.js today ~727 KB. Raised by P9 (the cal
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_720_000   # dist/thrive-console.html today ~1.71 MB, tracking app.js (P9 calm composer +
+DIST_MAX     = 1_748_000   # dist/thrive-console.html today ~1.74 MB, tracking app.js (P10 Contact Book +
+                           # P9 calm composer +
                            # P4 + P5 + P6 + P7 +
                            # P8 durable queue grew it). The offline single file inlines app.js,
                            # which grew with the reply card, the grouped/bounded reply card + expander, and
                            # the two-sided thread bubbles across the reply briefs)
-HYDRATE_MAX  = 10          # one hydrate today reads 8 tables, each once
+HYDRATE_MAX  = 11          # one hydrate today reads 11 tables, each once (P10 added console_contacts, the
+                           # Contact Book curation overlay, read in its own try like console_comments)
 
 fails=[]
 def ck(n,c,d=None):
