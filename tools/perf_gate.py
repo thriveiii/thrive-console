@@ -21,11 +21,11 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 704_000     # library/app.js today ~698 KB. Raised by P6 (personalize / D4): the display-side
-                           # {{NAME}} merge helpers (stripNameTokenClean, mergeGreetingLine, greeting detection)
-                           # and the composer "Personalize names" chip + pre-send merge roster, stacked on P5
-                           # roster ingest (D3) and P4 Insights truth. app.js is one large file; the module SPLIT
-                           # below is well overdue. Prior: 668K->676K->684K->696K across campaigns Phase 1, P4, P5, which added the
+APP_JS_MAX   = 709_000     # library/app.js today ~703 KB. Raised by P7 (true preview / D5): one
+                           # compileArtifact(recipient) replaced sendBody and now feeds both preview and send,
+                           # plus the recipient switcher and the pixel-safe preview CSP, stacked on P4 + P5 + P6
+                           # (personalize composer). app.js is one large file; the module SPLIT below is well
+                           # overdue. Prior: 668K->676K->684K->696K->704K across campaigns Phase 1, P4, P5, P6, which added the
                            # per-recipient companion read (campaignRecipientLedger, D1/D7). Campaigns is a seven-phase
                            # build all touching app.js; the module SPLIT below is the real fix and is now overdue.
                            # Prior: 665K->668K by the mail-write-path brief, which
@@ -55,8 +55,8 @@ APP_JS_MAX   = 704_000     # library/app.js today ~698 KB. Raised by P6 (persona
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_683_000   # dist/thrive-console.html today ~1.68 MB, tracking app.js (P4 + P5 + P6 personalize
-                           # grew it). The offline single file inlines app.js,
+DIST_MAX     = 1_689_000   # dist/thrive-console.html today ~1.68 MB, tracking app.js (P4 + P5 + P6 + P7 true
+                           # preview grew it). The offline single file inlines app.js,
                            # which grew with the reply card, the grouped/bounded reply card + expander, and
                            # the two-sided thread bubbles across the reply briefs)
 HYDRATE_MAX  = 10          # one hydrate today reads 8 tables, each once

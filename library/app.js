@@ -6562,26 +6562,63 @@ async function initCompose(slugArg, opts){
     if(box && box.dataset.dirty==="1") return box.value;
     return toPlainText(resolveTokens(htmlOut()), sigBox?sigBox.value:"");
   }
-  /* The finished body the console hands to the relay, footer included. This is the ONE place the footer
-     is attached, from the single POSTAL source (#79), so every send path carries the same correct footer
-     and none can omit or diverge. The relay is a courier: it sends exactly this html and text and
-     composes no footer or address of its own. Every send below builds its payload through sendBody. */
-  // The per-recipient open token for the send in flight. Set only for the moment of a real outreach send
-  // (never a self-test proof copy, never the preview), then cleared, so exactly one send carries it.
-  var __sendToken="";
-  function sendBody(){
-    const lang = docLoc()==="AR" ? "ar" : "en";
-    var html = composedHtml()+ThriveStore.footerHtml(lang);
-    var text = composedText()+ThriveStore.footerText(lang);
-    // Campaigns P2: tokenize the page link and add one open pixel, only when a real send is in flight.
-    if(__sendToken && oppObj && oppObj.slug){
-      var base=liveUrl(oppObj.slug), tokd=base+(base.indexOf("?")<0?"?":"&")+"r="+encodeURIComponent(__sendToken);
-      html = html.split(base).join(tokd);                 // channel 2: the page link carries the token
-      text = text.split(base).join(tokd);
-      html = html + openPixelHtml(oppObj.slug, __sendToken, getSyncEndpoint());   // channel 1: one open pixel
-    }
-    return { html: html, text: text };
+  /* ---- P7 / D5: one compile(recipient) -> the exact artifact that lands --------------------------
+     Preview and every send build the outgoing subject + HTML + text through THIS one function, so what
+     the operator previews is byte-for-byte what the recipient receives: merge resolved for that person
+     (or the clean fallback for a nameless one), closing block, footer (the single POSTAL source #79),
+     the tokenized page link and the P2 open pixel. Preview renders this same artifact in the email-safe
+     iframe; a CSP there stops the pixel from firing, so a preview never records a phantom open. One
+     function, both callers; nothing composes a footer or a token anywhere else. */
+  function fieldRecipient(){ return { addr:(el("eto")?el("eto").value:""), name:(nameEl?nameEl.value:""), lang:(docLoc()==="AR"?"ar":"") }; }
+  function mergeNameFor(rec){
+    var n=(rec && rec.name!=null ? String(rec.name) : "").replace(/^\s+|\s+$/g,"");
+    if(firstEl && firstEl.checked && n) return n.split(/\s+/)[0];
+    return n;
   }
+  // The body as a template still carrying {{NAME}}/{{MONTH}}, so each recipient merges from the one body.
+  function bodyTemplateHtml(){
+    var c=body.cloneNode(true);
+    c.querySelectorAll('[data-m="name"]').forEach(function(s){ s.replaceWith(document.createTextNode("{{NAME}}")); });
+    c.querySelectorAll('[data-m="month"]').forEach(function(s){ s.replaceWith(document.createTextNode("{{MONTH}}")); });
+    return c.innerHTML;
+  }
+  // Resolve the four tokens for ONE recipient. A nameless recipient drops {{NAME}} cleanly (no stray
+  // comma, no double space), never a placeholder or an empty slot.
+  function resolveForRecipient(str, name){
+    var out=String(str||"");
+    if(name){ out=out.replace(/\{\{\s*NAME\s*\}\}/g, name); }
+    else { out=out.replace(/\{\{\s*NAME\s*\}\}/g,"").replace(/[ \t]+([,،.:;!?])/g,"$1").replace(/[ \t]{2,}/g," "); }
+    out=out.split("{{BIZ}}").join((oppObj&&oppObj.business)||"");
+    out=out.split("{{LINK}}").join(oppUrl||"");
+    out=out.split("{{MONTH}}").join((monthEl?monthEl.value:"")||"");
+    return out;
+  }
+  // The one compile. opts.track adds the per-recipient open token (pixel + tokenized link); a proof copy
+  // and the preview-with-blocked-pixel both still carry it so the artifact is truthful, but eSelf passes
+  // track:false so a copy to the operator never tokenizes.
+  function compileArtifact(recipient, opts){
+    opts=opts||{};
+    var rec=recipient||fieldRecipient();
+    var nm=mergeNameFor(rec), addr=bareAddress(rec.addr||"");
+    var lang=docLoc()==="AR" ? "ar" : "en";
+    var innerHtml=resolveForRecipient(bodyTemplateHtml(), nm);
+    var subject=resolveForRecipient((el("esubject")?el("esubject").value:""), nm).replace(/^\s+|\s+$/g,"");
+    var sig=sigBox?sigBox.value:"";
+    var html=brandWrap(innerHtml, isBranded(), sig)+ThriveStore.footerHtml(lang);
+    var pbox=el("plainBox");
+    // The footer (POSTAL) is attached in exactly ONE place, here, so no send path can omit or diverge it.
+    var rawText=(pbox && pbox.dataset.dirty==="1") ? pbox.value : toPlainText(innerHtml, sig);
+    var text=rawText+ThriveStore.footerText(lang);
+    var token=(opts.track && !replyCtx) ? recipientOpenToken(oppOf(), addr, subject) : "";
+    if(token && oppObj && oppObj.slug){
+      var base=liveUrl(oppObj.slug), tokd=base+(base.indexOf("?")<0?"?":"&")+"r="+encodeURIComponent(token);
+      html=html.split(base).join(tokd);                   // channel 2: the page link carries the token
+      text=text.split(base).join(tokd);
+      html=html+openPixelHtml(oppObj.slug, token, getSyncEndpoint());   // channel 1: one open pixel
+    }
+    return { to:addr, name:nm, subject:subject, html:html, text:text, token:token, lang:lang };
+  }
+  try{ window.__cmpCompile=compileArtifact; }catch(_){}
 
   const plainBox=el("plainBox");
   if(plainBox) plainBox.addEventListener("input", ()=>{ plainBox.dataset.dirty="1"; });
@@ -6601,18 +6638,54 @@ async function initCompose(slugArg, opts){
   }
 
   const prevFrame=el("cmpPreview");
+  /* P7 / D5: the recipient switcher. Preview steps the ACTUAL roster (a campaign's recipients, or the one
+     field recipient for a single send: a campaign of one), so the operator sees each person's exact email
+     in turn. It only chooses which recipient the preview compiles; it sends nothing. */
+  var prevIdx=0;
+  function previewRoster(){
+    var recs = oppObj ? (campaignRecipients(oppObj)||[]) : [];
+    return recs.length>1 ? recs : [fieldRecipient()];
+  }
+  function currentPreviewRecipient(){
+    var r=previewRoster(); if(!r.length) return fieldRecipient();
+    if(prevIdx<0) prevIdx=0; if(prevIdx>=r.length) prevIdx=r.length-1;
+    return r[prevIdx];
+  }
+  function renderRecipSwitch(){
+    var box=el("cmpRecipSwitch"); if(!box) return;
+    var r=previewRoster();
+    if(r.length<2){ box.hidden=true; return; }
+    box.hidden=false;
+    if(prevIdx>=r.length) prevIdx=r.length-1;
+    var cur=currentPreviewRecipient(), nm=mergeNameFor(cur), lbl=el("cmpRecipLabel");
+    if(lbl) lbl.innerHTML='<bdi class="n">'+(prevIdx+1)+'</bdi> / <bdi class="n">'+r.length+'</bdi> · '+
+      (nm? esc(nm) : '<span class="tp-noname">'+esc(t("tp_noname"))+'</span>')+
+      ' <span class="mono-iso">'+ltr(esc(bareAddress(cur.addr||"")))+'</span>';
+  }
+  var recPrevBtn=el("cmpPrevRecip"), recNextBtn=el("cmpNextRecip");
+  function stepRecip(d){ var r=previewRoster(); if(r.length<2) return; prevIdx=(prevIdx+d+r.length)%r.length; refreshPreview(); }
+  if(recPrevBtn) recPrevBtn.addEventListener("click", ()=>stepRecip(-1));
+  if(recNextBtn) recNextBtn.addEventListener("click", ()=>stepRecip(1));
+  // The email-safe frame. A CSP allows the site logo and data: images but blocks the relay open pixel from
+  // firing, so the preview shows the pixel in the source (the truth) yet never records a phantom open.
+  var PREVIEW_CSP="default-src 'none'; img-src https://"+SITE+" data:; style-src 'unsafe-inline'";
   function refreshPreview(){
     refreshSubjMeter();
     if(plainBox && plainBox.dataset.dirty!=="1") plainBox.value=composedText();
     renderPreSend();
+    renderRecipSwitch();
     if(!prevFrame) return;
-    const card = oppObj ? linkCard(oppObj, {copy:false}) : "";
-    // The preview is its own document (an iframe), so the console stylesheet cannot reach inside it. The
-    // body wraps within the frame here: overflow-wrap and word-break both inherit, so composedHtml and the
-    // card wrap long words and URLs and no line escapes the frame at any width, in either direction.
-    prevFrame.srcdoc='<!DOCTYPE html><html dir="'+(docLoc()==="AR"?"rtl":"ltr")+'"><body '+
-      'style="margin:0;padding:16px;background:#fff;overflow-wrap:anywhere;word-break:break-word">'+composedHtml()+card+'</body></html>';
+    var art=compileArtifact(currentPreviewRecipient(), {track:true});
+    // Dev-only divergence hook (see the true-preview test): when set, the preview bypasses compile and the
+    // pixel/token vanish, so the match breaks. Undefined in production.
+    var bodyHtml = (typeof window!=="undefined" && window.__previewBypassCompile) ? composedHtml() : art.html;
+    // The preview is its own document (an iframe): the console stylesheet cannot reach in, and the body
+    // wraps within the frame (overflow-wrap + word-break inherit) so no line escapes at any width.
+    prevFrame.srcdoc='<!DOCTYPE html><html dir="'+(art.lang==="ar"?"rtl":"ltr")+'"><head><meta charset="utf-8">'+
+      '<meta http-equiv="Content-Security-Policy" content="'+PREVIEW_CSP+'"></head><body '+
+      'style="margin:0;padding:16px;background:#fff;overflow-wrap:anywhere;word-break:break-word">'+bodyHtml+'</body></html>';
   }
+  try{ window.__cmpRefreshPreview=refreshPreview; }catch(_){}   // test hook; harmless in prod
 
   /* Send safety: the page is proven live before any message leaves for a party. liveState is the
      last known answer, refreshed on open and re-checked at the moment of each send. `null` means
@@ -6818,10 +6891,10 @@ async function initCompose(slugArg, opts){
     if(!ep){ toast(t("cmp_no_ep")); return; }
     selfBtn.disabled=true;
     try{
-      const sb=sendBody();   // same finished body as a real send, footer included, so the proof copy shows exactly what a client sees
+      const sb=compileArtifact(fieldRecipient(), {track:false});   // same finished body as a real send, footer included; a proof copy to the operator never tokenizes
       const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
         body:JSON.stringify({ from:FROM_EMAIL, fromName:getFromName(), to:FROM_EMAIL,
-          subject:"["+t("cmp_self_tag")+"] "+resolveTokens(el("esubject").value.trim()),
+          subject:"["+t("cmp_self_tag")+"] "+sb.subject,
           html:sb.html, text:sb.text }) }, 30000);
       const txt=await r.text();
       let j=null; try{ j=JSON.parse(txt); }catch(_){}
@@ -6866,16 +6939,16 @@ async function initCompose(slugArg, opts){
     const left=unresolvedTokens(resolveTokens(htmlOut()+" "+el("esubject").value));
     if(left.length){ toast(t("ps_tokens_block")+" "+left.join(", ")); renderPreSend(); return; }
     /* The physical address and the one line opt out are required by US law for commercial email, and
-       both are already true of Thrive. The footer is attached by sendBody, the one composer, from the
+       both are already true of Thrive. The footer is attached by compileArtifact, the one composer, from the
        single POSTAL source, so this send carries the exact footer the self-send proof copy showed.
        List-Unsubscribe is not required at this volume and costs nothing, and it converts a spam
        complaint into an unsubscribe. The relay sends this body verbatim and adds nothing. */
     // Campaigns P2: an outreach send (never a thread reply) carries a per-recipient open token so this
     // person's opens attribute to them. The token is this send's console_mail row id, set BEFORE the body
     // is compiled so the open pixel and the tokenized page link both carry it, then cleared in finally.
-    const subjectOut=resolveTokens(el("esubject").value.trim());
-    __sendToken = replyCtx ? "" : recipientOpenToken(oppOf(), to, subjectOut);
-    const sb=sendBody();
+    // The one compile: the send submits byte-for-byte what the preview showed for this recipient.
+    const art=compileArtifact(fieldRecipient(), {track:true});
+    const subjectOut=art.subject, sb={ html:art.html, text:art.text }, sendToken=art.token;
     // A stable Message-ID the reply's In-Reply-To will carry back, recorded on the row so the reply
     // threads by header (the strongest tier). Passed through the relay to Resend; whether Resend keeps it
     // verbatim is a device gate, so sender and subject stay the reliable tiers underneath it.
@@ -6906,8 +6979,8 @@ async function initCompose(slugArg, opts){
       res=await relaySend({ opp:oppOf(), to:to, toName:recName(), subject:subjectOut,
         html:sb.html, text:sb.text, msgid:msgid, headers:replyHeaders, preview:preview(),
         chapter:sendChapter(oppOf()),
-        mailExtra:{ templateId:m.templateId, templateName:m.templateName, branded:isBranded(), mid:(__sendToken||undefined) } });
-    } finally { el("eSend").disabled=false; el("eSend").textContent=old; __sendToken=""; }
+        mailExtra:{ templateId:m.templateId, templateName:m.templateName, branded:isBranded(), mid:(sendToken||undefined) } });
+    } finally { el("eSend").disabled=false; el("eSend").textContent=old; }
     // A completed send, refused by name: no second delivery.
     if(res.status==="duplicate"){ toast(t("cmp_dupe_block")); reconcileReply(); return; }
     // A timeout: in flight and MAY have delivered. The pending row already advanced the card; say "sent,

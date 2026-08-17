@@ -2,11 +2,11 @@
 
 The footer "Alexandria, Egypt" shipped from an older relay after #79 fixed the console's footer, because
 the footer was composed in two places. This proves the root fix: the console attaches the footer in ONE
-place (sendBody, from the POSTAL source), both send paths use it, and the relay composes no footer of its
+place (compileArtifact, from the POSTAL source), both send paths use it, and the relay composes no footer of its
 own.
 
 Part 1 reads the source: the relay sendMail_ forwards d.html/d.text verbatim and writes no footer or
-address; both console send payloads build their body from the one sendBody helper, which appends the
+address; both console send payloads build their body from the one compileArtifact helper, which appends the
 POSTAL footer. Part 2 drives the real self-send in Chromium (the device-gate path, "send to myself"),
 captures the body the console hands the relay, and asserts it carries the correct footer and never
 "Egypt".
@@ -41,11 +41,13 @@ ck("the relay composes no footer or address in code (no Egypt, no address string
    send_code[:200])
 
 app = open(os.path.join(ROOT, "library/app.js")).read()
-ck("the console has one footer composer (sendBody), attaching the POSTAL footer",
-   "function sendBody()" in app and "ThriveStore.footerHtml(lang)" in app and "ThriveStore.footerText(lang)" in app)
-ck("both send payloads build their body from sendBody (self-send and real send)",
-   len(re.findall(r"const sb=sendBody\(\)", app)) >= 2 and app.count("html:sb.html") >= 1)
-ck("the footer is attached in exactly one place (only sendBody appends it)",
+# P7: one compile(recipient) (compileArtifact) is now the single body/footer composer, feeding both the
+# preview and every send, so what the operator previews is byte-for-byte what the relay is handed.
+ck("the console has one footer composer (compileArtifact), attaching the POSTAL footer",
+   "function compileArtifact(" in app and "ThriveStore.footerHtml(lang)" in app and "ThriveStore.footerText(lang)" in app)
+ck("both send payloads build their body from compileArtifact (self-send and real send)",
+   len(re.findall(r"compileArtifact\(fieldRecipient\(\)", app)) >= 2 and app.count("html:sb.html") >= 1)
+ck("the footer is attached in exactly one place (only compileArtifact appends it)",
    app.count("ThriveStore.footerHtml") == 1 and app.count("ThriveStore.footerText") == 1)
 
 # ---- Part 2: the real self-send body, in Chromium ---------------------------
