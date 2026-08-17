@@ -1236,6 +1236,35 @@ function groupSendPlan(recipients, template){
     return { addr:r.addr, name:greetingFor(r), lang:r.lang||(template&&template.lang)||"", blocked:!g.ok, reason:g.ok? "" : g.reason };
   });
 }
+/* P6 / D4: "Personalize names", the display side of the {{NAME}} merge (R2). The backend above
+   (renderPersonalized, greetingFor) still blocks a nameless recipient from an actual send; these
+   pure helpers add only what the composer and the pre-send roster SHOW: the greeting each recipient
+   will read, with the name merged in, or, for a nameless recipient, the token removed cleanly. The
+   send path is untouched (P7). One token spelling only: {{NAME}}. */
+// The greeting forms the chip recognizes, EN and AR. Longer forms first so a multi-word greeting
+// (Good day, أهلا وسهلا) matches whole, not only its first word.
+var GREET_FORMS=["Good day","Hello","Hi","Dear","أهلا وسهلا","مرحبا","يوم سعيد","عزيزي"];
+function greetingHeadRe(){
+  var alt=GREET_FORMS.map(function(g){ return g.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }).join("|");
+  return new RegExp("^([ \\t]*)(?:"+alt+")","i");
+}
+// Remove the {{NAME}} token and heal the seam: a space stranded before a comma or a stop collapses,
+// and a double space becomes one. So "Hi {{NAME}}," with no name reads "Hi," and never "Hi ,".
+function stripNameTokenClean(s){
+  return String(s==null?"":s)
+    .replace(/\{\{\s*NAME\s*\}\}/g,"")
+    .replace(/[ \t]+([,،.:;!?])/g,"$1")
+    .replace(/[ \t]{2,}/g," ")
+    .replace(/[ \t]+$/g,"");
+}
+// The greeting a recipient will actually read: the name merged in, or, for a nameless recipient, the
+// token removed cleanly. Pure; used by the pre-send roster and the editor, never by the send.
+function mergeGreetingLine(line, name){
+  var s=String(line==null?"":line), nm=(name==null?"":String(name)).trim();
+  return nm ? s.replace(/\{\{\s*NAME\s*\}\}/g, nm) : stripNameTokenClean(s);
+}
+try{ window.stripNameTokenClean=stripNameTokenClean; window.mergeGreetingLine=mergeGreetingLine;
+     window.greetingHeadRe=greetingHeadRe; window.GREET_FORMS=GREET_FORMS; }catch(_){}
 
 /* ---------- the quiet update badge (P1.5, minimal) ----------
    New opens or replies on a card since its panel was last opened. Last-seen is local presentation state,
@@ -5053,7 +5082,7 @@ function mergeFieldsText(str, o, name, month){
 function mergeFieldsHtml(str, o, name, month){
   return (str||"").split("{{BIZ}}").join(esc((o&&o.business)||""))
     .split("{{LINK}}").join(o?liveUrl(o.slug):"")
-    .split("{{NAME}}").join('<span data-m="name">'+esc(name||"there")+'</span>')
+    .split("{{NAME}}").join('<span data-m="name" contenteditable="false">'+esc(name||"there")+'</span>')
     .split("{{MONTH}}").join('<span data-m="month">'+esc(month||"")+'</span>')
     .split("{{SLUG}}").join(esc(o?o.slug:""));
 }
@@ -6193,6 +6222,111 @@ async function initCompose(slugArg, opts){
     refreshLinks(); recordBody();                        // applying a template is a single undo step
   }
   function clearCompose(){ subjectDirty=false; el("esubject").value=""; body.innerHTML=""; if(monthWrap) monthWrap.hidden=true; refreshLinks(); recordBody(); }
+
+  /* ---- P6 / D4: "Personalize names" ---------------------------------------
+     One chip that adds the {{NAME}} merge token to the greeting. The token lives in the editor as
+     the same tagged soft pill the templates use (data-m="name", contenteditable so it deletes whole):
+     never raw braces, kept in sync by syncMerge, stripped to clean text on send by htmlOut. Here the
+     writer adds it (after a recognized greeting, or at the cursor) and removes it again, healing the
+     line so a nameless greeting reads "Hi," and never "Hi ,". {{NAME}} only (R2); nothing sends. */
+  const tbPer=el("tbPersonalize");
+  function personalizeActive(){ return !!body.querySelector('[data-m="name"]'); }
+  function refreshPersonalizeChip(){ if(tbPer){ const on=personalizeActive(); tbPer.classList.toggle("on", on); tbPer.setAttribute("aria-pressed", on?"true":"false"); } }
+  function makeNamePill(){
+    const s=document.createElement("span");
+    s.setAttribute("data-m","name"); s.setAttribute("contenteditable","false");
+    s.textContent=recipientName()||"there";
+    return s;
+  }
+  // The caret, only when it is a collapsed point inside the editable body (never a toolbar click).
+  function bodyCaret(){
+    const sel=window.getSelection();
+    if(!sel || !sel.rangeCount) return null;
+    const r=sel.getRangeAt(0);
+    return (r.collapsed && body.contains(r.startContainer)) ? r : null;
+  }
+  function caretOnPill(r){ let n=r&&r.startContainer; while(n&&n!==body){ if(n.nodeType===1 && n.getAttribute && n.getAttribute("data-m")==="name") return true; n=n.parentNode; } return false; }
+  // Insert the pill after a recognized greeting word, before any trailing comma, one space between.
+  function insertNameAfterGreeting(){
+    const re=greetingHeadRe();
+    const walk=document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null);
+    let node;
+    while((node=walk.nextNode())){
+      const m=re.exec(node.nodeValue||"");
+      if(!m) continue;
+      const after=m[0].length, lead=node.nodeValue.slice(0,after);
+      const tail=node.nodeValue.slice(after).replace(/^[ \t]+/,"");   // drop existing spaces; re-add exactly one
+      const parent=node.parentNode, pill=makeNamePill(), afterNode=document.createTextNode(tail);
+      parent.replaceChild(afterNode, node);
+      parent.insertBefore(pill, afterNode);
+      parent.insertBefore(document.createTextNode(lead+" "), pill);
+      return true;
+    }
+    return false;
+  }
+  // Insert the pill at the caret, padded with single spaces so it never glues to a neighbouring word.
+  function insertNameAtCaret(r){
+    if(!r) return false;
+    const pill=makeNamePill(), c=r.startContainer, off=r.startOffset;
+    const prevCh=(c.nodeType===3 && off>0)? c.nodeValue.charAt(off-1) : "";
+    const nextCh=(c.nodeType===3 && off<c.nodeValue.length)? c.nodeValue.charAt(off) : "";
+    r.insertNode(pill);
+    if(nextCh && !/\s/.test(nextCh)) pill.parentNode.insertBefore(document.createTextNode(" "), pill.nextSibling);
+    if(prevCh && !/\s/.test(prevCh)) pill.parentNode.insertBefore(document.createTextNode(" "), pill);
+    return true;
+  }
+  function insertNameAtStart(){ const pill=makeNamePill(); body.insertBefore(pill, body.firstChild); if(pill.nextSibling) pill.parentNode.insertBefore(document.createTextNode(" "), pill.nextSibling); return true; }
+  // Remove every name pill and heal the seam so turning personalisation off leaves no token residue.
+  function removeNamesClean(){
+    const spans=body.querySelectorAll('[data-m="name"]');
+    if(!spans.length) return false;
+    spans.forEach(s=>{ if(s.parentNode) s.parentNode.removeChild(s); });
+    body.normalize();
+    const walk=document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null), fix=[]; let n;
+    while((n=walk.nextNode())) fix.push(n);
+    fix.forEach(n=>{ n.nodeValue=String(n.nodeValue).replace(/[ \t]+([,،.:;!?])/g,"$1").replace(/[ \t]{2,}/g," "); });
+    return true;
+  }
+  if(tbPer) tbPer.addEventListener("click", ()=>{
+    const r=bodyCaret();
+    if(personalizeActive()){
+      if(r && !caretOnPill(r)) insertNameAtCaret(r);          // add another where the writer points
+      else removeNamesClean();                                 // otherwise, toggle it off cleanly
+    } else {
+      insertNameAfterGreeting() || (r && insertNameAtCaret(r)) || insertNameAtStart();
+    }
+    syncMerge(); refreshPersonalizeChip(); recordBody(); touchCompose(); refreshPreview();
+  });
+  body.addEventListener("input", refreshPersonalizeChip);
+  // The pre-send roster: every recipient of a campaign with the exact name that will merge and the
+  // greeting each will read (the name merged, or the clean fallback for a nameless one). The P5 roster
+  // rows are the single name source; this only shows what will happen. It writes nothing and sends nothing.
+  function bodyNameTemplateLine(){
+    const c=body.cloneNode(true);
+    c.querySelectorAll('[data-m="name"]').forEach(s=>s.replaceWith(document.createTextNode("{{NAME}}")));
+    const lines=String(c.innerText||c.textContent||"").split(/\r?\n/);
+    for(let i=0;i<lines.length;i++){ const L=lines[i].trim(); if(L) return L; }
+    return "";
+  }
+  function renderMergeRoster(){
+    const host=el("mergeRoster"); if(!host) return;
+    const recips = oppObj ? (campaignRecipients(oppObj)||[]) : [];
+    const active = personalizeActive() || /\{\{\s*NAME\s*\}\}/.test(htmlOut());
+    if(recips.length<2 || !active){ host.hidden=true; host.innerHTML=""; return; }
+    const line=bodyNameTemplateLine();
+    const rows=recips.map(r=>{
+      const nm=greetingFor(r);
+      const lang=(r.lang==="ar"||isArabicText(nm))?"ar":(docLoc()==="AR"?"ar":"en");
+      const greet=mergeGreetingLine(line, nm);
+      return '<li class="mr-row'+(nm?"":" mr-noname")+'" dir="'+(lang==="ar"?"rtl":"ltr")+'">'+
+        '<span class="mr-name">'+(nm? esc(nm) : '<span class="mr-miss">'+esc(t("pn_no_name"))+'</span>')+'</span>'+
+        '<span class="mr-addr mono-iso">'+ltr(esc(r.addr))+'</span>'+
+        '<span class="mr-greet">'+esc(greet)+'</span></li>';
+    }).join("");
+    host.hidden=false;
+    host.innerHTML='<h4 class="mr-h">'+esc(t("pn_roster_h"))+' <bdi class="n">'+recips.length+'</bdi></h4>'+
+      '<ul class="mr-list">'+rows+'</ul>';
+  }
   if(tplSel){
     const plainOpt=document.createElement("option"); plainOpt.value=""; plainOpt.textContent=t("cmp_no_tpl"); plainOpt.setAttribute("data-i18n","cmp_no_tpl"); tplSel.appendChild(plainOpt);
     /* The drop-down obeys the same rule as the chips. Two controls offering different sets is
@@ -6524,6 +6658,7 @@ async function initCompose(slugArg, opts){
         '<li class="'+(r.pending?"wait":(r.ok?"ok":"no"))+'">'+ic(r.pending?"clock":(r.ok?"check":"alert"))+esc(t(r.k))+
         (r.detail? ' <span class="mono-iso">'+esc(r.detail)+'</span>':'')+'</li>').join("")+'</ul>';
     }
+    renderMergeRoster();   // P6: every recipient with the exact name that will merge
     syncSendState();   // the Send buttons follow the same gate, so the look matches the truth at a glance
   }
   /* The honest Send state. A send to a party is only allowed once the page is proven live, so while
@@ -6634,6 +6769,7 @@ async function initCompose(slugArg, opts){
   if(prevWrap) prevWrap.addEventListener("toggle", ()=>{ if(prevWrap.open) refreshPreview(); });
   if(!replyCtx && restoreCompose()) toast(t("draft_restored"));   // a reply is transient: never restore the outreach draft over the greeting
   refreshPreview();
+  refreshPersonalizeChip();   // P6: reflect whether the body already carries the {{NAME}} pill
 
   /* Undo and redo for the outreach message text, and only there. The history is keyed by the slug, so
      reopening the same message keeps its steps while a different one starts fresh, and it survives the
@@ -6797,6 +6933,7 @@ async function initCompose(slugArg, opts){
       if(onSent) try{ onSent(); }catch(_){}
     }
   });
+  try{ window.__composeReady=(window.__composeReady||0)+1; }catch(_){}   // test readiness signal; harmless in prod
 }
 
 /* ---------- settings (GitHub publishing + analytics endpoint) ---------- */

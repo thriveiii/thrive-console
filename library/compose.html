@@ -77,6 +77,9 @@
         <button type="button" id="tbList" data-i18n="cmp_tb_list">List</button>
         <button type="button" id="tbLink" data-i18n="cmp_tb_link">Link</button>
         <button type="button" id="tbUnlink" data-i18n="cmp_tb_unlink">Unlink</button>
+        <!-- Personalize names (D4): add the name merge token to the greeting as a soft pill, or
+             remove it cleanly. A toggle; nothing here sends. -->
+        <button type="button" id="tbPersonalize" class="tb-toggle" aria-pressed="false" data-i18n="pn_chip" data-i18n-aria="pn_aria">Personalize names</button>
         <button type="button" id="tbOpp" class="tb-accent" hidden data-i18n="cmp_insert_opp">Link to opportunity</button>
       </div>
       <div id="elinkbar" class="elinkbar" hidden>
@@ -140,6 +143,10 @@
       <summary data-i18n="cmp_preview_h">Preview as the recipient sees it</summary>
       <div class="cmp-preview"><iframe id="cmpPreview" title="preview" sandbox=""></iframe></div>
     </details>
+
+    <!-- The pre-send roster (D4): every recipient of a campaign with the exact name that will merge
+         and the greeting each will read. Read-only; the P5 roster rows are where names are edited. -->
+    <div id="mergeRoster" class="merge-roster" hidden></div>
 
     <!-- Three lines, shown once, before the message leaves. -->
     <div id="preSend" class="pre-send" hidden></div>
