@@ -578,10 +578,16 @@ function doGet(e) {
   var op = (e && e.parameter && e.parameter.op) || '';
   if (op === 'hit') {
     try {
+      /* r is the per-recipient token (a console_mail row id) carried by an email tracking pixel, so an
+         open can be attributed to one recipient (console_hits.data.r -> console_mail.id -> to_addr). It is
+         optional: a hit without it stays an anonymous, campaign-level view, never guessed onto a person. */
       hitPut_({ type: e.parameter.type || 'open', slug: e.parameter.slug || '',
-                ts: new Date().toISOString(), vid: e.parameter.vid || '',
+                ts: new Date().toISOString(), vid: e.parameter.vid || '', r: e.parameter.r || '',
                 ms: e.parameter.ms ? Number(e.parameter.ms) : undefined });
-      return json_({ ok: true });
+      /* Apps Script ContentService cannot serve image bytes or a 302, so the pixel URL answers with a tiny
+         text body. Loaded by an <img>, that renders as an empty 1x1 (no alt), invisible in the client; the
+         open is already recorded above. This is the only pixel behavior this relay can offer. */
+      return ContentService.createTextOutput('').setMimeType(ContentService.MimeType.TEXT);
     } catch (err) { return json_({ ok: false, error: String(err.message || err) }); }
   }
   /* The bare GET reports through json_, so relay_version (from the single RELAY_VERSION constant)
@@ -610,6 +616,18 @@ function doPost(e) {
     }
 
     if (!op) return json_(sendMail_(d));          // v4 shape: a bare body is a send
+
+    /* The prospect-page beacon (beacon.js) POSTs { op:'hit', ev:{...} } via navigator.sendBeacon. It is
+       unauthenticated by design (a visitor has no console credential), so it is answered BEFORE authOk_,
+       exactly like the GET pixel above. Without this branch a page open fell through to authOk_ and was
+       dropped, so remote page opens never reached the store; that is fixed here. ev carries r (the
+       per-recipient token) unchanged, so a page visit from a tokenized link attributes to one recipient. */
+    if (op === 'hit') {
+      var ev = (d && d.ev) || {};
+      if (!ev.ts) ev.ts = new Date().toISOString();   // stamp if the client omitted it
+      hitPut_(ev);
+      return json_({ ok: true });
+    }
 
     authOk_(d.auth);
 

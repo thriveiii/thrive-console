@@ -26,6 +26,14 @@
   if (!m) return;
   var slug = decodeURIComponent(m[1]);
 
+  // The per-recipient token: a tokenized page link (liveUrl?r=<mail_id>) carries r so a visit can be
+  // attributed to one recipient (console_hits.data.r -> console_mail.id -> to_addr). Absent it, the visit
+  // stays an anonymous, campaign-level view, never guessed onto a person.
+  function tokenR() {
+    try { return (new URLSearchParams(location.search)).get("r") || ""; } catch (e) { return ""; }
+  }
+  var R = tokenR();
+
   // Is this the console operator previewing their own page? Their browser holds an unlocked
   // console session on this same origin. Tagged, not dropped: the console filters it.
   function isSelf() {
@@ -81,7 +89,7 @@
   })();
 
   var openEv = {
-    type: "open", slug: slug, ts: new Date().toISOString(), vid: VID, self: SELF,
+    type: "open", slug: slug, ts: new Date().toISOString(), vid: VID, self: SELF, r: R,
     ref: document.referrer || "", lang: navigator.language || "",
     w: (screen && screen.width) || 0, h: (screen && screen.height) || 0,
     ua: (navigator.userAgent || "").slice(0, 180)
