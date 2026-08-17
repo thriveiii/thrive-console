@@ -6385,11 +6385,10 @@ async function initCompose(slugArg, opts){
   let tplCache=getEmailTemplates();                       // parse localStorage once, not on every keystroke
   const refreshTplCache=()=>{ tplCache=getEmailTemplates(); };
   let subjectDirty=false;                                 // writer edited the subject by hand, so stop recomputing it
-  // The shared editor serves both outreach and reply. Clear any reply-lean state a prior reply mount left on
-  // the node, so outreach always starts from the full editor; reply mode re-applies it below.
+  // The shared editor serves both outreach and reply. Clear any reply-lean marker a prior reply mount left on
+  // the node, so outreach always starts from the full calm chrome; reply mode re-applies it below.
   var __composeRoot=document.getElementById("view-compose");
-  if(__composeRoot){ __composeRoot.classList.remove("reply-lean","reply-show-options"); }
-  { var __roPrev=el("cmpReplyOptions"); if(__roPrev) __roPrev.hidden=true; }
+  if(__composeRoot){ __composeRoot.classList.remove("reply-lean"); }
 
   if(opts && opts.reply && slug){
     replyCtx=replyTarget(slug);
@@ -6403,27 +6402,12 @@ async function initCompose(slugArg, opts){
       const g=replyGreeting(replyCtx);
       bd.innerHTML='<div dir="'+(replyCtx.lang==="ar"?"rtl":"auto")+'">'+esc(g).split("\n").join("<br>")+'</div>';
     }
-    // Finding 2: a reply is calm by default. Mark the editor lean (CSS tucks the template picker, the
-    // formatting toolbar, the closing/plain/preview blocks and the alternate send buttons behind one toggle)
-    // and offer a single "Options" affordance that reveals the full surface. Recipient, subject, body and
-    // Send stay in view; nothing is removed, only tucked. The toggle is injected once and reused.
-    if(__composeRoot){
-      __composeRoot.classList.add("reply-lean");
-      var ob=el("cmpReplyOptions");
-      if(!ob){
-        ob=document.createElement("button");
-        ob.type="button"; ob.id="cmpReplyOptions"; ob.className="btn ghost sm cmp-reply-options";
-        ob.setAttribute("aria-expanded","false");
-        ob.addEventListener("click", function(){
-          var on=__composeRoot.classList.toggle("reply-show-options");
-          ob.setAttribute("aria-expanded", on?"true":"false");
-        });
-        var suAnchor=el("esubject"), fld=suAnchor && suAnchor.closest ? suAnchor.closest(".field") : null;
-        if(fld && fld.parentNode) fld.parentNode.insertBefore(ob, fld.nextSibling);
-        else __composeRoot.insertBefore(ob, __composeRoot.firstChild);
-      }
-      ob.hidden=false; ob.textContent=t("cmp_options"); ob.setAttribute("aria-expanded","false");
-    }
+    // A reply is calm by default through the ONE calm chrome: Aa reveals formatting, More reveals the
+    // overflow (template, closing block, plain text), Preview stays first-class. Nothing bespoke to reply.
+    // The reply-lean marker only tucks the campaign-only affordances a one-address reply never uses (the
+    // personalize chip and the campaign send); recipient, subject, body, formatting, options, Preview and
+    // Send all stay reachable.
+    if(__composeRoot){ __composeRoot.classList.add("reply-lean"); }
   }
   function recipientName(){
     const n=(nameEl?nameEl.value.trim():"");
@@ -6639,12 +6623,63 @@ async function initCompose(slugArg, opts){
   if(nameEl) nameEl.addEventListener("input",syncMerge);
   if(firstEl) firstEl.addEventListener("change",syncMerge);
   if(monthEl) monthEl.addEventListener("input",syncMerge);
-  // Resolved when counted, not when wired: these two live further down the file, and reading
-  // them here by name threw before they existed.
-  initMore("cmpMoreBtn","cmpMore", ()=>{
-    const f=document.getElementById("efirst"), br=document.getElementById("ebrand");
-    return ((f&&f.checked)?1:0)+((br&&br.checked)?1:0);
-  });
+  // P9 / D8 the calm chrome. The overflow (More / ⋯) holds everything real but rarely touched; Aa reveals a
+  // floating format bar, which also appears on a text selection inside the body; Preview opens the
+  // per-recipient preview. Formatting handlers (tbBold ...) are wired elsewhere by id and are unchanged.
+  (function calmChrome(){
+    var floatBar=el("eFloatBar"), aa=el("eAa"), ovfBtn=el("cmpOverflowBtn"), ovf=el("cmpOverflow"), panel=el("composePanel");
+    function expand(btn,on){ if(btn) btn.setAttribute("aria-expanded", on?"true":"false"); }
+    if(ovfBtn && ovf){
+      ovfBtn.addEventListener("click", function(){
+        var open=ovf.hidden; ovf.hidden=!open; expand(ovfBtn, open); ovfBtn.classList.toggle("has-on", open);
+      });
+    }
+    var pinned=false;
+    function bodySelection(){
+      var s=window.getSelection && window.getSelection();
+      if(!s || s.isCollapsed || !s.rangeCount) return null;
+      var n=s.anchorNode, host=(n && n.nodeType===1)? n : (n && n.parentNode);
+      return (host && body && body.contains(host)) ? s : null;
+    }
+    function place(){
+      if(!floatBar || !panel) return;
+      var rect=null, s=bodySelection();
+      try{ if(s) rect=s.getRangeAt(0).getBoundingClientRect(); }catch(_){}
+      if(!rect || (!rect.width && !rect.height)) rect=body.getBoundingClientRect();
+      var pr=panel.getBoundingClientRect();
+      // Never let the bar ride up over the rail above the body: floor its top at the body's own top so a
+      // first-line selection (or a no-selection pin) parks the bar just inside the body, not on the Aa rail.
+      var bodyTop=body.getBoundingClientRect().top - pr.top;
+      var top=rect.top - pr.top - floatBar.offsetHeight - 8;
+      if(top < bodyTop) top=bodyTop + 4;
+      floatBar.style.top=Math.max(0,top)+"px";
+      var left=rect.left - pr.left; left=Math.max(0, Math.min(left, pr.width - floatBar.offsetWidth - 8));
+      floatBar.style.left=left+"px";
+    }
+    function show(){ if(!floatBar) return; floatBar.hidden=false; place(); expand(aa,true); }
+    function hide(){ if(!floatBar || pinned) return; floatBar.hidden=true; expand(aa,false); }
+    if(aa && floatBar){
+      aa.addEventListener("click", function(){ pinned=!pinned; if(pinned) show(); else { floatBar.hidden=true; expand(aa,false); } });
+    }
+    if(floatBar){
+      // Keep the body's text selection alive when a format button is pressed: preventDefault on mousedown so
+      // the button never steals focus and the selection never collapses (the standard rich-text-toolbar move).
+      floatBar.addEventListener("mousedown", function(ev){ ev.preventDefault(); });
+      document.addEventListener("selectionchange", function(){ if(bodySelection()) show(); else hide(); });
+      document.addEventListener("mousedown", function(ev){
+        if(pinned || floatBar.hidden) return;
+        if(floatBar.contains(ev.target) || (body && body.contains(ev.target))) return;
+        floatBar.hidden=true; expand(aa,false);
+      });
+    }
+    var pbtn=el("cmpPreviewBtn"), pw=el("prevWrap");
+    if(pbtn && pw){
+      pbtn.addEventListener("click", function(){
+        pw.open=!pw.open; expand(pbtn, pw.open);
+        if(pw.open){ try{ refreshPreview(); }catch(_){} try{ pw.scrollIntoView({block:"nearest"}); }catch(_){} }
+      });
+    }
+  })();
   applyTemplate(currentTpl());
   refreshLinks();
   quick();

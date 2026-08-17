@@ -30,27 +30,16 @@
   <div class="page-h"><h1 class="title" data-i18n="cmp_title">Compose email</h1></div>
   <p class="sub" data-i18n="cmp_sub"></p>
 
-  <section class="panel compose-panel">
-    <!-- At rest this screen asks for four things: which message, to whom, what it says, and
-         send. Everything else is real and rarely touched, so it waits behind one disclosure
-         rather than competing for the same glance while you are writing. -->
-    <div class="etpl-bar">
-      <label for="etpl" class="etpl-label" data-i18n="cmp_template">Message template</label>
-      <select id="etpl" class="input"></select>
-      <button class="btn ghost sm" id="cmpMoreBtn" aria-expanded="false" aria-controls="cmpMore" data-icon="filter" data-i18n="lib_more">More</button>
-    </div>
-    <!-- One tap to a starting message. The editor still opens blank: this offers, it does not
-         decide. It is how a page you just activated goes out without writing from nothing. -->
-    <div class="etpl-quick" id="etplQuick" hidden></div>
-    <div id="cmpMore" class="more-bar" hidden>
-      <div class="field"><label for="efrom" data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
-      <button class="btn ghost sm" id="eSaveTpl" data-i18n="cmp_save_tpl">Save as template</button>
-      <label class="btn ghost sm" for="eTplFile" data-icon="import" data-i18n="cmp_tpl_upload">Import HTML as a message</label>
-      <input id="eTplFile" type="file" accept=".html,.htm,text/html" hidden>
-      <a class="btn ghost sm" href="templates.html?kind=mail" data-icon="edit" data-i18n="cmp_manage_tpl">Manage</a>
-      <label class="chk"><input type="checkbox" id="efirst"> <span data-i18n="cmp_firstname">Greet by first name only (Hi Ahmed)</span></label>
-      <label class="chk"><input type="checkbox" id="ebrand"> <span data-i18n="cmp_branded">Add logo header (for known contacts; a plain personal email reaches the inbox better)</span></label>
-    </div>
+  <section class="panel compose-panel calm" id="composePanel">
+    <!-- P9 / D8 the calm composer. At rest the screen shows only what you need to write and send:
+         To (with name), Subject, the message, and Send. Formatting hides behind Aa and appears as a
+         floating bar on a text selection; everything else real but rarely touched (template, closing
+         block, plain-text, link manager, send-to-self) waits behind one ⋯ overflow. Single, campaign,
+         and reply are this one component; reply mode is the same fields, prefilled. -->
+
+    <!-- Reply mode fills the same To/subject/body; this banner names the thread it answers. -->
+    <div id="replyBanner" class="reply-banner" hidden></div>
+
     <div class="grid2">
       <div class="field"><label for="eto" data-i18n="cmp_to">To</label><input id="eto" class="input" type="email" autocomplete="off" placeholder="name@example.com"></div>
       <div class="field"><label for="ename" data-i18n="cmp_name">Recipient name</label><input id="ename" class="input" autocomplete="off" data-i18n-ph="cmp_name_ph"></div>
@@ -63,23 +52,24 @@
       <div class="hint subj-meter" id="subjMeter"></div></div>
 
     <div class="field"><label id="ebodyL" data-i18n="cmp_message">Message</label>
-      <div class="etoolbar">
-        <!-- Undo and redo for the message text, by icon and by Cmd+Z / Cmd+Shift+Z / Cmd+Y. Greyed
-             when there is nothing to undo or redo, so an enabled tap always changes the text. -->
-        <button type="button" class="etb-hist" id="cmpUndo" data-icon="undo" data-i18n-aria="cmp_undo" disabled></button>
-        <button type="button" class="etb-hist ed-redo" id="cmpRedo" data-icon="undo" data-i18n-aria="cmp_redo" disabled></button>
-        <!-- title alone is not an accessible name, and a bare bullet is not a label
-             at all: it was the second instance of the [.] defect and verify found it.
-             WO-013 §4.1. -->
+      <!-- The quiet rail: Aa reveals formatting, ⋯ opens the overflow, undo/redo sit at the far end.
+           No permanent formatting toolbar competes for the glance while you write. -->
+      <div class="ebody-rail">
+        <button type="button" id="eAa" class="rail-btn" aria-expanded="false" aria-controls="eFloatBar" data-i18n="cmp_aa" data-i18n-aria="cmp_aa_aria">Aa</button>
+        <span class="rail-spacer"></span>
+        <button type="button" class="etb-hist rail-btn" id="cmpUndo" data-icon="undo" data-i18n-aria="cmp_undo" disabled></button>
+        <button type="button" class="etb-hist ed-redo rail-btn" id="cmpRedo" data-icon="undo" data-i18n-aria="cmp_redo" disabled></button>
+        <button type="button" id="cmpOverflowBtn" class="rail-btn rail-more" aria-expanded="false" aria-controls="cmpOverflow" data-icon="filter" data-i18n="lib_more" data-i18n-aria="cmp_more_aria">More</button>
+      </div>
+      <!-- The floating format bar: bold, italic, underline, list, link. Shown on a text selection or by
+           Aa; it is not a fixed toolbar. Handlers are unchanged, so formatting behaves exactly as before. -->
+      <div id="eFloatBar" class="efloat" role="toolbar" data-i18n-aria="cmp_format_aria" hidden>
         <button type="button" id="tbBold" data-i18n-aria="cmp_tb_bold" aria-label="Bold" title="Bold"><b>B</b></button>
         <button type="button" id="tbItalic" data-i18n-aria="cmp_tb_italic" aria-label="Italic" title="Italic"><i>I</i></button>
         <button type="button" id="tbUnder" data-i18n-aria="cmp_tb_under" aria-label="Underline" title="Underline"><u>U</u></button>
         <button type="button" id="tbList" data-i18n="cmp_tb_list">List</button>
         <button type="button" id="tbLink" data-i18n="cmp_tb_link">Link</button>
         <button type="button" id="tbUnlink" data-i18n="cmp_tb_unlink">Unlink</button>
-        <!-- Personalize names (D4): add the name merge token to the greeting as a soft pill, or
-             remove it cleanly. A toggle; nothing here sends. -->
-        <button type="button" id="tbPersonalize" class="tb-toggle" aria-pressed="false" data-i18n="pn_chip" data-i18n-aria="pn_aria">Personalize names</button>
         <button type="button" id="tbOpp" class="tb-accent" hidden data-i18n="cmp_insert_opp">Link to opportunity</button>
       </div>
       <div id="elinkbar" class="elinkbar" hidden>
@@ -113,34 +103,62 @@
       <div id="elinks" class="elinks" hidden></div>
     </div>
 
-    <!-- The bottom of the email is a real object, not a fixed string nobody sees
-         until send. It previews, it is editable for this message only, and there
-         is one saved block per locale chosen by the DOCUMENT language. §5.1. -->
-    <details class="mw-more" id="sigWrap">
-      <summary data-i18n="sig_h">Closing block</summary>
-      <p class="hint" data-i18n="sig_sub"></p>
-      <div class="field"><label for="sigBox" data-i18n="sig_this">This message only</label>
-        <textarea id="sigBox" class="input oc-body" rows="4"></textarea></div>
-      <div class="bar">
-        <button class="btn ghost sm" type="button" id="sigSave" data-i18n="sig_save">Save as my block for this language</button>
-        <button class="btn ghost sm" type="button" id="sigReset" data-i18n="sig_reset">Back to the saved block</button>
+    <!-- One overflow holds everything real but rarely touched. Opened by ⋯; closed by default so the
+         calm view stays calm. Nothing here sends to a party except Send-to-myself (a proof copy). -->
+    <div id="cmpOverflow" class="cmp-overflow" hidden>
+      <div class="ovf-group">
+        <div class="etpl-bar">
+          <label for="etpl" class="etpl-label" data-i18n="cmp_template">Message template</label>
+          <select id="etpl" class="input"></select>
+        </div>
+        <div class="etpl-quick" id="etplQuick" hidden></div>
+        <div class="more-bar" id="cmpMore">
+          <div class="field"><label for="efrom" data-i18n="cmp_from">From</label><input id="efrom" class="input" readonly></div>
+          <button class="btn ghost sm" id="eSaveTpl" data-i18n="cmp_save_tpl">Save as template</button>
+          <label class="btn ghost sm" for="eTplFile" data-icon="import" data-i18n="cmp_tpl_upload">Import HTML as a message</label>
+          <input id="eTplFile" type="file" accept=".html,.htm,text/html" hidden>
+          <a class="btn ghost sm" href="templates.html?kind=mail" data-icon="edit" data-i18n="cmp_manage_tpl">Manage</a>
+          <label class="chk"><input type="checkbox" id="efirst"> <span data-i18n="cmp_firstname">Greet by first name only (Hi Ahmed)</span></label>
+          <label class="chk"><input type="checkbox" id="ebrand"> <span data-i18n="cmp_branded">Add logo header (for known contacts; a plain personal email reaches the inbox better)</span></label>
+        </div>
       </div>
-      <span class="sig-loc" id="sigLoc"></span>
-    </details>
 
-    <!-- Some contact forms and some mail clients strip HTML, and a message that
-         arrives as tag soup is worse than no message. Generated, and editable. -->
-    <details class="mw-more" id="plainWrap">
-      <summary data-i18n="pt_h">Plain text alternative</summary>
-      <p class="hint" data-i18n="pt_sub"></p>
-      <div class="field"><textarea id="plainBox" class="input oc-body" rows="6"></textarea></div>
-      <button class="btn ghost sm" type="button" id="plainRegen" data-i18n="pt_regen">Generate it again from the message</button>
-    </details>
+      <!-- The bottom of the email is a real object, not a fixed string nobody sees until send. It
+           previews, it is editable for this message only, one saved block per DOCUMENT language. §5.1. -->
+      <details class="mw-more" id="sigWrap">
+        <summary data-i18n="sig_h">Closing block</summary>
+        <p class="hint" data-i18n="sig_sub"></p>
+        <div class="field"><label for="sigBox" data-i18n="sig_this">This message only</label>
+          <textarea id="sigBox" class="input oc-body" rows="4"></textarea></div>
+        <div class="bar">
+          <button class="btn ghost sm" type="button" id="sigSave" data-i18n="sig_save">Save as my block for this language</button>
+          <button class="btn ghost sm" type="button" id="sigReset" data-i18n="sig_reset">Back to the saved block</button>
+        </div>
+        <span class="sig-loc" id="sigLoc"></span>
+      </details>
+
+      <!-- Some contact forms and clients strip HTML; a message as tag soup is worse than none. -->
+      <details class="mw-more" id="plainWrap">
+        <summary data-i18n="pt_h">Plain text alternative</summary>
+        <p class="hint" data-i18n="pt_sub"></p>
+        <div class="field"><textarea id="plainBox" class="input oc-body" rows="6"></textarea></div>
+        <button class="btn ghost sm" type="button" id="plainRegen" data-i18n="pt_regen">Generate it again from the message</button>
+      </details>
+
+      <div class="ovf-group ovf-actions">
+        <button class="btn ghost sm" id="eSelf" data-icon="mail" data-i18n="cmp_self">Send to myself</button>
+        <button class="btn ghost sm" id="eCopy" data-icon="copy" data-i18n="cmp_copy">Copy for Gmail</button>
+        <button class="btn ghost sm" id="eMail" data-icon="mail" data-i18n="cmp_mailto">Open in mail app</button>
+      </div>
+    </div>
+
+    <!-- The pre-send roster (D4): every recipient of a campaign with the exact name that will merge
+         and the greeting each will read. Read-only; the P5 roster rows are where names are edited. -->
+    <div id="mergeRoster" class="merge-roster" hidden></div>
 
     <!-- A live preview of the exact message that lands, per recipient (P7/D5): the one compiled
-         artifact a send submits, rendered email-safe, pixel and tokenized link included. The switcher
-         steps the actual roster so the operator sees each person's exact email in turn. -->
-    <details class="mw-more" id="prevWrap">
+         artifact a send submits, rendered email-safe, pixel and tokenized link included. -->
+    <details class="mw-more cmp-prev-wrap" id="prevWrap">
       <summary data-i18n="cmp_preview_h">Preview as the recipient sees it</summary>
       <div id="cmpRecipSwitch" class="recip-switch" hidden>
         <button type="button" class="btn ghost sm rec-nav" id="cmpPrevRecip" data-i18n-aria="tp_prev" aria-label="Previous recipient">&lsaquo;</button>
@@ -150,21 +168,21 @@
       <div class="cmp-preview"><iframe id="cmpPreview" title="preview" sandbox=""></iframe></div>
     </details>
 
-    <!-- The pre-send roster (D4): every recipient of a campaign with the exact name that will merge
-         and the greeting each will read. Read-only; the P5 roster rows are where names are edited. -->
-    <div id="mergeRoster" class="merge-roster" hidden></div>
-
     <!-- Three lines, shown once, before the message leaves. -->
     <div id="preSend" class="pre-send" hidden></div>
+
+    <!-- Campaign controls: the personalize chip (P6) and Preview (P7), side by side, ABOVE Send. These
+         two stay first-class, never in the overflow. -->
+    <div class="cmp-campaign-controls">
+      <button type="button" id="tbPersonalize" class="tb-toggle chip-ctl" aria-pressed="false" data-i18n="pn_chip" data-i18n-aria="pn_aria">Personalize names</button>
+      <button type="button" id="cmpPreviewBtn" class="btn ghost sm" aria-expanded="false" aria-controls="prevWrap" data-icon="eye" data-i18n="cmp_preview_btn">Preview</button>
+    </div>
 
     <div class="bar bar-actions">
       <button class="btn" id="eSend" data-icon="send" data-i18n="cmp_send">Send</button>
       <!-- P8/D6: start the durable campaign queue for a group opportunity. Shown only when the opp has more
            than one recipient; the relay paces and sends, this device is free. -->
       <button class="btn" id="eCampaign" data-icon="send" hidden data-i18n="cq_start">Start campaign</button>
-      <button class="btn ghost" id="eSelf" data-icon="mail" data-i18n="cmp_self">Send to myself</button>
-      <button class="btn ghost" id="eCopy" data-icon="copy" data-i18n="cmp_copy">Copy for Gmail</button>
-      <button class="btn ghost" id="eMail" data-icon="mail" data-i18n="cmp_mailto">Open in mail app</button>
       <span id="draftSaved" class="draft-saved" data-icon="check" hidden></span>
       <div id="quotaMeter" class="quota-meter" title=""></div>
     </div>
