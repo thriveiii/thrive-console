@@ -25,7 +25,13 @@ relay_src=open(f"{ROOT}/relay/thrive-relay.gs").read()
 app_src=open(f"{ROOT}/library/app.js").read()
 rv=int(re.search(r"RELAY_VERSION\s*=\s*(\d+)", relay_src).group(1))
 rq=int(re.search(r"REQUIRED_RELAY\s*=\s*(\d+)", app_src).group(1))
-ck(f"the relay constant RELAY_VERSION ({rv}) equals the console REQUIRED_RELAY ({rq})", rv==rq, (rv,rq))
+# P8: additive ops (the durable send queue: outbox_push/status/control) bumped the relay to v6 WITHOUT
+# changing the single-send request shape, so the console keeps REQUIRED_RELAY at 5 and single sends keep
+# working on a v5 relay; the campaign queue is offered only when the console sees a v6+ relay. The
+# invariant is therefore that the console never REQUIRES a relay newer than deployed: REQUIRED_RELAY <=
+# RELAY_VERSION (a request declaring v>relay still refuses by name, the bug this guards against).
+ck(f"the console never requires a relay newer than deployed: REQUIRED_RELAY ({rq}) <= RELAY_VERSION ({rv})",
+   rq <= rv, (rv, rq))
 ck("the relay stamps relay_version on every JSON response (json_ helper)", "o.relay_version = RELAY_VERSION" in relay_src)
 ck("the relay bare GET now reports through json_ (relay_version present on the bare endpoint)",
    "return json_({ ok: true, service: 'Thrive relay'" in relay_src)

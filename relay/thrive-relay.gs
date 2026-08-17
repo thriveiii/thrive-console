@@ -43,7 +43,10 @@
  * send into a relay it does not match. Bump it whenever the request or response
  * shape changes, and only then, in the same commit as the change.
  */
-var RELAY_VERSION = 5;
+var RELAY_VERSION = 6;   // v6 adds the durable send queue (outbox_push / outbox_status / outbox_control) and the
+                         // sendQueue_ time-trigger worker (D6 + R3). The request/response shape changed, so the
+                         // number moves with it. The console keeps REQUIRED_RELAY = 5 for single sends, so a v5
+                         // relay still sends; the campaign queue is offered only when the console sees v6+.
 
 var TAG_LOCAL   = 'hi';
 var TAG_DOMAIN  = 'thriveiii.com';
@@ -562,6 +565,168 @@ function sendMail_(d) {
   return { ok: true, id: j.id || '', replyTo: replyTo, delivered: true };
 }
 
+/* ===================== the durable send queue (D6 + R3) ===================== */
+
+/**
+ * The server-driven send queue, so a large campaign completes with the operator's device asleep.
+ *
+ * WHERE IT LIVES. store.outbox is a relay-owned key, exactly like store.inbound and store.hits: the
+ * console PUSHES items and READS status, and never the reverse, so the console's full-state sync
+ * (state_put, which overwrites store.state) can never clobber the queue. The console also holds the
+ * matching console_mail ledger row per recipient; it reconciles that ledger from outbox_status. The
+ * relay still never writes to Supabase: it sends, and reports what it sent.
+ *
+ * THE INVARIANTS THIS FILE MUST NOT BREAK.
+ *   1. One message per recipient. Each item is one single-To send. No BCC, no multi-recipient To.
+ *   2. At most once. Each item carries the console_mail row id as its Resend idempotency key, so a
+ *      re-claimed 'sending' row (a worker that died mid-send) or an overlapping tick delivers the same
+ *      message at most once.
+ *   3. Idempotent claim. A due row is flipped queued->sending INSIDE the store lock, which serializes
+ *      every trigger tick (LockService), so two overlapping ticks can never both claim one row.
+ *   4. Never counted sent before acceptance. A row flips to 'sent' only after sendMail_ returns; a
+ *      throw flips it to 'failed' with the reason, never silently.
+ */
+var OUTBOX_BATCH    = 8;            // rows claimed per tick: small, so one run stays well under the time budget
+var OUTBOX_STUCK_MS = 5 * 60000;   // a 'sending' row older than this is re-claimed; the idem key makes a resend safe
+
+function dueMs_(due) { var t = Date.parse(String(due || '')); return isNaN(t) ? 0 : t; }
+
+function findOutbox_(mid) {
+  var ob = storeRead_().outbox || [];
+  for (var i = 0; i < ob.length; i++) if (ob[i] && ob[i].mid === mid) return ob[i];
+  return null;
+}
+
+function flipOutbox_(mid, patch) {
+  return withStore_(function (store) {
+    var ob = store.outbox || [];
+    for (var i = 0; i < ob.length; i++) {
+      if (ob[i] && ob[i].mid === mid) { for (var k in patch) ob[i][k] = patch[k]; break; }
+    }
+    store.outbox = ob;
+    return { ok: true };
+  });
+}
+
+/* The console hands the relay a batch of compiled, per-recipient items. Append-only and idempotent by
+   mid, so a retried push (a flaky network at campaign start) never duplicates a row. */
+function outboxPush_(rows) {
+  rows = rows || [];
+  return withStore_(function (store) {
+    var ob = store.outbox || [];
+    var seen = {};
+    for (var i = 0; i < ob.length; i++) if (ob[i] && ob[i].mid) seen[ob[i].mid] = 1;
+    var added = 0;
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j];
+      if (!r || !r.mid || seen[r.mid]) continue;   // idempotent: a mid already queued is never re-added
+      ob.push({ mid: r.mid, opp: r.opp || '', campaign: r.campaign || r.opp || '', to: r.to || '',
+                toName: r.toName || '', subject: r.subject || '', html: r.html || '', text: r.text || '',
+                due: r.due || new Date().toISOString(), status: 'queued', error: '', tries: 0 });
+      seen[r.mid] = 1; added++;
+    }
+    /* A runaway push cannot grow the store without bound: keep every un-terminal row, and only the most
+       recent terminal ones. */
+    if (ob.length > 5000) {
+      var live = ob.filter(function (x) { return x.status === 'queued' || x.status === 'sending' || x.status === 'held'; });
+      var done = ob.filter(function (x) { return x.status === 'sent' || x.status === 'failed'; }).slice(-1000);
+      ob = live.concat(done);
+    }
+    store.outbox = ob;
+    return { ok: true, added: added, total: ob.length };
+  });
+}
+
+/* Pause holds a campaign's un-sent rows so the worker skips them; resume re-queues them with the fresh
+   due times the console computed. A complaint pauses the same way, loudly on the console; the worker
+   simply stops claiming a held row. Nothing already 'sent' is touched: a paused campaign never un-sends. */
+function outboxControl_(opp, action, dues) {
+  return withStore_(function (store) {
+    var ob = store.outbox || [], n = 0;
+    for (var i = 0; i < ob.length; i++) {
+      var r = ob[i];
+      if (!r || (r.campaign !== opp && r.opp !== opp)) continue;
+      if (action === 'pause' && r.status === 'queued') { r.status = 'held'; n++; }
+      else if (action === 'resume' && r.status === 'held') { r.status = 'queued'; if (dues && dues[r.mid]) r.due = dues[r.mid]; n++; }
+      else if (action === 'cancel' && (r.status === 'queued' || r.status === 'held')) { r.status = 'failed'; r.error = 'cancelled'; n++; }
+    }
+    store.outbox = ob;
+    return { ok: true, changed: n };
+  });
+}
+
+/* Compact status for the console to reconcile its ledger: never the payload (html/text stay on the
+   relay), only the outcome per row. */
+function outboxStatus_(opp) {
+  var ob = storeRead_().outbox || [], out = [];
+  for (var i = 0; i < ob.length; i++) {
+    var r = ob[i];
+    if (!r) continue;
+    if (opp && r.campaign !== opp && r.opp !== opp) continue;
+    out.push({ mid: r.mid, opp: r.opp, status: r.status, error: r.error || '', id: r.id || '',
+               sent_at: r.sent_at || '', due: r.due || '' });
+  }
+  return { ok: true, rows: out };
+}
+
+/**
+ * The worker. Runs on a time trigger. Claims a small batch of due queued rows oldest-first, flipping
+ * each to 'sending' INSIDE the store lock so two overlapping ticks cannot claim the same row, then
+ * sends each as its own single-To message with the row id as the idempotency key, and flips
+ * 'sending'->'sent' on provider acceptance or ->'failed' with the reason. A 'sending' row stuck past
+ * OUTBOX_STUCK_MS (a worker that died mid-send) is re-claimed; the idempotency key makes that resend
+ * deliver at most once.
+ */
+function sendQueue_() {
+  var now = new Date().getTime();
+  var claimed = withStore_(function (store) {
+    var ob = store.outbox || [];
+    // re-claim a 'sending' row a dead worker left behind, so a stall never strands a recipient
+    for (var s = 0; s < ob.length; s++) {
+      var q = ob[s];
+      if (q && q.status === 'sending' && (now - (q.sending_since || 0)) > OUTBOX_STUCK_MS) q.status = 'queued';
+    }
+    var due = [];
+    for (var i = 0; i < ob.length; i++) {
+      var r = ob[i];
+      if (r && r.status === 'queued' && dueMs_(r.due) <= now) due.push(r);
+    }
+    due.sort(function (a, b) { return dueMs_(a.due) - dueMs_(b.due); });   // oldest due first
+    var take = due.slice(0, OUTBOX_BATCH);
+    for (var k = 0; k < take.length; k++) { take[k].status = 'sending'; take[k].sending_since = now; take[k].tries = (take[k].tries || 0) + 1; }
+    store.outbox = ob;
+    return take.map(function (x) { return x.mid; });   // claim under the lock; send below, outside it
+  });
+
+  var sent = 0, failed = 0;
+  for (var c = 0; c < claimed.length; c++) {
+    var row = findOutbox_(claimed[c]);
+    if (!row) continue;
+    try {
+      var res = sendMail_({ to: row.to, subject: row.subject, html: row.html, text: row.text,
+                            slug: row.opp, idempotencyKey: row.mid });   // single To; row id = at-most-once key
+      flipOutbox_(row.mid, { status: 'sent', id: (res && res.id) || '', sent_at: new Date().toISOString(), error: '' });
+      sent++;
+    } catch (err) {
+      flipOutbox_(row.mid, { status: 'failed', error: String((err && err.message) || err) });   // visible, never silent
+      failed++;
+    }
+  }
+  return { ok: true, claimed: claimed.length, sent: sent, failed: failed };
+}
+
+/* Installed once, by hand, from the editor, like installScanTrigger. Running it twice does not make two
+   triggers: the old one is removed first. Every minute is the Apps Script floor; the pacing is in the
+   per-row due timestamps the console computed with jitter, not in the trigger interval. */
+function installSendTrigger() {
+  var all = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].getHandlerFunction() === 'sendQueue_') ScriptApp.deleteTrigger(all[i]);
+  }
+  ScriptApp.newTrigger('sendQueue_').timeBased().everyMinutes(1).create();
+  return 'sendQueue_ now runs every minute';
+}
+
 /* ===================== HTTP ===================== */
 
 function json_(o) {
@@ -645,6 +810,14 @@ function doPost(e) {
                                                scan: storeRead_().inboxScan || null });
     if (op === 'inbox_scan')    return json_(scanInbox());
     if (op === 'inbox_repair')  return json_(repairInbox_(d.days || 90, !!d.dryRun));
+
+    /* The durable send queue (D6 + R3). The console pushes a compiled per-recipient batch and reads
+       status; the sendQueue_ time trigger does the sending. outbox_run is a manual tick (a nudge, and
+       the test hook), so a campaign can be kicked without waiting for the next trigger. */
+    if (op === 'outbox_push')    return json_(outboxPush_(d.rows || []));
+    if (op === 'outbox_status')  return json_(outboxStatus_(d.opp || ''));
+    if (op === 'outbox_control') return json_(outboxControl_(d.opp || '', d.action || '', d.dues || null));
+    if (op === 'outbox_run')     return json_(sendQueue_());
 
     return json_({ ok: false, error: 'unknown op: ' + op });
   } catch (err) {
