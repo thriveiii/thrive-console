@@ -1584,6 +1584,11 @@ onThrive("unlock","supahydrate", function(){
   }catch(e){}
   try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(e){}   // paint now (local cards), no prompt
 });
+/* Freeze recovery: once signed in, push the local ledger so the sends the server is missing since Aug 14
+   record and the count moves. Deferred so hydrate/flush settle first; idempotent. */
+onThrive("unlock","mailreconcile", function(){
+  setTimeout(function(){ try{ if(supaOn() && supaSignedIn()) reconcileMailToServer(); }catch(_){} }, 2500);
+});
 
 /* The header carries the signed-in operator email and a one-tap sign-out, and nothing else about who they
    are: no role, no title, every operator equal. Sign-out returns to the operator sign-in step (gate two),
@@ -2698,6 +2703,7 @@ async function supaFlush(){
           var e=a[i];
           try{
             if(e.op==="del") await window.ThriveSupa.del(e.t, e.q);
+            else if(e.t==="console_mail") await mailUpsert(e.rows);  // the frozen path: schema-drift resilient
             else await window.ThriveSupa.upsert(e.t, e.rows);
             flushed++; progressed=true;
           }catch(err){ left.push(e); supaRecordDiverge("flush", e.t, err&&err.message); }
@@ -2804,6 +2810,36 @@ function supaMirrorMail(rec){
   if(rec.status==="pending" || rec.status==="sending" || rec.status==="unrecorded") return;   // transient/failed LOCAL states are never a server row
   supaQueueUpsert("console_mail", supaMailRow(rec));
 }
+/* Schema-drift resilience for console_mail (the 28-row freeze; full diagnosis in docs/supabase-mail-actor-column.sql).
+   supaMailRow emits a top-level `actor` column that exists only after the manual profile-phase-b migration; a DB
+   that never ran it rejects EVERY upsert, which the write path caught but never surfaced. So the write must not
+   hard-depend on a column a later migration adds. */
+var MAIL_OPTIONAL_COLS=["actor"];   // added by a later migration; each is ALSO inside data jsonb
+function mailColMissing(e){
+  // A PostgREST schema miss: the deployed table lacks a column the row names (PGRST204 / 42703 / named in the
+  // message). Not an auth or network error - a shape mismatch.
+  if(!e) return false;
+  var body=e.body, code=(body&&(body.code||""))||"";
+  if(code==="PGRST204" || code==="42703") return true;
+  var msg=String((e&&e.message)||"").toLowerCase();
+  return /could not find the .*column|column .* does not exist|schema cache/.test(msg);
+}
+function stripOptionalMailCols(row){ var r=Object.assign({}, row); MAIL_OPTIONAL_COLS.forEach(function(c){ delete r[c]; }); return r; }
+/* The one console_mail writer. Try the full row; if the server is a migration behind (a missing optional
+   column), drop the optional top-level columns and retry - each survives inside data jsonb, so nothing is lost
+   and the send records whether or not the actor migration ran. The drift is recorded, visible, never silent. */
+async function mailUpsert(rows){
+  var arr=Array.isArray(rows)? rows : [rows];
+  try{ return await window.ThriveSupa.upsert("console_mail", arr); }
+  catch(e){
+    if(mailColMissing(e)){
+      try{ supaRecordDiverge("write", "console_mail", "schema behind: retried without optional column(s) ["+MAIL_OPTIONAL_COLS.join(",")+"]; run docs/supabase-mail-actor-column.sql"); }catch(_){}
+      return await window.ThriveSupa.upsert("console_mail", arr.map(stripOptionalMailCols));
+    }
+    throw e;
+  }
+}
+window.mailUpsert=mailUpsert;
 /* The write invariant: a send is not "sent" until the SERVER has the row. The row is queued durably (retried
    by supaFlush on the next write or sign-in), then a direct upsert is AWAITED so the caller learns if the
    server holds it before reporting Sent; a failure is recorded on the diverge ledger, never swallowed. This
@@ -2815,7 +2851,7 @@ async function supaConfirmMail(rec){
   supaEnqueue({ op:"upsert", t:"console_mail", rows:[row] });        // durable: survives the direct attempt failing
   if(!supaSignedIn()) return { confirmed:false, signedOut:true };    // RLS refuses an anon write; it flushes on sign-in
   try{
-    await window.ThriveSupa.upsert("console_mail", [row]);           // the server now holds THIS row
+    await mailUpsert([row]);                                        // the server now holds THIS row (schema-drift resilient)
     dequeueMail(row.id);                                             // confirmed: drop it from the durable queue
     supaFlush().catch(function(){});                                 // opportunistically drain anything else queued
     return { confirmed:true };
@@ -2906,6 +2942,39 @@ function retryRecord(slug){
   }catch(e){ return false; }
 }
 window.retryRecord=retryRecord;
+/* Reconcile the whole local ledger to the server (Step 3). The server is missing EVERY send since Aug 14, but
+   the operator's device still holds them locally with their true recipient, subject and timestamp. This walks
+   that ledger and upserts every delivered send (and every one the freeze stranded as unrecorded/sending)
+   through mailUpsert, so the count moves and each card leaves "sent, not recorded" for its true Sent state.
+   Idempotent (upsert by id). A stranded row that lands flips locally to 'sent'; a failure is recorded, never
+   hidden. Runs once per session after hydrate; also callable by hand. */
+var __mailReconciling=false;
+async function reconcileMailToServer(){
+  if(__mailReconciling) return { pushed:0, busy:true };
+  if(!supaOn() || !supaSignedIn()) return { pushed:0, offline:true };
+  __mailReconciling=true;
+  var pushed=0, failed=0, changed=false;
+  try{
+    var log=getMailLogLocal();
+    var DELIVERED={ sent:1, opened:1, replied:1, copied:1 };
+    for(var i=0;i<log.length;i++){ var m=log[i];
+      if(!m || m.direction==="in") continue;
+      if(!String(m.opp||"").trim()) continue;                       // an empty-opp row has no lane; never written
+      var stranded=(m.status==="unrecorded" || m.status==="sending");
+      if(!DELIVERED[m.status] && !stranded) continue;               // only real, delivered sends reach the ledger
+      var writeStatus=stranded? "sent" : m.status;                  // a delivered send the freeze stranded records as Sent
+      try{
+        await mailUpsert([supaMailRow(Object.assign({}, m, { status:writeStatus }))]);
+        pushed++;
+        if(stranded){ log[i]=Object.assign({}, m, { status:"sent", confirmPending:false, error:"" }); changed=true; }
+      }catch(e){ failed++; try{ supaRecordDiverge("reconcile", "console_mail", e&&e.message); }catch(_){} }
+    }
+    if(changed){ setMailLog(log); try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} }
+  }catch(e){}
+  __mailReconciling=false;
+  return { pushed:pushed, failed:failed };
+}
+window.reconcileMailToServer=reconcileMailToServer;
 /* A team-discussion comment becomes one console_comments row. Unlike the ledger, the shape is discrete
    columns (not a data jsonb): the RLS ownership check reads `author` and the open read selects the same
    named columns back, so the schema and the client speak one vocabulary. The row travels through the SAME
