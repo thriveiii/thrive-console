@@ -665,7 +665,9 @@ function cardSending(o){
   if(!slug) return false;
   var log=getMailLog();
   for(var i=log.length-1;i>=0;i--){ var m=log[i];
-    if(m && m.opp===slug && m.direction!=="in" && m.status==="sending") return true;
+    // 'sending' is one unconfirmed send; 'queued' is a campaign still draining through the server queue (P8).
+    // Both are in-flight, so the card carries the one in-flight visual state. 'held' (paused) is not in flight.
+    if(m && m.opp===slug && m.direction!=="in" && (m.status==="sending" || m.status==="queued")) return true;
   }
   return false;
 }
@@ -1072,7 +1074,8 @@ function recipientState(slug, addr){
 // rows, so a person who wrote twice is one reply.
 function campaignStats(slug){
   var recips=campaignRecipients(slug);
-  var sent=getMailLog().filter(function(m){ return m && m.opp===slug && m.direction!=="in"; }).length;
+  // A queued or held row (P8) is committed but not yet a send, so it is never counted as "sent".
+  var sent=getMailLog().filter(function(m){ return m && m.opp===slug && m.direction!=="in" && !mailIsQueuedLike(m); }).length;
   // Opens count the same way Insights counts them: page opens at or after the first send, so a page read
   // before anything went out is never counted as an open (the number the card shows is the Insights number).
   var s0=sendsFor(slug);
@@ -1176,6 +1179,190 @@ function campaignRecipientLedger(slug){
   });
 }
 window.campaignRecipientLedger=campaignRecipientLedger;
+
+/* ===================== P8 / D6 + R3: the durable, server-driven send queue =====================
+   Starting a campaign writes one console_mail row per recipient (status queued, a jittered due, the
+   compiled per-recipient body) and hands the batch to the relay, which paces and sends on a time
+   trigger, so a large campaign completes with the operator's device asleep. The client starts, pauses,
+   resumes, and watches; it never paces (no client timers), never blasts (one row, one recipient), and
+   never counts a row sent before the relay accepts it. The ledger IS the queue: console_mail rows carry
+   status queued/held/sent/failed; the relay's store.outbox is the worker's copy, reconciled back here. */
+// A queued or held row is committed but not yet a send, so it is never counted as "sent".
+function mailIsQueuedLike(m){ var s=(m&&m.status)||""; return s==="queued"||s==="held"; }
+// Jitter config: a base gap plus a random spread between consecutive rows, never a fixed beat. Bounded so
+// a warm-ramp can widen the gaps but never zero them.
+var CAMPAIGN_JITTER={ baseMs:45000, spreadMs:120000, minMs:20000, maxMs:600000 };
+var CAMPAIGN_WARM_CAP=40;   // a soft per-day warm-ramp ceiling, stated on screen, never silent
+function campaignJitterCfg(o){
+  var c=(o&&o.campaign&&o.campaign.jitter)||{};
+  var base=Math.max(CAMPAIGN_JITTER.minMs, Math.min(CAMPAIGN_JITTER.maxMs, Number(c.baseMs)||CAMPAIGN_JITTER.baseMs));
+  var spread=Math.max(0, Math.min(CAMPAIGN_JITTER.maxMs, c.spreadMs==null?CAMPAIGN_JITTER.spreadMs:Number(c.spreadMs)));
+  return { baseMs:base, spreadMs:spread };
+}
+// Per-recipient due timestamps. Rows fill today up to the day's capacity (the smaller of the remaining
+// daily budget and the warm-ramp cap), jittered so no two share a beat; the overflow defers to the next
+// window, visibly (day>0). budget gates at queue time, exactly as the brief asks.
+function campaignSchedule(o, recipients, quota, nowMs){
+  var cfg=campaignJitterCfg(o), now=nowMs||Date.now();
+  var warmCap=Math.max(1, Number((o&&o.campaign&&o.campaign.warmCap))||CAMPAIGN_WARM_CAP);
+  var dayLeft=(quota && typeof quota.dayLeft==="number")? Math.max(0,quota.dayLeft) : recipients.length;
+  var todayCap=Math.max(0, Math.min(dayLeft, warmCap));
+  var rows=[], day=0, inDay=0, acc=0;
+  for(var i=0;i<recipients.length;i++){
+    var cap=(day===0)? todayCap : warmCap;
+    if(cap<=0){ day=1; inDay=0; acc=0; cap=warmCap; }          // no budget today: the whole batch defers
+    if(inDay>=cap){ day++; inDay=0; acc=0; }                   // this day is full: next window, fresh jitter
+    // first row of a day gets a small initial jitter (never an instant blast); each next one base+random later
+    var gap=(inDay===0)? Math.floor(Math.random()*cfg.baseMs) : (cfg.baseMs+Math.floor(Math.random()*(cfg.spreadMs+1)));
+    acc+=gap;
+    rows.push({ addr:recipients[i].addr, name:recipients[i].name||"", lang:recipients[i].lang||"",
+                dueMs:now+day*DAY_MS+acc, day:day });
+    inDay++;
+  }
+  return { rows:rows, todayCap:todayCap, warmCap:warmCap, deferred:rows.filter(function(r){return r.day>0;}).length };
+}
+// ── The ONE shared composition core, read by BOTH compile paths ─────────────────────────────────────
+// P7's single-send/preview compileArtifact and P8's campaign compileCampaignRow both compose their body
+// HERE, so neither re-implements the field merge, the POSTAL footer, the tokenized page link, the open
+// pixel, or the deterministic idem/open token. For the same recipient and content the two paths are
+// BYTE-IDENTICAL (proven by tools/compile_parity_test.py).
+//   TWO compile paths coexist BY DESIGN until P9 collapses them into one and re-proves preview==send with a
+//   single composer (see docs/durable-queue-phase8.md). This duplication of the *entry points* is tracked and
+//   deliberate; the *logic* below is shared, never copied.
+function mergeFieldsInto(str, name, ctx){
+  var out=String(str==null?"":str);
+  if(name){ out=out.replace(/\{\{\s*NAME\s*\}\}/g, name); }
+  else { out=out.replace(/\{\{\s*NAME\s*\}\}/g,"").replace(/[ \t]+([,،.:;!?])/g,"$1").replace(/[ \t]{2,}/g," "); }
+  out=out.split("{{BIZ}}").join((ctx&&ctx.business)||"");
+  out=out.split("{{LINK}}").join((ctx&&ctx.link)||"");
+  out=out.split("{{MONTH}}").join((ctx&&ctx.month)||"");
+  return out.replace(/<span data-m="[^"]*"[^>]*>([\s\S]*?)<\/span>/g,"$1");   // the sent body carries clean text, never editor spans
+}
+function composeArtifactCore(inp){
+  var lang=(inp.lang==="ar")?"ar":"en";
+  var addr=bareAddress(inp.addr||"");
+  var ctx={ business:inp.business||"", link:inp.link||"", month:inp.month||"" };
+  var inner=mergeFieldsInto(inp.innerTpl, inp.name, ctx);
+  var subject=mergeFieldsInto(inp.subjectTpl, inp.name, ctx).replace(/^\s+|\s+$/g,"");
+  var sig=inp.sig||"";
+  var html=brandWrap(inner, !!inp.branded, sig)+ThriveStore.footerHtml(lang);
+  // The footer (POSTAL) is attached in exactly ONE place, here, so no compile path can omit or diverge it.
+  var rawText=(inp.rawText!=null)? inp.rawText : toPlainText(inner, sig);
+  var text=rawText+ThriveStore.footerText(lang);
+  var tokenSlug=(inp.tokenSlug!=null)? inp.tokenSlug : (inp.slug||"");
+  var token=inp.track ? recipientOpenToken(tokenSlug, addr, subject) : "";
+  if(token && inp.slug){
+    var base=liveUrl(inp.slug), tokd=base+(base.indexOf("?")<0?"?":"&")+"r="+encodeURIComponent(token);
+    html=html.split(base).join(tokd); text=text.split(base).join(tokd);   // channel 2: the page link carries the token
+    html=html+openPixelHtml(inp.slug, token, getSyncEndpoint());           // channel 1: one open pixel
+  }
+  return { to:addr, name:inp.name||"", subject:subject, html:html, text:text, token:token, lang:lang, inner:inner };
+}
+try{ window.__composeCore=composeArtifactCore; window.mergeFieldsInto=mergeFieldsInto; }catch(_){}
+
+// One recipient's compiled artifact for the campaign queue (subject, html, text, token): the SAME shape and
+// SAME bytes a single send builds, via the ONE composeArtifactCore above (no duplicated footer/link/pixel/
+// token logic). tpl carries the authored message {subject, html, branded, sig, firstName, month, lang}.
+//   Second compile entry point BY DESIGN until P9 unifies to one; see composeArtifactCore's note.
+function compileCampaignRow(o, r, tpl){
+  tpl=tpl||{};
+  var name=String(r.name||"").trim();
+  if(tpl.firstName && name) name=name.split(/\s+/)[0];
+  var lang=(r.lang==="ar" || tpl.lang==="ar")? "ar" : "en";
+  return composeArtifactCore({
+    innerTpl:tpl.html||"", subjectTpl:tpl.subject||"", name:name,
+    business:(o&&o.business)||"", link:liveUrl((o&&o.slug)||""), month:tpl.month||"",
+    sig:tpl.sig||"", branded:!!tpl.branded, lang:lang, addr:r.addr||"",
+    slug:(o&&o.slug)||"", track:true
+  });
+}
+// Start (or top up) a campaign: write the queued ledger rows, record the day's committed sends against the
+// budget, stamp the campaign control state on the opp, and hand the compiled batch to the relay. Returns a
+// summary; never sends here.
+function startCampaignQueue(slug, tpl){
+  var o=getDraft(slug); if(!o) return { ok:false, error:"no opp" };
+  var recips=(campaignRecipients(o)||[]).filter(function(r){ return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(r.addr||"")); });
+  if(!recips.length) return { ok:false, error:"no recipients" };
+  var quota=(typeof quotaUsage==="function")? quotaUsage() : { dayLeft:recips.length };
+  var sched=campaignSchedule(o, recips, quota);
+  var batch=[], committedToday=0;
+  sched.rows.forEach(function(sr){
+    var art=compileCampaignRow(o, sr, tpl||{});
+    var dueIso=new Date(sr.dueMs).toISOString();
+    logMail({ opp:slug, to:sr.addr, toName:sr.name, subject:art.subject, status:"queued",
+              mid:art.token, direction:"out", provider:"queue", due:dueIso, campaign:slug,
+              preview:(art.text||"").replace(/\s+/g," ").trim().slice(0,120) });
+    batch.push({ mid:art.token, opp:slug, campaign:slug, to:sr.addr, toName:sr.name,
+                 subject:art.subject, html:art.html, text:art.text, due:dueIso });
+    if(sr.day===0 && typeof recordSend==="function"){ recordSend(); committedToday++; }   // budget counts at queue time
+  });
+  saveDraft({ slug:slug, campaign:{ state:"sending", started:new Date().toISOString(), n:recips.length,
+              warmCap:sched.warmCap, todayCap:sched.todayCap, deferred:sched.deferred } });
+  try{ if(typeof pushOutbox==="function") pushOutbox(batch); }catch(_){}   // hand off; the client does not pace
+  return { ok:true, n:recips.length, committedToday:committedToday, deferred:sched.deferred, batch:batch.length };
+}
+// Pause holds the un-sent tail (queued -> held) locally and on the relay; nothing already sent is touched.
+function pauseCampaign(slug, reason){
+  var log=getMailLogLocal(), n=0;
+  log.forEach(function(m){ if(m && m.opp===slug && m.status==="queued"){ m.status="held"; n++; } });
+  if(n) setMailLog(log);
+  var o=getDraft(slug)||{slug:slug};
+  saveDraft({ slug:slug, campaign:Object.assign({}, o.campaign||{}, { state:(reason==="complaint"?"paused-complaint":"paused"), paused_at:new Date().toISOString() }) });
+  try{ if(typeof relayOutboxControl==="function") relayOutboxControl(slug, "pause"); }catch(_){}
+  return { held:n };
+}
+// Resume re-queues the held tail with FRESH jitter (a new due per row) and tells the relay the new dues.
+function resumeCampaign(slug){
+  var o=getDraft(slug); if(!o) return { requeued:0 };
+  var log=getMailLogLocal();
+  var held=log.filter(function(m){ return m && m.opp===slug && m.status==="held"; });
+  if(!held.length){ saveDraft({ slug:slug, campaign:Object.assign({}, o.campaign||{}, { state:"sending" }) }); return { requeued:0 }; }
+  var sched=campaignSchedule(o, held.map(function(m){ return { addr:m.to, name:m.toName, lang:m.lang }; }),
+                             (typeof quotaUsage==="function")? quotaUsage() : { dayLeft:held.length });
+  var dues={};
+  held.forEach(function(m,i){ var dueIso=new Date(sched.rows[i].dueMs).toISOString(); m.status="queued"; m.due=dueIso; dues[m.mid||m.id]=dueIso; });
+  setMailLog(log);
+  saveDraft({ slug:slug, campaign:Object.assign({}, o.campaign||{}, { state:"sending", resumed_at:new Date().toISOString() }) });
+  try{ if(typeof relayOutboxControl==="function") relayOutboxControl(slug, "resume", dues); }catch(_){}
+  return { requeued:held.length };
+}
+// Reconcile the ledger from the relay's outbox status: the relay owns each row's outcome. Never downgrades a
+// real sent; flips queued/held/sending -> sent/failed and mirrors the terminal rows to the ledger.
+function reconcileOutbox(statusRows){
+  if(!Array.isArray(statusRows)) return 0;
+  var log=getMailLogLocal(), byId={}, changed=0;
+  log.forEach(function(m){ if(m){ var id=m.mid||m.id; if(id) byId[id]=m; } });
+  statusRows.forEach(function(sr){
+    var m=byId[sr.mid]; if(!m) return; var cur=m.status||"";
+    if(sr.status==="sent" && cur!=="sent"){ m.status="sent"; if(sr.id) m.id=sr.id; if(sr.sent_at) m.ts=sr.sent_at; if(m.due) delete m.due; changed++; }
+    else if(sr.status==="failed" && cur!=="sent"){ m.status="failed"; m.error=sr.error||"send failed"; if(m.due) delete m.due; changed++; }
+    else if(sr.status==="held" && cur==="queued"){ m.status="held"; changed++; }
+    else if(sr.status==="queued" && cur==="held"){ m.status="queued"; if(sr.due) m.due=sr.due; changed++; }
+  });
+  if(changed){ setMailLog(log); try{ statusRows.forEach(function(sr){ var m=byId[sr.mid]; if(m && (m.status==="sent"||m.status==="failed")) supaMirrorMail(m); }); }catch(_){} }
+  return changed;
+}
+// The card's live progress: k of N sent, how many queued/held/failed, and when the next row is due.
+function campaignProgress(slug){
+  var o=getDraft(slug), rows=getMailLog().filter(function(m){ return m && m.opp===slug && m.direction!=="in" && m.provider==="queue"; });
+  var sent=0, queued=0, held=0, failed=0, nextDue=0, now=Date.now();
+  rows.forEach(function(m){
+    var s=m.status||"";
+    if(s==="sent"||s==="sending") sent++;
+    else if(s==="queued"){ queued++; var d=Date.parse(String(m.due||"")); if(!isNaN(d) && (!nextDue || d<nextDue)) nextDue=d; }
+    else if(s==="held") held++;
+    else if(s==="failed") failed++;
+  });
+  var n=(o&&o.campaign&&o.campaign.n)||rows.length;
+  var state=(o&&o.campaign&&o.campaign.state)||(rows.length? "sending":"");
+  return { n:n, total:rows.length, sent:sent, queued:queued, held:held, failed:failed,
+           nextDueMs:nextDue, nextInMs:nextDue? Math.max(0,nextDue-now):0, state:state,
+           done:(queued===0 && held===0 && rows.length>0) };
+}
+try{ window.startCampaignQueue=startCampaignQueue; window.pauseCampaign=pauseCampaign;
+     window.resumeCampaign=resumeCampaign; window.reconcileOutbox=reconcileOutbox;
+     window.campaignProgress=campaignProgress; window.campaignSchedule=campaignSchedule;
+     window.compileCampaignRow=compileCampaignRow; }catch(_){}
 
 // A recipient of a group campaign who replies gets exactly one individual child opportunity, linked both
 // ways: spawned_from on the child, and the parent's recipient row finds the child by that link. The
@@ -1627,6 +1814,31 @@ function parseRoster(text){
 }
 window.parseRoster=parseRoster;
 
+// P8: the campaign's in-flight control, a first-class panel on the card. Sent k of N, how many are still
+// queued and when the next is due, held and failed counts, the deferred tail and the warm-ramp cap, and
+// the one control (pause or resume). Counts render outside the translated strings (bdi), never a flat
+// {n} template, so Arabic inflects correctly. Reads campaignProgress; the buttons start/hold nothing here,
+// they set state and tell the relay.
+function campaignControlHtml(o){
+  if(!o || !o.slug) return "";
+  var p=campaignProgress(o.slug);
+  if(!p.total && !(o.campaign && o.campaign.state)) return "";
+  var state=p.state||"", done=p.done;
+  var stateCls=state==="paused-complaint"?"is-complaint":(state==="paused"?"is-paused":(done?"is-done":"is-sending"));
+  var stateLbl=state==="paused-complaint"?t("cq_state_complaint"):(state==="paused"?t("cq_state_paused"):(done?t("cq_state_done"):t("cq_state_sending")));
+  var lines='<p class="cq-line cq-k"><bdi class="n">'+p.sent+'</bdi> / <bdi class="n">'+p.n+'</bdi> '+esc(t("cq_sent_of"))+'</p>';
+  if(p.queued) lines+='<p class="cq-line st-line">'+esc(t("cq_queued"))+' <bdi class="n">'+p.queued+'</bdi>'+(p.nextInMs? ' · '+esc(t("cq_next"))+' '+esc(fmtDur(p.nextInMs)) : '')+'</p>';
+  if(p.held)   lines+='<p class="cq-line st-miss">'+esc(t("cq_held"))+' <bdi class="n">'+p.held+'</bdi></p>';
+  if(p.failed) lines+='<p class="cq-line st-miss">'+esc(t("cq_failed"))+' <bdi class="n">'+p.failed+'</bdi></p>';
+  if(o.campaign && o.campaign.deferred) lines+='<p class="cq-line st-line">'+esc(t("cq_deferred"))+' <bdi class="n">'+o.campaign.deferred+'</bdi> · '+esc(t("cq_warmcap"))+' <bdi class="n">'+((o.campaign&&o.campaign.warmCap)||CAMPAIGN_WARM_CAP)+'</bdi></p>';
+  var ctrl="";
+  if(!done){
+    if(state==="paused"||state==="paused-complaint") ctrl='<button class="btn sm cq-resume" type="button" data-slug="'+esc(o.slug)+'">'+esc(t("cq_resume"))+'</button>';
+    else ctrl='<button class="btn ghost sm cq-pause" type="button" data-slug="'+esc(o.slug)+'">'+esc(t("cq_pause"))+'</button>';
+  }
+  return '<section class="cg-panel cq-panel '+stateCls+'"><h4 class="cg-h">'+esc(t("cq_h"))+' <span class="chip-st">'+esc(stateLbl)+'</span></h4>'+
+    lines+'<div class="cq-acts">'+ctrl+'</div></section>';
+}
 function recipientsPanelHtml(o){
   var recips=campaignRecipients(o);
   var rows=recips.map(function(r){
@@ -2501,7 +2713,42 @@ async function doSyncRound(ep, auth){
   // Replies ride the same round. A reply that arrives fifteen minutes after a
   // send should be on the board before the next time anybody looks at it.
   try{ await pullInbound(ep, auth); }catch(e){}
+  // P8: reconcile the campaign ledger from the relay's send queue on the same heartbeat (no new timer), so
+  // a queued row that the relay has since sent shows as sent the next time anybody syncs. The device that
+  // started the campaign can be closed; any device that syncs advances the truth.
+  try{ await pullOutbox(ep, auth); }catch(e){}
   if(typeof window.onThriveSync==="function"){ try{ window.onThriveSync(); }catch(e){} }
+}
+/* P8: the durable send queue's transport to the relay. The console pushes a compiled batch and reads
+   status; the relay (v6+) paces and sends. All three degrade silently on a v5 relay (unknown op), so a
+   campaign started before the relay is redeployed simply waits, exactly like pullInbound. */
+async function pushOutbox(rows){
+  const ep=getSyncEndpoint(), auth=syncAuth();
+  if(!ep || !auth || !rows || !rows.length) return { ok:false };
+  try{
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:relayBody({ op:"outbox_push", auth:auth, rows:rows }) });
+    const j=await r.json(); noteRelayVersion(j); return j;
+  }catch(e){ return { ok:false, error:String((e&&e.message)||e) }; }
+}
+async function relayOutboxControl(opp, action, dues){
+  const ep=getSyncEndpoint(), auth=syncAuth();
+  if(!ep || !auth) return { ok:false };
+  try{
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:relayBody({ op:"outbox_control", auth:auth, opp:opp, action:action, dues:dues||null }) });
+    const j=await r.json(); noteRelayVersion(j); return j;
+  }catch(e){ return { ok:false, error:String((e&&e.message)||e) }; }
+}
+async function pullOutbox(ep, auth){
+  let j=null;
+  try{
+    const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:relayBody({ op:"outbox_status", auth:auth }) });
+    j=await r.json();
+  }catch(e){ return 0; }
+  if(!j || !j.ok || !Array.isArray(j.rows)) return 0;   // a v5 relay has no queue: not an error, just nothing to reconcile
+  return reconcileOutbox(j.rows);
 }
 async function syncNow(){
   const auth=syncAuth(); if(!auth) return false;
@@ -6596,27 +6843,23 @@ async function initCompose(slugArg, opts){
   // The one compile. opts.track adds the per-recipient open token (pixel + tokenized link); a proof copy
   // and the preview-with-blocked-pixel both still carry it so the artifact is truthful, but eSelf passes
   // track:false so a copy to the operator never tokenizes.
+  // P7 / D5: the single-send + preview composer. Its body/footer/link/pixel/token all come from the ONE
+  // shared composeArtifactCore, the same source the campaign path (compileCampaignRow) reads, so preview==send
+  // AND single==campaign are byte-identical. (Two compile entry points by design until P9; see the core.)
   function compileArtifact(recipient, opts){
     opts=opts||{};
     var rec=recipient||fieldRecipient();
-    var nm=mergeNameFor(rec), addr=bareAddress(rec.addr||"");
-    var lang=docLoc()==="AR" ? "ar" : "en";
-    var innerHtml=resolveForRecipient(bodyTemplateHtml(), nm);
-    var subject=resolveForRecipient((el("esubject")?el("esubject").value:""), nm).replace(/^\s+|\s+$/g,"");
-    var sig=sigBox?sigBox.value:"";
-    var html=brandWrap(innerHtml, isBranded(), sig)+ThriveStore.footerHtml(lang);
     var pbox=el("plainBox");
-    // The footer (POSTAL) is attached in exactly ONE place, here, so no send path can omit or diverge it.
-    var rawText=(pbox && pbox.dataset.dirty==="1") ? pbox.value : toPlainText(innerHtml, sig);
-    var text=rawText+ThriveStore.footerText(lang);
-    var token=(opts.track && !replyCtx) ? recipientOpenToken(oppOf(), addr, subject) : "";
-    if(token && oppObj && oppObj.slug){
-      var base=liveUrl(oppObj.slug), tokd=base+(base.indexOf("?")<0?"?":"&")+"r="+encodeURIComponent(token);
-      html=html.split(base).join(tokd);                   // channel 2: the page link carries the token
-      text=text.split(base).join(tokd);
-      html=html+openPixelHtml(oppObj.slug, token, getSyncEndpoint());   // channel 1: one open pixel
-    }
-    return { to:addr, name:nm, subject:subject, html:html, text:text, token:token, lang:lang };
+    return composeArtifactCore({
+      innerTpl:bodyTemplateHtml(), subjectTpl:(el("esubject")?el("esubject").value:""),
+      name:mergeNameFor(rec),
+      business:(oppObj&&oppObj.business)||"", link:oppUrl||"", month:(monthEl?monthEl.value:"")||"",
+      sig:sigBox?sigBox.value:"", branded:isBranded(),
+      lang:(docLoc()==="AR"?"ar":"en"), addr:rec.addr||"",
+      slug:(oppObj&&oppObj.slug)||"", tokenSlug:oppOf(),
+      track:!!(opts.track && !replyCtx),
+      rawText:(pbox && pbox.dataset.dirty==="1") ? pbox.value : null
+    });
   }
   try{ window.__cmpCompile=compileArtifact; }catch(_){}
 
@@ -6906,6 +7149,43 @@ async function initCompose(slugArg, opts){
     }catch(e){ toast(t("cmp_send_err")+": "+e.message); }
     finally{ selfBtn.disabled=false; }
   });
+
+  /* P8 / D6: start the durable campaign queue. Shown only for a group opportunity. The authored message
+     becomes the per-recipient template (the body's NAME/MONTH spans back to {{NAME}}/{{MONTH}} so each
+     recipient merges); startCampaignQueue writes the queued rows and hands the batch to the relay. This
+     device does not pace or send: the relay does, on its trigger. */
+  // The authored message, captured as the campaign template: the same {{NAME}}/{{MONTH}}-tokenized body the
+  // single-send composer reads (bodyTemplateHtml), plus subject/brand/sig/first-name/month/language. One
+  // builder, so the campaign queue and the parity test see exactly what the send composes.
+  function buildCampaignTpl(){
+    var c=body.cloneNode(true);
+    c.querySelectorAll('[data-m="name"]').forEach(function(s){ s.replaceWith(document.createTextNode("{{NAME}}")); });
+    c.querySelectorAll('[data-m="month"]').forEach(function(s){ s.replaceWith(document.createTextNode("{{MONTH}}")); });
+    var tp=currentTpl();
+    var subjTpl=(tp && /\{\{\s*NAME\s*\}\}/.test(tp.subject||"")) ? tp.subject : el("esubject").value;
+    return { subject:subjTpl, html:c.innerHTML, branded:isBranded(), sig:sigBox?sigBox.value:"",
+             firstName:!!(firstEl && firstEl.checked), month:monthVal(), lang:(docLoc()==="AR"?"ar":"en") };
+  }
+  try{ window.__campaignTpl=buildCampaignTpl; }catch(_){}
+
+  const campBtn=el("eCampaign");
+  if(campBtn){
+    if(oppObj && typeof isGroupOpp==="function" && isGroupOpp(oppObj)) campBtn.hidden=false;
+    campBtn.addEventListener("click", async ()=>{
+      if(!oppObj || !isGroupOpp(oppObj)){ toast(t("cq_not_group")); return; }
+      if(!(await ensureLive())) return;                    // the page must be proven live, exactly like a single send
+      var tpl=buildCampaignTpl();
+      campBtn.disabled=true;
+      try{
+        var res=startCampaignQueue(oppObj.slug, tpl);
+        if(!res || !res.ok){ toast(t("cq_start_err")+(res&&res.error?": "+res.error:"")); return; }
+        clearComposeDraft();
+        toast(t("cq_started"));
+        setTimeout(function(){ if(window.thriveModal) window.thriveModal.open(oppObj.slug,"overview",oppObj.business||oppObj.slug); }, 300);
+      }catch(e){ toast(t("cq_start_err")+": "+(e&&e.message||e)); }
+      finally{ campBtn.disabled=false; }
+    });
+  }
 
   el("eSend").addEventListener("click", async ()=>{
     // Nothing leaves for a party until the page is proven live, at this moment, not on appearance.
@@ -10707,7 +10987,7 @@ function initModal(){
     // A group card carries its recipients panel and campaign aggregate; a spawned child links back to its
     // campaign. Both read the one P1.5 derivation, so these numbers are the Insights numbers.
     var extra="";
-    if(isGroupOpp(o)) extra+=recipientsPanelHtml(o);
+    if(isGroupOpp(o)) extra+=campaignControlHtml(o)+recipientsPanelHtml(o);   // P8: the in-flight campaign control sits above the roster
     if(o.spawned_from && o.spawned_from.parent) extra+=spawnedFromHtml(o);
     else extra+=rosterEditorHtml(o);                        // P5: the roster editor (D3), any non-child opp can build a campaign
     box.innerHTML=prohibitionBand(o)+recordNotes(o)+unrecordedNotice(o)+closedReplyNotice(o)+
@@ -10727,6 +11007,11 @@ function initModal(){
     }));
     var openCard=function(slug){ if(window.thriveModal) window.thriveModal.open(slug, "overview", slug);
       else goTo("compose","slug="+encodeURIComponent(slug)); };
+    // P8: pause holds the campaign's un-sent tail; resume re-queues it with fresh jitter. The client sets
+    // state and tells the relay; it never paces. Re-read so the panel reflects the new truth at once.
+    var reread=function(){ try{ if(window.thriveModal && window.thriveModal.reread) window.thriveModal.reread(); }catch(_){} };
+    box.querySelectorAll(".cq-pause").forEach(b=>b.addEventListener("click", ()=>{ try{ pauseCampaign(b.getAttribute("data-slug")); }catch(_){} reread(); }));
+    box.querySelectorAll(".cq-resume").forEach(b=>b.addEventListener("click", ()=>{ try{ resumeCampaign(b.getAttribute("data-slug")); }catch(_){} reread(); }));
     box.querySelectorAll(".rc-open").forEach(b=>b.addEventListener("click", ()=>openCard(b.getAttribute("data-child"))));
     box.querySelectorAll(".open-parent").forEach(b=>b.addEventListener("click", ()=>openCard(b.getAttribute("data-parent"))));
     // The reply notice reopens on one tap; the notice already said what it does, so it does not ask again.

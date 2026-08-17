@@ -1557,6 +1557,16 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .cg-agg{ display:flex; flex-wrap:wrap; gap:var(--s-2); margin-block-end:var(--s-3) }
 .cg-tile{ display:flex; flex-direction:column; gap:2px; min-width:4.5rem; padding:var(--s-2); border:1px solid var(--line); border-radius:var(--r-1, 8px) }
 .cg-tile .cg-n{ font-weight:700 } .cg-tile .cg-l{ font-size:var(--fs-micro); color:var(--ink-4) }
+/* P8: the campaign in-flight control panel */
+.cq-panel{ border:1px solid var(--line); border-radius:var(--r-1,8px); padding:var(--s-3); background:var(--panel-2) }
+.cq-panel.is-sending{ border-color:var(--purple) }
+.cq-panel.is-paused{ border-color:var(--state-stall, #b26a00) }
+.cq-panel.is-complaint{ border-color:var(--ops-rose, #b23a48) }
+.cq-panel.is-done{ opacity:.85 }
+.cq-line{ margin:2px 0; font-size:var(--fs-micro); color:var(--ink-3) }
+.cq-line.cq-k{ font-size:var(--fs-body); font-weight:700; color:var(--ink) }
+.cq-acts{ margin-block-start:var(--s-2); display:flex; gap:var(--s-2); flex-wrap:wrap }
+[dir="rtl"] .cq-line,[dir="rtl"] .cq-k{ letter-spacing:normal }
 .rc-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--s-2) }
 .rc-row{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) }
 .rc-name{ font-weight:600; flex:1 1 8rem; min-width:0 }
