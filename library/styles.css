@@ -437,22 +437,13 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100
 
 /* email composer */
 .compose-panel{max-width:820px}
-/* The thread reply is calm by default: recipient (locked), subject (Re:), body, and one Send. The template
-   picker, the formatting toolbar, the closing/plain/preview blocks and the alternate send buttons are the
-   full editing surface an outreach send needs but a quick reply rarely does, so in reply mode they wait
-   behind one "Options" toggle. Same editor, same controls, one disclosure, no new chrome. The :not() means
-   revealing is just removing the hide, so each element returns to its own natural display. */
-.reply-lean:not(.reply-show-options) .etpl-bar,
-.reply-lean:not(.reply-show-options) .etpl-quick,
-.reply-lean:not(.reply-show-options) .etoolbar,
-.reply-lean:not(.reply-show-options) #cmpMore,
-.reply-lean:not(.reply-show-options) #sigWrap,
-.reply-lean:not(.reply-show-options) #plainWrap,
-.reply-lean:not(.reply-show-options) #prevWrap{ display:none !important }
-.reply-lean #eSelf,
-.reply-lean #eCopy,
-.reply-lean #eMail{ display:none !important }            /* a reply is one Send; the outreach conveniences stay out */
-.cmp-reply-options{ margin-block:0 var(--s-2) }
+/* A reply rides the ONE calm chrome (Aa reveals formatting, More reveals the overflow, Preview stays
+   first-class); it needs no bespoke disclosure. reply-lean only tucks the campaign-only affordances a
+   one-address reply never uses: the personalize chip and the campaign send, plus the outreach send
+   conveniences (send-to-myself / copy / mail) that live in the overflow. */
+.reply-lean #tbPersonalize,
+.reply-lean #eCampaign{ display:none !important }
+.reply-lean .ovf-actions{ display:none !important }      /* a reply is one Send; the outreach conveniences stay out */
 .etpl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--hair-2)}
 .etpl-label{font-size:12.5px;font-weight:800;color:var(--ink-2)}
 .etpl-bar select{max-width:240px}
@@ -499,6 +490,58 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;width:100
   max-width:100%;
 }
 .etoolbar button u{text-decoration:underline}
+
+/* ── P9 / D8 the calm composer chrome ─────────────────────────────────────────────────────────────
+   At rest: To, Subject, body, Send. Formatting hides behind Aa and appears as a floating bar on a text
+   selection; the rest waits behind one overflow. Existing tokens only; reduced motion respected; no
+   letter-spacing added anywhere (Arabic inherits the global normal). */
+.compose-panel.calm{ position:relative }
+.ebody-rail{ display:flex; align-items:center; gap:6px; margin-bottom:8px }
+.ebody-rail .rail-spacer{ flex:1 1 auto }
+.rail-btn{ padding:6px 11px; border-radius:8px; border:1px solid var(--hair); background:transparent;
+  color:var(--ink-2); font-weight:800; font-size:13px; cursor:pointer; font-family:inherit; line-height:1;
+  min-width:34px }
+.rail-btn:hover{ border-color:var(--purple); color:var(--ink) }
+.rail-btn.has-on,[aria-expanded="true"].rail-btn{ border-color:var(--purple); color:var(--ink) }
+.ebody-rail .etb-hist{ line-height:0; min-width:34px }
+.ebody-rail .etb-hist.ed-redo .ic{ transform:scaleX(-1) }
+.ebody-rail .etb-hist:disabled{ opacity:.4; cursor:not-allowed }
+.ebody-rail .etb-hist:disabled:hover{ border-color:var(--hair); color:var(--ink-2) }
+/* the floating format bar: absolute within the panel, above the selection, kept inside the panel by JS */
+.efloat{ position:absolute; z-index:40; top:0; inset-inline-start:0; display:flex; gap:6px; padding:6px;
+  border:1px solid var(--hair-strong,var(--hair)); border-radius:10px; background:var(--panel);
+  box-shadow:0 8px 24px rgba(0,0,0,.30); animation:efloat-in .12s var(--e-enter,ease) }
+.efloat[hidden]{ display:none }
+.efloat button{ padding:7px 11px; border-radius:8px; border:1px solid var(--hair); background:transparent;
+  color:var(--ink-2); font-weight:800; font-size:13px; cursor:pointer; font-family:inherit; min-width:34px }
+.efloat button:hover{ border-color:var(--purple); color:var(--ink) }
+.efloat button u{ text-decoration:underline }
+.efloat .tb-accent{ color:#15121b; background:var(--grad); border:0 }
+@keyframes efloat-in{ from{ opacity:0; transform:translateY(4px) } to{ opacity:1; transform:none } }
+@media (prefers-reduced-motion:reduce){ .efloat{ animation:none } }
+/* one overflow menu: everything real but rarely touched */
+.cmp-overflow{ margin:2px 0 16px; padding:14px; border:1px dashed var(--hair); border-radius:12px;
+  background:var(--panel-2,rgba(255,255,255,.02)); display:flex; flex-direction:column; gap:12px }
+.cmp-overflow[hidden]{ display:none }
+.cmp-overflow .etpl-bar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 }
+.cmp-overflow .more-bar{ margin:0 }
+.cmp-overflow .mw-more{ margin:0 }
+.ovf-actions{ display:flex; gap:var(--s-3); flex-wrap:wrap }
+/* the base toggle look for the personalize chip, now living above Send (was in the toolbar before) */
+.tb-toggle{ padding:7px 12px; border-radius:8px; border:1px solid var(--hair); background:transparent;
+  color:var(--ink-2); font-weight:800; font-size:13px; cursor:pointer; font-family:inherit; line-height:1 }
+.tb-toggle:hover{ border-color:var(--purple); color:var(--ink) }
+/* campaign controls: the personalize chip and Preview, side by side, above Send */
+.cmp-campaign-controls{ display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap; margin:8px 0 12px }
+.cmp-campaign-controls .chip-ctl{ min-height:34px }
+.cmp-prev-wrap{ margin-top:0 }
+/* the Preview control (above Send) owns the disclosure now, so the details' own summary is redundant */
+.cmp-prev-wrap > summary{ display:none }
+/* reply mode: the same fields, prefilled; this banner names the thread being answered */
+.reply-banner{ display:flex; align-items:center; gap:8px; margin:0 0 14px; padding:9px 12px;
+  border:1px solid var(--hair); border-inline-start:3px solid var(--purple); border-radius:10px;
+  background:var(--panel-2,rgba(150,133,202,.06)); color:var(--ink-2); font-size:12.5px; font-weight:700 }
+.reply-banner[hidden]{ display:none }
 .elinkbar{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;padding:12px;border:1px solid var(--hair);border-radius:12px;background:var(--panel-2,rgba(255,255,255,.02))}
 .elinkrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .elinkrow .input{flex:1 1 200px;min-width:140px}

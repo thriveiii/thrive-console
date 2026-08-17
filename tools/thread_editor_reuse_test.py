@@ -86,26 +86,34 @@ with sync_playwright() as p:
         inHost: v.parentNode===h,
         lean: v.classList.contains('reply-lean'),
         toolbarHidden: !['tbBold','tbItalic','tbUnder','tbList','tbLink'].some(vis),
-        tplHidden: !vis('etpl'),
-        optionsShown: vis('cmpReplyOptions'),
+        overflowHidden: !vis('cmpOverflow'),
+        aaShown: vis('eAa'), moreShown: vis('cmpOverflowBtn'), preview: vis('cmpPreviewBtn'),
+        personalizeHidden: !vis('tbPersonalize'),          // campaign-only, tucked for a one-address reply
         send: vis('eSend'), to: vis('eto'), subject: vis('esubject'), body: !!document.getElementById('ebody')
       }; }""")
     ck("the History tab borrows the SAME send editor node (#view-compose) into the modal host",
        mount["inHost"] is True, mount)
-    # Finding 2: the reply composer is calm by default -- template picker and formatting toolbar tucked away.
-    ck("the reply composer is calm by default: template picker and formatting toolbar are tucked away",
-       mount["lean"] is True and mount["toolbarHidden"] is True and mount["tplHidden"] is True, mount)
-    ck("the essentials stay in view: recipient, subject, body, one Send, and a single Options affordance",
-       mount["send"] and mount["to"] and mount["subject"] and mount["body"] and mount["optionsShown"], mount)
+    # The reply composer is calm by default -- the same calm chrome tucks formatting behind Aa and the rest
+    # behind the one overflow (More); no bespoke reply disclosure.
+    ck("the reply composer is calm by default: the formatting bar and the overflow are tucked away",
+       mount["lean"] is True and mount["toolbarHidden"] is True and mount["overflowHidden"] is True, mount)
+    ck("the essentials stay in view: recipient, subject, body, one Send, the Aa + More affordances and first-class Preview",
+       mount["send"] and mount["to"] and mount["subject"] and mount["body"]
+       and mount["aaShown"] and mount["moreShown"] and mount["preview"], mount)
+    ck("a reply tucks the campaign-only controls it never uses (the personalize chip)",
+       mount["personalizeHidden"] is True, mount)
 
-    # clicking Options reveals the FULL editing surface (same editor, one disclosure, nothing removed).
+    # The ONE calm chrome reveals the full surface: Aa shows formatting, More shows the overflow (template
+    # picker, closing block, plain text); Preview stays first-class; undo lives on the body rail. No bespoke
+    # reply toggle, no bare textarea.
     reveal = pg.evaluate("""()=>{
-      const btn=document.getElementById('cmpReplyOptions'); if(btn) btn.click();
+      const aa=document.getElementById('eAa'); if(aa) aa.click();
+      const more=document.getElementById('cmpOverflowBtn'); if(more) more.click();
       const vis=id=>{ const e=document.getElementById(id); return !!(e && e.checkVisibility()); };
       return { toolbar: ['tbBold','tbItalic','tbUnder','tbList','tbLink'].every(vis),
-               templates: vis('etpl'), preview: !!document.getElementById('cmpPreview'),
+               templates: vis('etpl'), preview: !!document.getElementById('cmpPreviewBtn'),
                undo: !!document.getElementById('cmpUndo') }; }""")
-    ck("Options reveals the full editing surface (formatting toolbar, template picker, preview, undo), not a bare textarea",
+    ck("the calm chrome reveals the full editing surface (Aa->formatting, More->template picker, Preview, undo), not a bare textarea",
        reveal["toolbar"] is True and reveal["templates"] is True and reveal["preview"] is True and reveal["undo"] is True, reveal)
 
     # ---- scoped to the thread: recipient locked to the replier, subject Re:, greeting in Arabic, RTL body ----
