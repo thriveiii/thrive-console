@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="e75b56f7">
-<meta name="thrive-built-at" content="2026-08-17T18:04:22Z">
+<meta name="thrive-build" content="9d6cf94d">
+<meta name="thrive-built-at" content="2026-08-17T19:14:48Z">
 <!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
      bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
      in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
@@ -35,7 +35,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=eb5ce33754">
+<link rel="stylesheet" href="styles.css?v=005d822622">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -56,7 +56,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
      second which code is live and when it was built; every device capture is now labeled. Low contrast and
      pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
      the Arabic layout cannot reorder them. -->
-<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">e75b56f7</bdi> · <bdi class="mono-iso">2026-08-17T18:04:22Z</bdi></div>
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">9d6cf94d</bdi> · <bdi class="mono-iso">2026-08-17T19:14:48Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
 
@@ -413,6 +413,9 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
         <button type="button" id="tbList" data-i18n="cmp_tb_list">List</button>
         <button type="button" id="tbLink" data-i18n="cmp_tb_link">Link</button>
         <button type="button" id="tbUnlink" data-i18n="cmp_tb_unlink">Unlink</button>
+        <!-- Personalize names (D4): add the name merge token to the greeting as a soft pill, or
+             remove it cleanly. A toggle; nothing here sends. -->
+        <button type="button" id="tbPersonalize" class="tb-toggle" aria-pressed="false" data-i18n="pn_chip" data-i18n-aria="pn_aria">Personalize names</button>
         <button type="button" id="tbOpp" class="tb-accent" hidden data-i18n="cmp_insert_opp">Link to opportunity</button>
       </div>
       <div id="elinkbar" class="elinkbar" hidden>
@@ -476,6 +479,10 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <summary data-i18n="cmp_preview_h">Preview as the recipient sees it</summary>
       <div class="cmp-preview"><iframe id="cmpPreview" title="preview" sandbox=""></iframe></div>
     </details>
+
+    <!-- The pre-send roster (D4): every recipient of a campaign with the exact name that will merge
+         and the greeting each will read. Read-only; the P5 roster rows are where names are edited. -->
+    <div id="mergeRoster" class="merge-roster" hidden></div>
 
     <!-- Three lines, shown once, before the message leaves. -->
     <div id="preSend" class="pre-send" hidden></div>
@@ -912,7 +919,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
 <script src="config.js?v=806f4221bf"></script>
 <script src="icons.js?v=e41377c5ce"></script>
-<script src="i18n.js?v=f2aa0b18f8"></script>
+<script src="i18n.js?v=8fff05d140"></script>
 <script src="gate.js?v=fec6036cc5"></script>
 <script src="stage-model.js?v=1f1786d20e"></script>
 <script src="lifecycle.js?v=df368247ea"></script>
@@ -924,7 +931,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=94c2072d62"></script>
+<script src="app.js?v=862f53cec6"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

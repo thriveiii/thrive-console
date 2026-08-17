@@ -777,6 +777,22 @@ html[dir="rtl"] .eopp-thumb{transform-origin:top right}
 /* ---------- live merge fields (compose) ---------- */
 .month-input{max-width:240px}
 .ebody [data-m]{border-bottom:1px dashed rgba(150,133,202,.55)}  /* editor-only cue; sent HTML has no spans */
+/* P6/D4: the {{NAME}} merge token as a soft pill (never raw braces). contenteditable=false on the
+   span makes it delete whole. Editor-only: htmlOut strips it before send. */
+.ebody [data-m="name"]{border-bottom:0;background:rgba(150,133,202,.16);border:1px solid rgba(150,133,202,.42);border-radius:6px;padding:0 5px;white-space:nowrap}
+[dir="rtl"] .ebody [data-m="name"]{letter-spacing:normal}
+/* the Personalize-names toggle chip: neutral off, purple accent on */
+#tbPersonalize.tb-toggle.on{background:rgba(150,133,202,.18);border-color:var(--purple);color:var(--ink)}
+/* the pre-send merge roster: every recipient with the exact merge name and greeting */
+.merge-roster{margin:.5rem 0}
+.mr-h{margin:0 0 var(--s-2);font-size:var(--fs-micro);color:var(--ink-3);font-weight:700}
+.mr-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--s-2)}
+.mr-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2)}
+.mr-name{font-weight:600;flex:1 1 8rem}
+.mr-addr{flex:1 1 10rem;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--ink-4);font-size:var(--fs-micro)}
+.mr-greet{flex:1 1 100%;color:var(--ink-3);font-size:var(--fs-micro)}
+.mr-miss{color:var(--warn,#b26a00);font-size:var(--fs-micro)}
+[dir="rtl"] .mr-row,[dir="rtl"] .mr-name,[dir="rtl"] .mr-greet{letter-spacing:normal}
 
 /* ---------- Overview home + email-template editor ---------- */
 .tile.t-warn{border-color:rgba(230,180,90,.45)}

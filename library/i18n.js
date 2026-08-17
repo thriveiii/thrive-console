@@ -783,6 +783,10 @@ const I18N = {
     cmp_tb_bold:     "Bold",
     cmp_tb_italic:   "Italic",
     cmp_tb_under:    "Underline",
+    pn_chip:         "Personalize names",
+    pn_aria:         "Personalize names: add the recipient's name to the greeting",
+    pn_roster_h:     "Each recipient's greeting",
+    pn_no_name:      "No name, generic greeting",
 
     /* ---- the editor earns its place, WO-013 phase 4 ---------------------- */
     sig_h:           "Closing block",
@@ -1952,6 +1956,10 @@ const I18N = {
     cmp_tb_bold:     "عريض",
     cmp_tb_italic:   "مائل",
     cmp_tb_under:    "تحته خط",
+    pn_chip:         "خصِّص الأسماء",
+    pn_aria:         "خصِّص الأسماء: أدرج اسم المستلم في التحية",
+    pn_roster_h:     "تحية كل مستلم",
+    pn_no_name:      "بلا اسم، تحية عامة",
 
     /* ---- ما كسبه المحرر ---- */
     sig_h:           "خاتمة الرسالة",
