@@ -1,7 +1,7 @@
 {
   "site": "console.thriveiii.com",
   "base_path": "/opp/",
-  "updated": "2026-08-16",
+  "updated": "2026-08-17",
   "opportunities": [
     {
       "slug": "ludic-lillian",
@@ -144,6 +144,15 @@
       "template": "custom",
       "sent_on": "2026-08-16",
       "location": "Fairfax, VA",
+      "phone": "",
+      "status": ""
+    },
+    {
+      "slug": "organic-allure",
+      "business": "Organic Allure",
+      "template": "custom",
+      "sent_on": "2026-08-16",
+      "location": "Occoquan, VA",
       "phone": "",
       "status": ""
     }
