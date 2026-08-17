@@ -27,7 +27,7 @@ here; none is worked around silently.
    URL and includes it in the open event (channel 2).
 
 3. **The relay dropped POST hits entirely (pre-existing bug).** `beacon.js` sends page opens by
-   `navigator.sendBeacon` (a POST of `{op:"hit", ev}`), but `doPost` had **no `hit` branch** — the request
+   `navigator.sendBeacon` (a POST of `{op:"hit", ev}`), but `doPost` had **no `hit` branch** - the request
    fell through to `authOk_` and was refused, so remote page opens never reached the store (only the
    visitor's own localStorage, which never syncs to the console). **Fixed:** `doPost` now answers
    `op:"hit"` before `authOk_` (a visitor has no credential), calling the same `hitPut_` the GET pixel
@@ -35,10 +35,10 @@ here; none is worked around silently.
    collection.
 
 4. **The row id is minted at send, not known at compile.** `supaMailRow`'s `id` is `rec.mid`, minted by
-   `newMid()` (random) inside `logMail` at send time — not available when the body is compiled, and if the
+   `newMid()` (random) inside `logMail` at send time - not available when the body is compiled, and if the
    pixel token were a hash of the body it would be circular and, worse, would change the send idempotency
    key on every re-tap, breaking exactly-once. **What ships:** the token is
-   `recipientOpenToken(opp,to,subject) = sendIdem(opp,to,subject,"")` — deterministic, per-recipient,
+   `recipientOpenToken(opp,to,subject) = sendIdem(opp,to,subject,"")` - deterministic, per-recipient,
    **body-independent**, so it is known before the body is compiled and is identical across re-taps. The
    send passes it to `relaySend` as the row `mid`, so `console_mail.id === token` and the join holds. Since
    the token does not depend on the body, the body-with-pixel is stable across re-taps, so the dedup
