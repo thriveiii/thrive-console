@@ -98,10 +98,11 @@ with sync_playwright() as p:
     # ---- names survive intact (Arabic preserved) ----
     ck("Arabic recipient name is preserved intact", by.get("omar@studio.example", {}).get("name") == "عمر خالد", by.get("omar@studio.example"))
 
-    # ---- opens are NOT per recipient (no invented state) ----
-    ck("no ledger row invents a per-recipient open field",
-       all(("open_count" not in r) and ("last_open_at" not in r) and ("opens" not in r) for r in led),
-       [list(r.keys()) for r in led[:1]])
+    # ---- opens attribute only from token-bearing hits (P2): this seed's hits are untokened, so every
+    #      recipient's open_count is 0 - an untokened hit is never guessed onto a person ----
+    ck("untokened hits never attribute: every recipient open_count is 0",
+       all(r.get("open_count")==0 and r.get("last_open_at")=="" for r in led),
+       [(r["addr"], r.get("open_count")) for r in led])
 
     # ---- D2: a recipient's reply never lifts the campaign to Replied ----
     stage = pg.evaluate("()=>window.effStage(window.getDraft('thrive-july'))")

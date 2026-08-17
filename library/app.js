@@ -13,6 +13,23 @@ function slugify(s){
 }
 function esc(s){ return (s==null?"":String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function liveUrl(slug){ return "https://"+SITE+OPP_PATH+slug; }
+/* Campaigns P2 - truthful per-recipient opens. The per-recipient token is a console_mail row id (a
+   deterministic key of opp+recipient+subject, so it is known at compile, stable across re-taps, and never
+   perturbs the send idempotency), tied to to_addr through its row. It rides two channels:
+   1. one standard email open pixel (this GET to the relay carries r);
+   2. the page link, tokenized (liveUrl?r=<token>), read by beacon.js.
+   The relay writes one console_hits row with data.r = token; attribution is the join
+   console_hits.data.r -> console_mail.id -> to_addr. A hit with no token stays an anonymous, campaign
+   level view, never guessed onto a person. */
+function recipientOpenToken(opp, to, subject){ return sendIdem(String(opp||""), String(to||""), String(subject||""), ""); }
+function openPixelHtml(slug, token, ep){
+  if(!ep || !token) return "";
+  var u=ep+(ep.indexOf("?")<0?"?":"&")+"op=hit&type=open&slug="+encodeURIComponent(slug||"")+"&r="+encodeURIComponent(token);
+  // Exactly one 1x1 pixel, standard format, same relay domain already used for page hits; no extra links,
+  // the visible body is unchanged. Not display:none (some clients skip hidden images, defeating the open).
+  return '<img src="'+esc(u)+'" width="1" height="1" alt="" style="width:1px;height:1px;border:0;margin:0;padding:0" referrerpolicy="no-referrer">';
+}
+window.recipientOpenToken=recipientOpenToken; window.openPixelHtml=openPixelHtml;
 function relOpp(slug){ return "../opp/"+slug+"/"; }
 /* One toast in the document, and one only. It grew an action rather than gaining a sibling,
    because two notification surfaces means two places a message can be missed. */
@@ -1065,20 +1082,35 @@ function campaignStats(slug){
   recips.forEach(function(r){ if(recipientState(slug, r.addr).replied) repliers[r.addr]=1; });
   inboundFor(slug).forEach(function(r){ if(r && r.kind!=="auto" && r.from) repliers[String(r.from).trim().toLowerCase()]=1; });
   var replies=Object.keys(repliers).length;
+  // P2 two truths, never summed: token-bearing opens attribute to a person; untokened opens stay anonymous.
+  var tokTo={}; getMailLog().forEach(function(m){ if(m && m.opp===slug && m.direction!=="in"){ var id=m.mid||m.id; if(id) tokTo[id]=String(m.to||"").trim().toLowerCase(); } });
+  var openers={}, viewsAnon=0;
+  allHits().forEach(function(e){
+    if(!e || (e.type && e.type!=="open") || e.self) return;
+    if(e.r && tokTo[e.r]){ openers[tokTo[e.r]]=1; }          // this open is a named recipient
+    else if(e.slug===slug && !e.r){ viewsAnon++; }           // an anonymous, campaign-level page view
+  });
   return { recipients:recips.length, sent:sent, opens:opens, unique:Object.keys(uniq).length,
+           openersTokened:Object.keys(openers).length, viewsAnon:viewsAnon,
            replies:replies, replyRate: sent? Math.round((replies/sent)*100) : 0 };
 }
+window.campaignStats=campaignStats;
 
-// Per-recipient companion read (Phase 1 - D1/D7): one row per campaign recipient carrying only the signals
-// tied to a single address - sent_at, the reply (with its thread link: the extracted child, or the reply
-// still on the parent), and a bounce naming them. Reads console_mail / console_inbound only; no new store;
-// the campaign aggregate is untouched and a reply here never lifts the campaign (D2). Opens are page-level,
-// not per recipient: a campaign is one page (one slug) and console_hits carry an anonymous visitor id with
-// no recipient token, so an open cannot be tied to an address without inventing it. Opens stay the campaign
-// number (campaignStats.opens); per-recipient opens would need a per-recipient link token, a later additive
-// phase. See docs/campaign-phase1.md.
+// Per-recipient companion read (D1/D7): one row per campaign recipient carrying only the signals tied to a
+// single address - sent_at, opens, the reply (with its thread link: the extracted child, or the reply still
+// on the parent), and a bounce naming them. Reads console_mail / console_hits / console_inbound only; no new
+// store; the campaign aggregate is untouched and a reply here never lifts the campaign (D2).
+// Opens are truthfully per recipient (P2): a send carries a per-recipient token (the console_mail row id) in
+// its open pixel and its page link, so a hit whose r is one of this recipient's send ids is this person's
+// open. A hit with no token is an anonymous, campaign-level view (campaignStats.viewsAnon) and is NEVER
+// counted here, so no open is guessed onto a person. See docs/campaign-phase2.md.
 function campaignRecipientLedger(slug){
   slug=String(slug||"");
+  // token-bearing opens only, keyed by token; anonymous (no r) opens never enter a person's row
+  var openByTok={};
+  ((typeof allHits==="function")? allHits() : []).forEach(function(h){
+    if(h && (!h.type||h.type==="open") && !h.self && h.r){ (openByTok[h.r]=openByTok[h.r]||[]).push(String(h.ts||"")); }
+  });
   return campaignRecipients(slug).map(function(r){
     var a=String(r.addr||"").trim().toLowerCase();
     var sends=getMailLog().filter(function(m){ return m && m.opp===slug && m.direction!=="in" && String(m.to||"").trim().toLowerCase()===a; });
@@ -1089,7 +1121,12 @@ function campaignRecipientLedger(slug){
       .filter(function(x){ return x && x.kind!=="auto" && String(x.from||"").trim().toLowerCase()===a; })
       .sort(function(x,y){ return String(y.ts||"").localeCompare(String(x.ts||"")); });
     var link=child? { child:child } : (reps[0]? { inbound:inboundKey(reps[0]) } : null);
+    // opens for THIS recipient: token-bearing hits whose r is one of this recipient's send ids (the token)
+    var toks={}; sends.forEach(function(m){ var id=m.mid||m.id; if(id) toks[id]=1; });
+    var openTs=[]; Object.keys(toks).forEach(function(k){ (openByTok[k]||[]).forEach(function(ts){ openTs.push(ts); }); });
+    var lastOpen=""; openTs.forEach(function(ts){ if(ts>lastOpen) lastOpen=ts; });
     return { addr:a, name:r.name||"", sent:sends.length>0, sent_at:sentAt,
+             open_count:openTs.length, last_open_at:lastOpen,
              replied:st.replied, reply_at:(reps[0]? String(reps[0].ts||"") : ""), reply_link:link,
              bounced:st.bounced, child:child };
   });
@@ -6190,9 +6227,21 @@ async function initCompose(slugArg, opts){
      is attached, from the single POSTAL source (#79), so every send path carries the same correct footer
      and none can omit or diverge. The relay is a courier: it sends exactly this html and text and
      composes no footer or address of its own. Every send below builds its payload through sendBody. */
+  // The per-recipient open token for the send in flight. Set only for the moment of a real outreach send
+  // (never a self-test proof copy, never the preview), then cleared, so exactly one send carries it.
+  var __sendToken="";
   function sendBody(){
     const lang = docLoc()==="AR" ? "ar" : "en";
-    return { html: composedHtml()+ThriveStore.footerHtml(lang), text: composedText()+ThriveStore.footerText(lang) };
+    var html = composedHtml()+ThriveStore.footerHtml(lang);
+    var text = composedText()+ThriveStore.footerText(lang);
+    // Campaigns P2: tokenize the page link and add one open pixel, only when a real send is in flight.
+    if(__sendToken && oppObj && oppObj.slug){
+      var base=liveUrl(oppObj.slug), tokd=base+(base.indexOf("?")<0?"?":"&")+"r="+encodeURIComponent(__sendToken);
+      html = html.split(base).join(tokd);                 // channel 2: the page link carries the token
+      text = text.split(base).join(tokd);
+      html = html + openPixelHtml(oppObj.slug, __sendToken, getSyncEndpoint());   // channel 1: one open pixel
+    }
+    return { html: html, text: text };
   }
 
   const plainBox=el("plainBox");
@@ -6480,6 +6529,11 @@ async function initCompose(slugArg, opts){
        single POSTAL source, so this send carries the exact footer the self-send proof copy showed.
        List-Unsubscribe is not required at this volume and costs nothing, and it converts a spam
        complaint into an unsubscribe. The relay sends this body verbatim and adds nothing. */
+    // Campaigns P2: an outreach send (never a thread reply) carries a per-recipient open token so this
+    // person's opens attribute to them. The token is this send's console_mail row id, set BEFORE the body
+    // is compiled so the open pixel and the tokenized page link both carry it, then cleared in finally.
+    const subjectOut=resolveTokens(el("esubject").value.trim());
+    __sendToken = replyCtx ? "" : recipientOpenToken(oppOf(), to, subjectOut);
     const sb=sendBody();
     // A stable Message-ID the reply's In-Reply-To will carry back, recorded on the row so the reply
     // threads by header (the strongest tier). Passed through the relay to Resend; whether Resend keeps it
@@ -6494,7 +6548,6 @@ async function initCompose(slugArg, opts){
       replyHeaders["In-Reply-To"]="<"+replyCtx.inReplyTo+">";
       replyHeaders["References"]=chain.map(x=>"<"+x+">").join(" ");
     }
-    const subjectOut=resolveTokens(el("esubject").value.trim());
     // The whole send is now the ONE hardened relay path, shared with the thread reply (relaySend): the
     // per-intent idempotency key, the durable pending row before the POST, no blind retry, and the relay's
     // true answer as the outcome all live there. The composer keeps only what is its own: the button
@@ -6512,8 +6565,8 @@ async function initCompose(slugArg, opts){
       res=await relaySend({ opp:oppOf(), to:to, toName:recName(), subject:subjectOut,
         html:sb.html, text:sb.text, msgid:msgid, headers:replyHeaders, preview:preview(),
         chapter:sendChapter(oppOf()),
-        mailExtra:{ templateId:m.templateId, templateName:m.templateName, branded:isBranded() } });
-    } finally { el("eSend").disabled=false; el("eSend").textContent=old; }
+        mailExtra:{ templateId:m.templateId, templateName:m.templateName, branded:isBranded(), mid:(__sendToken||undefined) } });
+    } finally { el("eSend").disabled=false; el("eSend").textContent=old; __sendToken=""; }
     // A completed send, refused by name: no second delivery.
     if(res.status==="duplicate"){ toast(t("cmp_dupe_block")); reconcileReply(); return; }
     // A timeout: in flight and MAY have delivered. The pending row already advanced the card; say "sent,
