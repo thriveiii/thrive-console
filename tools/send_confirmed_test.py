@@ -45,12 +45,12 @@ ck("the server write is confirmed and AWAITED on the send path (supaConfirmMail)
    "async function supaConfirmMail(" in app and "const conf=await supaConfirmMail(" in app)
 ck("a console_mail write with an empty opp is refused, not silently accepted (Part 2)",
    "function mailOppOk(" in app and 'refused: empty opp' in app and "refused:true" in app)
-ck("pending/sending are local outbox states, never mirrored to the server as a phantom send",
-   'if(rec.status==="pending" || rec.status==="sending") return;' in app)
+ck("pending/sending/unrecorded are local outbox states, never mirrored to the server as a phantom send",
+   'if(rec.status==="pending" || rec.status==="sending" || rec.status==="unrecorded") return;' in app)
 ck("the 'sending' outbox graduates to sent once the durable write lands (reconcileSendingMail after flush)",
    "function reconcileSendingMail(" in app and "reconcileSendingMail();" in app)
-ck("the card shows a visible outbox marker for an unconfirmed send (cardSending + is-sending)",
-   "function cardSending(" in app and 'cls.push("is-sending")' in app)
+ck("the card shows a visible outbox marker for an unconfirmed send (cardSending -> in-flight -> is-sending)",
+   "function cardSending(" in app and '"in-flight":"is-sending"' in app and "const state = cardState(tk);" in app)
 ck("the outbox line and status label exist in both languages",
    i18n.count("tok_sending:") == 2 and i18n.count("mst_sending:") == 2 and i18n.count("cmp_sent_queued:") == 2)
 ck("no em dash in the touched sources", "\u2014" not in app)
