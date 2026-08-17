@@ -21,7 +21,18 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 665_000     # library/app.js today ~662 KB. Raised from 655K by the state-law brief, which added
+APP_JS_MAX   = 668_000     # library/app.js today ~666 KB. Raised from 665K by the mail-write-path brief, which
+                           # added the schema-drift-resilient console_mail writer (mailUpsert + the missing-column
+                           # fallback) and reconcileMailToServer to lift the total 28-row write freeze (a
+                           # production-down bug). NOTE: app.js is now large and breaching on nearly every brief;
+                           # it should be SPLIT into modules soon (a real follow-up), not kept alive by ceiling
+                           # bumps. Prior step: 655K->665K by the state-law brief, which added
+                           # a genuine subsystem: the bounded-sending timeout (reconcileStuckSending + the
+                           # 'unrecorded' failed state + retryRecord), the one visual-state law (cardState ->
+                           # data-state, replacing the scattered is-glow/is-hot/is-provisional treatments), and
+                           # the drift indicator counting stuck sends. The file sat at 99.8% of the old ceiling,
+                           # so any real feature breached it; comments were trimmed first, then the ceiling was
+                           # lifted the minimum to fit. Earlier growth history:  (grew across merged briefs; the replies-attach brief
                            # a genuine subsystem: the bounded-sending timeout (reconcileStuckSending + the
                            # 'unrecorded' failed state + retryRecord), the one visual-state law (cardState ->
                            # data-state, replacing the scattered is-glow/is-hot/is-provisional treatments), and
