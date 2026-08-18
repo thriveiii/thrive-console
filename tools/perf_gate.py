@@ -21,7 +21,13 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 757_000     # library/app.js today ~754 KB. Raised by P12 (the message model + thread render):
+APP_JS_MAX   = 762_000     # library/app.js today ~758 KB. Raised by P16 (the match join completed): the
+                           # confirm / orphan-sections / duplicate-merge blocks under the resolver report
+                           # (ingConfirmBlock / ingOrphanBlock / ingDupBlock / ingCountLine / acceptConfirm),
+                           # their wiring in mountIngestReport, and the count line. The pure join itself
+                           # (token ranker + greedy assignment) lives in intake.js, off this budget. The
+                           # module SPLIT is still the real fix and remains overdue. Prior: 757 KB.
+                           # Raised by P12 (the message model + thread render):
                            # the R10 message model (buildMessage / splitReplyBody), the one body renderer
                            # (renderMessageBody / renderQuotedSection) and the sender-then-recipient header
                            # (msgWhoLine) that the rebuilt thread reads from - so an outbound send finally
@@ -73,7 +79,9 @@ APP_JS_MAX   = 757_000     # library/app.js today ~754 KB. Raised by P12 (the me
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_764_000   # dist/thrive-console.html today ~1.76 MB, tracking app.js (P11 tolerant ingest +
+DIST_MAX     = 1_786_000   # dist/thrive-console.html today ~1.78 MB, tracking app.js. Raised by P16 (the
+                           # match join): the confirm/orphan/duplicate report blocks, i18n and CSS. Prior: 1764 KB.
+                           # tracking app.js (P11 tolerant ingest +
                            # P10 Contact Book +
                            # P9 calm composer +
                            # P4 + P5 + P6 + P7 +

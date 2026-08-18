@@ -68,7 +68,8 @@
       channel: "", url: "", alternates: [], email: "", tier: "",
       page_file: "", slug_hint: "", subject: "",
       owner: "", owner_note: "", prohibition: "",
-      body: "", extra: {}, warnings: []
+      body: "", extra: {}, warnings: [],
+      file: null, confirm: null, match_rule: "", match_score: 0
     };
   }
 
@@ -285,36 +286,97 @@
     return slugify(base);
   }
 
+  /* ---- the one matcher: token ranking (P13) -------------------------------
+     A page slug and a section business are the same opportunity when their normSlug TOKENS rank a match.
+     One scorer, used for every page-to-section join, so a folder page (opp/hypergoat-coffee/index.html)
+     and its section ("Hypergoat Coffee Roasters") unify - which exact-slug equality alone never could,
+     because slugify("Hypergoat Coffee Roasters") is "hypergoat-coffee-roasters", not the folder slug.
+       exact         3  the token lists are identical
+       token-prefix  2  one list is an ordered prefix of the other (hypergoat-coffee < hypergoat-coffee-roasters)
+       token-subset  2  every token of one appears in the other, order aside
+       overlap       1  Jaccard of the token sets is >= 0.6 (a CONFIRM, never an auto-join)
+       below            no match
+     `matched` is the count of shared/consumed tokens, the specificity used to break a tie between two
+     pages that both rank a section: the more specific (more matched tokens) wins, the other stays open. */
+  function normTokens(s) { return slugify(s).split("-").filter(Boolean); }
+  function rankTokens(a, b) {
+    if (!a.length || !b.length) return { score: 0, matched: 0, rule: "" };
+    if (a.join("-") === b.join("-")) return { score: 3, matched: a.length, rule: "exact" };
+    var sh = a.length <= b.length ? a : b, lo = a.length <= b.length ? b : a;
+    if (sh.every(function (t, i) { return lo[i] === t; })) return { score: 2, matched: sh.length, rule: "token_prefix" };
+    var setA = {}, setB = {}; a.forEach(function (t) { setA[t] = 1; }); b.forEach(function (t) { setB[t] = 1; });
+    var subset = a.every(function (t) { return setB[t]; }) || b.every(function (t) { return setA[t]; });
+    if (subset) return { score: 2, matched: Math.min(a.length, b.length), rule: "token_subset" };
+    var inter = 0; Object.keys(setA).forEach(function (t) { if (setB[t]) inter++; });
+    var uni = Object.keys(setA).length + Object.keys(setB).length - inter;
+    var j = uni ? inter / uni : 0;
+    if (j >= 0.6) return { score: 1, matched: inter, rule: "overlap" };
+    return { score: 0, matched: 0, rule: "" };
+  }
+  // Score one page against one entry. The entry offers up to three identities - the slug it named
+  // (slug_hint), its business title, and the file it named (page_file, reduced to its folder-aware slug) -
+  // and the best rank against the page's slug wins. Ranking the page's FOLDER slug (never the shared
+  // "index" basename) is what lets folder-shipped bundles match without every page colliding on one key.
+  function scorePageEntry(pageSlugStr, page, e) {
+    var pt = normTokens(pageSlugStr);
+    var cands = [];
+    if (e.slug_hint) cands.push(e.slug_hint);
+    if (e.business) cands.push(slugify(e.business));
+    if (e.page_file) cands.push(pageSlug(e.page_file));
+    var best = { score: 0, matched: 0, rule: "" };
+    cands.forEach(function (c) {
+      var r = rankTokens(pt, normTokens(c));
+      if (r.score > best.score || (r.score === best.score && r.matched > best.matched)) best = r;
+    });
+    return best;
+  }
+  function hasSendish(e) { return !!(e && (e.email || e.url || (e.channel && e.channel !== ""))); }
+
+  /* The join, complete. Every page and every entry ends in exactly one state. Pairs are scored with the
+     one ranker, assigned greedily by (score, specificity), 1:1. Score 3 or 2 and unambiguous -> the entry
+     takes the page (e.file). Score 1, or a tie at the top (two pages equally specific) -> e.confirm, a
+     "possible match, confirm" that is never auto-joined. No candidate -> the entry is an orphan section
+     (e.file and e.confirm both unset) and the page is an orphan page. An unmatched section is a join
+     failure to surface, NEVER a card to spawn: this matcher only records the verdict. */
   function match(entries, pages) {
-    var byKey = {}, bySlug = {}, used = {};
-    (pages || []).forEach(function (f) {
-      byKey[keyOf(f.name)] = f;
-      var ps = pageSlug(f.name); if (ps && !bySlug[ps]) bySlug[ps] = f;    // folder identity (R8), never overwrites
-    });
+    var P = (pages || []).map(function (p) { return { page: p, slug: pageSlug(p.name) }; });
+    var E = entries || [];
+    E.forEach(function (e) { e.file = e.file || null; e.confirm = null; e.match_rule = ""; e.match_score = 0; });
 
-    (entries || []).forEach(function (e) {
-      var f = null;
-      // R8, MOST specific first: a folder page (opp/<slug>/index.html) matches the entry whose slug is that
-      // folder. This runs before the filename pass so a bundle whose pages are all a generic "index.html"
-      // resolves by folder, never colliding on the shared filename key.
-      var es = e.slug_hint || slugify(e.business);
-      if (es && bySlug[es] && !used[bySlug[es].name]) f = bySlug[es];
-      if (!f && e.page_file && byKey[keyOf(e.page_file)] && !used[byKey[keyOf(e.page_file)].name]) f = byKey[keyOf(e.page_file)];
-      if (!f) {
-        var want = keyOf(e.business);
-        Object.keys(byKey).forEach(function (k) {
-          if (f || !want || used[byKey[k].name]) return;
-          if (k === want || k.indexOf(want) === 0 || want.indexOf(k) === 0) f = byKey[k];
-        });
+    var pairs = [];
+    E.forEach(function (e, ei) {
+      P.forEach(function (pp, pi) {
+        var r = scorePageEntry(pp.slug, pp.page, e);
+        if (r.score > 0) pairs.push({ ei: ei, pi: pi, score: r.score, matched: r.matched, rule: r.rule });
+      });
+    });
+    pairs.sort(function (a, b) { return (b.score - a.score) || (b.matched - a.matched); });
+
+    var eDone = {}, pDone = {}, used = {};
+    pairs.forEach(function (pr) {
+      if (eDone[pr.ei] || pDone[pr.pi]) return;
+      // A tie at the top: another still-open pair with IDENTICAL score and specificity contesting the same
+      // entry (two pages) or the same page (two entries). Specificity has not separated them, so confirm.
+      var tie = pairs.some(function (q) {
+        if (q === pr || eDone[q.ei] || pDone[q.pi]) return false;
+        if (q.score !== pr.score || q.matched !== pr.matched) return false;
+        return q.ei === pr.ei || q.pi === pr.pi;
+      });
+      var e = E[pr.ei], pp = P[pr.pi];
+      if (pr.score >= 2 && !tie) {
+        e.file = pp.page; e.match_rule = pr.rule; e.match_score = pr.score; used[pp.page.name] = 1;
+        eDone[pr.ei] = 1; pDone[pr.pi] = 1;
+      } else {                                 // score 1, or an unresolved tie: a CONFIRM, never auto-joined
+        e.confirm = { page: pp.page, page_slug: pp.slug, score: pr.score, matched: pr.matched, rule: pr.rule };
+        eDone[pr.ei] = 1; pDone[pr.pi] = 1;
       }
-      if (f && !used[f.name]) { e.file = f; used[f.name] = 1; }
     });
 
-    var orphanPages = (pages || []).filter(function (f) { return !used[f.name]; });
-    var orphanEntries = (entries || []).filter(function (e) { return !e.file; });
+    var orphanPages = P.filter(function (pp) { return !used[pp.page.name]; }).map(function (pp) { return pp.page; });
+    var orphanEntries = E.filter(function (e) { return !e.file; });
     orphanEntries.forEach(function (e) { if (e.warnings.indexOf("no_page") < 0) e.warnings.push("no_page"); });
 
-    return { matched: (entries || []).filter(function (e) { return !!e.file; }),
+    return { matched: E.filter(function (e) { return !!e.file; }),
              orphanPages: orphanPages, orphanEntries: orphanEntries };
   }
 
@@ -573,12 +635,21 @@
       if (/(^|\/)opp\.md$/i.test(m.name || "")) envelopes.push(m); else docs.push(m);
     });
 
-    // rung 3 (+ the fenced ```json block): the tested core parses sections and matches pages by slug.
+    // rung 3 (+ the fenced ```json block): the tested core parses sections and matches pages by the one
+    // token ranker. A section is keyed to its PAGE's slug when it matched a page, so page + section unify
+    // onto one row. A section that matched NO page is NOT keyed here: it is an orphan section (surfaced
+    // below), never a slug that spawns its own card.
     var base = TI.buildBatch(pages, docs.map(function (m) { return m.text; }), opts);
     var docBySlug = {};
     base.entries.forEach(function (e) {
-      var s = e.file ? pageSlug(e.file.name) : (e.slug_hint || slugify(e.business));
-      if (s && !docBySlug[s]) docBySlug[s] = e;
+      if (e.file) { var s = pageSlug(e.file.name); if (s && !docBySlug[s]) docBySlug[s] = e; return; }
+      // A drop with NO pages at all is a manifest-only import (templates to become drafts, pages hosted
+      // later): the section IS the opportunity, keyed by its own slug. This is NOT the page-vs-section
+      // reconciliation the orphan rule governs - there are no pages for a section to fail to join.
+      if (pages.length === 0) {
+        var isSection = !!e.business && (!!e.body || hasSendish(e) || !!e.subject);
+        if (isSection) { var so = e.slug_hint || slugify(e.business); if (so && !docBySlug[so]) docBySlug[so] = e; }
+      }
     });
 
     // rung 2: manifest.json FILES, keyed by slug
@@ -599,11 +670,15 @@
       if (s) { e.slug_hint = s; if (!envBySlug[s]) envBySlug[s] = e; }
     });
 
-    // every opportunity slug, from every source and every page
+    // Every opportunity slug comes from a PAGE or an authoritative envelope/json - never from a section
+    // alone. A pageless section is an orphan (below), so six pages plus six sections resolve to six rows,
+    // never eight. Matched sections are reachable here because their docBySlug key IS their page's slug.
     var pageBySlug = {};
     pages.forEach(function (p) { var s = pageSlug(p.name); if (s && !pageBySlug[s]) pageBySlug[s] = p; });
     var slugs = {};
-    [pageBySlug, envBySlug, docBySlug, jsonBySlug].forEach(function (map) { Object.keys(map).forEach(function (s) { slugs[s] = 1; }); });
+    var unionMaps = [pageBySlug, envBySlug, jsonBySlug];
+    if (pages.length === 0) unionMaps.push(docBySlug);          // manifest-only import: the sections are the opps
+    unionMaps.forEach(function (map) { Object.keys(map).forEach(function (s) { slugs[s] = 1; }); });
 
     var entries = Object.keys(slugs).map(function (s) {
       return resolveOne(s, pageBySlug[s] || null, envBySlug[s] || null, jsonBySlug[s] || null, docBySlug[s] || null);
@@ -614,12 +689,70 @@
     report.rows.forEach(function (row) {
       var e = row.entry || {};
       row.provenance = e.provenance || "";
+      row.match_rule = e.match_rule || "";                 // WHICH ranking rule joined the page and section
       row.needs_message = !!e.needs_message;
       if (e.needs_message && row.reasons.indexOf("needs_message") < 0) { row.reasons.push("needs_message"); row.verdict = "warned"; }
     });
     report.matched = report.rows.filter(function (r) { return r.verdict === "matched"; }).length;
     report.warned = report.rows.filter(function (r) { return r.verdict === "warned"; }).length;
     report.allMatched = report.rows.length > 0 && report.rows.every(function (r) { return r.verdict === "matched"; }) && !base.jsonError;
+
+    // CONFIRM rows (score 1 or an unresolved tie) and ORPHAN sections (no page at all): the two states a
+    // pageless section can take. Neither is a row among the pages; neither is auto-imported or spawned.
+    var confirmRows = [], orphanSections = [];
+    // Only a drop that HAS pages can have an orphan section: an orphan is a section that failed to join a
+    // page. A manifest-only import (no pages) has no join, so its sections are drafts, never orphans.
+    if (pages.length) base.entries.forEach(function (e) {
+      if (e.file) return;
+      var isSection = !!e.business && (!!e.body || hasSendish(e) || !!e.subject);
+      if (!isSection) return;                                // a synthesized page-stub is not a section
+      if (e.confirm) {
+        confirmRows.push({ page_slug: e.confirm.page_slug, score: e.confirm.score, rule: e.confirm.rule,
+          business: e.business, slug_hint: e.slug_hint || slugify(e.business),
+          hasSubject: !!e.subject, hasBody: !!e.body, hasSendTo: hasSendish(e), entry: e });
+      } else {
+        var best = null;                                     // the nearest page below threshold, a suggestion only
+        pages.forEach(function (p) {
+          var r = scorePageEntry(pageSlug(p.name), p, e);
+          if (r.score > 0 && (!best || r.score > best.score || (r.score === best.score && r.matched > best.matched)))
+            best = { slug: pageSlug(p.name), score: r.score, rule: r.rule, matched: r.matched };
+        });
+        orphanSections.push({ business: e.business, slug_hint: e.slug_hint || slugify(e.business),
+          suggest: best ? best.slug : "", suggest_rule: best ? best.rule : "",
+          hasSubject: !!e.subject, hasBody: !!e.body, hasSendTo: hasSendish(e), entry: e });
+      }
+    });
+    report.confirm = confirmRows;
+    report.orphanSections = orphanSections;
+
+    // Repair on re-drop: a card already in the store whose send-to AND subject equal a page now joined here,
+    // but under a DIFFERENT slug, is a previously spawned ghost. Flag it "duplicate of <page>, merge?" - the
+    // page card keeps everything, the ghost archives. Never merged silently; the flag drives a one-tap action.
+    var duplicates = [];
+    var existingRecords = opts.existingRecords || [];
+    if (existingRecords.length) {
+      report.rows.forEach(function (row) {
+        if (row.verdict !== "matched") return;
+        var e = row.entry || {};
+        var to = e.email || e.url || "", subj = e.subject || "";
+        if (!to && !subj) return;
+        existingRecords.forEach(function (rec) {
+          if (!rec || !rec.slug || rec.slug === row.slug) return;
+          var rto = (rec.channel && rec.channel.to) || rec.email || "";
+          var rsubj = rec.outreach_subject || rec.subject || "";
+          if (rto && rto === to && rsubj === subj) duplicates.push({ ghost_slug: rec.slug, page_slug: row.slug, business: row.business });
+        });
+      });
+    }
+    report.duplicates = duplicates;
+
+    report.counts = {
+      pages: report.rows.length,
+      matched: report.matched,
+      confirm: confirmRows.length,
+      needs: report.rows.filter(function (r) { return r.needs_message; }).length,
+      orphans: orphanSections.length
+    };
 
     return {
       entries: entries, report: report,

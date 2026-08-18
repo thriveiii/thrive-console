@@ -1882,6 +1882,30 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .bt tr.is-needs{ background:var(--state-stall-t) }
 .bt-write{ white-space:nowrap }
 
+/* --- P16: the join's states below the table ------------------------------
+   The count line reads pages / matched / confirm / needs / orphans, each count
+   in an isolated <bdi class="n"> so a Western numeral never reverses inside an
+   Arabic phrase. Confirm, orphan and duplicate sections are small labelled lists,
+   each row a business and its one or two actions, never a row among the pages. */
+.ing-count{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2);
+  font-size:var(--fs-sm); color:var(--ink-2); margin:var(--s-3) 0 var(--s-2) }
+.ing-count .ing-c{ white-space:nowrap }
+.ing-count .n{ font-weight:var(--w-strong); color:var(--ink-1) }
+.ing-count .ing-sep{ color:var(--ink-3) }
+.ing-block{ margin-top:var(--s-3); border:1px solid var(--hair-2); border-radius:var(--r-sm);
+  padding:var(--s-2) var(--s-3) }
+.ing-block .ing-h{ font-size:var(--fs-sm); font-weight:var(--w-strong); color:var(--ink-2);
+  margin:0 0 var(--s-2) }
+.ing-confirm{ background:var(--state-stall-t) }
+.ing-dup{ background:var(--lane-live-t, var(--state-stall-t)) }
+.ing-row{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
+  gap:var(--s-2); padding:var(--s-1) 0 }
+.ing-row + .ing-row{ border-top:1px solid var(--hair-1) }
+.ing-row-main{ display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s-2); min-width:0 }
+.ing-biz{ font-weight:var(--w-strong); color:var(--ink-1) }
+.ing-note,.ing-suggest{ font-size:var(--fs-micro); color:var(--ink-3) }
+.ing-row-act{ display:flex; gap:var(--s-1); flex-shrink:0 }
+
 /* --- the symbol set -------------------------------------------------------
    Stroke only, inheriting currentColor, so a symbol is never a second colour
    decision after the text beside it. Decoration in the accessibility sense: the
