@@ -63,7 +63,7 @@ with sync_playwright() as p:
     ck("the resolver report is shown before anything is written (the shared .bt report + Approve gate)",
        pg.eval_on_selector("#intakeOut .bt", "e=>!!e") and pg.eval_on_selector("#intakeOut #batchApprove", "e=>!!e"))
     ck("three opportunities resolve from the package",
-       pg.eval_on_selector_all("#intakeOut .bt tbody tr td:first-child, #intakeOut .bt tr td:first-child",
+       pg.eval_on_selector_all("#intakeOut .bt tbody tr td:first-child .bt-slug, #intakeOut .bt tr td:first-child .bt-slug",
                                "e=>e.map(x=>x.textContent.trim()).filter(Boolean).length") == 3)
     ck("nothing is written yet", not any(o.get("outreach_text") for o in store(pg)))
 

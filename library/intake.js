@@ -69,7 +69,8 @@
       page_file: "", slug_hint: "", subject: "",
       owner: "", owner_note: "", prohibition: "",
       body: "", extra: {}, warnings: [],
-      file: null, confirm: null, match_rule: "", match_score: 0
+      file: null, confirm: null, match_rule: "", match_score: 0,
+      template: "", greeting_name: "", person_name: ""
     };
   }
 
@@ -161,6 +162,77 @@
     return e;
   }
 
+  /* ---- the field grammar --------------------------------------------------
+     A labeled field is a label anywhere on the line, bold-tolerant, its value bounded by the next labeled
+     field (a spaced middle-dot then a bold label, in the batches so far) or end of line. Several fields
+     share one line - "**Send to:** a@b.com (middle-dot) **Subject:** ..." yields BOTH - which a
+     start-of-line, single-field regex could never read. Labels are a known set (EN + AR); an unknown
+     `key: value` is still kept in extra, never discarded. Only a middle-dot that precedes a KNOWN label
+     splits a value, so a middle-dot inside a quoted subject stays in the value. */
+  var FIELD_LABELS = [
+    { re: "Send[ \\-]?to|To|Email|Recipient|المرسل إليه", key: "send_to" },
+    { re: "Subject|Subj|الموضوع", key: "subject" },
+    { re: "Owner|المالك", key: "owner" },
+    { re: "Template|القالب", key: "template" },
+    { re: "Page", key: "page" },
+    { re: "Kind|النوع", key: "kind" },
+    { re: "Location|الموقع", key: "location" }
+  ];
+  // A known label, an optional "/ opener" or "(note)" qualifier some batches append ("Subject / opener:"),
+  // then the colon. The qualifier must begin with `/` or `(`, so ordinary prose ("talk to me:") never
+  // matches a short label like To or Kind.
+  var FIELD_RE = new RegExp("(?:^|[^\\p{L}\\p{N}])[\\s*]*(" +
+    FIELD_LABELS.map(function (f) { return f.re; }).join("|") + ")(?:\\s*[\\/(][^:*\\n]*)?[\\s*]*:", "giu");
+  function canonKey(label) {
+    var s = String(label).replace(/\*/g, "").trim();
+    for (var i = 0; i < FIELD_LABELS.length; i++) {
+      if (new RegExp("^(?:" + FIELD_LABELS[i].re + ")$", "iu").test(s)) return FIELD_LABELS[i].key;
+    }
+    return "";
+  }
+  function extractFields(line) {
+    var marks = [], m;
+    FIELD_RE.lastIndex = 0;
+    while ((m = FIELD_RE.exec(line))) {
+      marks.push({ label: m[1], valStart: FIELD_RE.lastIndex, at: m.index });
+      if (FIELD_RE.lastIndex === m.index) FIELD_RE.lastIndex++;   // never loop on a zero-width match
+    }
+    var out = [];
+    for (var i = 0; i < marks.length; i++) {
+      var end = (i + 1 < marks.length) ? marks[i + 1].at : line.length;
+      out.push({ key: canonKey(marks[i].label), raw: line.slice(marks[i].valStart, end) });
+    }
+    return out;
+  }
+  // Apply one extracted field to the entry, through the SAME readers send_to and owner already use, so
+  // there is one extractor and one shape. Values are bold-stripped by plain(); no marker survives.
+  function applyField(key, raw, e) {
+    if (key === "send_to") readSendTo(raw, e);
+    else if (key === "subject") { if (!e.subject) { e.subject = plain(raw); e.extra["Subject"] = e.subject; } }
+    else if (key === "owner") readOwner(raw, e);
+    else if (key === "template") { if (!e.template) e.template = plain(raw).replace(/\s.*$/, ""); }
+    else if (key === "page") readPage(raw, e);
+    else if (key === "kind") { if (!e.descriptor) e.descriptor = plain(raw); }
+    else if (key === "location") { if (!e.city) e.city = plain(raw); }
+  }
+  // The greeting name from a body's first line: "Hi Adam," -> "Adam", "Hi Krissee and Mariano," -> both.
+  // A bare merge token ({{NAME}}) is never captured as a name.
+  var GREET_RE = new RegExp("^(?:Hi|Hello|Dear|مرحبًا|مرحبا|أهلاً|أهلا)[\\s]+([^,،]+?)\\s*[,،]", "iu");
+  function greetingName(body) {
+    var first = String(body || "").split("\n").map(function (l) { return l.trim(); })
+      .filter(Boolean)[0] || "";
+    var g = first.match(GREET_RE);
+    if (g && !/\{\{/.test(g[1])) return plain(g[1]);
+    return "";
+  }
+  // The person the card is addressed to: the greeting name if the body has one, else the owner's leading
+  // first name, else blank. Never invented.
+  function personName(e) {
+    if (e.greeting_name) return e.greeting_name;
+    if (e.owner) { var f = plain(e.owner).split(/[\s,]+/).filter(Boolean)[0]; if (f) return f; }
+    return "";
+  }
+
   /* ---- the manifest -------------------------------------------------------
      Returns { entries, notes, batch }. `notes` is every trailing section, kept
      once and attached to every opportunity in the batch: the pricing floor in
@@ -180,6 +252,7 @@
     var sections = [];          // { e, heading, raw } per `##` heading, in order
     var sec = null;             // the section currently being read
     var fence = false, buf = null;
+    var preamble = [];          // intro prose before the first section, scanned for a bundle-wide template
 
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
@@ -191,7 +264,10 @@
           /* The FIRST fenced block in a section is the message. A later one is a
              sample or a snippet, and overwriting the message with it would send
              the wrong words. */
-          if (sec && buf && !sec.e.body) sec.e.body = buf.join("\n").trim();
+          if (sec && buf && !sec.e.body) {
+            sec.e.body = buf.join("\n").trim();
+            if (!sec.e.greeting_name) sec.e.greeting_name = greetingName(sec.e.body);   // "Hi Adam," -> Adam
+          }
           buf = null;
         }
         continue;
@@ -213,14 +289,17 @@
 
       if (sec) {
         if (line.trim()) sec.raw.push(line.trim());     // kept so a demoted section survives as a note
-        var b = line.match(/^\s*[-*]\s*\*{0,2}([^:*]+?)\*{0,2}\s*:\s*(.*)$/);
-        if (!b) continue;
-        var key = plain(b[1]), val = b[2], e = sec.e;
-        if (/^send to$/i.test(key)) readSendTo(val, e);
-        else if (/^page$/i.test(key)) readPage(val, e);
-        else if (/^subject/i.test(key)) { e.subject = plain(val); e.extra["Subject"] = e.subject; }
-        else if (/^owner$/i.test(key)) readOwner(val, e);
-        else e.extra[key] = plain(val);      // never discarded, even when not understood
+        // Every labeled field on the line, in order - a shared "Send to ... Subject ..." line fills both.
+        var fields = extractFields(line);
+        if (fields.length) {
+          fields.forEach(function (f) { applyField(f.key, f.raw, sec.e); });
+        } else {
+          // an unlabeled-by-our-set `key: value` is still kept, never discarded
+          var b = line.match(/^\s*[-*]\s*\*{0,2}([^:*]+?)\*{0,2}\s*:\s*(.*)$/);
+          if (b) sec.e.extra[plain(b[1])] = plain(b[2]);
+        }
+      } else if (line.trim()) {
+        preamble.push(line.trim());
       }
     }
 
@@ -243,14 +322,22 @@
       if (!x.page_file) x.warnings.push("no_page_named");
     });
 
-    return {
-      entries: entries,
-      notes: notes,
-      batch: batch,
-      note_text: notes.map(function (n) {
-        return "## " + n.heading + "\n" + n.body.join("\n");
-      }).join("\n\n").trim()
-    };
+    var note_text = notes.map(function (n) {
+      return "## " + n.heading + "\n" + n.body.join("\n");
+    }).join("\n\n").trim();
+
+    // A bundle-wide template the README/intro names for all pages (batch 13 says en-opp1) applies to any
+    // opportunity that did not carry its own Template label. Scanned, never guessed; blank if unnamed.
+    var scanText = (batch.title || "") + "\n" + (batch.sub || "") + "\n" + preamble.join("\n") + "\n" + note_text;
+    var bt = scanText.match(/template[^A-Za-z0-9]{0,3}([a-z]{2}-[a-z]+\d+)/i) || scanText.match(/\b([a-z]{2}-opp\d+)\b/i);
+    batch.template = bt ? bt[1] : "";
+
+    entries.forEach(function (e) {
+      if (!e.template && batch.template) e.template = batch.template;
+      e.person_name = personName(e);                     // greeting name, else owner's first name, else blank
+    });
+
+    return { entries: entries, notes: notes, batch: batch, note_text: note_text };
   }
 
   /* ---- matching pages to entries ------------------------------------------
@@ -386,10 +473,16 @@
   function toRecord(e, opts) {
     opts = opts || {};
     var slug = e.slug_hint || slugify(e.business) || slugify(e.page_file) || "opportunity";
+    // The person the message greets, and the language it is written in - both read by the composer and the
+    // pre-send roster for the {{NAME}} merge (P6). A record with an address carries one recipient so the
+    // greeting is never a bare placeholder; a channel-only opportunity carries none, as before.
+    var person = e.person_name || "";
+    var lang = /[؀-ۿ]/.test(String(e.body || "") + String(e.subject || "")) ? "ar" : "en";
+    var recipients = e.email ? [{ addr: e.email, name: person, lang: lang }] : [];
     return {
       slug: slug,
-      business: e.business || slug,
-      template: "custom",
+      business: e.business || slug,               // the display name a human reads; the slug stays the identity
+      template: e.template || "custom",           // the template the bundle named (e.g. en-opp1), else custom
       sent_on: opts.today || "",
       location: e.city || "",
       phone: "",
@@ -404,6 +497,8 @@
       channel: { kind: e.channel || "", to: e.email || e.url || "", note: e.extra["Send to"] || "" },
       channel_alternates: e.alternates || [],
       contact_tier: e.tier || "",
+      recipients: recipients,                     // the {{NAME}} merge reads recipients[].name (P6/P10)
+      contact_name: person,                       // the person the card is addressed to, for the header + roster
       outreach_text: e.body || "",
       outreach_subject: e.subject || "",
       owner: e.owner || "",

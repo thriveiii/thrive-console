@@ -79,7 +79,10 @@ APP_JS_MAX   = 762_000     # library/app.js today ~758 KB. Raised by P16 (the ma
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_786_000   # dist/thrive-console.html today ~1.78 MB, tracking app.js. Raised by P16 (the
+DIST_MAX     = 1_790_000   # dist/thrive-console.html today ~1.79 MB, tracking app.js. Raised by P17 (field
+                           # extraction): the multi-field grammar, greeting/owner name capture, and the report
+                           # row's business-name-beside-slug. Prior: 1786 KB.
+                           # Raised by P16 (the
                            # match join): the confirm/orphan/duplicate report blocks, i18n and CSS. Prior: 1764 KB.
                            # tracking app.js (P11 tolerant ingest +
                            # P10 Contact Book +
