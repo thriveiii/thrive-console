@@ -70,7 +70,8 @@
       owner: "", owner_note: "", prohibition: "",
       body: "", extra: {}, warnings: [],
       file: null, confirm: null, match_rule: "", match_score: 0,
-      template: "", greeting_name: "", person_name: ""
+      template: "", greeting_name: "", person_name: "",
+      phones: [], socials: []
     };
   }
 
@@ -176,7 +177,15 @@
     { re: "Template|القالب", key: "template" },
     { re: "Page", key: "page" },
     { re: "Kind|النوع", key: "kind" },
-    { re: "Location|الموقع", key: "location" }
+    { re: "Location|الموقع", key: "location" },
+    // R11 (P18): every channel type carries its own label, EN + AR.
+    { re: "Phone|Tel|Telephone|هاتف|جوال|رقم", key: "phone" },
+    { re: "WhatsApp|Whatsapp|واتساب|واتس", key: "whatsapp" },
+    { re: "Instagram|انستغرام|انستقرام", key: "instagram" },
+    { re: "X|Twitter|تويتر|إكس", key: "x" },
+    { re: "TikTok|Tiktok|تيك توك|تيكتوك", key: "tiktok" },
+    { re: "Facebook|فيسبوك|فيس بوك", key: "facebook" },
+    { re: "LinkedIn|Linkedin|لينكد إن|لينكدإن", key: "linkedin" }
   ];
   // A known label, an optional "/ opener" or "(note)" qualifier some batches append ("Subject / opener:"),
   // then the colon. The qualifier must begin with `/` or `(`, so ordinary prose ("talk to me:") never
@@ -214,6 +223,49 @@
     else if (key === "page") readPage(raw, e);
     else if (key === "kind") { if (!e.descriptor) e.descriptor = plain(raw); }
     else if (key === "location") { if (!e.city) e.city = plain(raw); }
+    else if (key === "phone") readPhone(raw, e);
+    else if (key === "whatsapp") readWhatsApp(raw, e);
+    else if (key === "instagram" || key === "x" || key === "tiktok" || key === "facebook" || key === "linkedin")
+      readSocial(key, raw, e);
+  }
+  // A phone number is normalized to digits, the leading + kept as written; never mangled.
+  function normPhone(v) {
+    var s = plain(v).match(/\+?[\d][\d\s()\-.]{5,}/);
+    if (!s) return "";
+    var d = s[0].replace(/[^\d]/g, "");
+    return (/^\s*\+/.test(s[0]) ? "+" : "") + d;
+  }
+  function readPhone(v, e) { var p = normPhone(v); if (p && e.phones.indexOf(p) < 0) e.phones.push(p); }
+  function readWhatsApp(v, e) {
+    var raw = plain(v);
+    var num = normPhone(raw);
+    var link = raw.match(/wa\.me\/(\+?\d+)/i);
+    var val = link ? "https://wa.me/" + link[1].replace(/[^\d]/g, "") : (num ? "https://wa.me/" + num.replace(/[^\d]/g, "") : raw);
+    pushSocialish(e, { channel: "whatsapp", url: val });
+  }
+  // Instagram | X | TikTok | Facebook | LinkedIn: the value may be a URL or an @handle; the handle is derived
+  // from either, stripped of @ and URL chrome, its case left exactly as written.
+  function readSocial(platform, v, e) {
+    var raw = plain(v);
+    var handle = socialHandle(platform, raw);
+    var url = /https?:\/\//i.test(raw) ? (raw.match(/https?:\/\/\S+/i) || [""])[0] : (handle ? socialUrl(platform, handle) : "");
+    e.socials.push({ platform: platform, handle: handle, url: url });
+  }
+  function pushSocialish(e, ch) {
+    if (!e.channel) { e.channel = ch.channel; e.url = ch.url; }
+    else if (!e.alternates.some(function (a) { return a.channel === ch.channel; })) e.alternates.push(ch);
+  }
+  function socialHandle(platform, raw) {
+    var m = raw.match(/@([A-Za-z0-9_.\-]+)/);
+    if (m) return m[1];
+    var u = raw.match(/(?:instagram|x|twitter|tiktok|facebook|linkedin)\.com\/(?:in\/|company\/|@)?([A-Za-z0-9_.\-]+)/i);
+    if (u) return u[1];
+    var bare = raw.match(/^[A-Za-z0-9_.\-]+$/);
+    return bare ? bare[0] : "";
+  }
+  function socialUrl(platform, handle) {
+    var host = { instagram: "instagram.com/", x: "x.com/", tiktok: "tiktok.com/@", facebook: "facebook.com/", linkedin: "linkedin.com/in/" };
+    return "https://" + (host[platform] || (platform + ".com/")) + handle;
   }
   // The greeting name from a body's first line: "Hi Adam," -> "Adam", "Hi Krissee and Mariano," -> both.
   // A bare merge token ({{NAME}}) is never captured as a name.
@@ -470,6 +522,69 @@
   /* ---- an entry becomes a record ------------------------------------------
      Everything the console already understands, plus what the manifest adds.
      Draft, and nothing stronger: it is published nowhere and sent to nobody. */
+  /* ---- R11: the one contact model -----------------------------------------
+     Every channel an opportunity carries, in one shape:
+       { type, value, platform, handle, tier, tier_basis, source, primary }
+     The composer, the roster and the Contact Book all read this one list. The primary channel is the send
+     target: the envelope's email when there is one, else the first channel. JOOD tiering travels with it -
+     an address sighted on the business's own page is A/sighted; one the research md states is A/stated (shown
+     "Tier A per research, confirm" until Thyab verifies); anything merely inferred is C. Never invented. */
+  var SOCIAL_KEYS = { instagram: 1, x: 1, twitter: 1, tiktok: 1, facebook: 1, linkedin: 1 };
+  function channelSource(prov) {
+    if (prov === "page_partial") return "page";
+    if (prov === "opp_md") return "opp.md";
+    if (prov === "research_md" || prov === "manifest_json") return "research md";
+    return "research md";
+  }
+  function tierFor(explicit, source) {
+    if (source === "page") return { tier: explicit || "A", basis: "sighted" };
+    if (source === "research md" || source === "opp.md") return { tier: explicit || "A", basis: "stated" };
+    if (source === "manual") return { tier: explicit || "", basis: "stated" };
+    return { tier: explicit || "C", basis: "inferred" };
+  }
+  function classifyKind(kind, value) {
+    var k = String(kind || "").toLowerCase();
+    if (k === "email") return { type: "email", platform: "", handle: "" };
+    if (k === "web_form" || k === "form") return { type: "form", platform: "", handle: "" };
+    if (k === "whatsapp") return { type: "whatsapp", platform: "", handle: "" };
+    if (k === "phone" || k === "tel") return { type: "phone", platform: "", handle: "" };
+    if (SOCIAL_KEYS[k]) { var p = (k === "twitter") ? "x" : k; return { type: "social", platform: p, handle: socialHandle(p, String(value || "")) }; }
+    return { type: "other", platform: "", handle: "" };
+  }
+  function cleanChannelValue(type, value) {
+    var v = String(value == null ? "" : value).trim();
+    if (type === "email") return v.replace(/^mailto:/i, "");
+    if (type === "phone") return normPhone(v) || v;
+    return v;                                            // form/whatsapp/social keep their URL as written
+  }
+  function buildChannels(e, opts) {
+    opts = opts || {};
+    var source = opts.source || "research md";
+    var raw = [];
+    if (e.email) raw.push({ kind: "email", value: e.email });
+    if (e.channel && e.channel !== "email") raw.push({ kind: e.channel, value: e.url || "" });
+    (e.alternates || []).forEach(function (a) { if (a && a.channel) raw.push({ kind: a.channel, value: a.url || "" }); });
+    (e.phones || []).forEach(function (p) { if (p) raw.push({ kind: "phone", value: p }); });
+    (e.socials || []).forEach(function (s) { if (s && s.platform) raw.push({ kind: s.platform, value: s.url || (s.handle ? "@" + s.handle : "") }); });
+
+    var seen = {}, out = [];
+    raw.forEach(function (r) {
+      var c = classifyKind(r.kind, r.value);
+      var val = cleanChannelValue(c.type, r.value);
+      if (!val && !c.handle) return;
+      var key = c.type + "|" + c.platform + "|" + val.toLowerCase();
+      if (seen[key]) return; seen[key] = 1;
+      var t = tierFor(e.tier || "", source);
+      out.push({ type: c.type, value: val, platform: c.platform, handle: c.handle,
+        tier: t.tier, tier_basis: t.basis, source: source, primary: false });
+    });
+    var pri = null;
+    for (var i = 0; i < out.length; i++) { if (out[i].type === "email") { pri = out[i]; break; } }
+    if (!pri && out.length) pri = out[0];
+    if (pri) pri.primary = true;
+    return out;
+  }
+
   function toRecord(e, opts) {
     opts = opts || {};
     var slug = e.slug_hint || slugify(e.business) || slugify(e.page_file) || "opportunity";
@@ -497,6 +612,9 @@
       channel: { kind: e.channel || "", to: e.email || e.url || "", note: e.extra["Send to"] || "" },
       channel_alternates: e.alternates || [],
       contact_tier: e.tier || "",
+      // R11 (P18): the ONE contact list the card, composer and Contact Book read. channel/contact_tier above
+      // are the legacy mirror of the primary, kept for the send path; this list is the source of truth.
+      channels: buildChannels(e, { source: channelSource(e.provenance) }),
       recipients: recipients,                     // the {{NAME}} merge reads recipients[].name (P6/P10)
       contact_name: person,                       // the person the card is addressed to, for the header + roster
       outreach_text: e.body || "",
@@ -673,8 +791,18 @@
     e.file = page;
     var html = String((page && page.html) || "");
     var textOnly = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
-    var em = textOnly.match(EMAIL_RE);
-    if (em) { e.email = em[0]; e.channel = "email"; e.url = "mailto:" + em[0]; e.extra["Send to"] = em[0]; }
+    var em = (html.match(/mailto:([^"'\s>]+)/i) || [])[1] || (textOnly.match(EMAIL_RE) || [])[0];
+    if (em) { e.email = em; e.channel = "email"; e.url = "mailto:" + em; e.extra["Send to"] = em; }
+    // Every channel visible on the business's OWN page (rung 4) is A/sighted: tel, wa.me, social profiles.
+    var tel = (html.match(/tel:(\+?[\d\-().\s]{6,})/i) || [])[1];
+    if (tel) { var tp = normPhone(tel); if (tp && e.phones.indexOf(tp) < 0) e.phones.push(tp); }
+    var wa = (html.match(/wa\.me\/(\+?\d+)/i) || [])[1];
+    if (wa) pushSocialish(e, { channel: "whatsapp", url: "https://wa.me/" + wa.replace(/[^\d]/g, "") });
+    ["instagram", "x", "tiktok", "facebook", "linkedin"].forEach(function (pf) {
+      var host = pf === "x" ? "(?:x|twitter)" : pf;
+      var m = html.match(new RegExp("https?://(?:www\\.)?" + host + "\\.com/(?:in/|company/|@)?([A-Za-z0-9_.\\-]+)", "i"));
+      if (m && !e.socials.some(function (s) { return s.platform === pf; })) e.socials.push({ platform: pf, handle: m[1].replace(/^@/, ""), url: m[0] });
+    });
     var h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
     var title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     e.business = plain((h1 && h1[1]) || (title && title[1]) || "") || slug.replace(/-/g, " ");

@@ -6674,10 +6674,21 @@ async function initCompose(slugArg, opts){
      so arriving here a second time to finish a half written message finds it
      exactly as it was left. */
   if(oppObj){
-    const addr=bareAddress((oppObj.channel && /@/.test(String(oppObj.channel.to||"")) ? oppObj.channel.to : "")
-             || oppObj.email || "");
+    /* R11 (P18): the To resolves from the ONE channel model, not a separate field. emailAddress() returns the
+       primary email channel's address (or any email channel's). If the primary is a non-email channel and no
+       email channel exists, the composer says so rather than leaving the field silently blank. */
+    const addr=emailAddress(oppObj);
     const toEl=el("eto");
     if(toEl && !toEl.value.trim() && addr) toEl.value=addr;   // the bare address, mailto lives in the send href
+    if(toEl){
+      const prim=primaryChannel(oppObj);
+      const field=toEl.closest(".field")||toEl.parentNode;
+      let note=field? field.querySelector(".eto-note") : null;
+      if(!addr && prim && prim.type!=="email"){
+        if(field && !note){ note=document.createElement("p"); note.className="mw-note eto-note"; field.appendChild(note); }
+        if(note) note.textContent=t("ocm_not_email");
+      } else if(note){ note.remove(); }
+    }
     const nm=el("ename");
     if(nm && !nm.value.trim()) nm.value=oppObj.owner||oppObj.business||"";
     const su=el("esubject");
@@ -10973,6 +10984,29 @@ const LC_CHANNEL_ICON={ web_form:"form", instagram:"dm", linkedin:"other", whats
                         x:"other", phone:"other", other:"other" };
 function lcChannelLabel(k){ return t("oc_ch_"+k) !== ("oc_ch_"+k) ? t("oc_ch_"+k) : k; }
 
+/* R11 (P18): the ONE universal contact reader, at module scope so the Communication tab, the composer, and
+   the Contact Book all resolve a channel through the SAME functions. A record imported under P18 carries
+   o.channels in the R11 shape {type,value,platform,handle,tier,tier_basis,source,primary}; a legacy record
+   is read into the SAME shape from its old scattered fields, so there is one model and no second store. */
+function chTypeOf(kind){ var k=String(kind||"").toLowerCase();
+  if(k==="email") return "email"; if(k==="web_form"||k==="form") return "form";
+  if(k==="whatsapp") return "whatsapp"; if(k==="phone"||k==="tel") return "phone";
+  if(["instagram","x","twitter","tiktok","facebook","linkedin"].indexOf(k)>=0) return "social"; return "other"; }
+function chPlatformOf(kind){ var k=String(kind||"").toLowerCase();
+  return ["instagram","x","twitter","tiktok","facebook","linkedin"].indexOf(k)>=0 ? (k==="twitter"?"x":k) : ""; }
+function contactChannels(o){
+  if(o && Array.isArray(o.channels) && o.channels.length) return o.channels;
+  var out=[], c=(o&&o.channel)||{}, tier=((o&&o.contact_tier)||"").toUpperCase();
+  var email=(c.kind==="email"&&c.to)? bareAddress(c.to) : ((o&&o.email)? bareAddress(o.email) : (/@/.test(String(c.to||""))? bareAddress(c.to):""));
+  if(email) out.push({ type:"email", value:email, platform:"", handle:"", tier:tier||"", tier_basis:tier?"stated":"", source:"legacy", primary:true });
+  if(c.kind && c.kind!=="email" && c.to) out.push({ type:chTypeOf(c.kind), value:c.to, platform:chPlatformOf(c.kind), handle:"", tier:tier||"", tier_basis:"", source:"legacy", primary:!email });
+  ((o&&o.channel_alternates)||[]).forEach(function(a){ if(a&&a.channel&&a.channel!=="email") out.push({ type:chTypeOf(a.channel), value:a.url||"", platform:chPlatformOf(a.channel), handle:"", tier:"", tier_basis:"", source:"legacy", primary:false }); });
+  return out;
+}
+function primaryEmailChannel(o){ var cs=contactChannels(o); return cs.find(function(c){return c.primary&&c.type==="email";}) || cs.find(function(c){return c.type==="email";}) || null; }
+function primaryChannel(o){ var cs=contactChannels(o); return cs.find(function(c){return c.primary;}) || cs[0] || null; }
+function emailAddress(o){ var c=primaryEmailChannel(o); return c? bareAddress(c.value) : ""; }
+
 async function runMove(move, slug, opts){
   opts=opts||{};
   const all=await mergedOpps();
@@ -11223,27 +11257,45 @@ function initModal(){
 
      The choice is stored on the opportunity, so returning to the tab RESUMES
      rather than asking again, and changing it keeps what was already written. */
-  function emailAddress(o){
-    const c=o.channel||{};
-    /* Always the bare address. A record imported before the address fix may carry "mailto:" on
-       channel.to; the scheme belongs in a send href, never in what is shown or seeded here. */
-    if(c.kind==="email" && c.to) return bareAddress(c.to);
-    if(o.email) return bareAddress(o.email);
-    /* Tier A is the manifest saying an owner address was found. An address with
-       no tier is still an address; a tier with no address is not one. */
-    if(/@/.test(String(c.to||""))) return bareAddress(c.to);
-    return "";
-  }
+  /* R11 (P18): the ONE contact reader lives at module scope (contactChannels / primaryEmailChannel /
+     emailAddress, defined near lcChannelLabel). This tab, the composer, and the Contact Book all read the
+     channel list through those same functions, so there is one model and no second store. */
   function channelChoices(o){
-    const out=[];
-    const c=o.channel||{};
-    if(c.kind && c.kind!=="email") out.push({ kind:c.kind, url:c.to||"", first:true });
-    (o.channel_alternates||[]).forEach(a=>{
-      if(!a || !a.channel || a.channel==="email") return;
-      if(out.some(x=>x.kind===a.channel)) return;
-      out.push({ kind:a.channel, url:a.url||"" });
+    const seen={}, out=[];
+    contactChannels(o).filter(c=>c.type!=="email").forEach(c=>{
+      const kind=c.platform||c.type; if(seen[kind]) return; seen[kind]=1;
+      out.push({ kind:kind, url:c.value||"" });
     });
     return out;
+  }
+  // The channel's display type and value, RTL-safe: a social handle reads @handle, everything else its value.
+  function chTypeLabel(c){
+    if(c.type==="social" && c.platform){ const k="ocm_pf_"+c.platform; return t(k)!==k? t(k) : c.platform; }
+    const k="ocm_type_"+c.type; return t(k)!==k? t(k) : c.type;
+  }
+  function chValueDisp(c){ return (c.type==="social" && c.handle) ? "@"+c.handle : (c.value||""); }
+  function chTierChip(c){
+    if(!c.tier) return "";
+    const basis=c.tier_basis==="sighted"? t("ocm_basis_sighted") : c.tier_basis==="inferred"? t("ocm_basis_inferred") : t("ocm_basis_stated");
+    return '<span class="oc-tier is-'+esc(c.tier_basis||"stated")+'"><bdi class="n">'+esc(t("ocm_tier"))+' '+esc(c.tier)+'</bdi> '+esc(basis)+'</span>';
+  }
+  // The full channel list: type icon, value, tier chip with basis, primary marker, and a one-tap Confirm for
+  // a research-stated tier (flips basis to sighted after Thyab verifies) - never auto-upgraded.
+  // R11 channel type -> an existing sprite glyph (the sprite has no phone/form/social-specific icon).
+  function chIcon(c){ return c.type==="email"? "mail" : c.type==="social"? "globe" : "channel"; }
+  function channelListHtml(o){
+    const cs=contactChannels(o);
+    if(!cs.length) return '<section class="mw-sec"><h4 class="mw-h">'+ic("channel")+esc(t("ocm_ch_h"))+'</h4><p class="mw-note">'+esc(t("och_no_channels"))+'</p></section>';
+    const rows=cs.map((c,i)=>
+      '<li class="oc-ch'+(c.primary?" is-primary":"")+'">'+
+        ic(chIcon(c),18)+
+        '<span class="oc-ch-type">'+esc(chTypeLabel(c))+'</span>'+
+        '<span class="oc-ch-val mono-iso" dir="ltr">'+esc(chValueDisp(c))+'</span>'+
+        chTierChip(c)+
+        (c.primary?'<span class="oc-primary">'+esc(t("ocm_primary"))+'</span>':'')+
+        (c.tier_basis==="stated"?'<button type="button" class="btn ghost sm oc-confirm" data-ci="'+i+'">'+esc(t("ocm_confirm"))+'</button>':'')+
+      '</li>').join("");
+    return '<section class="mw-sec"><h4 class="mw-h">'+ic("channel")+esc(t("ocm_ch_h"))+'</h4><ul class="oc-chs">'+rows+'</ul></section>';
   }
   function outreachPath(o){ return (o && o.outreach_path) || ""; }
 
@@ -11260,10 +11312,10 @@ function initModal(){
     const box=el("modalOutreach");
     const addr=emailAddress(o);
     const chs=channelChoices(o);
-    const tierA=(o.contact_tier||"").toUpperCase()==="A";
-    /* Email is offered only when a Tier A address exists on the record, and it
-       says the address. Offering a send you cannot make is worse than not
-       offering it. */
+    /* R11 (P18): email is offered when a Tier A email channel exists - stated or sighted. A stated tier is
+       shown "Tier A per research, confirm" in the channel list below; the choice to send is still Thyab's. */
+    const emailCh=primaryEmailChannel(o);
+    const tierA=!!(emailCh && String(emailCh.tier||"").toUpperCase()==="A");
     const emailOn = !!addr && tierA;
     let h=prohibitionBand(o)+
       '<section class="mw-sec"><h4 class="mw-h">'+ic("channel")+esc(t("och_h"))+'</h4>'+
@@ -11285,6 +11337,7 @@ function initModal(){
           '<span class="och-t">'+esc(t("och_own"))+'</span>'+
           '<span class="och-s">'+esc(t("och_no_channels"))+'</span></div>';
     h+='</div>';
+    h+=channelListHtml(o);                              // R11: the full channel list, every type, with tiers
     box.innerHTML=h;
     box.querySelectorAll("[data-path]").forEach(b=>b.addEventListener("click", async ()=>{
       saveDraft({ slug:o.slug, outreach_path:b.getAttribute("data-path") });
@@ -11293,6 +11346,18 @@ function initModal(){
          answer decides whether the composer is adopted at all. */
       await reread();
       await switchTo("outreach");
+    }));
+    // Confirm a research-stated tier: Thyab has verified the address, so its basis flips to sighted. Never
+    // auto-upgraded; only this tap does it. The channel list is the one store, so we write it back whole.
+    box.querySelectorAll(".oc-confirm").forEach(b=>b.addEventListener("click", async ()=>{
+      const i=+b.getAttribute("data-ci");
+      const cs=contactChannels(o).map(c=>Object.assign({}, c));
+      if(cs[i]){ cs[i].tier_basis="sighted"; }
+      saveDraft({ slug:o.slug, channels:cs, contact_tier:(cs.find(c=>c.primary)||cs[0]||{}).tier||o.contact_tier });
+      logActivity("och_tier_confirm", o.slug, cs[i]? cs[i].type : "");
+      /* reread refreshes the module record and re-renders this same channel-question screen
+         (the outreach path is still empty), so the confirmed basis shows without a second call. */
+      await reread();
     }));
   }
 

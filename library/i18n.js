@@ -1101,6 +1101,29 @@ const I18N = {
     oc_ch_phone:      "Phone",
     oc_ch_other:      "Another channel",
 
+    /* ---- R11 universal contact model (P18): one channel list, every type, each with a tier and its basis.
+       The channel list below the outreach question reads this one model; so do the composer and the
+       Contact Book. A stated tier is shown, never auto-upgraded; one tap (ocm_confirm) records the sighting. */
+    ocm_ch_h:         "Contact channels",
+    ocm_tier:         "Tier",
+    ocm_basis_sighted:  "seen on their own page",
+    ocm_basis_stated:   "per research, confirm",
+    ocm_basis_inferred: "inferred, unconfirmed",
+    ocm_confirm:      "Confirm",
+    ocm_primary:      "primary",
+    ocm_type_email:   "Email",
+    ocm_type_phone:   "Phone",
+    ocm_type_whatsapp:"WhatsApp",
+    ocm_type_form:    "Contact form",
+    ocm_type_social:  "Social",
+    ocm_type_other:   "Other",
+    ocm_pf_instagram: "Instagram",
+    ocm_pf_x:         "X",
+    ocm_pf_tiktok:    "TikTok",
+    ocm_pf_facebook:  "Facebook",
+    ocm_pf_linkedin:  "LinkedIn",
+    ocm_not_email:    "This is not an email channel. Pick an email channel or add one to send by email.",
+
     /* ---- outreach text, which is never called a template ------------------ */
     ot_h:             "Outreach text",
     ot_none:          "No outreach text is attached to this one yet.",
@@ -2325,6 +2348,27 @@ const I18N = {
     oc_ch_x:          "رسالة إكس",
     oc_ch_phone:      "هاتف",
     oc_ch_other:      "قناة أخرى",
+
+    /* R11 (P18): قائمة قنوات واحدة، كل قناة بفئتها وأساس الفئة. */
+    ocm_ch_h:         "قنوات التواصل",
+    ocm_tier:         "الفئة",
+    ocm_basis_sighted:  "ظاهر على صفحتهم",
+    ocm_basis_stated:   "حسب البحث، أكِّد",
+    ocm_basis_inferred: "مستنتَج، غير مؤكَّد",
+    ocm_confirm:      "أكِّد",
+    ocm_primary:      "الأساسية",
+    ocm_type_email:   "بريد",
+    ocm_type_phone:   "هاتف",
+    ocm_type_whatsapp:"واتساب",
+    ocm_type_form:    "نموذج تواصل",
+    ocm_type_social:  "شبكة اجتماعية",
+    ocm_type_other:   "أخرى",
+    ocm_pf_instagram: "إنستغرام",
+    ocm_pf_x:         "إكس",
+    ocm_pf_tiktok:    "تيك توك",
+    ocm_pf_facebook:  "فيسبوك",
+    ocm_pf_linkedin:  "لينكدإن",
+    ocm_not_email:    "هذه ليست قناة بريد. اختر قناة بريد أو أضف واحدة للإرسال بالبريد.",
 
     ot_h:             "نص التواصل",
     ot_none:          "لا يوجد نص تواصل مرفق بهذه الفرصة بعد.",
