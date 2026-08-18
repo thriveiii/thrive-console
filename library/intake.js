@@ -40,7 +40,19 @@
      because the long dash is banned in this source, and a parser that accepts
      one is not the same thing as copy that uses one. */
   var SEP = "[\u00b7\u2013\u2014]";
-  var HEAD_RE = new RegExp("^\\s*(\\d+)\\s*" + SEP + "\\s*(.+)$");
+  /* The heading grammar, tolerant of every shape a person actually writes. A
+     heading is an optional list marker (a number, optionally closed by a paren,
+     dot or colon), then an optional separator (middle dot, hyphen, en dash, em
+     dash, pipe or colon), then the title. "1 dot Name", "1) Name", "1. Name",
+     "N pipe Name" and a plain "Name" all parse. The producer that broke batch 13
+     wrote a numbered list with a close-paren after the digit ("## 1) River-Sea
+     Chocolates ..."): that paren is why the old digit-then-separator pattern
+     rejected every heading and left the batch with zero sections. Capture groups:
+     1 = the number (may be absent), 2 = the title. The separator characters are
+     escapes, not literals, because the long dash is banned in this source.
+     Because this matches a plain name too, heading SHAPE no longer decides
+     opportunity-vs-note - the send-to + body gate does, at section close. */
+  var HEAD_RE = new RegExp("^\\s*(\\d+)?\\s*[)\\.:]?\\s*[\u00b7\\-\u2013\u2014|:]?\\s*(.+)$");
   var EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
   var DOMAIN_RE = /\b((?:[a-z0-9-]+\.)+[a-z]{2,})\b/i;
 
@@ -128,76 +140,100 @@
     else e.owner = head;
   }
 
+  /* One heading, parsed into the business, an optional city in parentheses, and a
+     trailing descriptor. The heading is matched with the tolerant grammar (so a
+     numbered `1) Name` and a plain `Name` both parse); the business and descriptor
+     are then split on the SEP separators (middle dot, en dash, long dash). Those
+     separators, not the ordinary hyphen, are what carries a "Name to maker" title
+     into business + descriptor while leaving the hyphen inside "River-Sea" intact. */
+  function headEntry(text) {
+    var e = blank();
+    var m = text.match(HEAD_RE);
+    var rest = text;
+    if (m) { if (m[1]) e.n = parseInt(m[1], 10); rest = m[2]; }
+    var bits = rest.split(new RegExp("\\s*" + SEP + "\\s*"));
+    var head = bits.shift() || "";
+    e.descriptor = plain(bits.join(" · "));
+    var loc = head.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+    if (loc) { e.business = plain(loc[1]); e.city = plain(loc[2]); }
+    else e.business = plain(head);
+    return e;
+  }
+
   /* ---- the manifest -------------------------------------------------------
      Returns { entries, notes, batch }. `notes` is every trailing section, kept
      once and attached to every opportunity in the batch: the pricing floor in
      "Money at a glance" is something to read while deciding, not something to
-     go and find in a file. */
+     go and find in a file.
+
+     Every `##` heading starts a candidate section - because the tolerant grammar
+     accepts a plain name, heading shape can no longer tell an opportunity from a
+     "Market Assessment" or a "Sources" section. The qualification gate decides at
+     section close: a section is an opportunity only if it yields a send-to AND a
+     body. Everything else is a note, folded into note_text, and never becomes a
+     phantom "needs message" card. This is the P13 gate, moved to where a permissive
+     heading makes it necessary. */
   function parseManifest(md) {
     var lines = String(md || "").replace(/\r\n?/g, "\n").split("\n");
-    var entries = [], notes = [], batch = { title: "", sub: "" };
-    var e = null, note = null;
+    var batch = { title: "", sub: "" };
+    var sections = [];          // { e, heading, raw } per `##` heading, in order
+    var sec = null;             // the section currently being read
     var fence = false, buf = null;
 
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
 
       if (/^\s*```/.test(line)) {
-        if (!fence) { fence = true; buf = e ? [] : null; }
+        if (!fence) { fence = true; buf = sec ? [] : null; }
         else {
           fence = false;
           /* The FIRST fenced block in a section is the message. A later one is a
              sample or a snippet, and overwriting the message with it would send
              the wrong words. */
-          if (e && buf && !e.body) e.body = buf.join("\n").trim();
+          if (sec && buf && !sec.e.body) sec.e.body = buf.join("\n").trim();
           buf = null;
         }
         continue;
       }
       if (fence) { if (buf) buf.push(line); continue; }
 
-      if (/^#\s+/.test(line)) { batch.title = plain(line.replace(/^#\s+/, "")); e = null; note = null; continue; }
+      if (/^#\s+/.test(line)) { batch.title = plain(line.replace(/^#\s+/, "")); sec = null; continue; }
       if (/^###\s+/.test(line)) {
-        if (!batch.sub && !entries.length && !notes.length) batch.sub = plain(line.replace(/^###\s+/, ""));
-        else if (note) note.body.push(plain(line));
+        if (!batch.sub && !sections.length) batch.sub = plain(line.replace(/^###\s+/, ""));
+        else if (sec) sec.raw.push(plain(line));
         continue;
       }
       if (/^##\s+/.test(line)) {
         var text = plain(line.replace(/^##\s+/, ""));
-        var m = text.match(HEAD_RE);
-        if (m) {
-          e = blank();
-          e.n = parseInt(m[1], 10);
-          var rest = m[2];
-          var bits = rest.split(new RegExp("\\s*" + SEP + "\\s*"));
-          var head = bits.shift() || "";
-          e.descriptor = plain(bits.join(" · "));
-          var loc = head.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
-          if (loc) { e.business = plain(loc[1]); e.city = plain(loc[2]); }
-          else e.business = plain(head);
-          entries.push(e);
-          note = null;
-        } else {
-          e = null;
-          note = { heading: text, body: [] };
-          notes.push(note);
-        }
+        sec = { e: headEntry(text), heading: text, raw: [] };
+        sections.push(sec);
         continue;
       }
 
-      if (e) {
+      if (sec) {
+        if (line.trim()) sec.raw.push(line.trim());     // kept so a demoted section survives as a note
         var b = line.match(/^\s*[-*]\s*\*{0,2}([^:*]+?)\*{0,2}\s*:\s*(.*)$/);
         if (!b) continue;
-        var key = plain(b[1]), val = b[2];
+        var key = plain(b[1]), val = b[2], e = sec.e;
         if (/^send to$/i.test(key)) readSendTo(val, e);
         else if (/^page$/i.test(key)) readPage(val, e);
         else if (/^subject/i.test(key)) { e.subject = plain(val); e.extra["Subject"] = e.subject; }
         else if (/^owner$/i.test(key)) readOwner(val, e);
         else e.extra[key] = plain(val);      // never discarded, even when not understood
-        continue;
       }
-      if (note && line.trim()) note.body.push(line.trim());
     }
+
+    // The gate: a section becomes an opportunity only with a send-to AND a body.
+    // Same predicate resolveOne uses, so the two never disagree about what an
+    // opportunity is. A section that fails is a note, not a phantom card.
+    var entries = [], notes = [];
+    sections.forEach(function (s) {
+      var e = s.e;
+      var hasSend = !!(e.email || e.url || (e.channel && e.channel !== ""));
+      var hasBody = !!(e.body && e.body.trim());
+      if (hasSend && hasBody) entries.push(e);
+      else notes.push({ heading: s.heading, body: s.raw });
+    });
 
     entries.forEach(function (x) {
       if (!x.business) x.warnings.push("no_business");

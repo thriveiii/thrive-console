@@ -76,14 +76,29 @@ ck("exactly one is hosted (the matched page)", w2.hosted === 1, w2.hosted);
 ck("the two page-pending rows still carry their text",
    w2.store.filter(r => (r.outreach_text || "").length > 0).length === 3, w2.store.map(r => r.slug + ":" + (r.outreach_text || "").length));
 
-// 3. A genuinely text-less template is stored but NAMED incomplete, not reported as all-present.
+// 3. A section stripped of its message (P15 gate: a shippable opportunity needs a send-to AND a body).
+//    Pure md, no page: parseManifest demotes the body-less section to a NOTE rather than storing a phantom
+//    empty template - the same law that keeps "Market Assessment" and "Sources" out of the board. It is not
+//    lost: its heading survives in note_text. The never-drop guarantee lives one level up, at the resolver,
+//    proven in 3b: the SAME body-less section, once its page is present, resolves as a needs-message card.
 const stripped = md.replace(/```[\s\S]*?```/, "```\n\n```").replace(/\*\*Subject:\*\*[^\n]*/i, "**Subject:** ");
 const b3 = TI.buildBatch([], [stripped]);
 const w3 = writeBatch(b3);
-console.log("\n=== 3. a template with its text removed: stored, flagged incomplete ===");
-ck("still persists every row", w3.saved === b3.report.rows.length, w3.saved + "/" + b3.report.rows.length);
-ck("at least one row is flagged incomplete (no text), not hidden", w3.incomplete >= 1, w3.incomplete);
-ck("a no_text row is reported by name", b3.report.rows.some(r => r.reasons.indexOf("no_text") >= 0 || (!r.hasSubject && !r.hasBody)));
+console.log("\n=== 3. a template with its message removed, no page: a note, not a phantom empty template ===");
+ck("the two intact templates still resolve; the body-less one is not a phantom entry",
+   b3.report.rows.length === 2, b3.report.rows.length);
+ck("every stored row carries its body text (no empty template is created)",
+   w3.saved === b3.report.rows.length && w3.incomplete === 0, w3.saved + "/" + b3.report.rows.length + " incomplete=" + w3.incomplete);
+ck("the body-less section is kept as a note (its heading is not silently lost)",
+   TI.parseManifest(stripped).notes.some(n => /Ludic Lillian/.test(n.heading)),
+   TI.parseManifest(stripped).notes.map(n => n.heading).join(" | "));
+
+// 3b. The never-drop law, where it actually protects the user: the resolver. The same stripped md, this time
+//     WITH the section's page in the bundle, surfaces the opportunity as "needs message" - never dropped.
+const b3b = TI.resolveBatch([P("opp/ludic-lillian/index.html")], [{ name: "research.md", text: stripped }], []);
+const rLud = b3b.report.rows.find(r => r.slug === "ludic-lillian");
+ck("with its page present, the body-less opportunity is a needs-message card at the resolver, never dropped",
+   !!rLud && rLud.needs_message === true && rLud.hasBody === false, rLud && rLud.provenance);
 
 // 4. Re-import the same batch into the store from run 1: updates in place, no duplicate slugs, and
 //    an already-published lifecycle is not knocked back to draft.
