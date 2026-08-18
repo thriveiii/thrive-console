@@ -678,9 +678,8 @@
      A page alone, a page and its manifest, or a zip of both. The caller hands
      over File objects and gets the same answer in every case, so nothing
      downstream has to know which of the three happened. */
-  /* Read a drop into its two kinds, unpacking any zip. One place decides what a
-     page is and what a manifest is, so readDrop and the editor's batch pipeline
-     can never disagree about which file was which. */
+  /* Read a drop into its kinds, unpacking any zip. One place decides what a page, a manifest and a json
+     are, so every ingest surface agrees about which file was which. */
   async function readFiles(files) {
     var pages = [], manifests = [], jsons = [], skipped = [];
     var list = Array.prototype.slice.call(files || []);
@@ -704,48 +703,20 @@
     return { pages: pages, manifests: manifests, jsons: jsons, skipped: skipped };
   }
 
-  async function readDrop(files) {
-    var read = await readFiles(files);
-    var pages = read.pages, manifests = read.manifests, skipped = read.skipped;
-
-    var entries = [], notes = "", batch = { title: "", sub: "" };
-    manifests.forEach(function (m) {
-      var r = global.ThriveIntake.parseManifest(m.text);
-      entries = entries.concat(r.entries);
-      if (r.note_text) notes = notes ? notes + "\n\n" + r.note_text : r.note_text;
-      if (r.batch.title && !batch.title) batch = r.batch;
-    });
-
-    /* A page with no manifest entry is still a real page and still work. It
-       becomes an opportunity named after its file, flagged so the report says
-       exactly what it is rather than pretending it arrived complete. */
-    var m = global.ThriveIntake.match(entries, pages);
-    var extra = m.orphanPages.map(function (f) {
-      var e = { n: 0, business: f.name.replace(/^.*\//, "").replace(/\.html?$/i, "").replace(/[-_]+/g, " ").trim(),
-                city: "", descriptor: "", channel: "", url: "", alternates: [], email: "", tier: "",
-                page_file: f.name, slug_hint: "", subject: "", owner: "", owner_note: "",
-                prohibition: "", body: "", extra: {}, warnings: ["no_manifest_entry"], file: f };
-      return e;
-    });
-
-    return {
-      entries: entries.concat(extra),
-      orphanPages: m.orphanPages.map(function (f) { return f.name; }),
-      orphanEntries: m.orphanEntries.map(function (e) { return e.business || "(unnamed)"; }),
-      pages: pages.length, manifests: manifests.length,
-      notes: notes, batch: batch, skipped: skipped
-    };
-  }
+  /* P14: readDrop, the second ingest path that fed the board's "Today's batch" surface, is retired. It
+     parsed sections and matched pages directly (parseManifest + match), never running the tolerant ladder,
+     so every fix to resolveBatch left that surface unchanged. Both drop and upload surfaces now go through
+     ThriveIntake.readBatch -> resolveBatch (one reader). parseManifest and match remain, reached ONLY through
+     buildBatch inside the resolver (the one path), never as a second entry point. */
 
   global.ThriveIntake.readZip = readZip;
   global.ThriveIntake.readFiles = readFiles;
-  global.ThriveIntake.readDrop = readDrop;
 })(typeof window !== "undefined" ? window : this);
 
 /* ============================================================================
    The batch report, and the warn-before-write gate (upload mode)
 
-   readDrop already parses each section (subject, body, send-to, page file) and
+   buildBatch parses each section (subject, body, send-to, page file) and
    matches pages to entries by slug, never by position. This layer adds the two
    things the upload gate needs on top of that: the optional structured JSON
    manifest block (a second, machine-reliable source for the structured fields
@@ -897,7 +868,12 @@
     };
   }
 
-  /* Read the dropped files, then build the batch. The editor's one entry point. */
+  /* The ONE entry point for every drop or upload surface. Reads the files, runs the tolerant resolver, and
+     reports (never silently drops) any instruction-shaped file the reader cannot open. */
+  // A document a producer might have meant as the instruction file but that this console cannot read (it
+  // reads only html/md/txt/json). Surfaced as "unreadable format, needs message" so a .docx or .pdf is a
+  // truthful state on the report, never a file that vanished before the resolver saw it.
+  var DOC_LIKE = /\.(docx?|pdf|rtf|pages|odt|key|pptx?)$/i;
   async function readBatch(files, opts) {
     var read = await TI.readFiles(files);
     // The ONE tolerant resolver runs the ladder (opp.md > manifest.json > research md > page > needs message)
@@ -905,6 +881,9 @@
     var out = TI.resolveBatch(read.pages, read.manifests, read.jsons || [], opts);
     out.skipped = read.skipped;
     out.pageList = read.pages;
+    // A dropped .docx/.pdf is named on the report as an unreadable instruction file, not dropped in silence.
+    out.unreadable = (read.skipped || []).filter(function (n) { return DOC_LIKE.test(n); })
+      .map(function (n) { return String(n).replace(/^.*\//, ""); });
     return out;
   }
 
