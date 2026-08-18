@@ -67,10 +67,14 @@ APP_JS_MAX   = 750_000     # library/app.js today ~747 KB. Raised by P10 (the Co
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_748_000   # dist/thrive-console.html today ~1.74 MB, tracking app.js (P10 Contact Book +
+DIST_MAX     = 1_764_000   # dist/thrive-console.html today ~1.76 MB, tracking app.js (P11 tolerant ingest +
+                           # P10 Contact Book +
                            # P9 calm composer +
                            # P4 + P5 + P6 + P7 +
-                           # P8 durable queue grew it). The offline single file inlines app.js,
+                           # P8 durable queue grew it). Raised by P11 (the tolerant opportunity reader): the
+                           # drop-surface provenance column + one-tap needs-message Write action in the batch
+                           # report, plus the provenance/needs-message strings and CSS the offline file inlines.
+                           # The offline single file inlines app.js,
                            # which grew with the reply card, the grouped/bounded reply card + expander, and
                            # the two-sided thread bubbles across the reply briefs)
 HYDRATE_MAX  = 11          # one hydrate today reads 11 tables, each once (P10 added console_contacts, the

@@ -235,14 +235,35 @@
       .replace(/&/g, " and ")
       .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
   }
+  /* The identity of a dropped page (R8). A page shipped inside its own folder (opp/<slug>/index.html)
+     takes the FOLDER as its identity, because the file is a generic "index.html" that would collide with
+     every other folder's index. A flat page keeps its filename. This is what lets a bundle of
+     opp/<slug>/index.html files resolve, where matching by the bare filename never could. */
+  function folderOf(name) { var i = String(name || "").lastIndexOf("/"); return i < 0 ? "" : String(name).slice(0, i + 1); }
+  function baseOf(name) { return String(name || "").replace(/^.*\//, ""); }
+  function pageSlug(name) {
+    var parts = String(name || "").split("/").filter(Boolean);
+    var file = parts.length ? parts[parts.length - 1] : "";
+    var base = file.replace(/\.html?$/i, "");
+    if (parts.length >= 2 && /^(index|page|opp|opportunity|default|home)$/i.test(base)) return slugify(parts[parts.length - 2]);
+    return slugify(base);
+  }
 
   function match(entries, pages) {
-    var byKey = {}, used = {};
-    (pages || []).forEach(function (f) { byKey[keyOf(f.name)] = f; });
+    var byKey = {}, bySlug = {}, used = {};
+    (pages || []).forEach(function (f) {
+      byKey[keyOf(f.name)] = f;
+      var ps = pageSlug(f.name); if (ps && !bySlug[ps]) bySlug[ps] = f;    // folder identity (R8), never overwrites
+    });
 
     (entries || []).forEach(function (e) {
       var f = null;
-      if (e.page_file && byKey[keyOf(e.page_file)]) f = byKey[keyOf(e.page_file)];
+      // R8, MOST specific first: a folder page (opp/<slug>/index.html) matches the entry whose slug is that
+      // folder. This runs before the filename pass so a bundle whose pages are all a generic "index.html"
+      // resolves by folder, never colliding on the shared filename key.
+      var es = e.slug_hint || slugify(e.business);
+      if (es && bySlug[es] && !used[bySlug[es].name]) f = bySlug[es];
+      if (!f && e.page_file && byKey[keyOf(e.page_file)] && !used[byKey[keyOf(e.page_file)].name]) f = byKey[keyOf(e.page_file)];
       if (!f) {
         var want = keyOf(e.business);
         Object.keys(byKey).forEach(function (k) {
@@ -293,7 +314,11 @@
       descriptor: e.descriptor || "",
       batch_note: opts.note_text || "",
       batch_title: (opts.batch && opts.batch.title) || "",
-      manifest_extra: e.extra || {}
+      manifest_extra: e.extra || {},
+      // R8 provenance: which rung of the tolerant ladder resolved this opportunity, kept on the record so
+      // the truth ("read from opp.md" vs "read from research md" vs "needs message") is visible, not guessed.
+      provenance: e.provenance || "",
+      needs_message: !!e.needs_message
     };
   }
 
@@ -380,12 +405,206 @@
     return { pass: f.length === 0, fails: f };
   }
 
+  /* ---- R8: the opportunity envelope (opp.md) ------------------------------
+     One opportunity, self-describing, beside its index.html. A flat block of `key: value` lines, then a
+     line that is exactly `---`, then the full tailored email body verbatim (the {{NAME}} token kept). No
+     manual manifest step. This is the authoritative source when present. It reuses the same field readers
+     as the bullet manifest (readSendTo, readOwner), so an envelope and a manifest entry resolve to the
+     SAME record shape. */
+  function parseEnvelope(md) {
+    var lines = String(md == null ? "" : md).replace(/\r\n?/g, "\n").split("\n");
+    var head = [], body = [], inBody = false;
+    for (var i = 0; i < lines.length; i++) {
+      if (!inBody && /^\s*---+\s*$/.test(lines[i])) { inBody = true; continue; }
+      (inBody ? body : head).push(lines[i]);
+    }
+    var f = {};
+    head.forEach(function (l) {
+      var m = l.match(/^\s*([A-Za-z][A-Za-z0-9_ ]*?)\s*:\s*(.*)$/);
+      if (m) { var k = plain(m[1]).toLowerCase().replace(/\s+/g, "_"); f[k] = m[2].trim(); }
+    });
+    var e = blank();
+    e.business = plain(f.business || "");
+    e.slug_hint = f.slug ? slugify(f.slug) : "";
+    if (f.location) { var loc = f.location.match(/^(.*?),\s*([A-Za-z]{2})\s*$/); e.city = plain(loc ? f.location : f.location); }
+    if (f.subject) { e.subject = plain(f.subject); e.extra["Subject"] = e.subject; }
+    if (f.template) e.extra.template = plain(f.template);
+    if (f.kind) e.extra.kind = plain(f.kind);
+    if (f.sent_on) e.extra.sent_on = plain(f.sent_on);
+    if (f.send_to) readSendTo(f.send_to, e);
+    e.body = body.join("\n").trim();
+    e.envelope = true;
+    return e;
+  }
+
+  /* ---- a manifest.json FILE (rung 2, the legacy path) ---------------------
+     An array of entries, or {opportunities:[...]}, or a {slug: {...}} map, or one entry object. Each entry
+     names its slug/business and carries send_to/subject/body. Unparseable JSON yields nothing (the ladder
+     simply falls through to the next rung), never a guess. */
+  function parseJsonFile(text) {
+    var raw = String(text == null ? "" : text).trim();
+    if (!raw) return [];
+    try {
+      var v = JSON.parse(raw);
+      if (Array.isArray(v)) return v;
+      if (v && Array.isArray(v.opportunities)) return v.opportunities;
+      if (v && Array.isArray(v.entries)) return v.entries;
+      if (v && typeof v === "object") {
+        if (v.slug || v.business || v.send_to || v.sendTo || v.email) return [v];
+        return Object.keys(v).map(function (k) { var o = v[k] || {}; if (!o.slug) o.slug = k; return o; });
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  function jsonToEntry(j, slug) {
+    j = j || {};
+    var e = blank();
+    e.slug_hint = j.slug ? slugify(j.slug) : slug;
+    e.business = plain(j.business || "");
+    if (j.subject) { e.subject = plain(j.subject); e.extra["Subject"] = e.subject; }
+    if (j.template) e.extra.template = plain(j.template);
+    if (j.sent_on) e.extra.sent_on = plain(j.sent_on);
+    if (j.location) e.city = plain(j.location);
+    var send = j.send_to || j.sendTo || j.email || "";
+    if (send) readSendTo(String(send), e);
+    e.body = String(j.body || j.message || "");
+    return e;
+  }
+
+  /* Rung 4: index.html itself. Extract the visible business email and a name; NEVER a body (the body is
+     written by hand). A minimum record, marked partial. */
+  function pageToEntry(page, slug) {
+    var e = blank();
+    e.slug_hint = slug;
+    e.file = page;
+    var html = String((page && page.html) || "");
+    var textOnly = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
+    var em = textOnly.match(EMAIL_RE);
+    if (em) { e.email = em[0]; e.channel = "email"; e.url = "mailto:" + em[0]; e.extra["Send to"] = em[0]; }
+    var h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+    var title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    e.business = plain((h1 && h1[1]) || (title && title[1]) || "") || slug.replace(/-/g, " ");
+    e.body = "";                       // partial by design; a body is never invented from a page
+    return e;
+  }
+
+  /* ---- the tolerant reader: ONE resolver, ONE ladder ----------------------
+     Every opportunity, keyed by slug, resolves its instruction by trying in order and stopping at the first
+     rung that yields a send_to AND a body: (1) opp.md beside index.html [R8, authoritative], (2) any
+     manifest.json entry for the slug [legacy], (3) any research/flat md section for the slug [batch 13],
+     (4) index.html email + name [partial, body needs writing], (5) nothing [needs message, never blocked].
+     Each opportunity records WHICH rung resolved it (provenance). No per-batch or per-slug branch. */
+  function resolveOne(slug, page, env, json, doc) {
+    var cands = [];
+    if (env)  { env.provenance = "opp_md"; cands.push(env); }
+    if (json) { var je = jsonToEntry(json, slug); je.provenance = "manifest_json"; cands.push(je); }
+    if (doc)  { doc.provenance = "research_md"; cands.push(doc); }
+    if (page) { var pe = pageToEntry(page, slug); pe.provenance = "page_partial"; cands.push(pe); }
+
+    function hasSend(e) { return !!(e && (e.email || e.url || (e.channel && e.channel !== ""))); }
+    function hasBody(e) { return !!(e && e.body && e.body.trim()); }
+
+    var chosen = null, needs = false, i;
+    for (i = 0; i < cands.length; i++) { if (hasSend(cands[i]) && hasBody(cands[i])) { chosen = cands[i]; break; } }
+    if (!chosen) {
+      needs = true;
+      for (i = 0; i < cands.length; i++) { if (hasSend(cands[i])) { chosen = cands[i]; break; } }  // best partial: a send with no body
+    }
+    var e;
+    if (chosen) { e = chosen; }
+    else {                              // nothing anywhere: create the card as "needs message", never dropped
+      e = blank(); e.provenance = "needs_message"; e.file = page || null;
+      e.business = (env && env.business) || (doc && doc.business) || (json && plain(json.business || "")) ||
+        (page ? baseOf(page.name).replace(/\.html?$/i, "").replace(/[-_]+/g, " ").trim() : slug.replace(/-/g, " "));
+      needs = true;
+    }
+    e.slug_hint = e.slug_hint || slug;
+    if (page && !e.file) e.file = page;
+    if (!e.business) e.business = page ? baseOf(page.name).replace(/\.html?$/i, "").replace(/[-_]+/g, " ").trim() : slug.replace(/-/g, " ");
+    e.needs_message = needs || e.provenance === "page_partial" || e.provenance === "needs_message";
+    return e;
+  }
+
+  function resolveBatch(pages, manifests, jsons, opts) {
+    opts = opts || {};
+    pages = pages || []; manifests = manifests || []; jsons = jsons || [];
+    var TI = global.ThriveIntake;
+
+    // classify manifests: opp.md envelopes (rung 1) vs research/flat docs (rung 3)
+    var envelopes = [], docs = [];
+    manifests.forEach(function (m) {
+      if (/(^|\/)opp\.md$/i.test(m.name || "")) envelopes.push(m); else docs.push(m);
+    });
+
+    // rung 3 (+ the fenced ```json block): the tested core parses sections and matches pages by slug.
+    var base = TI.buildBatch(pages, docs.map(function (m) { return m.text; }), opts);
+    var docBySlug = {};
+    base.entries.forEach(function (e) {
+      var s = e.file ? pageSlug(e.file.name) : (e.slug_hint || slugify(e.business));
+      if (s && !docBySlug[s]) docBySlug[s] = e;
+    });
+
+    // rung 2: manifest.json FILES, keyed by slug
+    var jsonBySlug = {};
+    jsons.forEach(function (j) {
+      parseJsonFile(j.text).forEach(function (x) {
+        var s = x.slug ? slugify(x.slug) : slugify(x.business || "");
+        if (s && !jsonBySlug[s]) jsonBySlug[s] = x;
+      });
+    });
+
+    // rung 1: opp.md envelopes, keyed by the FOLDER slug so they unify with their sibling index.html
+    var envBySlug = {};
+    envelopes.forEach(function (m) {
+      var e = parseEnvelope(m.text);
+      var folderSlug = pageSlug(folderOf(m.name) + "index.html");
+      var s = folderSlug || e.slug_hint || slugify(e.business);
+      if (s) { e.slug_hint = s; if (!envBySlug[s]) envBySlug[s] = e; }
+    });
+
+    // every opportunity slug, from every source and every page
+    var pageBySlug = {};
+    pages.forEach(function (p) { var s = pageSlug(p.name); if (s && !pageBySlug[s]) pageBySlug[s] = p; });
+    var slugs = {};
+    [pageBySlug, envBySlug, docBySlug, jsonBySlug].forEach(function (map) { Object.keys(map).forEach(function (s) { slugs[s] = 1; }); });
+
+    var entries = Object.keys(slugs).map(function (s) {
+      return resolveOne(s, pageBySlug[s] || null, envBySlug[s] || null, jsonBySlug[s] || null, docBySlug[s] || null);
+    });
+
+    var report = TI.batchReport(entries, { existingSlugs: opts.existingSlugs || [], jsonError: base.jsonError || "" });
+    // provenance and the needs-message verdict travel onto every row so the drop surface can show the rung.
+    report.rows.forEach(function (row) {
+      var e = row.entry || {};
+      row.provenance = e.provenance || "";
+      row.needs_message = !!e.needs_message;
+      if (e.needs_message && row.reasons.indexOf("needs_message") < 0) { row.reasons.push("needs_message"); row.verdict = "warned"; }
+    });
+    report.matched = report.rows.filter(function (r) { return r.verdict === "matched"; }).length;
+    report.warned = report.rows.filter(function (r) { return r.verdict === "warned"; }).length;
+    report.allMatched = report.rows.length > 0 && report.rows.every(function (r) { return r.verdict === "matched"; }) && !base.jsonError;
+
+    return {
+      entries: entries, report: report,
+      pages: pages.length, manifests: manifests.length, jsons: jsons.length,
+      notes: base.notes, batch: base.batch,
+      jsonPresent: base.jsonPresent, jsonError: base.jsonError
+    };
+  }
+
   global.ThriveIntake = {
     parseManifest: parseManifest,
+    parseEnvelope: parseEnvelope,
+    parseJsonFile: parseJsonFile,
+    resolveBatch: resolveBatch,
     match: match,
     toRecord: toRecord,
     substituteLink: substituteLink,
     slugify: slugify,
+    pageSlug: pageSlug,
+    folderOf: folderOf,
+    baseOf: baseOf,
     selfTest: selfTest
   };
 })(typeof window !== "undefined" ? window : this);
@@ -442,7 +661,7 @@
 
       if (/\/$/.test(name)) continue;                                  // a directory entry
       if (name.replace(/^.*\//, "").charAt(0) === ".") continue;        // __MACOSX and friends
-      if (!/\.(html?|md|txt)$/i.test(name)) continue;
+      if (!/\.(html?|md|txt|json)$/i.test(name)) continue;
       if (u32(v, local) !== 0x04034b50) continue;
       var dataAt = local + 30 + u16(v, local + 26) + u16(v, local + 28);
       var raw = v.subarray(dataAt, dataAt + csize);
@@ -463,7 +682,7 @@
      page is and what a manifest is, so readDrop and the editor's batch pipeline
      can never disagree about which file was which. */
   async function readFiles(files) {
-    var pages = [], manifests = [], skipped = [];
+    var pages = [], manifests = [], jsons = [], skipped = [];
     var list = Array.prototype.slice.call(files || []);
     for (var i = 0; i < list.length; i++) {
       var f = list[i], name = f.name || "";
@@ -471,16 +690,18 @@
         var inner = await readZip(await f.arrayBuffer());
         inner.forEach(function (z) {
           if (/\.html?$/i.test(z.name)) pages.push({ name: z.name, html: z.text });
+          else if (/\.json$/i.test(z.name)) jsons.push({ name: z.name, text: z.text });
           else if (/\.(md|txt)$/i.test(z.name)) manifests.push({ name: z.name, text: z.text });
           else skipped.push(z.name);
         });
         continue;
       }
       if (/\.html?$/i.test(name)) { pages.push({ name: name, html: await f.text() }); continue; }
+      if (/\.json$/i.test(name)) { jsons.push({ name: name, text: await f.text() }); continue; }
       if (/\.(md|txt)$/i.test(name)) { manifests.push({ name: name, text: await f.text() }); continue; }
       skipped.push(name);
     }
-    return { pages: pages, manifests: manifests, skipped: skipped };
+    return { pages: pages, manifests: manifests, jsons: jsons, skipped: skipped };
   }
 
   async function readDrop(files) {
@@ -679,7 +900,9 @@
   /* Read the dropped files, then build the batch. The editor's one entry point. */
   async function readBatch(files, opts) {
     var read = await TI.readFiles(files);
-    var out = buildBatch(read.pages, read.manifests.map(function (m) { return m.text; }), opts);
+    // The ONE tolerant resolver runs the ladder (opp.md > manifest.json > research md > page > needs message)
+    // and carries provenance. buildBatch remains its rung-3 section engine, so the flat path is unchanged.
+    var out = TI.resolveBatch(read.pages, read.manifests, read.jsons || [], opts);
     out.skipped = read.skipped;
     out.pageList = read.pages;
     return out;
