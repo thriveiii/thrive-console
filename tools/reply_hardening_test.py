@@ -107,13 +107,16 @@ with sync_playwright() as p:
 
     # Finding 2: the reply body reads answer-first, with the quoted original SEPARATED (a collapsible quote),
     # even though this Gmail header ("في الأربعاء، كتب فريق ثرايف الفريق the team:") does not cleanly parse.
+    # P12: the answer is its own block (.rp-snip); the quoted original is a SEPARATE collapsible section
+    # (details.rp-quoted), a sibling of the answer. Even an unparsable Gmail header is still detected as the
+    # quote boundary, so the answer reads first and the original is separated (never one flat tangle).
     body = pg.evaluate("""()=>{ const d=document.createElement('div'); d.innerHTML=window.threadListHtml('madar');
-      const snip=d.querySelector('.rp-snip'); if(!snip) return {none:true};
-      return { hasMsg: !!snip.querySelector('.rp-msg'), hasQuote: !!snip.querySelector('.rp-quoted'),
-               ltrIso: !!snip.querySelector('.rp-ltr'),
-               // the answer text precedes the quoted block in DOM order
-               answerFirst: (function(){ const msg=snip.querySelector('.rp-msg'), q=snip.querySelector('.rp-quoted');
-                 if(!msg||!q) return false; return !!(msg.compareDocumentPosition(q)&Node.DOCUMENT_POSITION_FOLLOWING); })() }; }""")
+      const bubble=d.querySelector('.th-reply'); if(!bubble) return {none:true};
+      const snip=bubble.querySelector('.rp-snip'), q=bubble.querySelector('details.rp-quoted');
+      return { hasMsg: !!snip, hasQuote: !!q,
+               ltrIso: !!bubble.querySelector('.rp-ltr'),
+               // the answer block precedes the quoted section in DOM order
+               answerFirst: (function(){ if(!snip||!q) return false; return !!(snip.compareDocumentPosition(q)&Node.DOCUMENT_POSITION_FOLLOWING); })() }; }""")
     ck("Finding 2: the reply renders the answer in its own block, the quoted original in a separate collapsible quote",
        body.get("hasMsg") is True and body.get("hasQuote") is True and body.get("answerFirst") is True, body)
     ck("Finding 2: the URL inside the Arabic answer is direction-isolated (no RTL/LTR collision)",

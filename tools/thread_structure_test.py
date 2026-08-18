@@ -43,7 +43,11 @@ ck("the header is recomposed from isolated parts, not painted as the raw mixed r
    and 'class="rp-qh-name"' in app and 'class="rp-qh-addr rp-ltr"' in app)
 ck("an unparsable/plain body falls back to the per-line isolated rendering (never worse)",
    "function renderReplyBodyStructured(" in app and "if(!blocks) return renderReplyBody(text);" in app)
-ck("the thread renders through the structured path", "renderReplyBodyStructured(r.snippet)" in app)
+# P12: the thread now reads the R10 message model (buildMessage) and renders its body zone through the one
+# renderMessageBody path; the answer block still lands in .rp-snip and the quoted original still collapses.
+ck("the thread renders through the R10 message model and one body path",
+   "function buildMessage(" in app and "function renderMessageBody(" in app
+   and "renderMessageBody(msg)" in app and 'class="rp-snip"' in app)
 
 BASEL = ("نعم، هذا رائع. شكرًا لكم.\n\n"
          "في اثنين، ٣ آب ٢٠٢٦ في ٩:٣٧ م، كتب Thrive Digital Solutions <hi@thriveiii.com>:\n"
