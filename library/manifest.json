@@ -1,7 +1,7 @@
 {
   "site": "console.thriveiii.com",
   "base_path": "/opp/",
-  "updated": "2026-08-17",
+  "updated": "2026-08-18",
   "opportunities": [
     {
       "slug": "ludic-lillian",
@@ -162,6 +162,15 @@
       "template": "custom",
       "sent_on": "2026-08-16",
       "location": "Occoquan, VA",
+      "phone": "",
+      "status": ""
+    },
+    {
+      "slug": "clear-spring-acupuncture",
+      "business": "Clear Spring Acupuncture",
+      "template": "custom",
+      "sent_on": "2026-08-18",
+      "location": "",
       "phone": "",
       "status": ""
     }
