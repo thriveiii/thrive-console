@@ -5655,7 +5655,7 @@ function buildThread(slug){
       // keeps the thread unchanged when a reply genuinely fails.
       if(m.status==="unsent") return;
       out.push({ kind:"sent", ts:m.ts, to:m.to||"", toName:m.toName||"",
-                 subject:m.subject||"", channel:m.provider||"", status:m.status||"sent",
+                 subject:m.subject||"", body:(m.preview||m.body||""), channel:m.provider||"", status:m.status||"sent",
                  templateName:m.templateName||"", chapter:m.chapter||1, mid:m.mid });
     }
   });
@@ -5702,7 +5702,7 @@ function buildThread(slug){
       if(!m || m.opp!==self.spawned_from.parent || m.direction==="in") return;
       if(String(m.to||"").trim().toLowerCase()!==pa) return;
       out.push({ kind:"sent", ts:m.ts, to:m.to||"", toName:m.toName||"", subject:m.subject||"",
-                 channel:m.provider||"", status:m.status||"sent", templateName:m.templateName||"", chapter:m.chapter||1, mid:m.mid });
+                 body:(m.preview||m.body||""), channel:m.provider||"", status:m.status||"sent", templateName:m.templateName||"", chapter:m.chapter||1, mid:m.mid });
     });
   }
 
@@ -5932,6 +5932,79 @@ function renderReplyBodyStructured(text){
       '</summary><div class="rp-quoted-body">'+renderReplyBody(bk.text)+'</div></details>';
   }).join("");
 }
+/* ---- R10 · the message model: one named shape, read once, used everywhere ----------------------------
+   The thread once collapsed a message into an undifferentiated blob and the renderer guessed at it: the
+   subject was shown as the body, the real body was buried inside the quoted reply, and an outbound send
+   carried no body at all. The cure is a message OBJECT with named fields. Every message - our send, their
+   reply - is read once into this shape and every surface reads its fields; nothing re-parses a blob
+   downstream (the one-source law, applied to messages).
+
+     { time, from, fromAddr, to, toAddr, subject, body, quoted, direction }
+
+   splitReplyBody separates the new text from the quoted original ONCE, with the same quote detector the
+   renderer already uses (quoteStartIndex), so the "On <date> X wrote:" header and everything below it is
+   `quoted`, never `body`, and the subject (a distinct field) is never mistaken for either. Outbound reads
+   the compiled body the ledger already stored (m.preview / m.body); a message with no body carries body:""
+   and its zone is simply omitted, never faked. Pure derivation: the stored row is never rewritten. */
+function splitReplyBody(text){
+  var raw=String(text==null?"":text);
+  var lines=raw.split(/\r?\n/);
+  var qs=quoteStartIndex(lines);
+  if(qs<0) return { body:raw.replace(/\s+$/,""), quoted:"" };   // all new text, no quoted original
+  var body=lines.slice(0,qs).join("\n").replace(/\s+$/,"");
+  var quoted=lines.slice(qs).join("\n").replace(/^\s+|\s+$/g,"");
+  return { body:body, quoted:quoted };
+}
+function buildMessage(e){
+  if(!e) return null;
+  var out=(e.kind==="sent");
+  var raw=out ? (e.body!=null? e.body : (e.preview||"")) : (e.snippet||"");
+  var sp=splitReplyBody(raw);
+  return {
+    direction: out ? "out" : "in",
+    time: e.ts,
+    from: out ? getFromName() : (e.from||t("th_someone")),
+    fromAddr: out ? FROM_EMAIL : (e.fromAddr||""),
+    to: out ? (e.toName||e.to||"") : getFromName(),
+    toAddr: out ? (e.to||"") : FROM_EMAIL,
+    subject: e.subject||"",
+    body: sp.body,
+    quoted: sp.quoted
+  };
+}
+/* The header line reads sender, then recipient, so who wrote to whom is never in doubt. Each name is its
+   own direction-isolated part (dir="auto"), the recipient quietly muted behind one localized "to" label,
+   so an Arabic name and a Latin name never reorder against each other and the line reads the same in both
+   languages. */
+function msgWhoLine(msg){
+  var from='<span class="msg-from" dir="auto">'+esc(msg.from)+'</span>';
+  var to=msg.to ? ' <span class="msg-to"><span class="msg-to-t">'+esc(t("th_to"))+'</span> <bdi dir="auto">'+esc(msg.to)+'</bdi></span>' : '';
+  return from+to;
+}
+/* The body zone from the model: the answer as its own block, then the quoted prior thread as a quiet
+   collapsible section beneath it, recomposed from isolated parts so a mixed-direction quote header never
+   scrambles. Both are absent-tolerant: no body, no block; no quote, no section. One renderer, one path. */
+function renderQuotedSection(quoted){
+  var raw=String(quoted==null?"":quoted); if(!raw.trim()) return "";
+  var lines=raw.split(/\r?\n/), head="", rest=lines;
+  if(lines.length && isQuoteHeaderLine(lines[0])){
+    var hp=parseQuoteHeader(lines[0]);
+    if(hp){ head=renderQuoteHeader(hp); rest=lines.slice(1); }
+  }
+  var hist=rest.map(function(x){ return String(x==null?"":x).replace(/^\s?>\s?/,""); });
+  while(hist.length && !hist[0].trim()) hist.shift();
+  while(hist.length && !hist[hist.length-1].trim()) hist.pop();
+  var inner=head+(hist.length? '<div class="rp-quoted-body">'+renderReplyBody(hist.join("\n"))+'</div>' : '');
+  if(!inner) return "";
+  return '<details class="rp-quoted"><summary class="rp-quoted-sum">'+esc(t("rp_quoted_history"))+'</summary>'+inner+'</details>';
+}
+function renderMessageBody(msg){
+  if(!msg) return "";
+  var parts="";
+  if(msg.body && msg.body.trim()) parts+='<div class="rp-snip" dir="auto">'+renderReplyBody(msg.body)+'</div>';
+  parts+=renderQuotedSection(msg.quoted);
+  return parts;
+}
 /* The rendered thread self-identifies. This marker is painted in a corner of the History conversation the
    moment it opens, analogous to the build stamp but scoped to THIS component, so it is obvious on device
    whether the current renderer is the one on screen. It exists because the conversation view once appeared
@@ -6001,14 +6074,16 @@ function threadListHtml(slug){
         (o.footHtml ? '<div class="rp-foot">'+o.footHtml+'</div>' : '')+
       '</div></li>';
   }
-  // A send is our side: the far-edge outgoing bubble. "Sent" and the recipient are the who, the address is on
-  // its own line, the subject is the body. Opens and stage notes stay quiet event lines, not messages.
+  // A send is our side: the far-edge outgoing bubble, read from the R10 message model. The header names the
+  // sender then the recipient; the subject is its OWN emphasized line (never the body); the compiled body
+  // the ledger stored is its own block beneath it (the fix: a send used to show only its subject, so its
+  // real words were visible only when the reply quoted them). Opens and stage notes stay quiet event lines.
   function sentCard(e){
-    var to=e.toName||e.to||"";
-    return msgBubble({ side:"out", ts:e.ts, addr:e.to||"",
-      whoHtml: esc(t("th_sent"))+(to? ' <span class="msg-to" dir="auto">'+esc(to)+'</span>' : ''),
-      subjHtml: (e.subject? '<div class="rp-subj" dir="auto">'+esc(e.subject)+'</div>' : ''),
-      bodyHtml: (e.channel? '<div class="rp-chan"><span class="th-chan">'+esc(e.channel)+'</span></div>' : '') });
+    var msg=buildMessage(e);
+    return msgBubble({ side:"out", ts:msg.time, addr:msg.toAddr,
+      whoHtml: msgWhoLine(msg),
+      subjHtml: (msg.subject? '<div class="rp-subj" dir="auto">'+esc(msg.subject)+'</div>' : ''),
+      bodyHtml: renderMessageBody(msg)+(e.channel? '<div class="rp-chan"><span class="th-chan">'+esc(e.channel)+'</span></div>' : '') });
   }
   // Part 3: each reply carries its per-opportunity number (arrival order), the same number the card badge
   // and the inbox show, so a reply is the same "#N" everywhere.
@@ -6021,12 +6096,15 @@ function threadListHtml(slug){
     // Part 4: the newest reply (the highest per-opportunity number) is marked, only when there is more than
     // one (a lone reply is trivially the latest).
     var latest=(rn && __repMax>1 && rn===__repMax);
-    return msgBubble({ side:"in", rid:r.id||"", latest:latest, ts:r.ts, addr:r.fromAddr||"",
+    // Read the reply through the SAME R10 model as our send: the header names sender then recipient, the
+    // subject is its own line, the answer is its own block, and the quoted original collapses beneath it.
+    var msg=buildMessage(r);
+    return msgBubble({ side:"in", rid:r.id||"", latest:latest, ts:msg.time, addr:msg.fromAddr,
       leadHtml: (rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
                 (latest? '<span class="rp-latest">'+esc(t("rp_latest"))+'</span>' : ''),
-      whoHtml: esc(r.from||t("th_someone")),
-      subjHtml: (r.subject? '<div class="rp-subj" dir="auto">'+esc(r.subject)+'</div>' : ''),
-      bodyHtml: (r.snippet? '<div class="rp-snip" dir="auto">'+renderReplyBodyStructured(r.snippet)+'</div>' : ''),
+      whoHtml: msgWhoLine(msg),
+      subjHtml: (msg.subject? '<div class="rp-subj" dir="auto">'+esc(msg.subject)+'</div>' : ''),
+      bodyHtml: renderMessageBody(msg),
       footHtml: (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>' : '')+
                 (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>' : '')+
                 (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+ic("link")+esc(t("rp_open_gmail"))+'</a>' : '') });

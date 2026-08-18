@@ -21,7 +21,13 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 750_000     # library/app.js today ~747 KB. Raised by P10 (the Contact Book): the shared person
+APP_JS_MAX   = 757_000     # library/app.js today ~754 KB. Raised by P12 (the message model + thread render):
+                           # the R10 message model (buildMessage / splitReplyBody), the one body renderer
+                           # (renderMessageBody / renderQuotedSection) and the sender-then-recipient header
+                           # (msgWhoLine) that the rebuilt thread reads from - so an outbound send finally
+                           # shows its compiled body and the subject is never rendered as the body. app.js is
+                           # one large file breaching on nearly every brief; the module SPLIT is well overdue.
+                           # Prior: 750 KB. Raised by P10 (the Contact Book): the shared person
                            # derivation (derivePeople, extracted so Insights and the Book reconcile), the
                            # curation overlay model (buildContacts / contactReviewItems / merge / tags),
                            # bounced-address hygiene, and the Contacts surface (initContacts). app.js is one

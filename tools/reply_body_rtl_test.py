@@ -83,26 +83,27 @@ with sync_playwright() as p:
       document.body.appendChild(wrap);
     }""")
 
-    # ---- STRUCTURAL: the body parses into typed blocks (message, recomposed header, quoted history) ----
-    # Per-line isolation was not enough: it could not ORDER the one physical quote-header line. The body now
-    # renders as structure: the new message, a recomposed header built from isolated parts (so the raw mixed
-    # run is never painted), and the quoted history in its own collapsible section.
+    # ---- STRUCTURAL (P12): the R10 render splits the answer (.rp-snip) from the quoted original, which
+    # collapses as one section (its recomposed header AND its quoted lines) beneath the answer. Per-line
+    # isolation was not enough to ORDER the one physical quote-header line, so the header is still recomposed
+    # from isolated parts (the raw mixed run is never painted); it now lives inside the collapsed quote. ----
     struct = pg.evaluate("""()=>{
-      const card=document.querySelector('#probe .th-reply .rp-snip');
-      return { hasMsg: !!card.querySelector('.rp-msg'),
-               hasHeader: !!card.querySelector('.rp-qhead'),
-               hasQuoted: !!card.querySelector('details.rp-quoted'),
-               msgText: (card.querySelector('.rp-msg')||{}).textContent||'',
-               // the message keeps per-line direction isolation inside its block
-               msgLinesIsolate: [...card.querySelectorAll('.rp-msg .rp-line')].every(l=>getComputedStyle(l).unicodeBidi.indexOf('isolate')>=0) }; }""")
-    ck("the body renders as typed blocks: the message, a recomposed header, and a collapsible quoted history",
+      const bubble=document.querySelector('#probe .th-reply');
+      const snip=bubble.querySelector('.rp-snip');
+      return { hasMsg: !!snip,
+               hasHeader: !!bubble.querySelector('.rp-qhead'),
+               hasQuoted: !!bubble.querySelector('details.rp-quoted'),
+               msgText: (snip||{}).textContent||'',
+               // the answer keeps per-line direction isolation inside its own block
+               msgLinesIsolate: [...bubble.querySelectorAll('.rp-snip .rp-line')].every(l=>getComputedStyle(l).unicodeBidi.indexOf('isolate')>=0) }; }""")
+    ck("the answer is its own block, the header is recomposed, and the quoted original is a collapsible section",
        struct["hasMsg"] and struct["hasHeader"] and struct["hasQuoted"], struct)
     ck("the new message is the human's words, still per-line direction-isolated",
        "نعم، هذا رائع" in struct["msgText"] and struct["msgLinesIsolate"], struct)
 
     # ---- the header is recomposed from ISOLATED parts; the address is a clean LTR chip, no raw run ----
     addr = pg.evaluate("""()=>{
-      const hdr=document.querySelector('#probe .th-reply .rp-snip .rp-qhead');
+      const hdr=document.querySelector('#probe .th-reply .rp-qhead');
       const date=hdr.querySelector('.rp-qh-date'), name=hdr.querySelector('.rp-qh-name'), a=hdr.querySelector('.rp-qh-addr');
       const iso=el=>el && getComputedStyle(el).unicodeBidi.indexOf('isolate')>=0;
       return { headerDir: getComputedStyle(hdr).direction,
@@ -121,7 +122,7 @@ with sync_playwright() as p:
 
     # ---- the quoted history is the quieter, collapsible section with a logical inline-start rule ----
     quote = pg.evaluate("""()=>{
-      const det=document.querySelector('#probe .th-reply .rp-snip details.rp-quoted');
+      const det=document.querySelector('#probe .th-reply details.rp-quoted');
       const body=det.querySelector('.rp-quoted-body');
       return { hasSummary: !!det.querySelector('summary.rp-quoted-sum'),
                collapsedByDefault: !det.open,
@@ -134,7 +135,7 @@ with sync_playwright() as p:
 
     # ---- the URL is isolated and the body stays escaped: no script node, the text is inert ----
     safe = pg.evaluate("""()=>{
-      const card=document.querySelector('#probe .th-reply .rp-snip');
+      const card=document.querySelector('#probe .th-reply');
       const urlBdi=[...card.querySelectorAll('bdi.rp-ltr')].find(x=>x.textContent.indexOf('console.thriveiii.com/opp/thrive-july')>=0);
       return { scripts: card.querySelectorAll('script').length,
                inertText: card.textContent.indexOf('<script>alert(1)</script>')>=0,

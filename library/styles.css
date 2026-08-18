@@ -2115,6 +2115,12 @@ body.is-dragging{ cursor:grabbing; user-select:none }
    opposite edge, so sender and date never collide; the address is on its own line; the body follows with an
    even vertical rhythm from one gap token. */
 .th-list{ gap:var(--s-3) }                                  /* even breathing room between bubbles */
+/* P12 · the thread panel shares the composer's content column. The reply editor directly beneath it is a
+   .compose-panel (max-width:820px) inside a .panel (20px inline padding); the thread now takes the SAME
+   max-width and the SAME inline gutter, so the conversation and the reply box line up on both edges with
+   equal gutters and neither overflows. Box-sizing is border-box globally, so the two content columns match
+   to the pixel (bar the composer's 1px frame). */
+#modalHistory .th-list{ max-width:820px; padding-inline:var(--s-5); box-sizing:border-box; }
 .th-sent{ display:flex; justify-content:flex-end }
 .th-reply{ display:flex; justify-content:flex-start }
 .msg-out,.rp-card{
@@ -2131,7 +2137,11 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .rp-when{ flex:0 0 auto; margin-inline-start:auto; white-space:nowrap }
 .rp-from{ margin-block-start:2px; unicode-bidi:isolate; overflow-wrap:anywhere; max-width:100% }
 .rp-when,.rp-from{ font-size:12px; color:var(--ink-4) }
-.msg-to{ color:var(--ink-3); font-weight:400 }
+/* R10 header: the sender leads (it carries the bubble's weight), the recipient follows quietly behind one
+   localized "to" label. Each name is its own isolated run so an Arabic and a Latin name never reorder. */
+.msg-from{ unicode-bidi:isolate }
+.msg-to{ color:var(--ink-3); font-weight:400; unicode-bidi:isolate }
+.msg-to-t{ color:var(--ink-4) }
 .rp-chan{ font-size:12px; color:var(--ink-4) }
 .th-opti{ opacity:.72 }   /* the optimistic reply, dimmed until the confirmed-write reconciles it in place */
 .rp-body{ display:flex; flex-direction:column; gap:var(--s-2); }
