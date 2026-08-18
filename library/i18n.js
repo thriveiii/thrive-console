@@ -1009,6 +1009,18 @@ const I18N = {
     in_dup_h:      "Already in the library",
     in_dup_note:   "duplicate of",
     in_dup_merge:  "Merge",
+    /* ---- P19 R13: re-import is idempotent by slug - new / updates / needs-decision ---------- */
+    in_c_new:      "new",
+    in_c_updates:  "updates",
+    in_c_decision: "need a decision",
+    in_act_new:      "new",
+    in_act_updates:  "updates in place",
+    in_act_history:  "history kept, body unchanged",
+    in_act_archived: "archived, choose",
+    in_dec_restore:  "Restore & update",
+    in_dec_new:      "Import as new",
+    in_dec_restored: "will restore & update",
+    in_dec_asnew:    "will import as new",
 
     /* ---- the opportunity lifecycle ---------------------------------------
        One name per move, used by the button, by the activity log and by the
@@ -1034,6 +1046,11 @@ const I18N = {
     lc_drop_d:        "Sets it aside as not a fit; you can restore it later.",
     lc_archive_d:     "Files it off the board; the record stays.",
     lc_retire_page_d: "Records that the page is gone and stops showing its link.",
+    /* ---- P19 R12: the delete law - drafts only; a card with history archives ---------- */
+    lc_delete:        "Delete",
+    lc_delete_d:      "Removes this draft for good. There is no send or reply to keep.",
+    lc_delete_why:    "This one has been sent to or has replies, so its history is kept. Archive it; it cannot be deleted.",
+    lc_delete_confirm:"Delete {name}? Its record and board row are removed. The sending and reply history is never touched.",
 
     lc_err_illegal:     "That move is not possible from here.",
     lc_err_nopage:      "There is no page to activate yet.",
@@ -2262,6 +2279,18 @@ const I18N = {
     in_dup_h:      "موجودة في المكتبة",
     in_dup_note:   "نسخة مكررة من",
     in_dup_merge:  "ادمج",
+    /* ---- P19 R13: إعادة الاستيراد تحدّث بالاسم، لا تكرّر ---------- */
+    in_c_new:      "جديدة",
+    in_c_updates:  "تحديثات",
+    in_c_decision: "بحاجة إلى قرار",
+    in_act_new:      "جديدة",
+    in_act_updates:  "تحديث في مكانها",
+    in_act_history:  "السجل محفوظ، النص كما هو",
+    in_act_archived: "مؤرشفة، اختر",
+    in_dec_restore:  "استعد وحدّث",
+    in_dec_new:      "استورد كجديدة",
+    in_dec_restored: "استعادة وتحديث",
+    in_dec_asnew:    "استيراد كجديدة",
 
     lc_h:             "ما يمكنك فعله الآن",
     lc_publish:       "تنشيط الصفحة",
@@ -2284,6 +2313,11 @@ const I18N = {
     lc_drop_d:        "تنتقل إلى المستبعدة، ويمكنك استعادتها لاحقًا.",
     lc_archive_d:     "تنتقل إلى الأرشيف بعيدًا عن اللوحة، ويبقى السجل.",
     lc_retire_page_d: "يتوقف عرض رابط الصفحة، ويبقى السجل.",
+    /* ---- P19 R12: قانون الحذف - للمسودات فقط؛ بطاقة لها سجل تُؤرشف ---------- */
+    lc_delete:        "حذف",
+    lc_delete_d:      "يحذف هذه المسودة نهائيًا. لا إرسال ولا ردّ لحفظه.",
+    lc_delete_why:    "وصل إلى هذه الفرصة إرسال أو ردّ، فسجلها يبقى. أرشفها؛ لا يمكن حذفها.",
+    lc_delete_confirm:"أتحذف {name}؟ يختفي سجلها وصفها من اللوحة. لا يمسّ هذا سجل الإرسال والردود.",
 
     lc_err_illegal:     "هذه الحركة غير ممكنة من هنا.",
     lc_err_nopage:      "لا توجد صفحة لتنشيطها بعد.",
@@ -2774,6 +2808,7 @@ var I18N_BOARD = {
     in_added:  { one:"{n} opportunity imported into Draft.", other:"{n} opportunities imported into Draft." },
     imp_new:     { one:"{n} imported into Draft.", other:"{n} imported into Draft." },
     imp_updated: { one:"{n} updated.", other:"{n} updated." },
+    imp_pending: { one:"{n} archived, awaiting your restore-or-new choice.", other:"{n} archived, awaiting your restore-or-new choice." },
     imp_skipped: { one:"{n} skipped.", other:"{n} skipped." },
 
     /* the batch upload gate: what will save, what is hosted, and what the approval did */
@@ -3129,6 +3164,11 @@ var I18N_BOARD = {
     imp_updated: {
       one:"حُدّثت فرصة واحدة.", two:"حُدّثت فرصتان.",
       few:"حُدّثت {n} فرص.", many:"حُدّث {n} فرصة.", other:"حُدّثت {n} فرصة."
+    },
+    imp_pending: {
+      one:"فرصة واحدة مؤرشفة تنتظر اختيارك: استعادة أو جديدة.", two:"فرصتان مؤرشفتان تنتظران اختيارك: استعادة أو جديدة.",
+      few:"{n} فرص مؤرشفة تنتظر اختيارك: استعادة أو جديدة.", many:"{n} فرصة مؤرشفة تنتظر اختيارك: استعادة أو جديدة.",
+      other:"{n} فرصة مؤرشفة تنتظر اختيارك: استعادة أو جديدة."
     },
     imp_skipped: {
       one:"تُخطّيت فرصة واحدة.", two:"تُخطّيت فرصتان.",

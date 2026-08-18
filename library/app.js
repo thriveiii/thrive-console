@@ -422,6 +422,10 @@ function setTombs(o){
   return lsSet(TOMB, JSON.stringify(out));
 }
 function markRemoved(kind, id){ const o=tombs(); o[kind+":"+id]=Date.now(); setTombs(o); }
+// Lift a tombstone so a re-created record is not removed again by the next sync. Re-import (R13) calls this
+// for every slug it writes, so re-dropping a bundle after a delete re-creates the card cleanly (one truth),
+// exactly as an undo does.
+function liftTomb(kind, id){ const o=tombs(); if(o[kind+":"+id]!=null){ delete o[kind+":"+id]; setTombs(o); } }
 /* One merge rule for every keyed collection, so opportunities, message templates and page
    templates cannot drift into three different ideas of what "deleted" means. */
 function mergeKeyed(local, remote, key, tombKind, allTombs, carry){
@@ -4012,6 +4016,36 @@ async function supaSetRead(on){
    in place and keeps its send and activation lifecycle (a sent opportunity is not knocked back to a
    draft); a duplicate that appears only inside this one batch gets a numeric suffix so siblings never
    overwrite each other. Returns an honest tally: only what actually landed, named by kind. */
+/* ---------- R12/R13 (P19): the opportunity lifecycle - one delete law, one re-import law ----------
+   The ledger is the truth of what was sent and received; it is never deleted, and it decides whether a
+   card may be hard-deleted at all. hasLedgerHistory is the ONE predicate every lifecycle surface reads:
+   a card with any real mail row, any resolved inbound reply, or any token-bearing open has history and
+   can only be archived; a card with none is a draft in the true sense and can be removed cleanly. */
+function oppLedgerCounts(slug){
+  if(!slug) return { mail:0, inbound:0, hits:0 };
+  var mail=0, inbound=0, hits=0;
+  try{ mail=getMailLog().filter(function(m){ return m && m.opp===slug; }).length; }catch(_){}
+  try{ inbound=inboundFor(slug).length; }catch(_){}
+  try{ hits=allHits().filter(function(e){ return e && e.slug===slug && e.r; }).length; }catch(_){}
+  return { mail:mail, inbound:inbound, hits:hits };
+}
+function hasLedgerHistory(slug){
+  var c=oppLedgerCounts(slug);
+  return (c.mail>0) || (c.inbound>0) || (c.hits>0);
+}
+// The lifecycle meta the re-import reader (R13) classifies each existing slug by: archived? has history?
+// Built here, in the client, because only the client can read the three ledgers. One builder, both surfaces.
+function oppExistingMeta(records){
+  var map={};
+  (records||[]).forEach(function(o){
+    if(!o || !o.slug) return;
+    map[o.slug]={ archived:!!o.archived, hasHistory:hasLedgerHistory(o.slug) };
+  });
+  return map;
+}
+// A safe delete gate: only a zero-history card may be hard-deleted; anything with ledger history archives.
+function canHardDelete(o){ return !!o && !hasLedgerHistory(o.slug); }
+
 async function writeImport(items, ctx){
   ctx=ctx||{};
   const existing=ctx.existing||{};
@@ -4030,21 +4064,37 @@ async function writeImport(items, ctx){
       try{
         const rec=ThriveIntake.toRecord(e, { today:today(), note_text:ctx.notes, batch:ctx.batch });
         let s=rec.slug;
-        const isUpdate=!!existing[s];
-        if(seen[s] && !existing[s]){ let k=2; while(seen[s+"-"+k]) k++; s=s+"-"+k; }
+        // R13: the ONE re-import classifier (ThriveIntake.importPlan) decides new vs update vs update_locked
+        // vs decision. A decision (an archived slug) is resolved only by Thyab's explicit per-row choice,
+        // carried on it.decision; without it the row is left pending, never written silently.
+        let plan=ThriveIntake.importPlan(s, existing);
+        if(plan==="decision"){
+          const d=it.decision;
+          if(d==="new"){ plan="new"; }                                            // import as a fresh, suffixed card
+          else if(d==="restore"){ plan=(existing[s]&&existing[s].hasHistory)?"update_locked":"update"; }  // restore-and-update
+          else { tally.pending=(tally.pending||0)+1; continue; }                   // unresolved: not written
+        }
+        const isNew=(plan==="new");
+        // A slug collision only matters for a NEW record; an update keeps its slug. An import-as-new over an
+        // existing (or archived) slug is suffixed so it never overwrites the card it was told to spare.
+        if(isNew && (seen[s] || existing[s])){ let k=2; while(seen[s+"-"+k]||existing[s+"-"+k]) k++; s=s+"-"+k; }
         rec.slug=s; seen[s]=1;
         const html=(e.file&&e.file.html)||"";
-        // Re-import updates in place without knocking a sent or activated opportunity back to a draft.
-        if(isUpdate){ delete rec.published; delete rec.stage; delete rec.sent_on; }
-        // The one flag an import always clears, new or updated: nothing imported may stay archived, or
-        // the confirmation would say Draft while the record sits out of sight in the archive.
-        rec.archived=false;
+        // Update in place without knocking a sent or activated opportunity back to a draft.
+        if(!isNew){ delete rec.published; delete rec.stage; delete rec.sent_on; }
+        // A card that already sent something never has its body or subject silently changed under it.
+        if(plan==="update_locked"){ delete rec.outreach_text; delete rec.outreach_subject; }
+        // Archived flag: a NEW card is unarchived and a RESTORE explicitly unarchives; a plain update never
+        // touches it (deleted here so the stored value survives the merge), so a re-import never silently
+        // un-archives - or un-deletes - a card. The tombstone is lifted so a re-created slug stays created.
+        if(isNew || it.decision==="restore"){ rec.archived=false; } else { delete rec.archived; }
+        liftTomb("opp", s);
         if(it.host){
           await publishOpp(Object.assign({}, rec, { slug:s, published:false, stage:(rec.stage||""), html:html }));
           rec.published=true; tally.hosted++;
         }
         staged.push(rec);                               // staged, not yet written: the store stays whole
-        if(isUpdate) tally.updated++; else tally.imported++;
+        if(isNew) tally.imported++; else tally.updated++;
         if(!e.subject && !e.body) tally.incomplete++;   // stored, but named text-less rather than hidden
         tally.slugs.push(s);
         logActivity("in_import", s, (rec.business||"")+(it.host?" · hosted":""));
@@ -4062,6 +4112,7 @@ function importResultMsg(tally, skipped){
   tally=tally||{}; const parts=[];
   parts.push(boardText(getLang(),"imp_new", tally.imported||0));
   if(tally.updated) parts.push(boardText(getLang(),"imp_updated", tally.updated));
+  if(tally.pending) parts.push(boardText(getLang(),"imp_pending", tally.pending));  // R13: archived-slug rows still awaiting Thyab's restore-or-new choice
   if(tally.hosted) parts.push(boardText(getLang(),"bt_hosted", tally.hosted));
   if(tally.incomplete) parts.push(boardText(getLang(),"bt_incomplete", tally.incomplete));
   if(skipped) parts.push(boardText(getLang(),"imp_skipped", skipped));
@@ -4292,7 +4343,7 @@ async function initDashboard(){
         + `<button class="btn ghost sm" data-arch="${esc(o.slug)}" data-val="${arch?"0":"1"}">${arch?t("unarchive"):t("archive")}</button>`
         + (half?`<button class="btn sm" data-finish="${esc(o.slug)}">${t("pub_finish")}</button>`:``)
         + (live?`<button class="btn ghost sm danger" data-unpub="${esc(o.slug)}">${t("unpublish")}</button>`:``)
-        + ((o._local&&!o.published)?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:``);
+        + ((o._local&&!o.published&&canHardDelete(o))?`<button class="btn ghost sm danger" data-del="${esc(o.slug)}">${t("remove")}</button>`:``);
       return `<div class="card${arch?" is-arch":""}${live?"":" is-draft"}${fu?" needs-fu":""}">
         <div class="card-top">
           <div class="card-id"><p class="biz">${esc(o.business)||esc(o.slug)}</p>${linkRow}</div>
@@ -4384,8 +4435,11 @@ async function initDashboard(){
     }})));
     grid.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{
       const slug=b.getAttribute("data-del");
-      if(!confirm(t("confirm_remove"))) return;
       const gone=state.data.find(o=>o.slug===slug);
+      // R12 (P19): the delete law, at the source. A card that has grown ledger history can never be hard
+      // deleted, only archived; the guard here holds even if a stale control slipped through the render.
+      if(gone && !canHardDelete(gone)) return;
+      if(!confirm(t("lc_delete_confirm").split("{name}").join((gone&&gone.business)||slug))) return;
       removeDraftUndoable(slug, (gone&&gone.business)||"");
       state.data=state.data.filter(o=>!(o._local&&o.slug===slug)); render();
       /* The undo puts the record back, so the list has to be able to see it again. */
@@ -4568,7 +4622,13 @@ function ingHostable(r){ return r.hasPage; }
 function ingCountLine(rep){
   const c=rep.counts||{};
   const part=(n,key)=> '<span class="ing-c"><bdi class="n">'+n+'</bdi> '+esc(t(key))+'</span>';
-  const bits=[part(c.pages||0,"in_c_pages"), part(c.matched||0,"in_c_matched")];
+  const bits=[part(c.pages||0,"in_c_pages")];
+  // R13 (P19): the re-import tally reads new / updates / needs-decision, so a re-dropped bundle says at a
+  // glance how many cards it creates versus heals versus leaves for Thyab to decide. Shown only when nonzero.
+  if(c.new) bits.push(part(c.new,"in_c_new"));
+  if(c.updates) bits.push(part(c.updates,"in_c_updates"));
+  if(c.decision) bits.push(part(c.decision,"in_c_decision"));
+  bits.push(part(c.matched||0,"in_c_matched"));
   if(c.confirm) bits.push(part(c.confirm,"in_c_confirm"));
   if(c.needs) bits.push(part(c.needs,"in_c_needs"));
   if(c.orphans) bits.push(part(c.orphans,"in_c_orphans"));
@@ -4611,6 +4671,24 @@ function ingDupBlock(rep){
       '<div class="ing-row-act"><button type="button" class="btn ghost sm ing-merge" data-di="'+i+'" data-icon="check">'+esc(t("in_dup_merge"))+'</button></div>'+
     '</div>').join("");
   return '<div class="ing-block ing-dup"><h5 class="ing-h">'+esc(t("in_dup_h"))+'</h5>'+rows+'</div>';
+}
+// R13 (P19): the per-row re-import action, read from the ONE classifier (report row .action). new is the
+// default; an existing card reads "updates"; a card with ledger history reads "history kept, body unchanged";
+// an archived slug asks Thyab, on the row, to restore-and-update or import-as-new - never resolved silently.
+function ingActionHtml(r){
+  const a=r.action;
+  if(a==="update") return '<span class="bt-act is-update">'+esc(t("in_act_updates"))+'</span>';
+  if(a==="update_locked") return '<span class="bt-act is-locked">'+esc(t("in_act_history"))+'</span>';
+  if(a==="decision"){
+    if(r.decision==="restore") return '<span class="bt-act is-update">'+esc(t("in_dec_restored"))+'</span>';
+    if(r.decision==="new") return '<span class="bt-act is-new">'+esc(t("in_dec_asnew"))+'</span>';
+    return '<span class="bt-act is-decision">'+esc(t("in_act_archived"))+'</span>'+
+      '<span class="bt-dec">'+
+        '<button type="button" class="btn ghost sm bt-restore" data-dec="'+esc(r.slug)+'">'+esc(t("in_dec_restore"))+'</button>'+
+        '<button type="button" class="btn ghost sm bt-asnew" data-dec="'+esc(r.slug)+'">'+esc(t("in_dec_new"))+'</button>'+
+      '</span>';
+  }
+  return '<span class="bt-act is-new">'+esc(t("in_act_new"))+'</span>';
 }
 // Recompute the report's tallies after a CONFIRM is joined/rejected, an orphan is created, or a ghost merged.
 function recountBatch(rep){
@@ -4660,11 +4738,15 @@ function ingReportInner(batch){
     // P17: the human reads the business display name; the slug stays, isolated ltr, as the small identity
     // beneath it. The business name keeps its natural direction so an Arabic name renders right-to-left.
     const bizName = (r.business && r.business!==r.slug) ? '<span class="bt-biz">'+esc(r.business)+'</span>' : '';
-    return '<tr class="'+(r.verdict==="matched"?"is-matched":"is-warned")+(r.needs_message?" is-needs":"")+'">'+
+    // R13: the action (new / updates / history-kept / decision) leads the last cell; the field verdict follows,
+    // except a decision row shows only its two explicit choices, never a stray "matched".
+    const actionHtml = ingActionHtml(r);
+    const verdictHtml = (r.action==="decision" && !r.decision) ? "" : verdict;
+    return '<tr class="'+(r.verdict==="matched"?"is-matched":"is-warned")+(r.needs_message?" is-needs":"")+' bt-a-'+esc(r.action||"new")+'">'+
       '<td class="bt-id">'+bizName+'<span class="mono-iso bt-slug" dir="ltr">'+esc(r.slug)+'</span></td>'+
       ingCell(r.hasPage)+ingCell(r.hasManifest)+ingCell(r.hasSubject)+ingCell(r.hasBody)+ingCell(r.hasSendTo)+
       '<td>'+prov+'</td>'+
-      '<td>'+verdict+'</td></tr>';
+      '<td class="bt-verdict">'+actionHtml+(verdictHtml?' '+verdictHtml:'')+'</td></tr>';
   }).join("");
   // A dropped .docx/.pdf the reader cannot open is named as an unreadable instruction file, never vanished.
   const unreadable=(batch.unreadable&&batch.unreadable.length)
@@ -4701,6 +4783,14 @@ function mountIngestReport(container, batch, opts){
   // P16: the CONFIRM and ORPHAN actions. Join / Not-a-match are in-memory (the one write is still Approve);
   // Create-card and Merge write, each an explicit tap. Every action re-mounts so the count line stays true.
   const remount=()=>mountIngestReport(container, batch, opts);
+  // R13 (P19): an ARCHIVED-slug collision is resolved on its row - restore-and-update or import-as-new. The
+  // choice is recorded on the row (in-memory) and read by the one writer at Approve; never resolved silently.
+  container.querySelectorAll(".bt-restore").forEach(btn=>btn.addEventListener("click", ()=>{
+    const row=(batch.report.rows||[]).find(r=>r.slug===btn.getAttribute("data-dec")); if(row){ row.decision="restore"; remount(); }
+  }));
+  container.querySelectorAll(".bt-asnew").forEach(btn=>btn.addEventListener("click", ()=>{
+    const row=(batch.report.rows||[]).find(r=>r.slug===btn.getAttribute("data-dec")); if(row){ row.decision="new"; remount(); }
+  }));
   container.querySelectorAll(".ing-accept").forEach(btn=>btn.addEventListener("click", ()=>{
     const cf=(batch.report.confirm||[])[+btn.getAttribute("data-ci")];
     if(cf){ acceptConfirm(batch, cf); remount(); }
@@ -4712,7 +4802,7 @@ function mountIngestReport(container, batch, opts){
   container.querySelectorAll(".ing-make").forEach(btn=>btn.addEventListener("click", ()=>{
     const o=(batch.report.orphanSections||[])[+btn.getAttribute("data-oi")]; if(!o) return;
     runAction("ingOrphanMake", { working:t("publishing"), run: async ()=>{
-      const existing={}; try{ (await mergedOpps()).forEach(x=>{ if(x&&x.slug) existing[x.slug]=true; }); }catch(_){}
+      let existing={}; try{ existing=oppExistingMeta(await mergedOpps()); }catch(_){}
       const tally=await writeImport([{ entry:o.entry, host:false }], { existing:existing, notes:batch.notes, batch:batch.batch });
       batch.report.orphanSections=(batch.report.orphanSections||[]).filter(x=>x!==o); recountBatch(batch.report); remount();
       return importResultMsg(tally,0);
@@ -4732,9 +4822,10 @@ function mountIngestReport(container, batch, opts){
 // slug. host decides whether a row's page is also published (the editor hosts; the board never does).
 async function ingWriteRows(batch, host){
   const rows=batch.report.rows.filter(ingStorable);
-  const existing={};
-  try{ (await mergedOpps()).forEach(o=>{ if(o&&o.slug) existing[o.slug]=true; }); }catch(_){}
-  return writeImport(rows.map(r=>({ entry:r.entry, host: host? ingHostable(r) : false })),
+  let existing={};
+  try{ existing=oppExistingMeta(await mergedOpps()); }catch(_){}
+  // R13: the row's action decision (restore / import-as-new for an archived slug) rides to the writer.
+  return writeImport(rows.map(r=>({ entry:r.entry, host: host? ingHostable(r) : false, decision:r.decision })),
     { existing:existing, notes:batch.notes, batch:batch.batch });
 }
 
@@ -4898,7 +4989,7 @@ async function initEditor(slugArg){
     let out=null;
     try{
       const existingRecords=await mergedOpps();                 // full records, so re-drop can heal a ghost card
-      out=await ThriveIntake.readBatch(files, { existingSlugs:existingRecords.map(o=>o.slug), existingRecords:existingRecords });
+      out=await ThriveIntake.readBatch(files, { existing:oppExistingMeta(existingRecords), existingSlugs:existingRecords.map(o=>o.slug), existingRecords:existingRecords });
     }catch(e){
       dz.innerHTML=esc(t("upload_dz"));
       toast(/zip|inflate/i.test((e&&e.message)||"") ? t("in_zip_err") : t("in_none"));
@@ -10937,7 +11028,7 @@ function initIntake(){
     status(t("in_reading"));
     try{
       const existingRecords=await mergedOpps();                 // full records, so re-drop can heal a ghost card
-      batch=await ThriveIntake.readBatch(files, { existingSlugs:existingRecords.map(o=>o.slug), existingRecords:existingRecords });
+      batch=await ThriveIntake.readBatch(files, { existing:oppExistingMeta(existingRecords), existingSlugs:existingRecords.map(o=>o.slug), existingRecords:existingRecords });
     }catch(e){
       status(/zip|inflate/i.test((e&&e.message)||"") ? t("in_zip_err") : t("in_none"), "warn"); return;
     }
@@ -11220,7 +11311,30 @@ function initModal(){
             '<span class="close-desc">'+esc(t("lc_"+m+"_d"))+'</span></span>'+
           '</button>').join("")+'</div></section>';
     }
+    // R12 (P19): delete is a record removal, not a lifecycle move. A zero-history draft can be hard-deleted
+    // (حذف); a card that carries ledger history can only be archived, and the menu says so in one honest line.
+    // The delete never cascades into console_mail / console_hits / console_inbound - the ledger is the truth.
+    if(canHardDelete(o)){
+      html+='<div class="mw-del"><button type="button" class="close-opt close-delete mw-del-btn" data-del="'+esc(o.slug)+'">'+
+        '<span class="close-ic" aria-hidden="true">'+ic("trash")+'</span>'+
+        '<span class="close-txt"><span class="close-label">'+esc(t("lc_delete"))+'</span>'+
+        '<span class="close-desc">'+esc(t("lc_delete_d"))+'</span></span></button></div>';
+    } else {
+      html+='<div class="mw-del"><p class="mw-note mw-del-why">'+ic("lock")+esc(t("lc_delete_why"))+'</p></div>';
+    }
     return html+'</div>';
+  }
+  // R12: the delete flow. One confirmation that NAMES the card, then a hard delete (tombstoned, undoable),
+  // gated so a history-bearing card can never reach here. removeDraftUndoable removes the opp record and its
+  // board row and queues the console_opps / console_pages delete; it never touches the ledger tables.
+  async function deleteOppFlow(o){
+    if(!o || !canHardDelete(o)) return;                       // the gate is the law, not just the hidden control
+    const name=o.business||o.slug;
+    if(!confirm(t("lc_delete_confirm").split("{name}").join(name))) return;
+    removeDraftUndoable(o.slug, name);
+    logActivity("lc_delete", o.slug, name);
+    close(true);
+    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
   }
 
   /* Each guarded move asks for exactly what its guard requires, and nothing else. The prompts
@@ -11240,6 +11354,8 @@ function initModal(){
       if(opts===null) return;
       await runMove(m, o.slug, opts);
     }));
+    // R12: the delete control is bound here too, so the window and the card menu ask the same one question.
+    box.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click", ()=> deleteOppFlow(o)));
   }
 
   /* ---- Outreach: the off channel send ------------------------------------

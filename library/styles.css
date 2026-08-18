@@ -1500,6 +1500,16 @@ html[dir="rtl"] .lede{font-weight:500;line-height:1.8}
 .close-txt{ display:flex; flex-direction:column; gap:2px; min-inline-size:0 }
 .close-label{ font-weight:700; font-size:14px; color:var(--ink) }
 .close-desc{ font-size:12.5px; color:var(--ink-4); line-height:1.5; overflow-wrap:anywhere }
+/* --- R12 (P19): delete, set apart from the close set. A draft's delete carries the one warmer accent so it
+   never reads as a routine archive; a card with history shows only the quiet, locked reason line. --------- */
+.mw-del{ margin-block-start:var(--s-3) }
+.close-delete{ border-color:var(--state-err-b,rgba(224,115,111,.4)) }
+.close-delete .close-ic{ color:var(--state-err,#E0736F) }
+.close-delete:hover{ border-color:var(--state-err,#E0736F); background:var(--state-err-t,rgba(224,115,111,.14)) }
+.mw-del-why{ display:flex; align-items:flex-start; gap:var(--s-2); font-size:12.5px; color:var(--ink-4);
+  line-height:1.5; padding:10px 12px; border:1px dashed var(--hair); border-radius:12px }
+.mw-del-why .ic{ flex:none; color:var(--ink-4); margin-block-start:1px }
+[dir="rtl"] .mw-del-why,[dir="rtl"] .close-delete .close-label,[dir="rtl"] .close-delete .close-desc{ letter-spacing:normal }
 
 /* --- the off channel send, three numbered steps --------------------------- */
 
@@ -1881,6 +1891,18 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .bt-prov-page_partial,.bt-prov-needs_message{ color:var(--state-stall) }
 .bt tr.is-needs{ background:var(--state-stall-t) }
 .bt-write{ white-space:nowrap }
+/* R13 (P19): the per-row re-import action. A new row is neutral; an update reads in the live accent (it heals
+   a card); a history-kept row is amber (its body is deliberately left alone); an archived slug asks, on the
+   row, with two explicit choices. Chips wrap within the cell and never widen the table. */
+.bt-verdict{ display:flex; flex-wrap:wrap; align-items:center; gap:6px }
+.bt-act{ display:inline-flex; padding:2px 8px; border-radius:var(--r-pill,999px); font-size:var(--fs-micro);
+  border:1px solid var(--hair); white-space:nowrap }
+.bt-act.is-new{ color:var(--ink-3) }
+.bt-act.is-update{ color:var(--lane-live); background:var(--lane-live-t); border-color:rgba(127,159,212,.34) }
+.bt-act.is-locked{ color:var(--state-stall); background:var(--state-stall-t); border-color:var(--state-stall-b) }
+.bt-act.is-decision{ color:var(--state-stall); background:var(--state-stall-t); border-color:var(--state-stall-b) }
+.bt-dec{ display:inline-flex; flex-wrap:wrap; gap:6px }
+[dir="rtl"] .bt-act{ letter-spacing:normal }
 /* P17: the report row identity - the business display name (natural direction, so Arabic reads RTL) with
    the slug as a small isolated identity beneath it. */
 .bt-id .bt-biz{ display:block; font-weight:var(--w-strong); color:var(--ink-1) }

@@ -21,7 +21,13 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 764_000     # library/app.js today ~763 KB. Raised by P18 (the universal contact model): the
+APP_JS_MAX   = 774_000     # library/app.js today ~772 KB. Raised by P19 (the opportunity lifecycle): the
+                           # R12 delete law (hasLedgerHistory / oppExistingMeta / canHardDelete, the gated
+                           # deleteOppFlow and its close-set control) and the R13 re-import writer (the plan
+                           # switch in writeImport, the action badges + decision buttons in the report). The
+                           # importPlan classifier itself lives in intake.js, off this budget. The module SPLIT
+                           # remains the real fix. Prior: 764 KB.
+                           # Raised by P18 (the universal contact model): the
                            # module-scope R11 reader (contactChannels / primaryEmailChannel / primaryChannel /
                            # emailAddress) that the Communication tab, the composer and the Contact Book all
                            # read through, the channel-list render (channelListHtml / chTierChip / chTypeLabel)
@@ -85,7 +91,12 @@ APP_JS_MAX   = 764_000     # library/app.js today ~763 KB. Raised by P18 (the un
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_806_000   # dist/thrive-console.html today ~1.804 MB, tracking app.js. Raised by P18 (the
+DIST_MAX     = 1_822_000   # dist/thrive-console.html today ~1.820 MB, tracking app.js. Raised by P19 (the
+                           # opportunity lifecycle): the R12 delete law + R13 re-import writer in app.js, the
+                           # importPlan classifier + report actions in intake.js, the lc_delete / in_act / in_dec
+                           # strings in both languages, the trash glyph, and the action-badge / delete CSS the
+                           # offline file inlines. Prior: 1806 KB.
+                           # Raised by P18 (the
                            # universal contact model): the R11 channel builder (intake.js), the one-reader +
                            # channel-list render (app.js), the ocm_* i18n keys in both languages, and the
                            # channel-list CSS the offline file inlines. Prior: 1790 KB.
