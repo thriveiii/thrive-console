@@ -4542,6 +4542,96 @@ var ThriveEditHistory = (function(){
   };
 })();
 
+/* ---------- one ingest report, shared by every drop/upload surface (P14) ----------
+   The batch report and its warn-before-write gate are rendered here, once, from the tolerant resolver's
+   report (ThriveIntake.readBatch -> resolveBatch). Both the editor's "Upload HTML" mode and the board's
+   "Today's batch" drop mount THIS renderer into their own container, so there is one resolver and one
+   report on screen wherever a batch is dropped. The old board path (readDrop + a second review renderer)
+   is retired; this is what replaces it. */
+const ING_REASON={ no_page:"btr_page_pending", no_manifest_entry:"in_w_no_manifest_entry",
+  no_text:"btr_no_text", duplicate_slug:"btr_dupe", exists_would_overwrite:"btr_exists",
+  missing_business:"in_w_no_business", no_channel:"in_w_no_channel", needs_message:"in_prov_needs" };
+function ingReasonLabel(x){ return t(ING_REASON[x]||x); }
+// R8 provenance: the rung of the tolerant ladder that resolved each opportunity, shown quietly so the
+// truth is visible ("read from opp.md" vs "read from research md" vs "needs message"), never guessed.
+const ING_PROV={ opp_md:"in_prov_opp", manifest_json:"in_prov_json", research_md:"in_prov_research",
+  page_partial:"in_prov_partial", needs_message:"in_prov_needs" };
+function ingProvLabel(p){ return p? t(ING_PROV[p]||p) : ""; }
+function ingCell(v){ return '<td class="bt-c">'+(v?'<span class="bt-y" data-icon="check"></span>':'<span class="bt-n">·</span>')+'</td>'; }
+// Every report row is storable: toRecord always supplies a name (business, else the slug). A row with a
+// real page is additionally hostable; a missing page is "stored now, page hosted later", never dropped.
+function ingStorable(r){ return true; }
+function ingHostable(r){ return r.hasPage; }
+function ingReportInner(batch){
+  const rep=batch.report, rows=rep.rows;
+  const canSave=rows.filter(ingStorable).length;
+  const canHost=rows.filter(ingHostable).length;
+  const incomplete=rows.filter(r=>r.reasons.indexOf("no_text")>=0).length;
+  let summary=boardText(getLang(),"bt_summary",canSave);
+  if(canHost>0) summary+=" "+boardText(getLang(),"bt_hosted",canHost);
+  if(incomplete>0) summary+=" "+boardText(getLang(),"bt_incomplete",incomplete);
+  const head='<tr><th>'+esc(t("bt_slug"))+'</th><th>'+esc(t("bt_html"))+'</th><th>'+esc(t("bt_mfst"))+
+    '</th><th>'+esc(t("bt_subj"))+'</th><th>'+esc(t("bt_body"))+'</th><th>'+esc(t("bt_send"))+
+    '</th><th>'+esc(t("bt_source"))+'</th><th>'+esc(t("bt_verdict"))+'</th></tr>';
+  const body=rows.map(r=>{
+    // A resolved opportunity shows the rung that resolved it; a "needs message" row is never blocked, it
+    // offers a one-tap Write action that creates the card and opens the composer to write by hand.
+    const prov = r.provenance
+      ? '<span class="bt-prov bt-prov-'+esc(r.provenance)+'">'+esc(ingProvLabel(r.provenance))+'</span>' : '';
+    const shownReasons = r.reasons.filter(x=> x!=="needs_message" || !r.provenance);
+    const verdict = r.verdict==="matched"
+      ? '<span class="bt-ok">'+esc(t("bt_matched"))+'</span>'
+      : (r.needs_message
+          ? '<button type="button" class="btn ghost sm bt-write" data-write="'+esc(r.slug)+'" data-icon="send">'+esc(t("bt_write"))+'</button>'
+            +(shownReasons.length?' <span class="bt-warn">'+shownReasons.map(x=>esc(ingReasonLabel(x))).join(", ")+'</span>':'')
+          : '<span class="bt-warn">'+r.reasons.map(x=>esc(ingReasonLabel(x))).join(", ")+'</span>');
+    return '<tr class="'+(r.verdict==="matched"?"is-matched":"is-warned")+(r.needs_message?" is-needs":"")+'">'+
+      '<td class="mono-iso" dir="ltr">'+esc(r.slug)+'</td>'+
+      ingCell(r.hasPage)+ingCell(r.hasManifest)+ingCell(r.hasSubject)+ingCell(r.hasBody)+ingCell(r.hasSendTo)+
+      '<td>'+prov+'</td>'+
+      '<td>'+verdict+'</td></tr>';
+  }).join("");
+  // A dropped .docx/.pdf the reader cannot open is named as an unreadable instruction file, never vanished.
+  const unreadable=(batch.unreadable&&batch.unreadable.length)
+    ? '<div class="note warn-note">'+esc(t("bt_unreadable"))+': '+esc(batch.unreadable.join(", "))+'</div>' : '';
+  const html=
+    '<h4 class="sec-h" data-icon="check">'+esc(t("in_report_h"))+'</h4>'+
+    (batch.jsonError? '<div class="note warn-note">'+esc(t("bt_jsonerr"))+': '+esc(batch.jsonError)+'</div>':'')+
+    unreadable+
+    '<div class="bt-wrap"><table class="bt">'+head+body+'</table></div>'+
+    '<p class="hint">'+esc(summary)+'</p>'+
+    '<div class="bar bar-actions">'+
+      '<button class="btn" id="batchApprove" data-icon="send"'+(canSave?'':' disabled')+'>'+esc(t("bt_approve"))+'</button>'+
+      '<button class="btn ghost" id="batchDiscard">'+esc(t("in_cancel"))+'</button>'+
+    '</div>';
+  return { html:html, canSave:canSave };
+}
+// Mount the resolver report into a container and wire its gate. opts: onDiscard(), onApprove(batch),
+// onWrite(batch) [before the composer opens]. The one writer (writeImport) is reached from onApprove/onWrite.
+function mountIngestReport(container, batch, opts){
+  opts=opts||{};
+  if(!batch || !batch.report || !batch.report.rows.length){ container.hidden=true; container.innerHTML=""; return; }
+  const built=ingReportInner(batch);
+  container.innerHTML=built.html; container.hidden=false;
+  if(typeof applyIcons==="function") applyIcons(container);
+  const db=container.querySelector("#batchDiscard"); if(db) db.addEventListener("click",()=>{ if(opts.onDiscard) opts.onDiscard(); });
+  const ab=container.querySelector("#batchApprove");
+  if(ab && built.canSave) ab.addEventListener("click", ()=> runAction("batchApprove", { working:t("publishing"), run: ()=> opts.onApprove(batch) }));
+  container.querySelectorAll(".bt-write").forEach(btn=>btn.addEventListener("click", ()=>{
+    const slug=btn.getAttribute("data-write")||"";
+    runAction("batchWrite", { working:t("publishing"), run: async ()=>{ await opts.onWrite(batch); if(slug) goTo("compose", "slug="+encodeURIComponent(slug)); } });
+  }));
+}
+// The shared write: every storable row is imported through the one writer (writeImport), idempotent by
+// slug. host decides whether a row's page is also published (the editor hosts; the board never does).
+async function ingWriteRows(batch, host){
+  const rows=batch.report.rows.filter(ingStorable);
+  const existing={};
+  try{ (await mergedOpps()).forEach(o=>{ if(o&&o.slug) existing[o.slug]=true; }); }catch(_){}
+  return writeImport(rows.map(r=>({ entry:r.entry, host: host? ingHostable(r) : false })),
+    { existing:existing, notes:batch.notes, batch:batch.batch });
+}
+
 /* ---------- editor ---------- */
 async function initEditor(slugArg){
   const el=id=>document.getElementById(id);
@@ -4695,24 +4785,8 @@ async function initEditor(slugArg){
     fr.readAsText(f);
   }
 
-  /* The match report and the warn-before-write gate. Every reason names itself; a warned row is
-     never guessed past. The reasons reuse the intake warning labels where they already exist. */
-  const B_REASON={ no_page:"btr_page_pending", no_manifest_entry:"in_w_no_manifest_entry",
-    no_text:"btr_no_text", duplicate_slug:"btr_dupe", exists_would_overwrite:"btr_exists",
-    missing_business:"in_w_no_business", no_channel:"in_w_no_channel", needs_message:"in_prov_needs" };
-  const reasonLabel=x=> t(B_REASON[x]||x);
-  // R8 provenance: the rung of the tolerant ladder that resolved each opportunity, shown quietly so the
-  // truth is visible ("read from opp.md" vs "read from research md" vs "needs message"), never guessed.
-  const B_PROV={ opp_md:"in_prov_opp", manifest_json:"in_prov_json", research_md:"in_prov_research",
-    page_partial:"in_prov_partial", needs_message:"in_prov_needs" };
-  const provLabel=p=> p? t(B_PROV[p]||p) : "";
-  // Storable: every parsed template is persisted as its own draft opportunity, text and all. The only
-  // thing that ever stopped a row from being written was the absence of a name to file it under, and
-  // toRecord always supplies one (business, else the slug), so every report row is storable.
-  function storable(r){ return true; }
-  // Hostable: on top of being stored, a row that carries a real page also gets that page published.
-  // A missing page no longer drops the row; it only means "stored now, page hosted later".
-  function hostable(r){ return r.hasPage; }
+  /* The editor's "Upload HTML" mode reads through the ONE resolver (readBatch) and renders through the ONE
+     shared report renderer (mountIngestReport), the same the board's "Today's batch" drop uses. */
   async function runBatch(files){
     dz.innerHTML=esc(t("in_reading"));
     let out=null;
@@ -4725,88 +4799,30 @@ async function initEditor(slugArg){
       return;
     }
     dz.innerHTML=esc(t("upload_dz"));
-    batch=out; renderBatch();
+    batch=out;
+    if(!out.report.rows.length){ toast(t("in_none")); }
+    renderBatch();
   }
-  function batchCell(v){ return '<td class="bt-c">'+(v?'<span class="bt-y" data-icon="check"></span>':'<span class="bt-n">·</span>')+'</td>'; }
+  // Render through the ONE shared report renderer. Discard clears; Approve hosts the paged rows; a
+  // needs-message Write stores drafts (no hosting) then opens the composer.
   function renderBatch(){
-    if(!batch){ batchPanel.hidden=true; batchPanel.innerHTML=""; return; }
-    const rep=batch.report;
-    if(!rep.rows.length){ batchPanel.hidden=true; batchPanel.innerHTML=""; toast(t("in_none")); return; }
-    // Count what the write will actually persist: every storable row is saved, the paged ones are
-    // also hosted, and the text-less ones are named as incomplete. The confirmed count is the saved
-    // count, so the report cannot promise more than the write delivers.
-    const canSave=rep.rows.filter(storable).length;
-    const canHost=rep.rows.filter(hostable).length;
-    const incomplete=rep.rows.filter(r=>r.reasons.indexOf("no_text")>=0).length;
-    let summary=boardText(getLang(),"bt_summary",canSave);
-    if(canHost>0) summary+=" "+boardText(getLang(),"bt_hosted",canHost);
-    if(incomplete>0) summary+=" "+boardText(getLang(),"bt_incomplete",incomplete);
-    const head='<tr><th>'+esc(t("bt_slug"))+'</th><th>'+esc(t("bt_html"))+'</th><th>'+esc(t("bt_mfst"))+
-      '</th><th>'+esc(t("bt_subj"))+'</th><th>'+esc(t("bt_body"))+'</th><th>'+esc(t("bt_send"))+
-      '</th><th>'+esc(t("bt_source"))+'</th><th>'+esc(t("bt_verdict"))+'</th></tr>';
-    const rows=rep.rows.map(r=>{
-      // A resolved opportunity shows the rung that resolved it; a "needs message" row is never blocked, it
-      // offers a one-tap Write action that creates the card and opens the composer to write by hand.
-      const prov = r.provenance
-        ? '<span class="bt-prov bt-prov-'+esc(r.provenance)+'">'+esc(provLabel(r.provenance))+'</span>' : '';
-      const shownReasons = r.reasons.filter(x=> x!=="needs_message" || !r.provenance);
-      const verdict = r.verdict==="matched"
-        ? '<span class="bt-ok">'+esc(t("bt_matched"))+'</span>'
-        : (r.needs_message
-            ? '<button type="button" class="btn ghost sm bt-write" data-write="'+esc(r.slug)+'" data-icon="send">'+esc(t("bt_write"))+'</button>'
-              +(shownReasons.length?' <span class="bt-warn">'+shownReasons.map(x=>esc(reasonLabel(x))).join(", ")+'</span>':'')
-            : '<span class="bt-warn">'+r.reasons.map(x=>esc(reasonLabel(x))).join(", ")+'</span>');
-      return '<tr class="'+(r.verdict==="matched"?"is-matched":"is-warned")+(r.needs_message?" is-needs":"")+'">'+
-        '<td class="mono-iso" dir="ltr">'+esc(r.slug)+'</td>'+
-        batchCell(r.hasPage)+batchCell(r.hasManifest)+batchCell(r.hasSubject)+batchCell(r.hasBody)+batchCell(r.hasSendTo)+
-        '<td>'+prov+'</td>'+
-        '<td>'+verdict+'</td></tr>';
-    }).join("");
-    batchPanel.innerHTML=
-      '<h4 class="sec-h" data-icon="check">'+esc(t("in_report_h"))+'</h4>'+
-      (batch.jsonError? '<div class="note warn-note">'+esc(t("bt_jsonerr"))+': '+esc(batch.jsonError)+'</div>':'')+
-      '<div class="bt-wrap"><table class="bt">'+head+rows+'</table></div>'+
-      '<p class="hint">'+esc(summary)+'</p>'+
-      '<div class="bar bar-actions">'+
-        '<button class="btn" id="batchApprove" data-icon="send"'+(canSave?'':' disabled')+'>'+esc(t("bt_approve"))+'</button>'+
-        '<button class="btn ghost" id="batchDiscard">'+esc(t("in_cancel"))+'</button>'+
-      '</div>';
-    batchPanel.hidden=false;
-    if(typeof applyIcons==="function") applyIcons(batchPanel);
-    el("batchDiscard").addEventListener("click",()=>{ batch=null; renderBatch(); });
-    const ab=el("batchApprove"); if(ab && canSave) ab.addEventListener("click", ()=> runAction("batchApprove", { working:t("publishing"), run: approveBatch }));
-    // "Write now" on a needs-message row: never a dead end. It stores the batch as drafts (no GitHub needed,
-    // because hosting a page is a later step) so this card is created, then drops the operator into the
-    // composer to paste or write the email by hand.
-    batchPanel.querySelectorAll(".bt-write").forEach(btn=>btn.addEventListener("click", ()=>{
-      const slug=btn.getAttribute("data-write")||"";
-      runAction("batchWrite", { working:t("publishing"), run: async ()=>{
-        if(!batch) return;
-        const wr=batch.report.rows.filter(storable);
-        const existing={}; try{ (await mergedOpps()).forEach(o=>{ if(o&&o.slug) existing[o.slug]=true; }); }catch(_){}
-        await writeImport(wr.map(r=>({ entry:r.entry, host:false })), { existing:existing, notes:batch.notes, batch:batch.batch });
-        batch=null; batchPanel.hidden=true; batchPanel.innerHTML="";
-        if(slug) goTo("compose", "slug="+encodeURIComponent(slug));
-      } });
-    }));
+    mountIngestReport(batchPanel, batch, {
+      onDiscard: ()=>{ batch=null; renderBatch(); },
+      onApprove: (b)=> approveBatch(),
+      onWrite: async (b)=>{ await ingWriteRows(b, false); batch=null; batchPanel.hidden=true; batchPanel.innerHTML=""; }
+    });
   }
   async function approveBatch(){
     if(!batch) throw new Error(t("bt_nothing"));
-    const rows=batch.report.rows.filter(storable);
+    const rows=batch.report.rows.filter(ingStorable);
     if(!rows.length) throw new Error(t("bt_nothing"));
     // GitHub is needed only for the pages that get hosted. A text-only batch (no page in the
     // package) saves its drafts locally without it, rather than being blocked at the door.
-    const needGh=rows.some(hostable);
+    const needGh=rows.some(ingHostable);
     if(needGh && !ghReady()){ setTimeout(()=>goTo("settings"),900); throw new Error(t("gh_needed")); }
-    // Idempotent slug map, mirroring the board intake. A slug already in the library updates that
-    // opportunity in place; a duplicate that appears only inside this one batch gets a numeric suffix
-    // so two siblings never overwrite each other. Re-importing the same batch is a no-op on identity.
-    const existing={};
-    try{ (await mergedOpps()).forEach(o=>{ if(o&&o.slug) existing[o.slug]=true; }); }catch(_){}
-    // One writer: the same shared import that the board intake uses. Paged rows are hosted; every row
-    // is persisted and lands on the active board, and the confirmation counts only what landed.
-    const tally=await writeImport(rows.map(r=>({ entry:r.entry, host:hostable(r) })),
-      { existing:existing, notes:batch.notes, batch:batch.batch });
+    // One writer, shared with the board intake: paged rows are hosted, every row is persisted idempotently
+    // by slug, and the confirmation counts only what landed.
+    const tally=await ingWriteRows(batch, true);
     logActivity("in_batch", "", tally.imported+" imported, "+tally.updated+" updated, "+tally.hosted+
       " hosted, "+tally.incomplete+" without text, "+tally.failed+" failed");
     const msg=importResultMsg(tally, 0);
@@ -10772,122 +10788,44 @@ function initIntake(){
   if(!zone || !input || !out) return;
   if(typeof ThriveIntake==="undefined"){ zone.hidden=true; return; }
 
-  let found=null, existing={}, choice={};
-
-  const WARN=["no_business","no_body","no_channel","no_page","no_page_named","no_manifest_entry"];
+  // P14: the board's "Today's batch" drop is the SAME path as the editor upload - one resolver
+  // (ThriveIntake.readBatch -> resolveBatch), one shared report renderer (mountIngestReport). The old
+  // readDrop + review() path is retired. The board never hosts a page (host:false), so every approved
+  // opportunity lands as a Draft; a needs-message row keeps its one-tap Write action.
+  let batch=null;
   function status(msg, kind){ out.innerHTML='<p class="in-status '+(kind||"")+'">'+esc(msg)+'</p>'; }
-  function slugFor(e){
-    return e.slug_hint || ThriveIntake.slugify(e.business) ||
-           ThriveIntake.slugify(e.page_file) || "opportunity";
+  function clear(){ batch=null; out.innerHTML=""; input.value=""; }
+  function render(){
+    mountIngestReport(out, batch, {
+      onDiscard: clear,
+      onApprove: async (b)=>{
+        const tally=await ingWriteRows(b, false);
+        logActivity("in_batch", "", tally.imported+" imported, "+tally.updated+" updated, "+
+          tally.incomplete+" without text, "+tally.failed+" failed");
+        clear();
+        try{ scheduleSyncPush(); }catch(_){}
+        if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+        return importResultMsg(tally, 0);
+      },
+      onWrite: async (b)=>{
+        await ingWriteRows(b, false);
+        clear();
+        try{ scheduleSyncPush(); }catch(_){}
+        if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
+      }
+    });
   }
-  function count(label, n, cls){
-    return '<div class="in-count '+(cls||"")+'"><b>'+n+'</b><span>'+esc(label)+'</span></div>';
-  }
-
-  function card(e,i){
-    const slug=slugFor(e);
-    const dup=!!existing[slug];
-    const warns=(e.warnings||[]).filter(w=>WARN.indexOf(w)>=0)
-      .map(w=>'<span class="in-warn">'+esc(t("in_w_"+w))+'</span>').join("");
-    const bits=[];
-    if(e.city) bits.push(esc(e.city));
-    if(e.descriptor) bits.push(esc(e.descriptor));
-    const alt=(e.alternates||[]).map(a=>esc(lcChannelLabel(a.channel))).join(", ");
-    return '<label class="in-card'+(dup?" is-dupe":"")+'">'+
-      '<input type="checkbox" class="in-pick" data-i="'+i+'"'+(dup?"":" checked")+'>'+
-      '<span class="in-body">'+
-        '<span class="in-name">'+esc(e.business||"–")+'</span>'+
-        (bits.length? '<span class="in-meta">'+bits.join(" · ")+'</span>':'')+
-        '<span class="in-tags">'+
-          (e.channel? '<span class="in-tag">'+esc(lcChannelLabel(e.channel))+
-             (e.url? ' <span class="mono-iso">'+esc(e.url.replace(/^https?:\/\//,"").replace(/^mailto:/,""))+'</span>':'')+'</span>':'')+
-          (alt? '<span class="in-tag">'+esc(t("in_alt"))+' '+alt+'</span>':'')+
-          (e.tier? '<span class="in-tag">'+esc(t("in_tier"))+' '+esc(e.tier)+'</span>':'')+
-          (e.file? '<span class="in-tag">'+esc(e.page_file||e.file.name)+'</span>':'')+
-          (e.body? '<span class="in-tag">'+esc(t("ot_h"))+'</span>':'')+
-          (e.prohibition? '<span class="in-warn">'+esc(t("md_prohibition"))+'</span>':'')+
-          warns+
-        '</span>'+
-        (dup? '<span class="in-dupe-row"><b>'+esc(t("in_dupes_h"))+'</b>'+
-          '<span class="mono-iso">'+esc(slug)+'</span>'+
-          '<button type="button" class="btn ghost sm" data-dupe="skip" data-i="'+i+'">'+esc(t("in_dupe_skip"))+'</button>'+
-          '<button type="button" class="btn ghost sm danger" data-dupe="replace" data-i="'+i+'">'+esc(t("in_dupe_repl"))+'</button>'+
-          '</span>' : '')+
-      '</span></label>';
-  }
-
-  function review(){
-    const r=found;
-    if(!r || !r.entries.length){ status(t("in_none"),"warn"); return; }
-    const matched=r.entries.filter(e=>e.file).length;
-    const n=r.entries.length;
-    const named=(list)=> list.length
-      ? '<ul class="in-named">'+list.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>' : "";
-
-    out.innerHTML=
-      '<div class="in-head"><b>'+fmtRelative("in_found",n)+'</b>'+
-        '<span class="in-actions">'+
-          '<button class="btn sm" id="intakeAdd" type="button" data-icon="import">'+esc(t("in_add"))+'</button>'+
-          '<button class="btn ghost sm" id="intakeCancel" type="button">'+esc(t("in_cancel"))+'</button>'+
-        '</span></div>'+
-      '<section class="in-report"><h4 class="mw-h">'+esc(t("in_report_h"))+'</h4>'+
-        '<div class="in-counts">'+
-          count(t("in_pages"), r.pages)+
-          count(t("in_parsed"), r.entries.length-(r.orphanPages||[]).length)+
-          count(t("in_matched"), matched)+
-          count(t("in_orphan_p"), (r.orphanPages||[]).length, (r.orphanPages||[]).length?"warn":"")+
-          count(t("in_orphan_e"), (r.orphanEntries||[]).length, (r.orphanEntries||[]).length?"warn":"")+
-        '</div>'+
-        named(r.orphanPages||[])+named(r.orphanEntries||[])+
-      '</section>'+
-      '<div class="in-list">'+r.entries.map(card).join("")+'</div>'+
-      (r.notes? '<details class="mw-more"><summary>'+esc(t("in_notes_h"))+'</summary>'+
-        '<pre class="mw-pitch" dir="auto">'+esc(r.notes)+'</pre></details>' : '');
-
-    if(typeof applyIcons==="function") applyIcons(out);
-    el("intakeCancel").addEventListener("click", reset);
-    el("intakeAdd").addEventListener("click", add);
-    out.querySelectorAll("[data-dupe]").forEach(b=>b.addEventListener("click", e=>{
-      e.preventDefault(); e.stopPropagation();
-      const i=+b.getAttribute("data-i");
-      choice[i]=b.getAttribute("data-dupe");
-      const box=out.querySelector('.in-pick[data-i="'+i+'"]');
-      if(box) box.checked=(choice[i]==="replace");
-      b.parentNode.querySelectorAll("[data-dupe]").forEach(x=>x.classList.toggle("on", x===b));
-    }));
-  }
-
-  function reset(){ found=null; choice={}; out.innerHTML=""; input.value=""; }
-
-  async function add(){
-    const picked=[];
-    out.querySelectorAll(".in-pick").forEach(c=>{ if(c.checked) picked.push(found.entries[+c.getAttribute("data-i")]); });
-    if(!picked.length){ reset(); return; }
-    // One writer: the same shared import the editor batch uses. The board never hosts a page (host:false),
-    // so every picked opportunity lands as a Draft, and a replaced duplicate is un-archived and surfaces
-    // there. The confirmation counts only what landed; skipped is the reviewed set that was not imported.
-    const tally=await writeImport(picked.map(e=>({ entry:e, host:false })),
-      { existing:existing, notes:found.notes, batch:found.batch });
-    const skipped=Math.max(0, found.entries.length - picked.length);
-    logActivity("in_batch", "", tally.imported+" imported, "+tally.updated+" updated, "+skipped+" skipped, "+
-      ((found.orphanPages||[]).length)+" pages unmatched, "+((found.orphanEntries||[]).length)+" entries unmatched");
-    toast(importResultMsg(tally, skipped));
-    reset();
-    try{ scheduleSyncPush(); }catch(e){}
-    if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh();
-  }
-
   async function take(files){
     if(!files || !files.length) return;
     status(t("in_reading"));
-    try{ existing={}; (await mergedOpps()).forEach(o=>{ existing[o.slug]=true; }); }catch(e){}
     try{
-      found=await ThriveIntake.readDrop(files);
-      choice={};
-      review();
+      const existing=await allSlugs();
+      batch=await ThriveIntake.readBatch(files, { existingSlugs:existing });
     }catch(e){
-      status(/zip|inflate/i.test((e&&e.message)||"") ? t("in_zip_err") : t("in_none"), "warn");
+      status(/zip|inflate/i.test((e&&e.message)||"") ? t("in_zip_err") : t("in_none"), "warn"); return;
     }
+    if(!batch || !batch.report.rows.length){ status(t("in_none"), "warn"); batch=null; return; }
+    render();
   }
 
   /* The file picker is not an afterthought. iPad Safari has no drag and drop from Files into a
@@ -10912,7 +10850,7 @@ function initIntake(){
       e.preventDefault();
     }));
   }
-  onThrive("lang","intake", ()=>{ if(found) review(); });
+  onThrive("lang","intake", ()=>{ if(batch) render(); });
 }
 
 /* ---------- running a lifecycle move ----------

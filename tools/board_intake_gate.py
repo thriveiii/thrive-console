@@ -1,16 +1,16 @@
-"""The board intake lands what it says it imported, in the real board, in a real browser.
+"""The board intake lands what it says it imported, in the real board, through the ONE resolver.
 
-Drives library/board.html in Chromium against a three-item package (two new, one already in the library),
-through the real intake handler and its real write (writeImport, the one writer the editor batch also
-uses), and reads localStorage to see exactly what landed. It proves the two new appear in Draft with their
-text, the duplicate is handled by its Skip or Replace choice, a replaced archived duplicate is un-archived
-and surfaces in Draft (not left silently archived), and the toast counts only what landed, naming new,
-updated and skipped distinctly, never three when two landed.
+Drives library/board.html in Chromium: the "Today's batch" drop now reads through ThriveIntake.readBatch
+(resolveBatch) and renders the shared report (mountIngestReport), the same path the editor upload uses. It
+drops a three-item package (two new, one already in the library, archived) and reads localStorage to see
+exactly what landed. The unified surface has no per-item Skip/Replace; the resolver is idempotent by slug, so
+Approve imports the two new AND updates the existing one in place, un-archiving it (never left silently
+archived), and the toast counts what landed - two imported and one updated, never three imported.
 
-The package is READY_TO_SEND_BATCH06.md (ludic, wisebutterfly, 2faces); a pre-seeded archived record for
-the first slug makes it the duplicate. The sandbox is Chromium; WebKit and the live relay are Thyab's
-device. saveDraft writes to the browser's own localStorage here, so what this proves is what the board
-does on the device, minus the page hosting that needs a GitHub token."""
+The package is READY_TO_SEND_BATCH06.md (ludic, wisebutterfly, 2faces); a pre-seeded archived record for the
+first slug makes it the duplicate. The sandbox is Chromium; WebKit and the live relay are Thyab's device.
+saveDraft writes to the browser's own localStorage here, so what this proves is what the board does on the
+device, minus the page hosting that needs a GitHub token."""
 import threading, http.server, socketserver, functools, os
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT = "/home/user/thrive-console"
@@ -42,9 +42,10 @@ def open_board(pg, seed):
 def store(pg):
     return pg.evaluate("()=>JSON.parse(localStorage.getItem('thrive_opps_v1')||'[]')")
 
-def toast(pg):
-    n = pg.query_selector("#toast .toast-text")
-    return n.text_content() if n else "(no toast)"
+def outcome(pg):
+    # The unified surface reports through runAction's action-status line (the same as the editor), not a toast.
+    n = pg.query_selector("#actionStatus .act-msg")
+    return n.text_content() if n else "(no outcome)"
 
 # One archived record already in the library for the first package slug (ludic): the duplicate.
 SEED = '[{"slug":"ludic","business":"Ludic Lillian","archived":true,"published":false,"up":1}]'
@@ -52,44 +53,38 @@ SEED = '[{"slug":"ludic","business":"Ludic Lillian","archived":true,"published":
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
 
-    # Scenario A: the duplicate is left on Skip (unchecked). Two new land in Draft with text; the
-    # duplicate is not imported and stays as it was; the toast counts two, never three.
+    # The unified surface: drop, read the resolver report, Approve. The two new land in Draft with text; the
+    # existing slug is updated in place and un-archived (idempotent by slug); the toast counts 2 + 1, not 3.
     pg = b.new_page()
     open_board(pg, SEED)
     pg.set_input_files("#intakeFile", FIX)
-    pg.wait_for_selector("#intakeAdd", timeout=8000)
-    ck("the duplicate card is unchecked by default (Skip)", pg.eval_on_selector_all(".in-pick", "els=>els.filter(e=>e.checked).length") == 2)
-    pg.click("#intakeAdd")
-    pg.wait_for_timeout(600)
-    sA = store(pg)
-    drafts = [o for o in sA if not o.get("archived")]
-    ck("A: the two new landed in Draft (not archived)", len([o for o in drafts if o.get("slug") in ("wisebutterfly", "2faces")]) == 2, [o.get("slug") for o in drafts])
-    ck("A: each new draft carries its body text", all((o.get("outreach_text") or "").strip() for o in drafts if o.get("slug") in ("wisebutterfly", "2faces")))
-    ck("A: the skipped duplicate was not imported (still archived)", any(o.get("slug") == "ludic" and o.get("archived") for o in sA))
-    tA = toast(pg)
-    print("   A toast:", tA)
-    ck("A: the toast counts two, never three", "2" in tA and "3" not in tA, tA)
-    ck("A: the toast names skipped", "skip" in tA.lower(), tA)
-    pg.close()
+    pg.wait_for_selector("#intakeOut .bt tr", state="attached", timeout=8000)
+    pg.wait_for_timeout(300)
+    ck("the resolver report is shown before anything is written (the shared .bt report + Approve gate)",
+       pg.eval_on_selector("#intakeOut .bt", "e=>!!e") and pg.eval_on_selector("#intakeOut #batchApprove", "e=>!!e"))
+    ck("three opportunities resolve from the package",
+       pg.eval_on_selector_all("#intakeOut .bt tbody tr td:first-child, #intakeOut .bt tr td:first-child",
+                               "e=>e.map(x=>x.textContent.trim()).filter(Boolean).length") == 3)
+    ck("nothing is written yet", not any(o.get("outreach_text") for o in store(pg)))
 
-    # Scenario B: the duplicate is set to Replace. It un-archives and surfaces in Draft; the toast
-    # names it as updated, distinct from the two new imported.
-    pg = b.new_page()
-    open_board(pg, SEED)
-    pg.set_input_files("#intakeFile", FIX)
-    pg.wait_for_selector("#intakeAdd", timeout=8000)
-    pg.click('[data-dupe="replace"]')
-    pg.wait_for_timeout(150)
-    pg.click("#intakeAdd")
-    pg.wait_for_timeout(600)
-    sB = store(pg)
-    ck("B: nothing is left archived after a Replace import", sum(1 for o in sB if o.get("archived")) == 0, [(o.get("slug"), o.get("archived")) for o in sB])
-    ck("B: the replaced duplicate is now a visible Draft with its text",
-        any(o.get("slug") == "ludic" and not o.get("archived") and (o.get("outreach_text") or "").strip() for o in sB))
-    ck("B: all three landed on the active board", len([o for o in sB if not o.get("archived")]) == 3, len(sB))
-    tB = toast(pg)
-    print("   B toast:", tB)
-    ck("B: the toast counts two imported and one updated, not three imported", "2" in tB and "updated" in tB.lower(), tB)
+    pg.click("#intakeOut #batchApprove")
+    pg.wait_for_timeout(800)
+    s = store(pg)
+    drafts = [o for o in s if not o.get("archived")]
+    ck("the two new landed in Draft (not archived)",
+       len([o for o in drafts if o.get("slug") in ("wisebutterfly", "2faces")]) == 2, [o.get("slug") for o in drafts])
+    ck("each new draft carries its body text",
+       all((o.get("outreach_text") or "").strip() for o in drafts if o.get("slug") in ("wisebutterfly", "2faces")))
+    ck("the existing duplicate is updated in place and un-archived (never left silently archived)",
+       any(o.get("slug") == "ludic" and not o.get("archived") and (o.get("outreach_text") or "").strip() for o in s),
+       [(o.get("slug"), o.get("archived")) for o in s])
+    ck("nothing is left archived after the import", sum(1 for o in s if o.get("archived")) == 0,
+       [(o.get("slug"), o.get("archived")) for o in s])
+    ck("all three landed on the active board", len([o for o in s if not o.get("archived")]) == 3, len(s))
+    tt = outcome(pg)
+    print("   outcome:", tt)
+    ck("the confirmed outcome counts two imported and one updated, not three imported",
+       "2" in tt and "updated" in tt.lower(), tt)
     pg.close()
 
     b.close()
