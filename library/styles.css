@@ -1875,6 +1875,12 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .bt td:last-child{ overflow-wrap:anywhere }
 .bt-ok{ color:var(--lane-live); font-weight:var(--w-head) }
 .bt-warn{ color:var(--state-stall); font-weight:var(--w-strong) }
+/* R8 provenance: the ladder rung that resolved an opportunity, shown quietly so the truth is visible. */
+.bt-prov{ display:inline-block; font-size:var(--fs-micro); color:var(--ink-3); white-space:nowrap }
+.bt-prov-opp_md{ color:var(--lane-live) }
+.bt-prov-page_partial,.bt-prov-needs_message{ color:var(--state-stall) }
+.bt tr.is-needs{ background:var(--state-stall-t) }
+.bt-write{ white-space:nowrap }
 
 /* --- the symbol set -------------------------------------------------------
    Stroke only, inheriting currentColor, so a symbol is never a second colour

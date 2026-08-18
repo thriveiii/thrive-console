@@ -4699,8 +4699,13 @@ async function initEditor(slugArg){
      never guessed past. The reasons reuse the intake warning labels where they already exist. */
   const B_REASON={ no_page:"btr_page_pending", no_manifest_entry:"in_w_no_manifest_entry",
     no_text:"btr_no_text", duplicate_slug:"btr_dupe", exists_would_overwrite:"btr_exists",
-    missing_business:"in_w_no_business", no_channel:"in_w_no_channel" };
+    missing_business:"in_w_no_business", no_channel:"in_w_no_channel", needs_message:"in_prov_needs" };
   const reasonLabel=x=> t(B_REASON[x]||x);
+  // R8 provenance: the rung of the tolerant ladder that resolved each opportunity, shown quietly so the
+  // truth is visible ("read from opp.md" vs "read from research md" vs "needs message"), never guessed.
+  const B_PROV={ opp_md:"in_prov_opp", manifest_json:"in_prov_json", research_md:"in_prov_research",
+    page_partial:"in_prov_partial", needs_message:"in_prov_needs" };
+  const provLabel=p=> p? t(B_PROV[p]||p) : "";
   // Storable: every parsed template is persisted as its own draft opportunity, text and all. The only
   // thing that ever stopped a row from being written was the absence of a name to file it under, and
   // toRecord always supplies one (business, else the slug), so every report row is storable.
@@ -4737,14 +4742,24 @@ async function initEditor(slugArg){
     if(canHost>0) summary+=" "+boardText(getLang(),"bt_hosted",canHost);
     if(incomplete>0) summary+=" "+boardText(getLang(),"bt_incomplete",incomplete);
     const head='<tr><th>'+esc(t("bt_slug"))+'</th><th>'+esc(t("bt_html"))+'</th><th>'+esc(t("bt_mfst"))+
-      '</th><th>'+esc(t("bt_subj"))+'</th><th>'+esc(t("bt_body"))+'</th><th>'+esc(t("bt_send"))+'</th><th>'+esc(t("bt_verdict"))+'</th></tr>';
+      '</th><th>'+esc(t("bt_subj"))+'</th><th>'+esc(t("bt_body"))+'</th><th>'+esc(t("bt_send"))+
+      '</th><th>'+esc(t("bt_source"))+'</th><th>'+esc(t("bt_verdict"))+'</th></tr>';
     const rows=rep.rows.map(r=>{
+      // A resolved opportunity shows the rung that resolved it; a "needs message" row is never blocked, it
+      // offers a one-tap Write action that creates the card and opens the composer to write by hand.
+      const prov = r.provenance
+        ? '<span class="bt-prov bt-prov-'+esc(r.provenance)+'">'+esc(provLabel(r.provenance))+'</span>' : '';
+      const shownReasons = r.reasons.filter(x=> x!=="needs_message" || !r.provenance);
       const verdict = r.verdict==="matched"
         ? '<span class="bt-ok">'+esc(t("bt_matched"))+'</span>'
-        : '<span class="bt-warn">'+r.reasons.map(x=>esc(reasonLabel(x))).join(", ")+'</span>';
-      return '<tr class="'+(r.verdict==="matched"?"is-matched":"is-warned")+'">'+
+        : (r.needs_message
+            ? '<button type="button" class="btn ghost sm bt-write" data-write="'+esc(r.slug)+'" data-icon="send">'+esc(t("bt_write"))+'</button>'
+              +(shownReasons.length?' <span class="bt-warn">'+shownReasons.map(x=>esc(reasonLabel(x))).join(", ")+'</span>':'')
+            : '<span class="bt-warn">'+r.reasons.map(x=>esc(reasonLabel(x))).join(", ")+'</span>');
+      return '<tr class="'+(r.verdict==="matched"?"is-matched":"is-warned")+(r.needs_message?" is-needs":"")+'">'+
         '<td class="mono-iso" dir="ltr">'+esc(r.slug)+'</td>'+
         batchCell(r.hasPage)+batchCell(r.hasManifest)+batchCell(r.hasSubject)+batchCell(r.hasBody)+batchCell(r.hasSendTo)+
+        '<td>'+prov+'</td>'+
         '<td>'+verdict+'</td></tr>';
     }).join("");
     batchPanel.innerHTML=
@@ -4760,6 +4775,20 @@ async function initEditor(slugArg){
     if(typeof applyIcons==="function") applyIcons(batchPanel);
     el("batchDiscard").addEventListener("click",()=>{ batch=null; renderBatch(); });
     const ab=el("batchApprove"); if(ab && canSave) ab.addEventListener("click", ()=> runAction("batchApprove", { working:t("publishing"), run: approveBatch }));
+    // "Write now" on a needs-message row: never a dead end. It stores the batch as drafts (no GitHub needed,
+    // because hosting a page is a later step) so this card is created, then drops the operator into the
+    // composer to paste or write the email by hand.
+    batchPanel.querySelectorAll(".bt-write").forEach(btn=>btn.addEventListener("click", ()=>{
+      const slug=btn.getAttribute("data-write")||"";
+      runAction("batchWrite", { working:t("publishing"), run: async ()=>{
+        if(!batch) return;
+        const wr=batch.report.rows.filter(storable);
+        const existing={}; try{ (await mergedOpps()).forEach(o=>{ if(o&&o.slug) existing[o.slug]=true; }); }catch(_){}
+        await writeImport(wr.map(r=>({ entry:r.entry, host:false })), { existing:existing, notes:batch.notes, batch:batch.batch });
+        batch=null; batchPanel.hidden=true; batchPanel.innerHTML="";
+        if(slug) goTo("compose", "slug="+encodeURIComponent(slug));
+      } });
+    }));
   }
   async function approveBatch(){
     if(!batch) throw new Error(t("bt_nothing"));
