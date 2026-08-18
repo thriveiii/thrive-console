@@ -91,5 +91,43 @@ ck("a flat page + research md (legacy batch-06 shape) still resolves and matches
    out6.report.rows.length === 1 && out6.report.rows[0].verdict === "matched" && out6.report.rows[0].entry.email === "tis@ludiclillian.com",
    out6.report.rows[0] && out6.report.rows[0].verdict);
 
+// ---- P15: the tolerant heading grammar recognises the real producer shapes (this was the batch-13 defect).
+// The old pattern required a digit DIRECTLY followed by a separator, so `## 1) Name` (a close-paren after the
+// digit, the shape the producer actually ships) matched nothing and every section fell through to notes: the
+// batch resolved zero opportunities. One recogniser now accepts every shape a person writes. -----------------
+const SHAPES = [
+  ["## 1) River-Sea Chocolates – maker", "the number-with-paren shape the producer ships (broke batch 13)"],
+  ["## 1. River-Sea Chocolates – maker", "a number with a trailing dot"],
+  ["## 1 · River-Sea Chocolates · maker", "the middle-dot shape of the earlier batches"],
+  ["## River-Sea Chocolates", "a plain name with no list marker at all"]
+];
+SHAPES.forEach(([head, why]) => {
+  const md = head + "\n- **Send to:** chantilly@riverseachocolates.com\n```\nHi {{NAME}}. [LINK]\n```\n";
+  const r = TI.parseManifest(md);
+  const e = r.entries[0] || {};
+  ck("heading shape parses to one opportunity — " + why,
+     r.entries.length === 1 && e.business === "River-Sea Chocolates" && e.email === "chantilly@riverseachocolates.com",
+     r.entries.length + " / " + JSON.stringify(e.business));
+});
+
+// ---- P15: the send-to + body gate, not the heading shape, decides opportunity-vs-note. A permissive heading
+// would otherwise turn every "Market Assessment" / "Sources" / "Money at a glance" section into a phantom
+// "needs message" card. A section with no destination and no message is a note, kept in note_text, never a row.
+const pm = TI.parseManifest(research);
+ck("the non-opportunity sections (Market Assessment, Sources, Money at a glance) are notes, not opportunities",
+   pm.notes.length === 3 && !pm.entries.some(e => /Market Assessment|Sources|Money at a glance/.test(e.business)),
+   pm.notes.map(n => n.heading).join(" | "));
+ck("a note's content still survives into note_text (the pricing floor is not lost)",
+   pm.note_text.indexOf("2,500") >= 0, pm.note_text.slice(0, 60));
+const outNoOpp = TI.resolveBatch(
+  [], [{ name: "research.md", text: "# B\n## Market Assessment\nUnsaturated cluster, no destination.\n\n## Sources\nThe Fairfax Girl, July 2026.\n" }], []);
+ck("a research md of ONLY non-opportunity sections yields zero opportunity rows (no phantom cards)",
+   outNoOpp.report.rows.length === 0, outNoOpp.report.rows.length);
+
+// ---- P15: one recogniser, one splitter. The parser must not grow a second heading branch per batch format.
+const isrc = fs.readFileSync(path.join(__dirname, "../library/intake.js"), "utf8");
+ck("there is exactly ONE heading recogniser (HEAD_RE) and ONE section splitter (parseManifest)",
+   (isrc.match(/var HEAD_RE\s*=/g) || []).length === 1 && (isrc.match(/function parseManifest\(/g) || []).length === 1);
+
 console.log("\n" + (fails.length ? "FAILED: " + fails.join(", ") : "ALL INGEST LADDER CHECKS PASS"));
 process.exit(fails.length ? 1 : 0);
