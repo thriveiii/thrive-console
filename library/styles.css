@@ -1881,6 +1881,10 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .bt-prov-page_partial,.bt-prov-needs_message{ color:var(--state-stall) }
 .bt tr.is-needs{ background:var(--state-stall-t) }
 .bt-write{ white-space:nowrap }
+/* P17: the report row identity - the business display name (natural direction, so Arabic reads RTL) with
+   the slug as a small isolated identity beneath it. */
+.bt-id .bt-biz{ display:block; font-weight:var(--w-strong); color:var(--ink-1) }
+.bt-id .bt-slug{ font-size:var(--fs-micro); color:var(--ink-3) }
 
 /* --- P16: the join's states below the table ------------------------------
    The count line reads pages / matched / confirm / needs / orphans, each count

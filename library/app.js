@@ -4657,8 +4657,11 @@ function ingReportInner(batch){
           ? '<button type="button" class="btn ghost sm bt-write" data-write="'+esc(r.slug)+'" data-icon="send">'+esc(t("bt_write"))+'</button>'
             +(shownReasons.length?' <span class="bt-warn">'+shownReasons.map(x=>esc(ingReasonLabel(x))).join(", ")+'</span>':'')
           : '<span class="bt-warn">'+r.reasons.map(x=>esc(ingReasonLabel(x))).join(", ")+'</span>');
+    // P17: the human reads the business display name; the slug stays, isolated ltr, as the small identity
+    // beneath it. The business name keeps its natural direction so an Arabic name renders right-to-left.
+    const bizName = (r.business && r.business!==r.slug) ? '<span class="bt-biz">'+esc(r.business)+'</span>' : '';
     return '<tr class="'+(r.verdict==="matched"?"is-matched":"is-warned")+(r.needs_message?" is-needs":"")+'">'+
-      '<td class="mono-iso" dir="ltr">'+esc(r.slug)+'</td>'+
+      '<td class="bt-id">'+bizName+'<span class="mono-iso bt-slug" dir="ltr">'+esc(r.slug)+'</span></td>'+
       ingCell(r.hasPage)+ingCell(r.hasManifest)+ingCell(r.hasSubject)+ingCell(r.hasBody)+ingCell(r.hasSendTo)+
       '<td>'+prov+'</td>'+
       '<td>'+verdict+'</td></tr>';

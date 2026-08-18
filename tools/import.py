@@ -73,7 +73,7 @@ with sync_playwright() as p:
     pg.set_input_files("#intakeFile", ZIP)
     pg.wait_for_selector("#intakeOut .bt tr", state="attached", timeout=8000)
     pg.wait_for_timeout(400)
-    slugs = pg.eval_on_selector_all("#intakeOut .bt tbody tr td:first-child, #intakeOut .bt tr td:first-child",
+    slugs = pg.eval_on_selector_all("#intakeOut .bt tbody tr td:first-child .bt-slug, #intakeOut .bt tr td:first-child .bt-slug",
                                     "e=>e.map(x=>x.textContent.trim()).filter(Boolean)")
     print("resolved from the zip:", slugs)
     ck("the resolver report is shown on the board surface (the shared .bt report)",
@@ -133,7 +133,7 @@ with sync_playwright() as p:
     pg.set_input_files("#intakeFile", ONE)
     pg.wait_for_selector("#intakeOut .bt tr", state="attached", timeout=8000)
     pg.wait_for_timeout(400)
-    solo = pg.eval_on_selector_all("#intakeOut .bt tbody tr td:first-child, #intakeOut .bt tr td:first-child",
+    solo = pg.eval_on_selector_all("#intakeOut .bt tbody tr td:first-child .bt-slug, #intakeOut .bt tr td:first-child .bt-slug",
                                    "e=>e.map(x=>x.textContent.trim()).filter(Boolean)")
     ck("a page on its own becomes one opportunity, never dropped", solo == ["solo"], solo)
     ck("and it is a 'needs message' card with a one-tap Write action (never a dead end)",

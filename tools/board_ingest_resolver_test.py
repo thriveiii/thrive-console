@@ -81,8 +81,8 @@ with sync_playwright() as p:
       var rows=[].slice.call(o.querySelectorAll('.bt tbody tr, .bt tr')).filter(tr=>tr.querySelector('td'));
       var research=[].slice.call(o.querySelectorAll('.bt tr')).filter(tr=>tr.querySelector('.bt-prov-research_md'));
       function resolved(tr){ return tr.querySelectorAll('.bt-c .bt-y').length>=4; }
-      // the Arabic opportunity's slug row must be present and its slug read left-to-right (a mono-iso cell)
-      var arRow=[].slice.call(o.querySelectorAll('.bt tr td:first-child')).find(td=>td.textContent.indexOf('jamiyat-alsharq')>=0);
+      // the Arabic opportunity's slug must be present and read left-to-right (the isolated .bt-slug span)
+      var arRow=[].slice.call(o.querySelectorAll('.bt tr td:first-child .bt-slug')).find(s=>s.textContent.indexOf('jamiyat-alsharq')>=0);
       return { rowCount: rows.length, research: research.length,
                researchAllResolved: research.every(resolved),
                needs: o.querySelectorAll('.bt tr.is-needs').length,

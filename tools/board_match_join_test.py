@@ -40,10 +40,19 @@ BIZ = {
     "godet-furniture": "Godet Furniture",
     "clear-spring-acupuncture": "Clear Spring Acupuncture",
 }
+# The subject shares the send-to line, wrapped in bold, split by a middle dot - the real batch-13 shape that
+# left the subject column empty for all six. A real greeting name in the body, and a bundle-wide template.
+SUBJ = {
+    "hypergoat-coffee": "The right roast, found", "drip-docx": "From press to booked chairs",
+    "river-sea-chocolates": "The Reston shop, found", "manna-pottery": "The studio, on the map",
+    "godet-furniture": "The Del Ray opening, louder", "clear-spring-acupuncture": "The right patients, finding you",
+}
+NAME = {"hypergoat-coffee": "Rezgar", "drip-docx": "Narges", "river-sea-chocolates": "Chantilly",
+        "manna-pottery": "Etsuko", "godet-furniture": "Adam", "clear-spring-acupuncture": "Krissee and Mariano"}
 def section(slug):
-    return ("## " + BIZ[slug] + "\n- **Send to:** hi@" + slug.replace("-", "") + ".com\n- **Subject:** "
-            + BIZ[slug] + ", found\n```\nHi {{NAME}}, " + BIZ[slug] + " found. [LINK]\n```\n")
-RESEARCH = "# Batch 13\n\n" + "\n".join(section(s) for s in SLUGS)
+    return ("## " + BIZ[slug] + "\n- **Send to:** hi@" + slug.replace("-", "") + ".com · **Subject:** "
+            + SUBJ[slug] + "\n```\nHi " + NAME[slug] + ", " + BIZ[slug] + " found. [LINK]\n```\n")
+RESEARCH = "# Batch 13\nAll pages use template en-opp1.\n\n" + "\n".join(section(s) for s in SLUGS)
 
 def files_join():
     fs = [{"name": f"opp/{s}/index.html", "text": f"<!doctype html><title>{s}</title><h1>{s}</h1>", "type": "text/html"} for s in SLUGS]
@@ -57,7 +66,7 @@ def drop_js(files):
 
 # a ghost already in the store: the spawned card from the pre-fix batch, same send_to + subject as hypergoat's page
 GHOST = json.dumps([{ "slug": "hypergoat-coffee-roasters", "business": "Hypergoat Coffee Roasters",
-    "channel": {"kind": "email", "to": "hi@hypergoatcoffee.com"}, "outreach_subject": "Hypergoat Coffee Roasters, found",
+    "channel": {"kind": "email", "to": "hi@hypergoatcoffee.com"}, "outreach_subject": SUBJ["hypergoat-coffee"],
     "outreach_text": "Hi {{NAME}}. [LINK]", "published": False, "archived": False }])
 
 with sync_playwright() as p:
@@ -78,11 +87,16 @@ with sync_playwright() as p:
     rep = pg.evaluate("""()=>{
       var o=document.getElementById('intakeOut');
       var rows=[].slice.call(o.querySelectorAll('.bt tbody tr, .bt tr')).filter(tr=>tr.querySelector('td'));
-      var slugs=rows.map(tr=>tr.querySelector('td:first-child').textContent.trim());
+      var slugs=rows.map(function(tr){ var s=tr.querySelector('td:first-child .bt-slug'); return (s?s.textContent:'').trim(); });
       var matched=rows.filter(tr=>tr.className.indexOf('is-matched')>=0).length;
       function resolved(tr){ return tr.querySelectorAll('.bt-c .bt-y').length>=4; }
+      // P17: the Subject column is the 4th .bt-c cell; a filled subject is a checkmark (.bt-y), not a dot.
+      function subjectFilled(tr){ return !!tr.querySelectorAll('.bt-c')[2].querySelector('.bt-y'); }
       return { rowCount: rows.length, slugs: slugs, matched: matched,
                allResolved: rows.every(resolved),
+               subjectAll: rows.every(subjectFilled),
+               bizAll: rows.every(tr=>!!tr.querySelector('.bt-biz')),
+               noStars: (o.querySelector('.bt')||{textContent:''}).textContent.indexOf('*')<0,
                spawnedGhostRow: slugs.some(s=>/roasters|wellness/.test(s)),
                prefixShown: (o.textContent||'').toLowerCase().indexOf('prefix')>=0 || !!o.querySelector('.bt-prov'),
                orphanBlock: !!o.querySelector('.ing-orphan'),
@@ -91,6 +105,10 @@ with sync_playwright() as p:
                dupMergeBtn: !!o.querySelector('.ing-merge') }; }""")
     ck("all six opportunities are rows, none split into a second card", rep["rowCount"] == 6 and not rep["spawnedGhostRow"], rep)
     ck("all six resolve MATCHED with page/subject/body/send-to filled", rep["matched"] == 6 and rep["allResolved"] is True, rep)
+    ck("P17: the Subject column is filled for ALL SIX (the shared send-to+subject line, the live break)",
+       rep["subjectAll"] is True, rep)
+    ck("P17: the business display name renders in every row (not just the slug)", rep["bizAll"] is True, rep)
+    ck("P17: no markdown bold marker leaks into the rendered report", rep["noStars"] is True, rep)
     ck("no orphan-sections block (every section joined a page)", rep["orphanBlock"] is False, rep)
     ck("the count line is present and reads six pages, six matched",
        ("6" in rep["countText"]) and (rep["countText"].count("6") >= 2), rep["countText"])
