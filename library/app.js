@@ -1111,20 +1111,39 @@ function editDist(a,b){ a=String(a); b=String(b); var m=a.length,n=b.length,d=[]
   for(i=0;i<=m;i++){ d[i]=[i]; } for(j=0;j<=n;j++){ d[0][j]=j; }
   for(i=1;i<=m;i++) for(j=1;j<=n;j++){ var c=a.charCodeAt(i-1)===b.charCodeAt(j-1)?0:1;
     d[i][j]=Math.min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+c); } return d[m][n]; }
+// The ONE near-duplicate predicate, shared by the Insights flag (nearDupAddrs) and the Contact Book review
+// items (nearDupClusters). Two lowercased addresses are a possible duplicate when they share a local part
+// and differ only by a known typo domain or a domain one edit away, or when the whole address is one edit off.
+function nearDupPair(A,B){
+  A=String(A||"").toLowerCase(); B=String(B||"").toLowerCase(); if(!A||!B||A===B) return false;
+  if(addrLocal(A)===addrLocal(B)){
+    var dA=addrDomain(A), dB=addrDomain(B);
+    if(TYPO_DOMAINS[dA]===dB || TYPO_DOMAINS[dB]===dA || editDist(dA,dB)<=1) return true;
+  }
+  return editDist(A,B)<=1;
+}
 function nearDupAddrs(addrs){
   var out={}; addrs=(addrs||[]).filter(Boolean).map(function(a){ return String(a).toLowerCase(); });
   for(var i=0;i<addrs.length;i++) for(var j=i+1;j<addrs.length;j++){
-    var A=addrs[i], B=addrs[j]; if(A===B) continue; var near=false;
-    if(addrLocal(A)===addrLocal(B)){
-      var dA=addrDomain(A), dB=addrDomain(B);
-      if(TYPO_DOMAINS[dA]===dB || TYPO_DOMAINS[dB]===dA || editDist(dA,dB)<=1) near=true;
-    }
-    if(!near && editDist(A,B)<=1) near=true;
-    if(near){ out[A]=1; out[B]=1; }
+    if(nearDupPair(addrs[i], addrs[j])){ out[addrs[i]]=1; out[addrs[j]]=1; }
   }
   return out;
 }
 window.nearDupAddrs=nearDupAddrs;
+// Connected components of the near-dup graph: each returned cluster is a set of two or more addresses a human
+// should review as ONE person. Same predicate as the flag, so a flagged address is exactly a clustered one.
+function nearDupClusters(addrs){
+  addrs=(addrs||[]).filter(Boolean).map(function(a){ return String(a).toLowerCase(); });
+  addrs=addrs.filter(function(a,i){ return addrs.indexOf(a)===i; });          // unique
+  var parent={}; addrs.forEach(function(a){ parent[a]=a; });
+  function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; }
+  function uni(a,b){ parent[find(a)]=find(b); }
+  for(var i=0;i<addrs.length;i++) for(var j=i+1;j<addrs.length;j++){
+    if(nearDupPair(addrs[i], addrs[j])) uni(addrs[i], addrs[j]);
+  }
+  var by={}; addrs.forEach(function(a){ var r=find(a); (by[r]||(by[r]=[])).push(a); });
+  return Object.keys(by).map(function(k){ return by[k]; }).filter(function(c){ return c.length>1; });
+}
 
 /* P4 metric dictionary: every number shown on Insights names its definition and its ONE source, so no
    surface can invent a definition. Opens-by-person and anonymous page views are separate metrics and never
@@ -1912,17 +1931,24 @@ function wireRosterEditor(box, o){
     var have={}; recips().forEach(function(r){ if(r.addr) have[String(r.addr).toLowerCase()]=1; });
     var addable=parsed.filter(function(p){ return p.valid && p.flags.indexOf("dup")<0 && !have[p.addr.toLowerCase()]; });
     var bad=parsed.filter(function(p){ return !p.valid; }).length, dups=parsed.length-addable.length-bad;
+    // P10 hygiene: a previously-bounced address WARNS before it is re-sent. The bounce set is the SAME
+    // derived truth the Contact Book reads (bouncedAddrSet over console_inbound autos); nothing new is stored.
+    var bset=bouncedAddrSet(parsed.map(function(p){ return p.addr; }));
+    var nBounced=parsed.filter(function(p){ return bset[String(p.addr||"").toLowerCase()]; }).length;
     review.hidden=false;
     review.innerHTML='<ul class="rst-rev-list">'+parsed.map(function(p){
         var isdup=(p.flags.indexOf("dup")>=0 || have[p.addr.toLowerCase()]);
-        var cls=!p.valid?"is-bad":(isdup?"is-dup":(p.flags.indexOf("typo")>=0?"is-typo":""));
+        var isBounced=!!bset[String(p.addr||"").toLowerCase()];
+        var cls=!p.valid?"is-bad":(isdup?"is-dup":(isBounced?"is-bounced":(p.flags.indexOf("typo")>=0?"is-typo":"")));
         var fl=!p.valid?["invalid"]:(isdup?["dup"]:p.flags);
         return '<li class="rst-rev '+cls+'"><span class="rst-rev-nm" dir="auto">'+esc(p.name||t("rst_no_name"))+'</span>'+
           '<span class="rst-rev-em mono-iso" dir="ltr">'+esc(p.addr)+'</span>'+
-          (fl.length? ' <span class="tag tag-warn">'+esc(rosterFlagText(fl))+'</span>':'')+'</li>';
+          (fl.length? ' <span class="tag tag-warn">'+esc(rosterFlagText(fl))+'</span>':'')+
+          (isBounced? ' <span class="tag tag-warn rst-bounced">'+esc(t("rst_flag_bounced"))+'</span>':'')+'</li>';
       }).join("")+'</ul>'+
       '<button type="button" class="btn sm rst-addvalid"'+(addable.length?'':' disabled')+'>'+esc(t("rst_add_valid"))+' <bdi class="n">'+addable.length+'</bdi></button>'+
-      ' <span class="mw-muted">'+(dups?'<bdi class="n">'+dups+'</bdi> '+esc(t("rst_flag_dup")):'')+(bad?(dups?' · ':'')+'<bdi class="n">'+bad+'</bdi> '+esc(t("rst_flag_invalid")):'')+'</span>';
+      ' <span class="mw-muted">'+(dups?'<bdi class="n">'+dups+'</bdi> '+esc(t("rst_flag_dup")):'')+(bad?(dups?' · ':'')+'<bdi class="n">'+bad+'</bdi> '+esc(t("rst_flag_invalid")):'')+
+        (nBounced?((dups||bad)?' · ':'')+'<bdi class="n">'+nBounced+'</bdi> '+esc(t("rst_flag_bounced")):'')+'</span>';
     var addBtn=review.querySelector('.rst-addvalid');
     if(addBtn) addBtn.addEventListener('click', function(){
       var list=recips(), seen={}; list.forEach(function(r){ if(r.addr) seen[String(r.addr).toLowerCase()]=1; });
@@ -1938,6 +1964,7 @@ function wireRosterEditor(box, o){
     try{ rd.readAsText(f); }catch(_){} });
 }
 window.wireRosterEditor=wireRosterEditor;
+try{ window.rosterEditorHtml=rosterEditorHtml; }catch(_){}
 function spawnedFromHtml(o){
   return '<section class="cg-panel"><p class="st-line">'+esc(t("cg_spawned_from"))+
     ' <button class="btn ghost sm open-parent" type="button" data-parent="'+esc(o.spawned_from.parent)+'">'+esc(o.spawned_from.parent)+'</button></p></section>';
@@ -3542,6 +3569,23 @@ function supaDeleteComment(id){
   if(!supaOn() || !id) return;
   supaQueueDel("console_comments", "id=eq."+encodeURIComponent(id));
 }
+/* A Contact Book person record (P10) becomes one console_contacts row: curation facts only (the merge
+   grouping of addresses, a curated name, tags, a note), stamped with its author. Activity history is never
+   written here; it stays derived from the ledger. Same Stage-4 queued upsert path as every other mirror. */
+function supaContactRow(c){
+  return { id:c.id, addresses:(c.addresses||[]), name:(c.name!=null?c.name:null),
+    tags:(c.tags||[]), note:(c.note!=null?c.note:null),
+    author:c.author||currentActor()||"", author_name:c.author_name||"",
+    created_at:c.created_at||new Date().toISOString(), updated_at:new Date().toISOString() };
+}
+function supaMirrorContact(c){
+  if(!supaOn() || !c || !c.id) return;
+  supaQueueUpsert("console_contacts", supaContactRow(c));
+}
+function supaDeleteContact(id){
+  if(!supaOn() || !id) return;
+  supaQueueDel("console_contacts", "id=eq."+encodeURIComponent(id));
+}
 /* A reply (inbound) becomes one console_inbound row, keyed on the Gmail message id (the same key the
    inbound merge dedupes on), the whole record in the data jsonb. This is the store that was missed in
    Stage 2, so a migrated reply, the international-schools one included, reappears once it is read back. */
@@ -3673,7 +3717,7 @@ async function supaVerify(){
    no column for a snippet's type or template_ref, so reading templates back would be lossy; that waits
    for an additive column, raised in the PR. */
 var READ_FLAG="console_sb_read";
-var __supa={ opps:null, mail:null, inbound:null, hits:null, comments:null, hydrated:false, degraded:false, authRequired:false, ts:0 };
+var __supa={ opps:null, mail:null, inbound:null, hits:null, comments:null, contacts:null, hydrated:false, degraded:false, authRequired:false, ts:0 };
 var __supaHydrating=false;
 /* The board reads ONE server-computed stage. console_board computes each opp's canonical stage and its
    display fields (sent_count, open_count, replied, idle_days, has_page, has_email, archived) in one
@@ -3876,7 +3920,7 @@ async function supaHydrate(){
     // board and passes through; before the close a signed-out read still returns rows and passes through.
     if(supaReadFlagOn() && !supaSignedIn() && __supa.opps.length===0){
       __supa.authRequired=true; __supa.degraded=true; __supa.hydrated=false;
-      __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null; __supa.comments=null;
+      __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null; __supa.comments=null; __supa.contacts=null;
       try{ logActivity("supa_auth_required", "", "signed-out empty read"); }catch(_){}
       return false;
     }
@@ -3896,6 +3940,14 @@ async function supaHydrate(){
         { query:"select=id,opp,author,author_name,body,parent_id,created_at,updated_at&order=created_at.asc" });
       __supa.comments=(comments||[]).map(function(r){ return r||{}; });
     }catch(_){ __supa.comments=(__supa.comments||[]); }
+    // The Contact Book curation overlay (P10). Discrete columns, own try, so a contacts hiccup never fails
+    // the board; on failure the slice stays and reads fall back to the local cache. Curation facts only:
+    // the merge grouping, name, tags, note. Activity history is NEVER read here, it stays derived.
+    try{
+      var contacts=await S.rest("console_contacts",
+        { query:"select=id,addresses,name,tags,note,author,author_name,created_at,updated_at&order=updated_at.desc" });
+      __supa.contacts=(contacts||[]).map(function(r){ return r||{}; });
+    }catch(_){ __supa.contacts=(__supa.contacts||[]); }
     // Templates hydrate into the local cache (its own try, so a template hiccup never fails the board).
     try{ var tpls=await S.rest("console_templates", { query:"select=id,kind,name,subject,html,lang,up" }); supaMergeTemplatesToCache(tpls||[]); }catch(_){}
     __supa.hydrated=true; __supa.degraded=false; __supa.authRequired=false; __supa.ts=Date.now();
@@ -3915,7 +3967,7 @@ async function supaHydrate(){
     // Never while signed in: a 401/403 seen by a signed-in operator is a token or network fault to degrade
     // over, not a sign-in prompt, so the flag stays a pure function of "no session" at every assignment.
     __supa.authRequired = !!(e && e.authRequired) && !supaSignedIn();
-    __supa.degraded=true; __supa.hydrated=false; __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null; __supa.comments=null;
+    __supa.degraded=true; __supa.hydrated=false; __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null; __supa.comments=null; __supa.contacts=null;
     supaRecordDiverge("read", "hydrate", e&&e.message);
     try{ logActivity(__supa.authRequired ? "supa_auth_required" : "supa_read_degraded", "", String((e&&e.message)||"").slice(0,120)); }catch(_){}
     return false;
@@ -5380,6 +5432,36 @@ function commentCachePut(c){
 function commentCacheDrop(id){
   setCommentsLocal(getCommentsLocal().filter(function(x){ return x && x.id!==id; }));
   if(__supa.comments) __supa.comments=__supa.comments.filter(function(x){ return x && x.id!==id; });
+}
+
+/* ---------- the Contact Book curation overlay (console_contacts, P10) ----------
+   The Book holds ONLY curation facts a human decides: which addresses are one person (the merge grouping),
+   the person's curated name, tags, a note. The activity history is NEVER stored here; it stays derived from
+   the ledger (see buildContacts), so a merge is reversible by dropping the row and the ledger is untouched.
+   Same shape as the discussion store: a local cache mirrors the hydrated read slice for instant reflection,
+   and writes go through the ONE Stage-4 queue (supaMirrorContact / supaDeleteContact), never a second path. */
+const CONTACTS="thrive_contacts_v1";
+function getContactsLocal(){ try{ return JSON.parse(localStorage.getItem(CONTACTS)||"[]"); }catch(e){ return []; } }
+function setContactsLocal(a){ try{ localStorage.setItem(CONTACTS, JSON.stringify((a||[]).slice(-5000))); }catch(e){} }
+function getContacts(){ if(supaReadable() && __supa.contacts) return __supa.contacts.slice(); return getContactsLocal(); }
+function mintContactId(){
+  var t=Date.now().toString(36), r=Math.floor((1+Math.random())*0x1000000).toString(36).slice(1);
+  return "ct_"+t+"_"+r;
+}
+function contactCachePut(c){
+  var a=getContactsLocal(), i=a.findIndex(function(x){ return x && x.id===c.id; });
+  if(i>=0) a[i]=c; else a.push(c); setContactsLocal(a);
+  if(__supa.contacts){ var j=__supa.contacts.findIndex(function(x){ return x && x.id===c.id; });
+    if(j>=0) __supa.contacts[j]=c; else __supa.contacts.push(c); }
+}
+function contactCacheDrop(id){
+  setContactsLocal(getContactsLocal().filter(function(x){ return x && x.id!==id; }));
+  if(__supa.contacts) __supa.contacts=__supa.contacts.filter(function(x){ return x && x.id!==id; });
+}
+function contactPending(id){
+  try{ return supaPending().some(function(e){ return e && e.t==="console_contacts" &&
+    ((e.op==="upsert" && (e.rows||[]).some(function(r){ return r && r.id===id; })) ||
+     (e.op==="del" && String(e.q||"").indexOf(encodeURIComponent(id))>=0)); }); }catch(e){ return false; }
 }
 // A comment is still queued (not yet confirmed to Supabase) while an upsert for its id sits in the pending
 // queue. This is the honest queued state the card shows, and it clears when the queue drains on sign-in.
@@ -8431,6 +8513,273 @@ function aggregateHits(events){
   });
   return Object.values(bySlug).sort((a,b)=>b.opens-a.opens);
 }
+/* ============================ The Thrive Contact Book (P10) ============================
+   One person, one record, findable. The Book is a read-plus-curation LENS over the ledger: the activity
+   summary is derived live (buildContacts), the console_contacts overlay carries only curation facts (the
+   merge grouping, name, tags, note). Nothing here copies history, so a merge is reversible. */
+
+// The ONE person derivation, shared by Insights (initHome) and the Contact Book, so every summary number
+// reconciles by construction. One row per address: sends, token-bearing personal opens, attributed replies,
+// last activity, and the personal state. (Extracted verbatim from the Insights person block.)
+function derivePeople(){
+  const mail=getMailLog();
+  const byPerson={};
+  mail.forEach(m=>{
+    const who=String(m.to||"").toLowerCase(); if(!who) return;
+    const r=byPerson[who]||(byPerson[who]={ to:m.to, name:m.toName||"", sent:0, replies:0, opens:0, opps:new Set(), rk:new Set(), last:"", trackable:false, tokens:new Set(), lastOpen:"" });
+    if(m.toName && !r.name) r.name=m.toName;
+    if(m.status==="sent"||m.status==="copied") r.sent++;
+    if(m.direction!=="in"){ const id=String(m.mid||m.id||""); if(/^snd_/.test(id)){ r.trackable=true; r.tokens.add(id); } }
+    if(m.direction==="in"||m.status==="replied"){ const k=String(m.opp||"")+"|"+who; if(!r.rk.has(k)){ r.rk.add(k); r.replies++; } }
+    if(m.opp) r.opps.add(m.opp);
+    if(m.ts>r.last) r.last=m.ts;
+  });
+  getInbound().forEach(r0=>{
+    if(!r0 || r0.kind==="auto" || !r0.opp) return;
+    const who=String(r0.from||"").trim().toLowerCase(); if(!who) return;
+    const r=byPerson[who]; if(!r) return;
+    const k=String(r0.opp)+"|"+who; if(!r.rk.has(k)){ r.rk.add(k); r.replies++; }
+    if(r0.ts && String(r0.ts)>String(r.last||"")) r.last=String(r0.ts);
+  });
+  var tokOwner={}; Object.values(byPerson).forEach(function(r){ r.tokens.forEach(function(tk){ tokOwner[tk]=r; }); });
+  allHits().forEach(function(e){
+    if(!e || (e.type && e.type!=="open") || e.self || !e.r) return;
+    var r=tokOwner[String(e.r)]; if(!r) return;
+    r.opens++; var ts=String(e.ts||""); if(ts>r.lastOpen) r.lastOpen=ts; if(ts>String(r.last||"")) r.last=ts;
+  });
+  const DAY=86400000;
+  return Object.values(byPerson).map(r=>{
+    const age=r.last? (Date.now()-new Date(r.last).getTime())/DAY : 0;
+    r.state = r.replies? "replied" : (!r.trackable? "pretrack" : (r.opens? (age>3? "warm_cold":"warm") : (age>3? "cold":"sent")));
+    return r;
+  }).sort((a,b)=> b.replies-a.replies || b.opens-a.opens || (a.last<b.last?1:-1));
+}
+try{ window.derivePeople=derivePeople; }catch(_){}
+
+function contactAddrKey(a){ return bareAddress(a).toLowerCase(); }
+var CONTACT_STANDING_TAGS=["client","prospect","partner","personal","test"];
+// A domain the typo table names (gmial.com etc) is malformed hygiene; so is an address with no "@".
+function addrHygieneBad(a){ a=String(a||"").toLowerCase(); return a.indexOf("@")<0 || !!TYPO_DOMAINS[addrDomain(a)]; }
+// A bounce is an inbound auto naming the address (the ONE bounce signal, per recipientState). Bounced-address
+// index for a set of addresses, so the Book and the P5 roster paste read the SAME derived bounce truth.
+function bouncedAddrSet(addrs){
+  var want={}; (addrs||[]).forEach(function(a){ var k=contactAddrKey(a); if(k) want[k]=1; });
+  var out={};
+  getInbound().forEach(function(r){
+    if(!r || r.kind!=="auto" || !r.bounce) return;
+    var hay=String((r.snippet||"")+" "+(r.subject||"")+" "+(r.from||"")).toLowerCase();
+    Object.keys(want).forEach(function(k){ if(hay.indexOf(k)>=0) out[k]=(r.bounce==="hard"?"hard":(out[k]||"soft")); });
+  });
+  return out;
+}
+function addressBounced(addr){ var k=contactAddrKey(addr); if(!k) return ""; var s=bouncedAddrSet([k]); return s[k]||""; }
+try{ window.addressBounced=addressBounced; }catch(_){}
+
+/* Build the Book: one record per person. Default is one person per address (derived); a console_contacts row
+   overlays, grouping its addresses under one record and carrying the curated name/tags/note. Every activity
+   number is derived and summed from the member addresses, never stored. Sorted newest-activity first (R6). */
+function buildContacts(){
+  var people=derivePeople();
+  var byAddr={}; people.forEach(function(r){ byAddr[contactAddrKey(r.to)]=r; });
+  var curated=getContacts();
+  var owner={};                                       // addr -> curated row that owns it
+  curated.forEach(function(c){ (c.addresses||[]).forEach(function(a){ var k=contactAddrKey(a); if(k) owner[k]=c; }); });
+  var allAddrs={}; people.forEach(function(r){ allAddrs[contactAddrKey(r.to)]=1; });
+  curated.forEach(function(c){ (c.addresses||[]).forEach(function(a){ var k=contactAddrKey(a); if(k) allAddrs[k]=1; }); });
+  var bounced=bouncedAddrSet(Object.keys(allAddrs));
+  function record(id, addrs, cur){
+    addrs=addrs.filter(function(a,i,s){ return a && s.indexOf(a)===i; });
+    var members=addrs.map(function(a){ return byAddr[a]; }).filter(Boolean);
+    var sent=0,opens=0,replies=0,last=""; var opps={};
+    members.forEach(function(m){ sent+=m.sent; opens+=m.opens; replies+=m.replies;
+      m.opps.forEach(function(o){ opps[o]=1; });
+      if(String(m.last||"")>String(last)) last=String(m.last||""); });
+    // the primary display address: the member with the most sends, else the first grouped address
+    var primary=addrs[0], best=-1;
+    members.forEach(function(m){ if(m.sent>best){ best=m.sent; primary=contactAddrKey(m.to); } });
+    var derivedName=""; members.forEach(function(m){ if(!derivedName && m.name) derivedName=m.name; });
+    var name=(cur && cur.name && String(cur.name).trim()) || derivedName || primary;
+    var addrRows=addrs.map(function(a){ var m=byAddr[a];
+      return { addr:a, name:(m&&m.name)||"", bounced:bounced[a]||"", typo:addrHygieneBad(a) }; });
+    var nBounced=addrRows.filter(function(x){ return x.bounced; }).length;
+    var nTypo=addrRows.filter(function(x){ return x.typo; }).length;
+    return { id:id, curated:!!cur, name:name, primary:primary, addrs:addrRows,
+      tags:(cur&&cur.tags)||[], note:(cur&&cur.note)||"",
+      sent:sent, opens:opens, replies:replies, campaigns:Object.keys(opps).length,
+      opps:Object.keys(opps), bounces:nBounced, typos:nTypo, last:last, lastMs:parseTs(last) };
+  }
+  var recs=[], used={};
+  curated.forEach(function(c){
+    var addrs=(c.addresses||[]).map(contactAddrKey).filter(Boolean);
+    addrs.forEach(function(a){ used[a]=1; });
+    recs.push(record(c.id, addrs, c));
+  });
+  people.forEach(function(r){ var k=contactAddrKey(r.to); if(used[k]) return; used[k]=1;
+    recs.push(record("addr:"+k, [k], null)); });
+  recs.sort(function(a,b){ return b.lastMs-a.lastMs || (a.name<b.name?-1:(a.name>b.name?1:0)); });
+  return recs;
+}
+try{ window.buildContacts=buildContacts; }catch(_){}
+
+// The merge review: near-dup address clusters not yet grouped by a human. Each is a review ITEM the owner
+// confirms; nothing merges on its own. Uses the ONE near-dup predicate (nearDupClusters).
+function contactReviewItems(){
+  var people=derivePeople();
+  var byAddr={}; people.forEach(function(r){ byAddr[contactAddrKey(r.to)]=r; });
+  var owned={}; getContacts().forEach(function(c){ (c.addresses||[]).forEach(function(a){ var k=contactAddrKey(a); if(k) owned[k]=1; }); });
+  var addrs=Object.keys(byAddr).filter(function(a){ return !owned[a]; });
+  var clusters=nearDupClusters(addrs);
+  var bounced=bouncedAddrSet(addrs);
+  return clusters.map(function(cl){
+    var name=""; cl.forEach(function(a){ var m=byAddr[a]; if(!name && m && m.name) name=m.name; });
+    return { addrs:cl, suggestName:name,
+      members:cl.map(function(a){ var m=byAddr[a]||{};
+        return { addr:a, name:m.name||"", sent:m.sent||0, typo:addrHygieneBad(a), bounced:bounced[a]||"" }; }) };
+  }).sort(function(a,b){ return b.addrs.length-a.addrs.length; });
+}
+try{ window.contactReviewItems=contactReviewItems; }catch(_){}
+
+// Curation writes: all go through the ONE Stage-4 queue. A merge groups addresses into a new person record;
+// tags/name/note upsert onto the record's row (creating one for a still-derived person). Un-merge deletes.
+function contactAuthorStamp(){ var prof=(typeof profileNow==="function" && profileNow())||{};
+  return { author:currentActor(), author_name:String(prof.display_name||"").trim() }; }
+function mergeContacts(addrs, name){
+  addrs=(addrs||[]).map(contactAddrKey).filter(function(a,i,s){ return a && s.indexOf(a)===i; });
+  if(!addrs.length) return null;
+  var now=new Date().toISOString();
+  var c=Object.assign({ id:mintContactId(), addresses:addrs, name:(String(name||"").trim()||null),
+    tags:[], note:null, created_at:now, updated_at:now }, contactAuthorStamp());
+  contactCachePut(c); try{ logActivity("contact_merge", "", addrs.join(",")); }catch(_){}
+  supaMirrorContact(c); return c;
+}
+try{ window.mergeContacts=mergeContacts; }catch(_){}
+function unmergeContacts(id){
+  if(!id) return; contactCacheDrop(id); try{ logActivity("contact_unmerge", "", id); }catch(_){}
+  supaDeleteContact(id);
+}
+try{ window.unmergeContacts=unmergeContacts; }catch(_){}
+// Upsert curation onto a record (curated row edited in place; a still-derived person gets a fresh row that
+// groups its own single address). Reversible: dropping the row returns the person to the derived default.
+function saveContactCuration(rec, patch){
+  if(!rec) return null;
+  var existing=rec.curated ? getContacts().find(function(c){ return c && c.id===rec.id; }) : null;
+  var now=new Date().toISOString();
+  var base=existing || Object.assign({ id:mintContactId(),
+    addresses:(rec.addrs||[]).map(function(x){ return x.addr; }), name:null, tags:[], note:null,
+    created_at:now }, contactAuthorStamp());
+  var c=Object.assign({}, base, patch, { updated_at:now });
+  contactCachePut(c); try{ logActivity("contact_curate", "", c.id); }catch(_){}
+  supaMirrorContact(c); return c;
+}
+try{ window.saveContactCuration=saveContactCuration; }catch(_){}
+
+async function initContacts(){
+  const el=id=>document.getElementById(id);
+  try{ supaEnsureHydrated(); }catch(_){}
+  var state={ q:"", sort:"recent", tag:"" };
+  var searchEl=el("contactsSearch"), sortEl=el("contactsSort"), tagsEl=el("contactsTags"),
+      reviewEl=el("contactsReview"), listEl=el("contactsList");
+  function tagLabel(tag){ var k="contacts_tag_"+tag; var s=t(k); return s===k? tag : s; }
+  function chip(text, cls){ return '<span class="cb-chip '+(cls||"")+'">'+esc(text)+'</span>'; }
+  function renderReview(){
+    if(!reviewEl) return;
+    var items=contactReviewItems();
+    if(!items.length){ reviewEl.innerHTML=""; return; }
+    reviewEl.innerHTML='<div class="cb-review"><h2 class="cb-h">'+esc(t("contacts_review_h"))+
+      ' <span class="cb-count"><bdi class="n">'+nIso(items.length)+'</bdi></span></h2>'+
+      items.map(function(it,i){
+        return '<div class="cb-item" data-ri="'+i+'"><div class="cb-item-people">'+
+          it.members.map(function(m){ return '<div class="cb-cand"><b>'+esc(m.name||m.addr)+'</b>'+
+            '<span class="mono cb-addr"><bdi>'+esc(m.addr)+'</bdi></span>'+
+            (m.typo?' '+chip(t("contacts_typo"),"cb-warn"):"")+
+            (m.bounced?' '+chip(t("contacts_bounced"),"cb-warn"):"")+'</div>'; }).join("")+
+          '</div><div class="cb-item-act">'+
+          '<button class="btn sm cb-merge" data-ri="'+i+'" data-icon="check">'+esc(t("contacts_merge"))+'</button>'+
+          '</div></div>';
+      }).join("")+'</div>';
+  }
+  function personMatches(r, q){
+    if(!q) return true; q=q.toLowerCase();
+    if(String(r.name||"").toLowerCase().indexOf(q)>=0) return true;
+    if(r.addrs.some(function(a){ return a.addr.indexOf(q)>=0 || String(a.name||"").toLowerCase().indexOf(q)>=0; })) return true;
+    if(r.tags.some(function(tg){ return String(tg).toLowerCase().indexOf(q)>=0 || tagLabel(tg).toLowerCase().indexOf(q)>=0; })) return true;
+    if(r.opps.some(function(o){ return String(o).toLowerCase().indexOf(q)>=0; })) return true;
+    return false;
+  }
+  function renderList(){
+    if(!listEl) return;
+    var recs=buildContacts();
+    if(state.tag) recs=recs.filter(function(r){ return r.tags.indexOf(state.tag)>=0; });
+    recs=recs.filter(function(r){ return personMatches(r, state.q); });
+    if(state.sort==="name") recs=recs.slice().sort(function(a,b){ return String(a.name).localeCompare(String(b.name)); });
+    // tag filter row
+    if(tagsEl){
+      var counts={}; buildContacts().forEach(function(r){ r.tags.forEach(function(tg){ counts[tg]=(counts[tg]||0)+1; }); });
+      var tags=CONTACT_STANDING_TAGS.concat(Object.keys(counts).filter(function(tg){ return CONTACT_STANDING_TAGS.indexOf(tg)<0; }));
+      tagsEl.innerHTML=tags.map(function(tg){
+        return '<button class="cb-tagf'+(state.tag===tg?" on":"")+'" data-tag="'+esc(tg)+'">'+esc(tagLabel(tg))+
+          (counts[tg]?' <bdi class="n">'+nIso(counts[tg])+'</bdi>':"")+'</button>'; }).join("");
+    }
+    if(!recs.length){ listEl.innerHTML='<div class="empty">'+esc(t("contacts_empty"))+'</div>'; return; }
+    listEl.innerHTML='<div class="cb-people">'+recs.map(function(r){
+      var addrs=r.addrs.map(function(a){ return '<span class="cb-addr mono'+(a.typo||a.bounced?" bad":"")+'"><bdi>'+esc(a.addr)+'</bdi>'+
+        (a.typo?' <span class="cb-flag" title="'+esc(t("contacts_typo"))+'">!</span>':"")+
+        (a.bounced?' <span class="cb-flag" title="'+esc(t("contacts_bounced"))+'">⚑</span>':"")+'</span>'; }).join("");
+      var tags=r.tags.map(function(tg){ return chip(tagLabel(tg),"cb-tag"); }).join("");
+      var opps=r.opps.map(function(o){ return '<button class="cb-opp" data-opp="'+esc(o)+'" data-name="'+esc(r.name)+'">'+esc(o)+'</button>'; }).join("");
+      return '<div class="cb-person" data-id="'+esc(r.id)+'">'+
+        '<div class="cb-main">'+
+          '<div class="cb-id"><b class="cb-name">'+esc(r.name)+'</b>'+
+            (r.curated?' '+chip(t("contacts_merged"),"cb-merged"):"")+
+            (r.bounces?' '+chip(t("contacts_bounced"),"cb-warn"):"")+
+            (r.typos?' '+chip(t("contacts_typo"),"cb-warn"):"")+
+            '<div class="cb-addrs">'+addrs+'</div>'+
+            (tags?'<div class="cb-tags">'+tags+'</div>':"")+'</div>'+
+          '<div class="cb-metrics">'+
+            '<span title="'+esc(t("tip_tpl_sent"))+'">'+esc(t("cmp_sent_n"))+' <bdi class="n">'+nIso(r.sent)+'</bdi></span>'+
+            '<span title="'+esc(t("tip_opens"))+'">'+esc(t("ins_opens"))+' <bdi class="n">'+nIso(r.opens)+'</bdi></span>'+
+            '<span title="'+esc(t("tip_replies"))+'">'+esc(t("cmp_replied_n"))+' <bdi class="n">'+nIso(r.replies)+'</bdi></span>'+
+            '<span title="'+esc(t("home_p_dup"))+'">'+esc(t("contacts_campaigns"))+' <bdi class="n">'+nIso(r.campaigns)+'</bdi></span>'+
+            '<span class="cb-last mono">'+(r.last?fmtWhen(r.last):'<span class="zero">–</span>')+'</span>'+
+          '</div>'+
+        '</div>'+
+        (opps?'<div class="cb-threads"><span class="cb-threads-l">'+esc(t("contacts_threads"))+'</span>'+opps+'</div>':"")+
+        '<div class="cb-curate">'+
+          CONTACT_STANDING_TAGS.map(function(tg){ return '<button class="cb-tagtoggle'+(r.tags.indexOf(tg)>=0?" on":"")+'" data-id="'+esc(r.id)+'" data-tag="'+esc(tg)+'">'+esc(tagLabel(tg))+'</button>'; }).join("")+
+          (r.curated?'<button class="btn ghost sm cb-unmerge" data-id="'+esc(r.id)+'" data-icon="undo">'+esc(t("contacts_unmerge"))+'</button>':"")+
+        '</div>'+
+      '</div>';
+    }).join("")+'</div>';
+  }
+  function refresh(){ renderReview(); renderList(); }
+  // one record by id (curated id or "addr:k"), from the freshly-built list
+  function recById(id){ return buildContacts().filter(function(r){ return r.id===id; })[0]; }
+  if(searchEl && !searchEl.__cb){ searchEl.__cb=1; searchEl.addEventListener("input", function(){ state.q=searchEl.value.trim(); renderList(); }); }
+  if(sortEl && !sortEl.__cb){ sortEl.__cb=1; sortEl.addEventListener("change", function(){ state.sort=sortEl.value; renderList(); }); }
+  if(el("contactsRefresh") && !el("contactsRefresh").__cb){ el("contactsRefresh").__cb=1;
+    el("contactsRefresh").addEventListener("click", function(){ try{ __supa.hydrated=false; __supa.degraded=false; supaEnsureHydrated(); }catch(_){}; refresh(); }); }
+  if(tagsEl && !tagsEl.__cb){ tagsEl.__cb=1; tagsEl.addEventListener("click", function(ev){
+    var b=ev.target.closest && ev.target.closest("[data-tag]"); if(!b) return;
+    var tg=b.getAttribute("data-tag"); state.tag=(state.tag===tg?"":tg); renderList(); }); }
+  if(reviewEl && !reviewEl.__cb){ reviewEl.__cb=1; reviewEl.addEventListener("click", function(ev){
+    var b=ev.target.closest && ev.target.closest(".cb-merge"); if(!b) return;
+    var items=contactReviewItems(), it=items[+b.getAttribute("data-ri")]; if(!it) return;
+    if(!confirm(t("contacts_merge_confirm"))) return;          // the owner confirms every merge, never silent
+    mergeContacts(it.addrs, it.suggestName); refresh(); }); }
+  if(listEl && !listEl.__cb){ listEl.__cb=1; listEl.addEventListener("click", function(ev){
+    var opp=ev.target.closest && ev.target.closest(".cb-opp");
+    if(opp){ try{ window.thriveModal.open(opp.getAttribute("data-opp"), "history", opp.getAttribute("data-name")||""); }catch(_){}; return; }
+    var tt=ev.target.closest && ev.target.closest(".cb-tagtoggle");
+    if(tt){ var rec=recById(tt.getAttribute("data-id")); if(!rec) return; var tg=tt.getAttribute("data-tag");
+      var tags=rec.tags.slice(); var at=tags.indexOf(tg); if(at>=0) tags.splice(at,1); else tags.push(tg);
+      saveContactCuration(rec, { tags:tags }); refresh(); return; }
+    var un=ev.target.closest && ev.target.closest(".cb-unmerge");
+    if(un){ if(!confirm(t("contacts_unmerge_confirm"))) return; unmergeContacts(un.getAttribute("data-id")); refresh(); return; }
+  }); }
+  refresh();
+}
+try{ window.initContacts=initContacts; }catch(_){}
+
 async function initHome(){
   const el=id=>document.getElementById(id);
   // Every metric carries its own explanation. The ⓘ is pinned to the tile's top corner,
@@ -8680,45 +9029,10 @@ async function initHome(){
       : '<div class="empty">'+t("home_tpl_empty")+'</div>';
 
     /* ---- who is paying attention ----
-       One row per person, so a follow-up is a decision about a human rather than about a slug. */
-    const byPerson={};
-    mail.forEach(m=>{
-      const who=String(m.to||"").toLowerCase(); if(!who) return;
-      const r=byPerson[who]||(byPerson[who]={ to:m.to, name:m.toName||"", sent:0, replies:0, opens:0, opps:new Set(), rk:new Set(), last:"", trackable:false, tokens:new Set(), lastOpen:"" });
-      if(m.toName && !r.name) r.name=m.toName;
-      if(m.status==="sent"||m.status==="copied") r.sent++;
-      // P4: a P2 send carries a per-person open token (its mid, "snd_..."); such sends make this person's
-      // opens trackable. A person with no token send is pre-token history, never guessed a zero.
-      if(m.direction!=="in"){ const id=String(m.mid||m.id||""); if(/^snd_/.test(id)){ r.trackable=true; r.tokens.add(id); } }
-      if(m.direction==="in"||m.status==="replied"){ const k=String(m.opp||"")+"|"+who; if(!r.rk.has(k)){ r.rk.add(k); r.replies++; } }
-      if(m.opp) r.opps.add(m.opp);
-      if(m.ts>r.last) r.last=m.ts;
-    });
-    // Fold in attributed inbound replies (console_inbound), so a reply that never became a ledger row still
-    // credits its person, deduped by opportunity and sender: the same reply the board and campaign table count.
-    getInbound().forEach(r0=>{
-      if(!r0 || r0.kind==="auto" || !r0.opp) return;
-      const who=String(r0.from||"").trim().toLowerCase(); if(!who) return;
-      const r=byPerson[who]; if(!r) return;                 // a reply from an address never written to is not a person row
-      const k=String(r0.opp)+"|"+who; if(!r.rk.has(k)){ r.rk.add(k); r.replies++; }
-      if(r0.ts && String(r0.ts)>String(r.last||"")) r.last=String(r0.ts);
-    });
-    // P4: opens are per PERSON, token-bearing (P2) ONLY. The page-level total is NEVER copied onto a person,
-    // and an anonymous view (no token) has no person. This is the "opens 4 for fourteen people" fix.
-    var tokOwner={}; Object.values(byPerson).forEach(function(r){ r.tokens.forEach(function(tk){ tokOwner[tk]=r; }); });
-    allHits().forEach(function(e){
-      if(!e || (e.type && e.type!=="open") || e.self || !e.r) return;
-      var r=tokOwner[String(e.r)]; if(!r) return;
-      r.opens++; var ts=String(e.ts||""); if(ts>r.lastOpen) r.lastOpen=ts; if(ts>String(r.last||"")) r.last=ts;
-    });
-    const DAY=86400000;
-    const peopleRows=Object.values(byPerson).map(r=>{
-      const age=r.last? (Date.now()-new Date(r.last).getTime())/DAY : 0;
-      // The state is a decision from PERSONAL signals only: answered you, read it (and went quiet), sent but
-      // not opened, or no sign of life. A person we could never track (pre-token) is stated as such, not guessed.
-      r.state = r.replies? "replied" : (!r.trackable? "pretrack" : (r.opens? (age>3? "warm_cold":"warm") : (age>3? "cold":"sent")));
-      return r;
-    }).sort((a,b)=> b.replies-a.replies || b.opens-a.opens || (a.last<b.last?1:-1));
+       One row per person (per address), so a follow-up is a decision about a human rather than about a slug.
+       This is the ONE person derivation, shared with the Contact Book (derivePeople), so every summary number
+       reconciles with Insights by construction (P4 dictionary, one source). */
+    const peopleRows=derivePeople();
     // Flag near-duplicate addresses (typo domains, one-edit) for review in the Contact Book (P10). No merge.
     var dupSet=nearDupAddrs(peopleRows.map(function(r){ return r.to; }));
     el("homePeople").innerHTML = peopleRows.length

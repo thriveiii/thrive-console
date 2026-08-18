@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Thrive · Contacts</title>
+<link rel="icon" href="../assets/thrive-logo.png">
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<link rel="preconnect" href="https://api.github.com" crossorigin>
+<link rel="dns-prefetch" href="https://api.github.com">
+<script>(function(){var d=document.documentElement;function lock(){d.classList.add('gate-locked')}try{if(sessionStorage.getItem('thrive_gate_v2')!=='0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8')lock()}catch(e){lock()}/* boot failsafe: a script that never runs must not leave a blank locked page */setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;var ar=false;try{ar=localStorage.getItem('thrive_lang')==='ar'}catch(e){}var p=document.createElement('p');p.className='bootfail';p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل الصفحة، وتحقق من الاتصال إن تكرر الأمر.':'The console could not start. Reload the page, and check your connection if it happens again.';(document.body||d).appendChild(p)},6000)})();</script>
+<script src="gate.js" defer></script>
+</head>
+<body>
+<noscript><p class="bootfail">This console needs JavaScript to run. <span dir="rtl">يحتاج هذا الكونسول إلى تفعيل JavaScript.</span></p></noscript>
+<header class="top">
+  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <nav class="nav">
+    <a href="console.html#board" data-i18n="nav_board">Thrive Operations</a>
+    <a href="console.html#home" data-i18n="nav_insights">Insights</a>
+    <a href="console.html#contacts" data-i18n="nav_contacts">Contacts</a>
+    <a href="console.html#library" data-i18n="nav_library">Library</a>
+    <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
+    <button id="langbtn" class="langbtn">العربية</button>
+  </nav>
+</header>
+
+<!-- The Thrive Contact Book (P10): one person, one record, findable. A read-plus-curation lens over the
+     ledger; the review items, tag filter and person list are rendered by initContacts. -->
+<main class="wrap">
+  <div class="page-h"><h1 class="title" data-i18n="contacts_title">Contact Book</h1></div>
+  <p class="sub" data-i18n="contacts_sub"></p>
+
+  <div class="toolbar cb-tools">
+    <div class="search cb-search"><span class="fieldic" data-icon="search" aria-hidden="true"></span><input id="contactsSearch" type="search" autocomplete="off" data-i18n-ph="contacts_search" placeholder="Search people"></div>
+    <label class="cb-sort"><span data-i18n="contacts_sort">Sort</span>
+      <select id="contactsSort">
+        <option value="recent" data-i18n="contacts_sort_recent">Newest activity</option>
+        <option value="name" data-i18n="contacts_sort_name">Name</option>
+      </select></label>
+    <button class="btn ghost" id="contactsRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
+  </div>
+
+  <div id="contactsTags" class="cb-tagfilter"></div>
+  <div id="contactsReview"></div>
+  <div id="contactsList"></div>
+</main>
+
+<script src="icons.js" defer></script>
+<script src="i18n.js" defer></script>
+<script src="stage-model.js" defer></script>
+<script src="lifecycle.js" defer></script>
+<script src="numbers.js" defer></script>
+<script src="inbound.js" defer></script>
+<script src="kinds.js" defer></script>
+<script src="store.js" defer></script>
+<script src="drafts.js" defer></script>
+<script src="flows.js" defer></script>
+<script src="app.js" defer></script>
+<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initContacts(); });</script>
+</body>
+</html>

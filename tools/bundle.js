@@ -29,6 +29,7 @@ const VIEWS = [
      working, which campaign moved, and who is paying attention, and a name that does not say
      so is a name nobody taps. */
   { id: "home",      file: "index.html",     init: "initHome",      key: "nav_insights" },
+  { id: "contacts",  file: "contacts.html",  init: "initContacts",  key: "nav_contacts" },
   { id: "library",   file: "library.html",   init: "initDashboard", key: "nav_library" },
   { id: "editor",    file: "editor.html",    init: "initEditor",    key: "nav_editor" },
   { id: "compose",   file: "compose.html",   init: "initCompose",   key: "nav_compose" },
@@ -182,7 +183,7 @@ const MODAL = `
 /* Four destinations, not three. The numbers were reachable only from inside the Library after
    the reduction, which read as though they had been deleted. What you measure has to be one
    tap from where you work. */
-const TOPBAR = ["board","home","library","profile","settings"];
+const TOPBAR = ["board","home","contacts","library","profile","settings"];
 const nav = VIEWS.filter(v => TOPBAR.indexOf(v.id) >= 0).map(v =>
   '<a href="#' + v.id + '" data-view="' + v.id + '" data-i18n="' + v.key + '"></a>'
 ).join("\n    ");
