@@ -217,5 +217,47 @@ function resolve(pages, md, jsons) { return TI.resolveBatch(pages, [{ name: "res
   ck("P18: ten reads of the channel list are byte-identical", same, first);
 }
 
+/* ============================================================================
+   P19 · R13 re-import is idempotent by slug. importPlan is the ONE classifier; the report row carries the
+   action and the count line reads new / updates / needs-decision. Pure logic, proven here. */
+{
+  const P = (s) => ({ name: "opp/" + s + "/index.html", html: "<!doctype html><h1>" + s + "</h1>" });
+  const sec = (b, e, su) => "## " + b + "\n- **Send to:** " + e + " · **Subject:** " + su + "\n```\nHi. [LINK]\n```\n";
+  const md = "# B\n" + sec("Alpha Co", "a@a.com", "S") + sec("Beta Co", "b@b.com", "S") + sec("Gamma Co", "c@c.com", "S") + sec("Delta Co", "d@d.com", "S");
+  // beta has no history (update), gamma has history (locked), delta is archived (decision); alpha is new.
+  const existing = { "beta-co": { archived: false, hasHistory: false }, "gamma-co": { archived: false, hasHistory: true }, "delta-co": { archived: true, hasHistory: false } };
+
+  ck("P19: importPlan classifies new / update / update_locked / decision from one map (no per-slug branches)",
+     TI.importPlan("alpha-co", existing) === "new" && TI.importPlan("beta-co", existing) === "update" &&
+     TI.importPlan("gamma-co", existing) === "update_locked" && TI.importPlan("delta-co", existing) === "decision");
+
+  const out = TI.resolveBatch([P("alpha-co"), P("beta-co"), P("gamma-co"), P("delta-co")], [{ name: "r.md", text: md }], [], { existing: existing });
+  const act = {}; out.report.rows.forEach(r => act[r.slug] = r.action);
+  ck("P19: every report row carries its re-import action",
+     act["alpha-co"] === "new" && act["beta-co"] === "update" && act["gamma-co"] === "update_locked" && act["delta-co"] === "decision",
+     JSON.stringify(act));
+  ck("P19: the count line reads pages / new / updates / needs-decision (updates = update + update_locked)",
+     out.report.counts.pages === 4 && out.report.counts.new === 1 && out.report.counts.updates === 2 && out.report.counts.decision === 1,
+     JSON.stringify(out.report.counts));
+  ck("P19: an existing slug is an update, never a warning that blocks the batch (no exists_would_overwrite)",
+     out.report.rows.every(r => (r.reasons || []).indexOf("exists_would_overwrite") < 0), "still warns on exists");
+
+  // back-compat: a bare existingSlugs list (no history/archived info) still reads as a plain update
+  const out2 = TI.resolveBatch([P("beta-co")], [{ name: "r.md", text: sec("Beta Co", "b@b.com", "S") }], [], { existingSlugs: ["beta-co"] });
+  ck("P19: a bare existingSlugs list still classifies as update (back-compat)", out2.report.rows[0].action === "update");
+
+  // ONE classifier, and it is reached by both the report and the writer (grep the client)
+  const app = fs.readFileSync(path.join(__dirname, "../library/app.js"), "utf8");
+  const intake = fs.readFileSync(path.join(__dirname, "../library/intake.js"), "utf8");
+  ck("P19: exactly ONE importPlan classifier (in intake.js), read by the writer in app.js (one lifecycle path)",
+     (intake.match(/function importPlan\(/g) || []).length === 1 && /ThriveIntake\.importPlan\(/.test(app),
+     "classifier count / writer read");
+
+  // ten reads of the classified report are byte-identical
+  const snap = () => JSON.stringify(TI.resolveBatch([P("alpha-co"), P("beta-co"), P("gamma-co"), P("delta-co")], [{ name: "r.md", text: md }], [], { existing: existing }).report.rows.map(r => [r.slug, r.action]));
+  let first = snap(), same = true; for (let i = 0; i < 10; i++) if (snap() !== first) same = false;
+  ck("P19: ten reads of the re-import classification are byte-identical", same, first);
+}
+
 console.log("\n" + (fails.length ? "FAILED: " + fails.join(", ") : "ALL INGEST MATCHER CHECKS PASS"));
 process.exit(fails.length ? 1 : 0);

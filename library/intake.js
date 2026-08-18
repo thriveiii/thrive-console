@@ -907,7 +907,7 @@
       return resolveOne(s, pageBySlug[s] || null, envBySlug[s] || null, jsonBySlug[s] || null, docBySlug[s] || null);
     });
 
-    var report = TI.batchReport(entries, { existingSlugs: opts.existingSlugs || [], jsonError: base.jsonError || "" });
+    var report = TI.batchReport(entries, { existing: opts.existing || {}, existingSlugs: opts.existingSlugs || [], jsonError: base.jsonError || "" });
     // provenance and the needs-message verdict travel onto every row so the drop surface can show the rung.
     report.rows.forEach(function (row) {
       var e = row.entry || {};
@@ -974,7 +974,13 @@
       matched: report.matched,
       confirm: confirmRows.length,
       needs: report.rows.filter(function (r) { return r.needs_message; }).length,
-      orphans: orphanSections.length
+      orphans: orphanSections.length,
+      // R13 (P19): the re-import tally. new = created; updates = refreshed in place (with or without a
+      // frozen body); decision = an archived slug awaiting restore-or-new. Counts render outside the
+      // translated labels so a Western numeral never reverses inside an Arabic phrase.
+      "new": report.rows.filter(function (r) { return r.action === "new"; }).length,
+      updates: report.rows.filter(function (r) { return r.action === "update" || r.action === "update_locked"; }).length,
+      decision: report.rows.filter(function (r) { return r.action === "decision"; }).length
     };
 
     return {
@@ -1173,9 +1179,29 @@
      means an HTML page and a manifest entry are both present and nothing else is off. Every other
      state is warned, with its reason named, and a warned row blocks approval until the operator
      decides. Nothing here writes; it only reads and reports. */
+  /* R13 (P19) - re-import is idempotent by slug. `existing` is a map { slug: {archived, hasHistory} }
+     computed by the caller (the client, which alone can read the ledgers). importPlan is the ONE
+     classifier every surface reads, so there is one lifecycle path and no per-slug branches:
+       new           - no card with this slug exists; create it.
+       update        - a card exists with NO ledger history; refresh it in place (contacts, name,
+                       template, body), keeping its lifecycle fields.
+       update_locked - a card exists WITH ledger history; refresh the safe fields but never silently
+                       change the body or subject under a card that already sent something.
+       decision      - an ARCHIVED card exists with this slug; Thyab must pick restore-and-update or
+                       import-as-new. Never resolved silently. */
+  function importPlan(slug, existing) {
+    var m = existing && existing[slug];
+    if (!m) return "new";
+    if (m.archived) return "decision";
+    if (m.hasHistory) return "update_locked";
+    return "update";
+  }
+
   function batchReport(entries, opts) {
     opts = opts || {};
-    var existing = opts.existingSlugs || [];
+    var existing = opts.existing || {};                                       // R13: map slug -> {archived, hasHistory}
+    var legacySlugs = opts.existingSlugs || [];                               // back-compat: a bare slug list
+    legacySlugs.forEach(function (s) { if (!existing[s]) existing[s] = { archived: false, hasHistory: false }; });
     var jsonError = opts.jsonError || "";
     var counts = {};
     (entries || []).forEach(function (e) { var s = slugOf(e) || "(unnamed)"; counts[s] = (counts[s] || 0) + 1; });
@@ -1189,7 +1215,9 @@
       var hasSendTo = !!(e.email || e.url || (e.channel && e.channel !== ""));
       var reasons = [];
       if (counts[slug] > 1) reasons.push("duplicate_slug");
-      if (existing.indexOf(slug) >= 0) reasons.push("exists_would_overwrite");
+      // R13: an existing slug is NOT a warning - it is an update in place. The action, not a warning,
+      // carries the "already exists" fact, so a corrected bundle heals its cards instead of being blocked.
+      var action = importPlan(slug, existing);
       if (!hasPage) reasons.push("no_page");                                  // text with no page
       if (!hasManifest) reasons.push("no_manifest_entry");                    // page with no manifest
       if (hasPage && hasManifest && !hasSubject && !hasBody) reasons.push("no_text"); // page with no text
@@ -1197,7 +1225,7 @@
       // surface, without duplicating, the parser's own field warnings
       ["no_channel"].forEach(function (w) { if (e.warnings.indexOf(w) >= 0 && reasons.indexOf(w) < 0) reasons.push(w); });
       return {
-        slug: slug, business: e.business || slug,
+        slug: slug, business: e.business || slug, action: action,
         hasPage: hasPage, hasManifest: hasManifest, hasSubject: hasSubject, hasBody: hasBody, hasSendTo: hasSendTo,
         verdict: reasons.length ? "warned" : "matched", reasons: reasons, entry: e
       };
@@ -1251,7 +1279,7 @@
         prohibition: "", body: "", extra: {}, warnings: ["no_manifest_entry"], file: p });
     });
 
-    var report = batchReport(entries, { existingSlugs: opts.existingSlugs || [], jsonError: jm.error || "" });
+    var report = batchReport(entries, { existing: opts.existing || {}, existingSlugs: opts.existingSlugs || [], jsonError: jm.error || "" });
     return {
       entries: entries, report: report,
       pages: pages.length, manifests: texts.length,
@@ -1282,6 +1310,7 @@
   global.ThriveIntake.parseJsonManifest = parseJsonManifest;
   global.ThriveIntake.applyJson = applyJson;
   global.ThriveIntake.batchReport = batchReport;
+  global.ThriveIntake.importPlan = importPlan;
   global.ThriveIntake.buildBatch = buildBatch;
   global.ThriveIntake.readBatch = readBatch;
 })(typeof window !== "undefined" ? window : this);

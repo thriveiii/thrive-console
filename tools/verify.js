@@ -486,8 +486,8 @@ head("Symbols");
   let m;
   const nm = /^\s{4}"?([a-z]+)"?:\s*'/gm;
   while ((m = nm.exec(iconSrc))) names.push(m[1]);
-  names.length === 23 ? ok("twenty-three symbols are defined (" + names.length + ")")
-                      : bad("twenty-three symbols are defined", names.length + ": " + names.join(","));
+  names.length === 24 ? ok("twenty-four symbols are defined (" + names.length + ")")
+                      : bad("twenty-four symbols are defined", names.length + ": " + names.join(","));
 
   /* every place a symbol can be asked for */
   const surfaces = ["library/app.js", "tools/bundle.js"].concat(
@@ -500,6 +500,9 @@ head("Symbols");
     while ((k = re.exec(txt))) used.add(k[1]);
     const re2 = /thriveIcon\(\s*"([a-z]+)"/g;
     while ((k = re2.exec(txt))) used.add(k[1]);
+    // a symbol asked for at runtime through the short ic("name") API (the modal renders its icons this way)
+    const re3 = /\bic\(\s*"([a-z]+)"/g;
+    while ((k = re3.exec(txt))) used.add(k[1]);
   }
   /* asked for by value rather than by literal, so named here */
   ["form", "dm", "whatsapp", "other", "web_form", "instagram", "linkedin", "x", "phone"]
