@@ -153,5 +153,69 @@ function resolve(pages, md, jsons) { return TI.resolveBatch(pages, [{ name: "res
   ck("ten reads of the extraction are byte-identical", same);
 }
 
+/* ============================================================================
+   P18 · The universal contact model (R11). Extraction fills more than an email:
+   phones, WhatsApp, social handles, in EN and Arabic; each channel classified
+   and tiered by where it was sighted. One list on the record, read by the tab,
+   the composer and the Contact Book. Pure logic, proven here. */
+{
+  // Evidence 2: a crafted section with a phone, a WhatsApp link, an Instagram handle and an Arabic جوال
+  // (a second phone). The one extractor captures FOUR non-email channels beside the send-to email.
+  const md = "# Batch\n## Bloom Studio\n"
+    + "- **Send to:** hello@bloom.example  **Phone:** +1 (555) 200-3040  **WhatsApp:** https://wa.me/15552003040\n"
+    + "- **Instagram:** @bloomstudio  **جوال:** 0501234567\n"
+    + "```\nHi Sara, hello. [LINK]\n```\n";
+  const rec = TI.toRecord(TI.parseManifest(md).entries[0], {});
+  const chs = rec.channels || [];
+  const nonEmail = chs.filter(c => c.type !== "email");
+  ck("P18: the crafted fixture captures four channels beside the email (Phone, WhatsApp, Instagram, جوال)",
+     nonEmail.length === 4, nonEmail.map(c => c.type + (c.platform ? ":" + c.platform : "")).join(","));
+  ck("P18: the Arabic جوال line yields a phone channel (a second number, not dropped)",
+     chs.filter(c => c.type === "phone").length === 2 && chs.some(c => c.type === "phone" && c.value === "0501234567"),
+     JSON.stringify(chs.filter(c => c.type === "phone")));
+  ck("P18: the WhatsApp channel is a wa.me link; the Instagram channel carries the bare handle",
+     chs.some(c => c.type === "whatsapp" && /wa\.me\/15552003040/.test(c.value)) &&
+     chs.some(c => c.type === "social" && c.platform === "instagram" && c.handle === "bloomstudio"),
+     JSON.stringify(chs));
+  ck("P18: exactly one channel is primary and it is the send-to email (the send target)",
+     chs.filter(c => c.primary).length === 1 && (chs.find(c => c.primary) || {}).type === "email",
+     JSON.stringify(chs.filter(c => c.primary)));
+}
+{
+  // Evidence 3: a rung-4 page read. mailto + an Instagram profile link sit on the business's OWN page,
+  // so every channel sighted there is Tier A / sighted (never inferred, never invented).
+  const html = "<!doctype html><title>Godet</title><h1>Godet Furniture</h1>"
+    + "<a href=\"mailto:adam@godet.example\">Email</a><a href=\"https://instagram.com/godetfurniture\">IG</a>";
+  const out = TI.resolveBatch([{ name: "opp/godet-furniture/index.html", html: html }], [], []);
+  const rec = TI.toRecord(out.report.rows[0].entry, {});
+  ck("P18: a rung-4 page (mailto + instagram on the business's own surface) gives an email and a social channel",
+     rec.channels.length === 2 && rec.channels.some(c => c.type === "email") && rec.channels.some(c => c.type === "social" && c.platform === "instagram"),
+     JSON.stringify(rec.channels.map(c => c.type)));
+  ck("P18: every channel sighted on the business's own page is Tier A / sighted",
+     rec.channels.every(c => c.tier === "A" && c.tier_basis === "sighted"), JSON.stringify(rec.channels));
+}
+{
+  // Evidence 1: the real batch-13 shape (address named by the research md, not sighted on a page) is
+  // Tier A / stated - shown "Tier A per research, confirm" until Thyab verifies. The composer To resolves.
+  const md = "# Batch 13\n## Drip Docx Wellness and Aesthetics\n- **Send to:** info@dripdocx.com  **Subject:** From press to booked chairs\n```\nHi Narges, hello. [LINK]\n```\n";
+  const rec = TI.toRecord(TI.parseManifest(md).entries[0], {});
+  const email = (rec.channels || []).find(c => c.type === "email") || {};
+  ck("P18: a research-md address is Tier A / stated (confirm), never auto-upgraded to sighted",
+     email.tier === "A" && email.tier_basis === "stated" && email.source === "research md", JSON.stringify(email));
+  ck("P18: the email channel is primary, so the composer To resolves to it",
+     email.primary === true && email.value === "info@dripdocx.com", JSON.stringify(email));
+}
+{
+  // Evidence 4: ONE model. buildChannels is the single builder; toRecord writes exactly one `channels`
+  // field; ten reads are byte-identical; the record never carries a second contact list.
+  const src = fs.readFileSync(path.join(__dirname, "../library/intake.js"), "utf8");
+  ck("P18: there is exactly ONE channel builder (buildChannels) and toRecord writes it once",
+     (src.match(/function buildChannels\(/g) || []).length === 1 && (src.match(/channels: buildChannels\(/g) || []).length === 1);
+  const md = "# B\n## X\n- **Send to:** a@b.example  **Phone:** +15551112222  **Instagram:** @xco\n```\nHi. [LINK]\n```\n";
+  const snap = () => JSON.stringify(TI.toRecord(TI.parseManifest(md).entries[0], {}).channels);
+  let first = snap(), same = true; for (let i = 0; i < 10; i++) if (snap() !== first) same = false;
+  ck("P18: ten reads of the channel list are byte-identical", same, first);
+}
+
 console.log("\n" + (fails.length ? "FAILED: " + fails.join(", ") : "ALL INGEST MATCHER CHECKS PASS"));
 process.exit(fails.length ? 1 : 0);

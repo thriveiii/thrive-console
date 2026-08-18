@@ -2483,6 +2483,39 @@ body.modal-open{
 [dir="rtl"] .och-s,[dir="rtl"] .och-t{ letter-spacing:normal }
 .och-change{ margin-block-end:var(--s-3) }
 
+/* --- R11 universal contact model (P18): the one channel list ----------------
+   Every channel the extractor captured, each with its type, value, and a tier
+   chip whose colour is the basis: a sighting is green (settled), a research
+   claim is amber (asks to be confirmed), an inference is muted. The primary
+   channel, the one a send targets, is marked and tinted. WO-013 §4.2. */
+.oc-chs{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--s-2) }
+.oc-ch{
+  display:flex; align-items:center; flex-wrap:wrap; gap:var(--s-2) var(--s-3);
+  padding:var(--s-3); border:1px solid var(--hair); border-radius:var(--r-md);
+  background:var(--panel);
+}
+.oc-ch .ic{ color:var(--purple); flex:none }
+.oc-ch.is-primary{ border-color:rgba(150,133,202,.42); background:var(--lane-sent-t) }
+.oc-ch-type{ font-weight:600 }
+.oc-ch-val{ color:var(--ink-2); font-size:13px; overflow-wrap:anywhere; min-inline-size:0 }
+.oc-tier{
+  display:inline-flex; align-items:center; gap:var(--s-1);
+  padding:2px var(--s-2); border-radius:var(--r-pill); font-size:11px;
+  border:1px solid var(--hair);
+}
+.oc-tier .n{ font-weight:700 }
+.oc-tier.is-sighted{ color:var(--state-good); background:var(--lane-replied-t); border-color:rgba(126,224,184,.34) }
+.oc-tier.is-stated{ color:var(--state-stall); background:var(--state-stall-t); border-color:var(--state-stall-b) }
+.oc-tier.is-inferred{ color:var(--ink-4) }
+.oc-primary{
+  display:inline-flex; padding:2px var(--s-2); border-radius:var(--r-pill);
+  font-size:11px; font-weight:600; color:var(--purple);
+  background:var(--lane-sent-t); border:1px solid rgba(150,133,202,.42);
+}
+.oc-ch .oc-confirm{ margin-inline-start:auto }
+/* Arabic never tracks its letters apart, and nothing here truncates. */
+[dir="rtl"] .oc-ch-type,[dir="rtl"] .oc-tier,[dir="rtl"] .oc-primary{ letter-spacing:normal }
+
 /* --- the link card, one component, used by both paths ----------------------
    Both paths deliver the same two things: the text and the page link. A prospect
    reading either should see the same object. WO-013 §4.4. */

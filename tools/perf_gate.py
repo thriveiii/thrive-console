@@ -21,7 +21,13 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 762_000     # library/app.js today ~758 KB. Raised by P16 (the match join completed): the
+APP_JS_MAX   = 764_000     # library/app.js today ~763 KB. Raised by P18 (the universal contact model): the
+                           # module-scope R11 reader (contactChannels / primaryEmailChannel / primaryChannel /
+                           # emailAddress) that the Communication tab, the composer and the Contact Book all
+                           # read through, the channel-list render (channelListHtml / chTierChip / chTypeLabel)
+                           # and the composer's non-email To note. The channel BUILDER lives in intake.js, off
+                           # this budget. The module SPLIT remains the real fix. Prior: 762 KB.
+                           # Raised by P16 (the match join completed): the
                            # confirm / orphan-sections / duplicate-merge blocks under the resolver report
                            # (ingConfirmBlock / ingOrphanBlock / ingDupBlock / ingCountLine / acceptConfirm),
                            # their wiring in mountIngestReport, and the count line. The pure join itself
@@ -79,7 +85,11 @@ APP_JS_MAX   = 762_000     # library/app.js today ~758 KB. Raised by P16 (the ma
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_790_000   # dist/thrive-console.html today ~1.79 MB, tracking app.js. Raised by P17 (field
+DIST_MAX     = 1_806_000   # dist/thrive-console.html today ~1.804 MB, tracking app.js. Raised by P18 (the
+                           # universal contact model): the R11 channel builder (intake.js), the one-reader +
+                           # channel-list render (app.js), the ocm_* i18n keys in both languages, and the
+                           # channel-list CSS the offline file inlines. Prior: 1790 KB.
+                           # Raised by P17 (field
                            # extraction): the multi-field grammar, greeting/owner name capture, and the report
                            # row's business-name-beside-slug. Prior: 1786 KB.
                            # Raised by P16 (the
