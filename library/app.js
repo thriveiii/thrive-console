@@ -4562,6 +4562,78 @@ function ingCell(v){ return '<td class="bt-c">'+(v?'<span class="bt-y" data-icon
 // real page is additionally hostable; a missing page is "stored now, page hosted later", never dropped.
 function ingStorable(r){ return true; }
 function ingHostable(r){ return r.hasPage; }
+/* P16: the truthful count line - pages, matched, to-confirm, needs-message, orphan sections. Counts are
+   rendered OUTSIDE the translated labels, in an isolated <bdi class="n">, so a Western numeral never
+   reverses inside an Arabic phrase. Six pages plus six sections read as six matched, never eight rows. */
+function ingCountLine(rep){
+  const c=rep.counts||{};
+  const part=(n,key)=> '<span class="ing-c"><bdi class="n">'+n+'</bdi> '+esc(t(key))+'</span>';
+  const bits=[part(c.pages||0,"in_c_pages"), part(c.matched||0,"in_c_matched")];
+  if(c.confirm) bits.push(part(c.confirm,"in_c_confirm"));
+  if(c.needs) bits.push(part(c.needs,"in_c_needs"));
+  if(c.orphans) bits.push(part(c.orphans,"in_c_orphans"));
+  return '<p class="ing-count">'+bits.join('<span class="ing-sep" aria-hidden="true">·</span>')+'</p>';
+}
+// CONFIRM: a page and a candidate section shown together (score 1 or an unresolved tie). One tap Joins them
+// or marks Not a match. Never auto-imported, never auto-split.
+function ingConfirmBlock(rep){
+  const list=rep.confirm||[]; if(!list.length) return "";
+  const rows=list.map((cf,i)=>
+    '<div class="ing-row ing-confirm-row">'+
+      '<div class="ing-row-main"><span class="ing-biz">'+esc(cf.business)+'</span>'+
+        '<span class="ing-note">'+esc(t("in_confirm_hint"))+': <span class="mono-iso" dir="ltr">'+esc(cf.page_slug)+'</span></span></div>'+
+      '<div class="ing-row-act">'+
+        '<button type="button" class="btn ghost sm ing-accept" data-ci="'+i+'" data-icon="check">'+esc(t("in_accept"))+'</button>'+
+        '<button type="button" class="btn ghost sm ing-reject" data-ci="'+i+'">'+esc(t("in_reject"))+'</button>'+
+      '</div></div>').join("");
+  return '<div class="ing-block ing-confirm"><h5 class="ing-h">'+esc(t("in_confirm_h"))+'</h5>'+rows+'</div>';
+}
+// ORPHAN: a section that matched no page. Surfaced in its own list with the nearest page as a suggestion.
+// It is NOT a row among the pages and creates nothing on its own; Create card is the only, explicit path.
+function ingOrphanBlock(rep){
+  const list=rep.orphanSections||[]; if(!list.length) return "";
+  const rows=list.map((o,i)=>
+    '<div class="ing-row ing-orphan-row">'+
+      '<div class="ing-row-main"><span class="ing-biz">'+esc(o.business)+'</span>'+
+        (o.suggest? '<span class="ing-suggest">'+esc(t("in_orphan_near"))+' <span class="mono-iso" dir="ltr">'+esc(o.suggest)+'</span></span>':'')+'</div>'+
+      '<div class="ing-row-act"><button type="button" class="btn ghost sm ing-make" data-oi="'+i+'">'+esc(t("in_orphan_make"))+'</button></div>'+
+    '</div>').join("");
+  return '<div class="ing-block ing-orphan"><h5 class="ing-h">'+esc(t("in_orphan_h"))+'</h5>'+rows+'</div>';
+}
+// REPAIR on re-drop: a card already in the store whose send-to and subject equal a page now joined, under a
+// different slug, is a previously spawned ghost. One tap Merge archives it; the page card keeps everything.
+function ingDupBlock(rep){
+  const list=rep.duplicates||[]; if(!list.length) return "";
+  const rows=list.map((d,i)=>
+    '<div class="ing-row ing-dup-row">'+
+      '<div class="ing-row-main"><span class="mono-iso" dir="ltr">'+esc(d.ghost_slug)+'</span>'+
+        '<span class="ing-note">'+esc(t("in_dup_note"))+' <span class="mono-iso" dir="ltr">'+esc(d.page_slug)+'</span></span></div>'+
+      '<div class="ing-row-act"><button type="button" class="btn ghost sm ing-merge" data-di="'+i+'" data-icon="check">'+esc(t("in_dup_merge"))+'</button></div>'+
+    '</div>').join("");
+  return '<div class="ing-block ing-dup"><h5 class="ing-h">'+esc(t("in_dup_h"))+'</h5>'+rows+'</div>';
+}
+// Recompute the report's tallies after a CONFIRM is joined/rejected, an orphan is created, or a ghost merged.
+function recountBatch(rep){
+  rep.matched=rep.rows.filter(r=>r.verdict==="matched").length;
+  rep.warned=rep.rows.filter(r=>r.verdict==="warned").length;
+  rep.counts={ pages:rep.rows.length, matched:rep.matched, confirm:(rep.confirm||[]).length,
+    needs:rep.rows.filter(r=>r.needs_message).length, orphans:(rep.orphanSections||[]).length };
+}
+// Join a CONFIRM: the section takes the candidate page's slug and page, becoming a matched row in place of
+// that page's needs-message row. In-memory only; the ONE write is still the batch Approve, so no double-write.
+function acceptConfirm(batch, cf){
+  const rep=batch.report, sec=cf.entry;
+  const row=(rep.rows||[]).find(r=>r.slug===cf.page_slug);
+  if(row){
+    sec.slug_hint=cf.page_slug; sec.file=(row.entry&&row.entry.file)||sec.file||null;
+    sec.provenance="research_md"; sec.needs_message=false;
+    row.entry=sec; row.verdict="matched"; row.provenance="research_md"; row.match_rule=cf.rule||"overlap";
+    row.needs_message=false; row.reasons=[]; row.hasBody=!!sec.body; row.hasSubject=!!sec.subject;
+    row.hasSendTo=!!(sec.email||sec.url||(sec.channel&&sec.channel!=="")); row.hasPage=!!sec.file; row.hasManifest=true;
+  }
+  rep.confirm=(rep.confirm||[]).filter(x=>x!==cf);
+  recountBatch(rep);
+}
 function ingReportInner(batch){
   const rep=batch.report, rows=rep.rows;
   const canSave=rows.filter(ingStorable).length;
@@ -4599,7 +4671,9 @@ function ingReportInner(batch){
     (batch.jsonError? '<div class="note warn-note">'+esc(t("bt_jsonerr"))+': '+esc(batch.jsonError)+'</div>':'')+
     unreadable+
     '<div class="bt-wrap"><table class="bt">'+head+body+'</table></div>'+
+    ingCountLine(rep)+
     '<p class="hint">'+esc(summary)+'</p>'+
+    ingConfirmBlock(rep)+ingOrphanBlock(rep)+ingDupBlock(rep)+
     '<div class="bar bar-actions">'+
       '<button class="btn" id="batchApprove" data-icon="send"'+(canSave?'':' disabled')+'>'+esc(t("bt_approve"))+'</button>'+
       '<button class="btn ghost" id="batchDiscard">'+esc(t("in_cancel"))+'</button>'+
@@ -4620,6 +4694,35 @@ function mountIngestReport(container, batch, opts){
   container.querySelectorAll(".bt-write").forEach(btn=>btn.addEventListener("click", ()=>{
     const slug=btn.getAttribute("data-write")||"";
     runAction("batchWrite", { working:t("publishing"), run: async ()=>{ await opts.onWrite(batch); if(slug) goTo("compose", "slug="+encodeURIComponent(slug)); } });
+  }));
+  // P16: the CONFIRM and ORPHAN actions. Join / Not-a-match are in-memory (the one write is still Approve);
+  // Create-card and Merge write, each an explicit tap. Every action re-mounts so the count line stays true.
+  const remount=()=>mountIngestReport(container, batch, opts);
+  container.querySelectorAll(".ing-accept").forEach(btn=>btn.addEventListener("click", ()=>{
+    const cf=(batch.report.confirm||[])[+btn.getAttribute("data-ci")];
+    if(cf){ acceptConfirm(batch, cf); remount(); }
+  }));
+  container.querySelectorAll(".ing-reject").forEach(btn=>btn.addEventListener("click", ()=>{
+    const i=+btn.getAttribute("data-ci"), rep=batch.report;
+    rep.confirm=(rep.confirm||[]).filter((_,k)=>k!==i); recountBatch(rep); remount();
+  }));
+  container.querySelectorAll(".ing-make").forEach(btn=>btn.addEventListener("click", ()=>{
+    const o=(batch.report.orphanSections||[])[+btn.getAttribute("data-oi")]; if(!o) return;
+    runAction("ingOrphanMake", { working:t("publishing"), run: async ()=>{
+      const existing={}; try{ (await mergedOpps()).forEach(x=>{ if(x&&x.slug) existing[x.slug]=true; }); }catch(_){}
+      const tally=await writeImport([{ entry:o.entry, host:false }], { existing:existing, notes:batch.notes, batch:batch.batch });
+      batch.report.orphanSections=(batch.report.orphanSections||[]).filter(x=>x!==o); recountBatch(batch.report); remount();
+      return importResultMsg(tally,0);
+    } });
+  }));
+  container.querySelectorAll(".ing-merge").forEach(btn=>btn.addEventListener("click", ()=>{
+    const d=(batch.report.duplicates||[])[+btn.getAttribute("data-di")]; if(!d) return;
+    runAction("ingMerge", { working:t("publishing"), run: async ()=>{
+      saveDraft({ slug:d.ghost_slug, archived:true });        // the page card keeps everything; the ghost archives
+      try{ scheduleSyncPush(); }catch(_){}
+      batch.report.duplicates=(batch.report.duplicates||[]).filter(x=>x!==d); recountBatch(batch.report); remount();
+      return t("in_dup_merge")+" · "+d.ghost_slug;
+    } });
   }));
 }
 // The shared write: every storable row is imported through the one writer (writeImport), idempotent by
@@ -4791,8 +4894,8 @@ async function initEditor(slugArg){
     dz.innerHTML=esc(t("in_reading"));
     let out=null;
     try{
-      const existing=await allSlugs();
-      out=await ThriveIntake.readBatch(files, { existingSlugs:existing });
+      const existingRecords=await mergedOpps();                 // full records, so re-drop can heal a ghost card
+      out=await ThriveIntake.readBatch(files, { existingSlugs:existingRecords.map(o=>o.slug), existingRecords:existingRecords });
     }catch(e){
       dz.innerHTML=esc(t("upload_dz"));
       toast(/zip|inflate/i.test((e&&e.message)||"") ? t("in_zip_err") : t("in_none"));
@@ -10819,8 +10922,8 @@ function initIntake(){
     if(!files || !files.length) return;
     status(t("in_reading"));
     try{
-      const existing=await allSlugs();
-      batch=await ThriveIntake.readBatch(files, { existingSlugs:existing });
+      const existingRecords=await mergedOpps();                 // full records, so re-drop can heal a ghost card
+      batch=await ThriveIntake.readBatch(files, { existingSlugs:existingRecords.map(o=>o.slug), existingRecords:existingRecords });
     }catch(e){
       status(/zip|inflate/i.test((e&&e.message)||"") ? t("in_zip_err") : t("in_none"), "warn"); return;
     }
