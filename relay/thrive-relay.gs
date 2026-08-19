@@ -43,14 +43,12 @@
  * send into a relay it does not match. Bump it whenever the request or response
  * shape changes, and only then, in the same commit as the change.
  */
-var RELAY_VERSION = 7;   // v7 (P22, inbound proven): sendMail_ GUARANTEES a Message-ID header on every send and
-                         // returns it (so the reply's In-Reply-To threads deterministically), the inbox scan
-                         // stamps its interval and whether it hit the read cap onto the heartbeat, and a read-only
-                         // inbox_reconcile op compares the mailbox against what is filed and reports the gap. All
-                         // additive on the response shape; the console keeps REQUIRED_RELAY = 5, so a v5 relay
-                         // still sends and the new inbound signals are simply absent on an older relay.
-                         // v6 added the durable send queue (outbox_push / outbox_status / outbox_control) and the
-                         // sendQueue_ time-trigger worker (D6 + R3).
+var RELAY_VERSION = 8;   // v8 (P23, attachments): sendMail_ forwards d.attachments (each { filename, path } where
+                         // path is a public Storage URL Resend fetches) to Resend, and the outbox carries them per
+                         // queued row, so a campaign attaches the same image for every recipient. A change to the
+                         // send REQUEST shape, so the number moves with it (docs/RELAY.md, the version contract).
+                         // v7 (P22, inbound proven): guaranteed Message-ID, the inbox heartbeat (interval + cap) and
+                         // the read-only inbox_reconcile gap. v6: the durable send queue + sendQueue_ worker.
 
 var TAG_LOCAL   = 'hi';
 var TAG_DOMAIN  = 'thriveiii.com';
@@ -591,6 +589,11 @@ function sendMail_(d) {
     reply_to: replyTo
   };
   if (d.text) payload.text = d.text;  // sent verbatim, footer included by the console
+  /* P23 attachments. The console decided (in ONE place, compile) which images attach; each item is
+     { filename, path } where path is a public Supabase Storage URL. Resend fetches the file itself, so this
+     request carries only URLs, never megabytes of base64. Forwarded verbatim, like the body: the relay is a
+     courier and adds nothing. Absent for a text-only send, exactly as before. */
+  if (d.attachments && d.attachments.length) payload.attachments = d.attachments;
 
   /* THREADING, GUARANTEED. A reply is threaded deterministically only if the outbound message carried a
      Message-ID that the reply then echoes in In-Reply-To/References. The console already mints one and
@@ -691,6 +694,7 @@ function outboxPush_(rows) {
       if (!r || !r.mid || seen[r.mid]) continue;   // idempotent: a mid already queued is never re-added
       ob.push({ mid: r.mid, opp: r.opp || '', campaign: r.campaign || r.opp || '', to: r.to || '',
                 toName: r.toName || '', subject: r.subject || '', html: r.html || '', text: r.text || '',
+                attachments: (r.attachments && r.attachments.length ? r.attachments : undefined),   // P23: the same images for every recipient
                 due: r.due || new Date().toISOString(), status: 'queued', error: '', tries: 0 });
       seen[r.mid] = 1; added++;
     }
@@ -773,6 +777,7 @@ function sendQueue_() {
     if (!row) continue;
     try {
       var res = sendMail_({ to: row.to, subject: row.subject, html: row.html, text: row.text,
+                            attachments: row.attachments,   // P23: carried per queued row, the same for every recipient
                             slug: row.opp, idempotencyKey: row.mid });   // single To; row id = at-most-once key
       flipOutbox_(row.mid, { status: 'sent', id: (res && res.id) || '', sent_at: new Date().toISOString(), error: '' });
       sent++;

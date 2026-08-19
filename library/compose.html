@@ -70,8 +70,13 @@
         <button type="button" id="tbList" data-i18n="cmp_tb_list">List</button>
         <button type="button" id="tbLink" data-i18n="cmp_tb_link">Link</button>
         <button type="button" id="tbUnlink" data-i18n="cmp_tb_unlink">Unlink</button>
+        <button type="button" id="tbAttach" data-i18n="cmp_tb_attach">Image</button>
         <button type="button" id="tbOpp" class="tb-accent" hidden data-i18n="cmp_insert_opp">Link to opportunity</button>
       </div>
+      <!-- P23: attach an image from the device. It is uploaded to Supabase Storage (console-attachments),
+           never base64-inlined; compile() decides per size whether it lands as a real attachment or a hosted
+           link, so the preview shows exactly what the recipient gets. -->
+      <input id="eAttachFile" type="file" accept="image/*" multiple hidden>
       <div id="elinkbar" class="elinkbar" hidden>
         <div class="elinkrow">
           <input id="elinktext" class="input" data-i18n-ph="cmp_link_text_ph">
@@ -101,6 +106,12 @@
         <div id="eoppstatus" class="eoppstatus" hidden></div>
       </div>
       <div id="elinks" class="elinks" hidden></div>
+      <!-- The attachment strip: every image attached to this message, with its filename, size, how it will
+           land (attached or hosted link), and a remove control. What is shown here is exactly what compiles. -->
+      <div id="eattach" class="eattach" hidden></div>
+      <!-- A sender-only reminder shown when a Google Drive link is in the message: check that the link is
+           shared before it goes, or the recipient sees a request-access wall. It never leaves the composer. -->
+      <div id="edrivechip" class="edrivechip" hidden></div>
     </div>
 
     <!-- One overflow holds everything real but rarely touched. Opened by ⋯; closed by default so the

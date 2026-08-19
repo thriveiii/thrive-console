@@ -191,6 +191,50 @@
       .then(function (rows) { return (rows || []).map(function (r) { return r[col]; }); });
   }
 
+  /* ---- Storage (P23: attachments) ----------------------------------------------------------------
+     The one and only bucket this console uploads to is "console-attachments" (public-read), created by
+     docs/supabase-attachments.sql in this same project. Storage is orthogonal to the REST allow-list
+     above (that guards PostgREST tables, not the object store), so the bucket name is pinned here as a
+     constant and nothing else is reachable. An image is stored once, additively, under a slug-scoped
+     path; its public URL is what the compiled mail references (path-by-URL, never inlined base64). The
+     browser talks straight to the Storage REST endpoint with the session JWT (or the anon key), exactly
+     as the data path does; RLS on storage.objects scopes the write. */
+  var ATTACH_BUCKET = "console-attachments";
+  function attachPublicUrl(path) {
+    return cfg().url + "/storage/v1/object/public/" + ATTACH_BUCKET + "/" + String(path).split("/").map(encodeURIComponent).join("/");
+  }
+  // Upload one file to the attachments bucket under a slug-scoped, collision-free path. Returns
+  // { path, url, name, type, size }. Throws with the real status on failure, never a false ok.
+  async function uploadAttachment(file, slug, key) {
+    var c = cfg();
+    if (!c.url || !c.anon) throw new Error("supabase not configured");
+    if (!file) throw new Error("no file");
+    var safeSlug = String(slug || "unfiled").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unfiled";
+    var safeName = String(file.name || "image").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "image";
+    var path = safeSlug + "/" + String(key || "k") + "-" + safeName;
+    var url = c.url + "/storage/v1/object/" + ATTACH_BUCKET + "/" + path.split("/").map(encodeURIComponent).join("/");
+    var res = await fetch(url, {
+      method: "POST",
+      headers: { "apikey": c.anon, "Authorization": "Bearer " + bearer(), "Content-Type": file.type || "application/octet-stream", "x-upsert": "true" },
+      body: file
+    });
+    if ((res.status === 401 || res.status === 403) && session() && session().refresh_token) {
+      if (await refresh()) {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "apikey": c.anon, "Authorization": "Bearer " + bearer(), "Content-Type": file.type || "application/octet-stream", "x-upsert": "true" },
+          body: file
+        });
+      }
+    }
+    if (!res.ok) {
+      var t = ""; try { t = await res.text(); } catch (e) {}
+      var err = new Error("storage upload failed: HTTP " + res.status + (t ? (" " + t) : ""));
+      err.status = res.status; throw err;
+    }
+    return { path: path, url: attachPublicUrl(path), name: file.name || safeName, type: file.type || "", size: file.size || 0 };
+  }
+
   /* A cheap read that proves the connection AND that the console_ tables exist. It returns a real
      reason on failure and never a false ok. */
   async function probe() {
@@ -205,6 +249,7 @@
     cfg: cfg, setCfg: setCfg, ready: ready, rest: rest, probe: probe,
     upsertPage: upsertPage, getPage: getPage, upsertOpp: upsertOpp, listOpps: listOpps,
     upsert: upsert, del: del, listCol: listCol,
+    uploadAttachment: uploadAttachment, attachPublicUrl: attachPublicUrl, ATTACH_BUCKET: ATTACH_BUCKET,
     signIn: signIn, signOut: signOut, session: session, signedIn: signedIn,
     authEmail: authEmail, authUid: authUid, refresh: refresh,
     tables: function () { return Object.keys(TABLES); },
