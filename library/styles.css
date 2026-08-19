@@ -235,6 +235,45 @@ select{cursor:pointer}
 .ed-manifest{margin:0 0 15px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--hair);border-radius:var(--r-md)}
 .ed-manifest[hidden]{display:none}
 
+/* R17 (P26): the Batches view. Each batch is a bounded section: its documents (each a disclosure rendering
+   the md read-only on demand) and the opportunities it produced. And the card Overview's quiet "from batch"
+   chip. */
+#batchList{display:grid;gap:22px;margin-top:6px}
+.batch{background:var(--panel);border:1px solid var(--hair);border-radius:var(--r-xl);padding:18px 20px}
+.batch-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.batch-id{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0}
+.batch-t{font-family:var(--font-display);font-size:var(--fs-lg);font-weight:800;color:var(--ink);margin:0;line-height:1.2}
+.batch-t .n{font-weight:800}
+.batch-date{font-size:var(--fs-xs);font-weight:700;color:var(--ink-3);white-space:nowrap}
+.batch-counts{display:flex;gap:8px;flex-wrap:wrap}
+.batch-count{font-size:var(--fs-xs);font-weight:700;color:var(--ink-3);white-space:nowrap;background:var(--panel-2);border:1px solid var(--hair);border-radius:var(--r-pill);padding:3px 10px}
+.batch-count .n{font-weight:800;color:var(--ink-2)}
+.batch-tag{margin:8px 0 0;font-size:var(--fs-sm);color:var(--ink-3);line-height:var(--lh-read);max-width:75ch}
+.batch-docs{margin:14px 0 0;display:grid;gap:8px}
+.bdoc{background:var(--panel-2);border:1px solid var(--hair);border-radius:var(--r-md);overflow:hidden}
+.bdoc-s{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 14px;font-weight:700;user-select:none}
+.bdoc-s::-webkit-details-marker{display:none}
+.bdoc-type{font-size:var(--fs-xs);font-weight:800;color:var(--ink-2)}
+.bdoc-name{font-size:var(--fs-xs);color:var(--ink-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bdoc-body{padding:4px 16px 14px;border-top:1px solid var(--hair);max-height:520px;overflow:auto}
+.doc-h{margin:12px 0 4px;font-weight:800;color:var(--ink);line-height:var(--lh-tight)}
+.doc-h1{font-size:var(--fs-md)}.doc-h2{font-size:var(--fs-base);font-weight:800}.doc-h3,.doc-h4,.doc-h5,.doc-h6{font-size:var(--fs-sm);color:var(--ink-2)}
+.doc-p{margin:4px 0;font-size:var(--fs-sm);color:var(--ink-2);line-height:var(--lh-read)}
+.doc-li{margin:3px 0 3px 4px;padding-inline-start:14px;position:relative;font-size:var(--fs-sm);color:var(--ink-2);line-height:var(--lh-read)}
+.doc-li::before{content:"\2022";position:absolute;inset-inline-start:0;color:var(--ink-4)}
+.doc-gap{height:6px;margin:0}
+.doc-code{margin:8px 0;padding:10px 12px;background:var(--bg);border:1px solid var(--hair);border-radius:var(--r-sm);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--fs-xs);color:var(--ink-2);white-space:pre-wrap;overflow-x:auto}
+.batch-opps{margin:14px 0 0}
+.batch-opps-h{font-size:var(--fs-micro);font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3)}
+[dir="rtl"] .batch-opps-h{letter-spacing:normal;text-transform:none}
+.bopp-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.bopp-chip{background:var(--panel-2);border:1px solid var(--hair);border-radius:var(--r-pill);padding:5px 12px;font-size:var(--fs-xs);font-weight:700;color:var(--ink-2);cursor:pointer}
+.bopp-chip:hover{border-color:var(--hair-2);color:var(--ink)}
+.mw-batch-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--hair);border-radius:var(--r-pill);padding:3px 10px;font-size:var(--fs-xs);font-weight:700;color:var(--ink-2);cursor:pointer}
+.mw-batch-chip:hover{border-color:var(--hair-2);color:var(--ink)}
+.mw-batch-chip .ic{color:var(--ink-4)}
+.mw-batch-d{font-weight:800}
+
 /* editor */
 .editor{display:grid;grid-template-columns:minmax(0,420px) 1fr;gap:22px;align-items:start}
 @media(max-width:860px){.editor{grid-template-columns:1fr}}

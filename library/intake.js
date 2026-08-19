@@ -417,6 +417,20 @@
      opp/<slug>/index.html files resolve, where matching by the bare filename never could. */
   function folderOf(name) { var i = String(name || "").lastIndexOf("/"); return i < 0 ? "" : String(name).slice(0, i + 1); }
   function baseOf(name) { return String(name || "").replace(/^.*\//, ""); }
+  // R17 (P26): a batch carries non-opportunity DOCUMENTS (research md, market assessment, playbook, notes,
+  // README) alongside its opportunities. classifyDoc names each by a simple, recognizable type from its
+  // filename first, then its first heading. This never makes a card; it only labels a document for the batch
+  // record so the audit trail (sources, freshness, the owner's-eye review) rides with the drop.
+  function firstHeading(text) { var m = String(text || "").match(/^[ \t]*#{1,6}[ \t]*(.+?)[ \t]*$/m); return m ? m[1].trim() : ""; }
+  function classifyDoc(name, text) {
+    var n = baseOf(name || "").toLowerCase(), h = firstHeading(text).toLowerCase();
+    if (/readme/.test(n)) return "readme";
+    if (/playbook/.test(n)) return "playbook";
+    if (/market|assessment/.test(n) || /market assessment/.test(h)) return "market";
+    if (/note/.test(n)) return "notes";
+    if (/research|message|ready.?to.?send|batch/.test(n) || /research|message/.test(h)) return "research";
+    return "document";
+  }
   function pageSlug(name) {
     var parts = String(name || "").split("/").filter(Boolean);
     var file = parts.length ? parts[parts.length - 1] : "";
@@ -625,6 +639,10 @@
       descriptor: e.descriptor || "",
       batch_note: opts.note_text || "",
       batch_title: (opts.batch && opts.batch.title) || "",
+      // R17 (P26): the batch this opportunity came in with. Every opportunity a drop creates or updates links
+      // to its batch id, so the card's "from batch <date>" chip and the Batches view can find its documents.
+      batch_id: (opts.batch && opts.batch.id) || "",
+      batch_date: (opts.batch && opts.batch.date) || "",
       manifest_extra: e.extra || {},
       // R8 provenance: which rung of the tolerant ladder resolved this opportunity, kept on the record so
       // the truth ("read from opp.md" vs "read from research md" vs "needs message") is visible, not guessed.
@@ -983,10 +1001,17 @@
       decision: report.rows.filter(function (r) { return r.action === "decision"; }).length
     };
 
+    // R17 (P26): the batch's non-opportunity documents, captured additively so the audit trail rides with the
+    // drop. These are the SAME flat docs the resolver already read for sections (research md, market
+    // assessment, playbook, notes, README); we keep their name, type, and text, and make no card from them.
+    var documents = docs.map(function (m) {
+      return { name: baseOf(m.name || ""), type: classifyDoc(m.name || "", m.text || ""), text: String(m.text || "") };
+    });
+
     return {
       entries: entries, report: report,
       pages: pages.length, manifests: manifests.length, jsons: jsons.length,
-      notes: base.notes, batch: base.batch,
+      notes: base.notes, batch: base.batch, documents: documents,
       jsonPresent: base.jsonPresent, jsonError: base.jsonError
     };
   }
@@ -1003,6 +1028,7 @@
     pageSlug: pageSlug,
     folderOf: folderOf,
     baseOf: baseOf,
+    classifyDoc: classifyDoc,
     selfTest: selfTest
   };
 })(typeof window !== "undefined" ? window : this);
