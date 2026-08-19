@@ -150,8 +150,8 @@
   </div>
 
   <!-- The reserved sensitive zone: present and functional for the owner, absent for every other
-       operator. The tier is a database fact (console_admins), not a client flag, so this is refused
-       at the API for a non-owner, not merely hidden. -->
+       operator. The tier is a database fact (console_members.role), not a client flag, so this is
+       refused at the API for a non-owner, not merely hidden. -->
   <section class="panel pf-infra" id="pfInfra" aria-labelledby="pfInfraH" hidden>
     <h2 class="pf-region-h" id="pfInfraH" data-i18n="pf_infra_h">Infrastructure</h2>
     <p class="pf-region-sub" data-i18n="pf_infra_sub">Connections, activation, relay, sync and storage. Owner only.</p>

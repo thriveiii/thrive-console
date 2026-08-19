@@ -314,10 +314,17 @@ ${body}
   // fails CLOSED (owner status must be explicitly true), so a view is never shown before the role is known.
   var OWNER_ONLY = { oversight:1 };
   function ownerOK(){ try{ return !!(window.isOwnerMember && window.isOwnerMember()); }catch(e){ return false; } }
+  function ownerResolved(){ try{ return !!(window.ownerTierResolved && window.ownerTierResolved()); }catch(e){ return false; } }
   function show(id){
     var found = VIEWS.some(function(v){ return v.id === id; });
     if(!found) id = VIEWS[0].id;
-    if(OWNER_ONLY[id] && !ownerOK()){ id = VIEWS[0].id; try{ if((location.hash||"").replace(/^#/,"").split("?")[0]==="oversight") location.replace("#"+VIEWS[0].id); }catch(e){} }
+    // Owner-only routing. Refuse outright ONLY once the role is resolved-and-not-owner: correct the URL to the
+    // board so it can never rest on an owner-only route. While the role is still resolving (a slow or failed
+    // roster read), do NOT bounce -- let the view through to its own init, which awaits the role and
+    // self-refuses if this turns out to be a member. So a possible owner is never briefly kicked to the board.
+    if(OWNER_ONLY[id] && !ownerOK() && ownerResolved()){
+      id = VIEWS[0].id; try{ if((location.hash||"").replace(/^#/,"").split("?")[0]==="oversight") location.replace("#"+VIEWS[0].id); }catch(e){}
+    }
     // Going somewhere closes the sheet you were working in, and the sheet hands its view back.
     if(window.thriveModal && window.thriveModal.isOpen && window.thriveModal.isOpen())
       window.thriveModal.close(true);   // now, not after the transition: the view is needed here

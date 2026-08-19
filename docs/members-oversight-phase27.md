@@ -13,7 +13,10 @@ absolute). Additive SQL only; the SQL is applied by Thyab in the Supabase editor
   pre-stamp "console history" bucket). **Every actor-stamping write already calls it:** `logActivity` (the
   activity log), `logMail` (the one mail-ledger writer), and `postComment` (comments). So the actor is the
   member id at every ledger write, by construction.
-- **`console_admins` + `loadAdminTier()` / `isOwnerTier()`** already make the owner tier a database fact.
+- **`loadAdminTier()` / `isOwnerTier()`** establish the owner tier as a database fact. The authority is
+  **`console_members.role`** read via the non-recursive `read_own` RLS (a legacy `console_admins` table is
+  honored only if present); so a project without `console_admins` works, and the owner tier is never a client
+  literal or a self-granted flag.
 - **`operatorStats(uid)` / `operatorLedger(uid, opts)`** already derive a member's numbers and operations
   timeline from those stamped stores, filtered by actor; **`INSIGHTS_METRICS`** is the one P4 metric
   dictionary; **`resolveOperator(uid)`** turns a uid into a name via `console_profile_names`.
@@ -23,12 +26,14 @@ P27 builds on all of this rather than duplicating it.
 ## Members and roles (R17)
 
 - **`console_members`** (additive table, `docs/supabase-members-oversight.sql`): `{ id (= auth uid), name,
-  email, role: owner | member, active }`. RLS mirrors `console_admins` exactly: a member reads **only their
-  own row** (so a client learns its own role and nothing about anyone else); the owner reads the whole roster
-  (scoped by `console_admins`). There is **no client insert/update/delete policy**, so a role is never
-  self-granted from a session; the roster is managed only by the SQL. The owner is seeded from `auth.users` by
-  email (the address literal lives only in the SQL, never a client). Exactly two roles; finer roles are a
-  future brief.
+  email, role: owner | member, active }`. RLS: a member reads **only their own row** via `read_own`
+  (`id = auth.uid()`, non-recursive), so a client learns its own role and nothing about anyone else; the owner
+  reads the whole roster via `read_owner`, scoped to `console_members.role = 'owner'`. There is **no client
+  insert/update/delete policy**, so a role is never self-granted from a session; the roster is managed only by
+  the SQL. The owner is seeded from `auth.users` by email (the address literal lives only in the SQL, never a
+  client). Exactly two roles; finer roles are a future brief. **The owner tier the client trusts is read from
+  the member's OWN row (`read_own`), which cannot recurse, so a slow or recursive `read_owner` roster read
+  never locks the owner out of the room** (it would, at worst, leave the roster list empty).
 - **Client role model** (`app.js`): `hydrateMembers()` reads `console_members` (falling back to the known
   operators from `console_profile_names` when the table is not present yet, so the room still lists real
   people); `memberRole(uid)` / `isOwnerMember()` resolve the role. Graceful when the SQL has not been applied:
