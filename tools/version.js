@@ -59,9 +59,10 @@ const relay = loadRelay();
 const RV = relay.RELAY_VERSION;
 ck("relay declares a numeric RELAY_VERSION", typeof RV === "number" && RV > 0, RV);
 
-// The GET root, which the console reads to classify a deployment, names the version.
+// The bare GET reports through json_, so it carries relay_version as a field (the console reads one
+// explicit field on every endpoint rather than scraping a prose string). It must equal RELAY_VERSION.
 const root = relay.doGet({ parameter: {} }).getContent();
-ck("the GET root names the version, v" + RV, new RegExp("v" + RV + "\\b").test(root), root);
+ck("the GET root carries relay_version = " + RV, JSON.parse(root).relay_version === RV, root);
 
 // A hit GET is JSON and carries the version.
 const hit = JSON.parse(relay.doGet({ parameter: { op: "hit", slug: "x" } }).getContent());
@@ -98,8 +99,16 @@ ck("docs/RELAY.md carries the five-tap ritual box at the top",
 const appJs = fs.readFileSync(path.join(ROOT, "library", "app.js"), "utf8");
 ck("the connection panel links to the ritual in docs/RELAY.md",
    /docs\/RELAY\.md/.test(appJs) && /relay_ver_ritual/.test(appJs), "");
-ck("REQUIRED_RELAY equals the relay's RELAY_VERSION",
-   new RegExp("REQUIRED_RELAY\\s*=\\s*" + RV + "\\b").test(appJs), "app REQUIRED_RELAY vs relay " + RV);
+/* Since P8 the console and relay versions move independently: the relay may add ops (v6 the send queue,
+   v7 the inbound heartbeat + Message-ID guarantee) without changing the single-send request shape, so the
+   console keeps REQUIRED_RELAY at the last shape it needs and a newer relay still serves it. The invariant
+   is therefore REQUIRED_RELAY <= RELAY_VERSION (never require a relay newer than the source exists), the
+   same one tools/relay_handshake_test.py enforces. */
+{
+  const rq = Number((appJs.match(/REQUIRED_RELAY\s*=\s*(\d+)/) || [])[1]);
+  ck("the console never requires a relay newer than the source (REQUIRED_RELAY <= RELAY_VERSION)",
+     rq > 0 && rq <= RV, "app REQUIRED_RELAY " + rq + " vs relay " + RV);
+}
 
 console.log("\n" + fails + " failed");
 process.exit(fails ? 1 : 0);

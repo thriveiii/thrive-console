@@ -64,37 +64,47 @@ RECORDS = [
 STATE = {"puts": 0, "scans": 0, "repairs": []}
 
 
+# The real relay stamps relay_version on every JSON response (json_), and the console gates its sync round
+# on it (relayReady): a response without it reads as a relay older than the contract, so sync never reaches
+# the inbound pull. A faithful v5 mock therefore carries relay_version:5 on every response.
+def J(o):
+    o = dict(o); o["relay_version"] = 5
+    return json.dumps(o)
+
+
 def relay(route):
     if route.request.method == "GET":
         return route.fulfill(status=200, body="Thrive relay v5 (email + sync + analytics + inbox) is running.")
     d = json.loads(route.request.post_data or "{}")
     op = d.get("op")
     if op == "state_get":
-        return route.fulfill(status=200, body=json.dumps({"ok": True, "data": None}))
+        return route.fulfill(status=200, body=J({"ok": True, "data": None}))
     if op == "state_put":
         STATE["puts"] += 1
-        return route.fulfill(status=200, body=json.dumps({"ok": True}))
+        return route.fulfill(status=200, body=J({"ok": True}))
     if op == "hits_get":
-        return route.fulfill(status=200, body=json.dumps({"ok": True, "events": []}))
+        return route.fulfill(status=200, body=J({"ok": True, "events": []}))
     if op == "inbound_get":
-        return route.fulfill(status=200, body=json.dumps(
+        return route.fulfill(status=200, body=J(
             {"ok": True, "records": RECORDS,
-             "scan": {"ts": "2026-08-03T12:30:00Z", "ms": 820, "found": 6, "added": 6}}))
+             "scan": {"ts": "2026-08-03T12:30:00Z", "ms": 820, "found": 6, "added": 6, "everyMin": 15, "capped": False}}))
+    if op == "inbox_reconcile":
+        return route.fulfill(status=200, body=J({"ok": True, "gap": 0, "mailbox": 6, "filed": 6, "missing": []}))
     if op == "store_stats":
-        return route.fulfill(status=200, body=json.dumps(
+        return route.fulfill(status=200, body=J(
             {"ok": True, "migrated": True,
              "properties": {"bytes": 640, "limit": 512000, "pct": 0, "keys": 3,
                             "largest": [{"key": "SYNC_KEY", "bytes": 71}]},
              "drive": {"bytes": 190000, "fileId": "f1", "name": "thrive-console-store.json"}}))
     if op == "inbox_scan":
         STATE["scans"] += 1
-        return route.fulfill(status=200, body=json.dumps({"ok": True, "added": 0, "scanned": 6}))
+        return route.fulfill(status=200, body=J({"ok": True, "added": 0, "scanned": 6}))
     if op == "inbox_repair":
         STATE["repairs"].append(bool(d.get("dryRun")))
-        return route.fulfill(status=200, body=json.dumps(
+        return route.fulfill(status=200, body=J(
             {"ok": True, "dryRun": bool(d.get("dryRun")), "count": 4, "auto": 2,
              "byRule": {"tag": 1, "thread": 1, "sender": 1, "none": 1}, "days": d.get("days")}))
-    return route.fulfill(status=200, body=json.dumps({"ok": True, "id": "x"}))
+    return route.fulfill(status=200, body=J({"ok": True, "id": "x"}))
 
 
 # A relay still on v4: it does not know inbound_get. That must be quiet, not an error on screen.
@@ -157,23 +167,25 @@ with sync_playwright() as p:
     st = pg.evaluate("()=>ThriveInbound.selfTest()")
     ck("the attribution model passes its own test", st["pass"], st.get("failures"))
 
-    # ---------------- the sync round pulls, merges and moves ------------------
+    # ---------------- the sync round pulls, merges and resolves ---------------
     pg.evaluate("()=>location.hash='#board'")
     pg.wait_for_timeout(1600)
     n = pg.evaluate("()=>getInbound().length")
     ck("a sync round pulls the inbound records", n == len(RECORDS), n)
 
-    lanes = pg.evaluate("""()=>{const o={};document.querySelectorAll('.tok[data-slug]').forEach(e=>
-      o[e.dataset.slug]=e.closest('.lane').dataset.lane);return o}""")
-    ck("a reply matched by the tag moves its card", lanes.get("wise-butterfly") == "replied", lanes)
-    ck("a reply matched by the thread moves its card", lanes.get("two-faces") == "replied", lanes)
-    ck("a reply matched by the sender moves its card", lanes.get("ludic-lillian") == "replied", lanes)
-    ck("a card with no reply does not move", lanes.get("quiet-one") != "replied", lanes)
-
-    acts = pg.evaluate("""()=>getActivity().filter(a=>a.action==='lc_record_reply')
-      .map(a=>a.slug).sort()""")
-    ck("each matched card moved through the lifecycle move, with its activity entry",
-       acts == ["ludic-lillian", "two-faces", "wise-butterfly"], acts)
+    # Since P19/P20 the board reads its Replied lane from the SERVER view (console_board), not from a
+    # client derivation (that input was deleted, task "Delete client-derivation inputs from board build()").
+    # With no server view in the sandbox no card auto-moves; what the client still guarantees, and what feeds
+    # the server's link, is that every reply RESOLVES to its opportunity by its rule. That is what P22 hardens
+    # and is asserted here through the one client resolver (resolvedReplyOpp).
+    res = pg.evaluate("""()=>{const o={};getInbound().forEach(r=>{ if(r.kind==='auto')return;
+      const s=resolvedReplyOpp(r); if(s) o[r.rule]=s;});return o}""")
+    ck("a reply matched by the tag resolves to its opportunity", res.get("tag") == "wise-butterfly", res)
+    ck("a reply matched by the thread resolves to its opportunity", res.get("thread") == "two-faces", res)
+    ck("a reply matched by the sender resolves to its opportunity", res.get("sender") == "ludic-lillian", res)
+    unrep = pg.evaluate("""()=>{const has={};getInbound().forEach(r=>{ if(r.kind!=='auto'){const s=resolvedReplyOpp(r);
+      if(s)has[s]=1;}});return !has['quiet-one'];}""")
+    ck("a card with no reply resolves to nothing", unrep, unrep)
 
     # ---------------- machinery is stored, and moves nothing ------------------
     ck("a bounce is stored", pg.evaluate("()=>getInbound().some(r=>r.gid==='g-bounce')"))
@@ -205,7 +217,7 @@ with sync_playwright() as p:
     ck("History names who replied", "Wise Owner" in h, h[:200])
     ck("History carries the subject", "Wise Butterfly x Thrive" in h, h[:200])
     ck("History carries the words they wrote", "call me Sunday" in h, h[:200])
-    ck("History says which rule matched", "reply-to tag" in h, h[:200])
+    ck("History names the join basis", "reply-to address" in h, h[:200])
     link = pg.eval_on_selector_all("#modalHistory a[href*='mail.google.com']", "e=>e.map(x=>x.href)")
     ck("History deep links into Gmail", len(link) == 1 and "t1" in link[0], link)
     ck("and the bounce is shown, labelled, on the same tab", "not counted as a reply" in h, h[:300])

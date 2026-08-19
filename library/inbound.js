@@ -344,6 +344,52 @@
     return "https://mail.google.com/mail/u/0/#all/" + encodeURIComponent(id);
   }
 
+  /* ---------- the join basis: one derivation, one precedence ------------- */
+
+  /* Every inbound row is joined to its opportunity by one of five bases. This is
+     the SINGLE place the basis is decided, so the board, the thread and the tests
+     read one answer and it cannot drift. The precedence is fixed, and a
+     DETERMINISTIC basis always outranks a HEURISTIC one for the same row:
+
+       plus-address       Reply-To hi+<slug>@. An address; no client rewrites it.   deterministic
+       references         In-Reply-To/References against a sent Message-ID.         deterministic
+       sender             From matches a known recipient of a sent opportunity.     heuristic
+       subject-heuristic  the normalised subject matches one sent subject.          heuristic
+       manual             a person attached it by hand.                             certain (human)
+       unresolved         nothing matched; stored, named, never guessed.
+
+     The stored provenance is `rule` (tag/thread/sender/none, from attribute()) and,
+     on the client, `match_tier` (header/subject/sender) and `match_mode`. joinBasis
+     projects those onto the one vocabulary; it never guesses beyond them. The
+     if-chain order IS the precedence, so a row carrying both a deterministic and a
+     heuristic signal records the deterministic one. */
+  var BASIS = {
+    "plus-address":      { basis: "plus-address",      deterministic: true,  heuristic: false },
+    "references":        { basis: "references",        deterministic: true,  heuristic: false },
+    "sender":            { basis: "sender",            deterministic: false, heuristic: true  },
+    "subject-heuristic": { basis: "subject-heuristic", deterministic: false, heuristic: true  },
+    "manual":            { basis: "manual",            deterministic: true,  heuristic: false },
+    "unresolved":        { basis: "unresolved",        deterministic: false, heuristic: false }
+  };
+
+  function joinBasis(rec) {
+    rec = rec || {};
+    var rule = lower(rec.rule);         // tag | thread | sender | none
+    var tier = lower(rec.match_tier);   // header | subject | sender
+    var mode = lower(rec.match_mode);   // auto | manual
+    /* A hand attachment is certain and stands outside the automated ladder. */
+    if (mode === "manual") return BASIS["manual"];
+    /* The automated ladder, deterministic rungs before heuristic ones. */
+    if (rule === "tag") return BASIS["plus-address"];
+    if (rule === "thread" || tier === "header") return BASIS["references"];
+    if (rule === "sender" || tier === "sender") return BASIS["sender"];
+    if (tier === "subject") return BASIS["subject-heuristic"];
+    /* Placed on an opportunity by some other stored decision (a person, an
+       import) with no ladder rung recorded: certain-by-human, not a guess. */
+    if (rec.opp) return BASIS["manual"];
+    return BASIS["unresolved"];
+  }
+
   /* ---------- self test --------------------------------------------------- */
 
   function selfTest() {
@@ -423,6 +469,28 @@
     if (!/thriveiii/.test(tagAddress("s"))) f.push("tagAddress domain");
     if (gmailLink({ threadId: "t1" }).indexOf("t1") < 0) f.push("gmail link must carry the thread");
 
+    // the join basis: one vocabulary, fixed precedence, deterministic wins
+    if (joinBasis({ rule: "tag" }).basis !== "plus-address") f.push("tag is plus-address");
+    if (!joinBasis({ rule: "tag" }).deterministic) f.push("plus-address is deterministic");
+    if (joinBasis({ rule: "thread" }).basis !== "references") f.push("thread is references");
+    if (joinBasis({ match_tier: "header" }).basis !== "references") f.push("header tier is references");
+    if (joinBasis({ rule: "sender" }).basis !== "sender") f.push("sender is sender");
+    if (joinBasis({ rule: "sender" }).deterministic) f.push("sender is heuristic, not deterministic");
+    if (joinBasis({ match_tier: "subject" }).basis !== "subject-heuristic") f.push("subject is subject-heuristic");
+    if (joinBasis({ match_tier: "subject" }).deterministic) f.push("subject is heuristic, not deterministic");
+    if (joinBasis({ match_mode: "manual", opp: "x" }).basis !== "manual") f.push("a hand attachment is manual");
+    if (!joinBasis({ match_mode: "manual" }).deterministic) f.push("manual is certain");
+    if (joinBasis({}).basis !== "unresolved") f.push("no signal is unresolved");
+    // precedence: a row matchable by BOTH joins records the deterministic one
+    if (joinBasis({ rule: "tag", match_tier: "header" }).basis !== "plus-address")
+      f.push("plus-address outranks references on the same row");
+    if (joinBasis({ rule: "thread", match_tier: "subject" }).basis !== "references")
+      f.push("references outranks subject on the same row");
+    if (joinBasis({ rule: "sender", match_tier: "header" }).basis !== "references")
+      f.push("a deterministic references must beat a heuristic sender on the same row");
+    if (joinBasis({ match_tier: "subject", rule: "sender" }).basis !== "sender")
+      f.push("sender (heuristic) still outranks subject (heuristic) by fixed order");
+
     return { pass: !f.length, failures: f };
   }
 
@@ -436,6 +504,7 @@
     tagAddress: tagAddress,
     slugFromTag: slugFromTag,
     attribute: attribute,
+    joinBasis: joinBasis,
     mergeInbound: mergeInbound,
     repliedSlugs: repliedSlugs,
     dayOf: dayOf,

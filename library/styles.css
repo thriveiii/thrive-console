@@ -655,6 +655,12 @@ html[dir="rtl"] .elink-url{text-align:start}
 .pill.drift{color:#F6CF5B;border-color:rgba(246,207,91,.5);background:rgba(246,207,91,.12);display:inline-flex;align-items:center;gap:5px}
 .pill.drift svg{width:13px;height:13px;flex:none}
 .pill.drift[hidden]{display:none}
+/* P22: the inbound heartbeat, on the board. A quiet amber clock for a stale sweep, a louder rose alert for
+   a backlog the sweep could not clear, both beside the sync pill so silence is never silent. */
+.pill.inbound-delay{color:var(--ink-3,#9aa);border-color:var(--hair);background:transparent;display:inline-flex;align-items:center;gap:5px}
+.pill.inbound-gap{color:#E38B8B;border-color:rgba(227,139,139,.5);background:rgba(227,139,139,.12);display:inline-flex;align-items:center;gap:5px}
+.pill.inbound-delay svg,.pill.inbound-gap svg{width:13px;height:13px;flex:none}
+.pill.inbound-delay[hidden],.pill.inbound-gap[hidden]{display:none}
 /* The week, as days. One line each, the day on one side and what happened on the other, so a
    glance down the left tells you when and a glance down the right tells you what. */
 .story-days{list-style:none;margin:0 0 26px;padding:0;border:1px solid var(--hair);border-radius:var(--r-lg);overflow:hidden}
@@ -2410,6 +2416,20 @@ body.modal-open{
    is then diagnosable by the person looking at it rather than mysterious. */
 .rp-rule{ font-size:12px; color:var(--ink-4) }
 [dir="rtl"] .rp-rule,[dir="rtl"] .rp-when,[dir="rtl"] .rp-from{ letter-spacing:normal }
+
+/* P22: how this reply was joined, from the one derivation. A DETERMINISTIC basis reads inline with a
+   quiet check, so a certain match reads as certain at a glance; a HEURISTIC basis is a tap-open
+   disclosure marked with an alert, so a guess never masquerades as a fact. */
+.rp-basis{ font-size:12px; display:inline-flex; align-items:center; gap:4px }
+.rp-basis svg{ width:12px; height:12px; flex:none }
+.rp-basis.is-det{ color:var(--lane-replied, #7fb98a) }               /* certain: a settled green */
+.rp-basis.is-heur{ color:var(--warn, #b26a00) }                       /* a guess: the warn tone */
+.rp-basis.is-none{ color:var(--ink-4) }
+details.rp-basis.is-heur{ display:inline-block }
+details.rp-basis.is-heur > summary{ cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:4px }
+details.rp-basis.is-heur > summary::-webkit-details-marker{ display:none }
+.rp-basis-why{ display:block; margin-block-start:4px; font-size:11px; color:var(--ink-3); max-width:34ch }
+[dir="rtl"] .rp-basis{ letter-spacing:normal }
 
 /* --- the open team discussion (inside a card) ------------------------------
    One calm room: comments oldest-first, each in its own panel with the author's real name and the one
