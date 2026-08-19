@@ -2736,6 +2736,47 @@ details.rp-basis.is-heur > summary::-webkit-details-marker{ display:none }
 .tw-acts{ display:flex; gap:var(--s-2); flex-wrap:wrap }
 [dir="rtl"] .tw-t,[dir="rtl"] .tw-p{ letter-spacing:normal }
 
+/* P24: the two-path Send chooser. Reuses the .tw-scrim / .tw-box shell; the two paths are real decisions,
+   sized as cards (mirroring the channel chooser .och-card), and the box widens to hold both side by side. */
+.send-box{ inline-size:min(560px,94vw) }
+.send-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:var(--s-3); margin-block-end:var(--s-4) }
+.send-card{
+  display:flex; flex-direction:column; align-items:flex-start; gap:var(--s-2);
+  min-block-size:110px; padding:var(--s-4);
+  border:1px solid var(--hair); border-radius:var(--r-lg);
+  background:var(--bg); text-align:start; cursor:pointer; font:inherit; color:inherit;
+  transition:border-color var(--t-quick) var(--e-standard);
+}
+.send-card:hover{ border-color:var(--purple) }
+.send-card:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
+.send-card .ic{ color:var(--purple) }
+.send-card.is-off{ opacity:.55; cursor:default; border-style:dashed }
+.send-card.is-off .ic{ color:var(--ink-4) }
+.send-t{ font-weight:700; color:var(--ink) }
+.send-d{ font-size:12.5px; color:var(--ink-3); line-height:1.5 }
+.send-meta{ margin-block-start:auto; font-size:11.5px; color:var(--muted) }
+.send-foot{ display:flex; justify-content:flex-end }
+.send-list{ list-style:none; margin:0 0 var(--s-3); padding:0; display:flex; flex-direction:column; gap:var(--s-1); max-block-size:52vh; overflow-y:auto }
+.send-op{ inline-size:100%; display:flex; align-items:center; justify-content:space-between; gap:var(--s-3);
+  padding:var(--s-2) var(--s-3); border:1px solid var(--hair); border-radius:var(--r-md);
+  background:var(--bg); text-align:start; cursor:pointer; font:inherit; color:inherit; }
+.send-op:hover{ border-color:var(--purple) }
+.send-op:focus-visible{ outline:2px solid var(--purple); outline-offset:2px }
+.send-op-n{ font-weight:600; color:var(--ink); overflow-wrap:anywhere }
+.send-op-m{ flex:none; font-size:11.5px; color:var(--muted) }
+.send-empty{ color:var(--muted); padding:var(--s-3) 0 }
+
+/* P24: the Send call-to-action on the card overview, and the campaign plan on the campaign screen. */
+.ov-send{ margin-block:var(--s-3) }
+.ov-send-btn{ inline-size:100% }
+.cmp-plan{ margin-block:var(--s-3) 0 }
+.cpl-panel{ border:1px solid var(--hair); border-radius:var(--r-lg); padding:var(--s-3) var(--s-4); background:var(--panel) }
+.cpl-panel .cg-h{ display:flex; align-items:center; gap:var(--s-2); margin:0 0 var(--s-2) }
+.cpl-row{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s-3); padding:var(--s-1) 0; font-size:13px }
+.cpl-k{ color:var(--ink-3) }
+.cpl-v{ color:var(--ink); font-weight:600; text-align:end }
+.cpl-note{ margin:var(--s-2) 0 0; font-size:11.5px }
+
 /* Law 4: an empty state is an icon, a sentence, and exactly one action. */
 .lane-empty{
   display:flex; flex-direction:column; align-items:center; gap:var(--s-2);
