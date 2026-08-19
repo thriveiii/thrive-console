@@ -134,6 +134,65 @@ function activationCard(slug){
     } else { await copyToClipboard(url); confirmBtn(sh); }   // fall back to Copy where share is not available
   });
 }
+
+/* ---------- P21: the send moment ----------
+   A confirmed send earns its own moment, not the generic unsaved-edits dialog. On a dispatched outreach
+   send the screen shows an elegant Thrive-identity confirmation: an in-repo inline SVG asterisk mark (the
+   signature motif) with a gentle radiate, and one localized line. One tap or a short auto-dismiss returns
+   to the board. No dependency, no library; the mark is authored here and the radiate is CSS that respects
+   prefers-reduced-motion. The send itself already ran through the confirmed-write path without blocking the
+   screen (the button carried the in-progress state); this is only the arrival. */
+function sendMomentMark(){
+  // The asterisk signature: three strokes through one core, inside two radiating rings. currentColor only,
+  // so it takes the card's accent. viewBox 64x64, centred on (32,32). Authored in-repo, no external asset.
+  return '<svg class="sm-mark" viewBox="0 0 64 64" width="76" height="76" fill="none" aria-hidden="true" focusable="false">'
+    + '<circle class="sm-ring sm-ring-1" cx="32" cy="32" r="13" stroke="currentColor" stroke-width="1.4"/>'
+    + '<circle class="sm-ring sm-ring-2" cx="32" cy="32" r="13" stroke="currentColor" stroke-width="1.2"/>'
+    + '<g class="sm-rays" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">'
+    +   '<line x1="32" y1="17" x2="32" y2="47"/>'
+    +   '<line x1="19" y1="24.5" x2="45" y2="39.5"/>'
+    +   '<line x1="19" y1="39.5" x2="45" y2="24.5"/>'
+    + '</g>'
+    + '<circle class="sm-core" cx="32" cy="32" r="3.1" fill="currentColor"/>'
+    + '</svg>';
+}
+/* Show the moment, then call onDone (which returns to the board). Tap anywhere, Enter/Escape, or a short
+   timeout all resolve exactly once. It sits above everything and swallows its own keys, so a stray Escape
+   lands here and never on the modal's edit-close guard - the generic dialog can never appear on a send. */
+function showSendMoment(onDone){
+  var prev=document.getElementById("sendMoment"); if(prev){ try{ prev.remove(); }catch(_){} }
+  var scrim=document.createElement("div");
+  scrim.id="sendMoment"; scrim.className="sm-scrim";
+  scrim.setAttribute("role","status"); scrim.setAttribute("aria-live","polite"); scrim.tabIndex=-1;
+  scrim.innerHTML='<div class="sm-card">'
+    + '<div class="sm-mark-wrap">'+sendMomentMark()+'</div>'
+    + '<p class="sm-line" dir="auto">'+esc(t("send_moment_line"))+'</p>'
+    + '</div>';
+  document.body.appendChild(scrim);
+  requestAnimationFrame(function(){ scrim.classList.add("on"); });
+  var done=false, tt=0;
+  function finish(){
+    if(done) return; done=true; clearTimeout(tt);
+    scrim.classList.remove("on");
+    setTimeout(function(){ try{ scrim.remove(); }catch(_){} if(typeof onDone==="function"){ try{ onDone(); }catch(_){} } }, 240);
+  }
+  scrim.addEventListener("click", finish);
+  scrim.addEventListener("keydown", function(e){ if(e.key==="Escape"||e.key==="Enter"||e.key===" "){ e.stopPropagation(); e.preventDefault(); finish(); } });
+  tt=setTimeout(finish, 2600);
+  try{ scrim.focus(); }catch(_){}
+}
+/* After the moment, return to the board. If the composer was borrowed into the card modal, close the modal
+   DIRECTLY - close() never asks, so the edit-only dialog is bypassed by construction. Standalone compose is
+   a board page, so a plain navigation returns it. The card's lane is already set by the ledger row. */
+function returnToBoardAfterSend(){
+  try{
+    if(window.thriveModal && typeof window.thriveModal.isOpen==="function" && window.thriveModal.isOpen()){
+      window.thriveModal.close(true); return;
+    }
+  }catch(e){}
+  try{ goTo("board"); }catch(_){}
+}
+try{ window.showSendMoment=showSendMoment; }catch(_){}   // test hook; harmless in prod
 async function runAction(control, opts){
   opts=opts||{};
   var btn=(typeof control==="string") ? document.getElementById(control) : control;
@@ -5977,7 +6036,7 @@ function buildThread(slug){
       // A pending row stays, because it is in flight and has already advanced the card. This is what
       // keeps the thread unchanged when a reply genuinely fails.
       if(m.status==="unsent") return;
-      out.push({ kind:"sent", ts:m.ts, to:m.to||"", toName:m.toName||"",
+      out.push({ kind:"sent", ts:m.ts, to:m.to||"", toName:m.toName||"", actor:m.actor||"",
                  subject:m.subject||"", body:(m.preview||m.body||""), channel:m.provider||"", status:m.status||"sent",
                  templateName:m.templateName||"", chapter:m.chapter||1, mid:m.mid });
     }
@@ -6358,15 +6417,66 @@ function threadRendererReport(){
     mounted:true,
     marker: ((box.querySelector(".th-ver")||{}).textContent||"").trim(),
     historyRenderer: box.getAttribute("data-history-renderer")||"(unstamped)",
-    listRenderer: box.querySelector('[data-renderer="threadListHtml"]') ? "threadListHtml@library/app.js" : "(no threadListHtml container)",
+    listRenderer: box.querySelector('[data-renderer="activityTrailHtml"]') ? "activityTrailHtml@library/app.js"
+      : (box.querySelector('[data-renderer="threadListHtml"]') ? "threadListHtml@library/app.js" : "(no list container)"),
     bubbles: box.querySelectorAll('[data-bubble="msgBubble"]').length,
     replyTextOwner: owner
   };
 }
 if(typeof window!=="undefined") window.threadRendererReport=threadRendererReport;
+/* ---------- P21: the ONE message-bubble render path ----------
+   The full message bubble (our send, their reply) reads from the R10 message model (buildMessage +
+   renderMessageBody + msgWhoLine). It is defined ONCE here at module scope, so the conversation thread
+   (threadListHtml) AND the activity trail's inline expansion (activityTrailHtml) render a message through
+   the exact same code - renderMessageBody has these two call sites and no other. No copy. */
+function thWhen(ts){ return fmtWhenHtml(ts) || esc(String(ts==null?"":ts)); }   // isolated date markup (bdi), never LTR-forced
+// ONE bubble component. Our send and their reply share one header/body/foot skeleton and differ only by side.
+function thMsgBubble(o){
+  var isOut=o.side==="out";
+  var cardCls=isOut ? "msg-out" : ("rp-card"+(o.latest?" is-latest":""));
+  var bodyInner=(o.subjHtml||"")+(o.bodyHtml||"");
+  return '<li class="'+(isOut?"th-sent":"th-reply")+'" data-bubble="msgBubble"'+(o.rid? ' data-rid="'+esc(o.rid)+'"' : '')+'>'+
+    '<div class="'+cardCls+'">'+
+      '<div class="rp-head">'+
+        '<div class="rp-top">'+(o.leadHtml||"")+
+          '<span class="rp-who" dir="auto">'+o.whoHtml+'</span>'+
+          '<span class="rp-when">'+thWhen(o.ts)+'</span>'+
+        '</div>'+
+        (o.addr? '<div class="rp-from mono">'+ltr(esc(o.addr))+'</div>' : '')+
+      '</div>'+
+      (bodyInner ? '<div class="rp-body">'+bodyInner+'</div>' : '')+
+      (o.footHtml ? '<div class="rp-foot">'+o.footHtml+'</div>' : '')+
+    '</div></li>';
+}
+// A send is our side: the outgoing bubble from the R10 model. The header names sender then recipient; the
+// subject is its OWN emphasized line (never the body); the compiled body is its own block beneath it.
+function thSentBubble(e){
+  var msg=buildMessage(e);
+  return thMsgBubble({ side:"out", ts:msg.time, addr:msg.toAddr,
+    whoHtml: msgWhoLine(msg),
+    subjHtml: (msg.subject? '<div class="rp-subj" dir="auto">'+esc(msg.subject)+'</div>' : ''),
+    bodyHtml: renderMessageBody(msg)+(e.channel? '<div class="rp-chan"><span class="th-chan">'+esc(e.channel)+'</span></div>' : '') });
+}
+// Their reply is the incoming bubble through the SAME builder: lead is the #N and latest mark, body is the
+// subject then the structured answer (new text first, quoted original collapsed), foot the rule and Gmail link.
+function thReplyBubble(r, slug){
+  var repNum={}, __repMax=0; repliesForOpp(slug).forEach(function(x){ repNum[x.addr]=x.num; if(x.num>__repMax) __repMax=x.num; });
+  var rn=repNum[String(r.from||"").trim().toLowerCase()];
+  var latest=(rn && __repMax>1 && rn===__repMax);   // the newest reply is marked only when there is more than one
+  var msg=buildMessage(r);
+  return thMsgBubble({ side:"in", rid:r.id||"", latest:latest, ts:msg.time, addr:msg.fromAddr,
+    leadHtml: (rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
+              (latest? '<span class="rp-latest">'+esc(t("rp_latest"))+'</span>' : ''),
+    whoHtml: msgWhoLine(msg),
+    subjHtml: (msg.subject? '<div class="rp-subj" dir="auto">'+esc(msg.subject)+'</div>' : ''),
+    bodyHtml: renderMessageBody(msg),
+    footHtml: (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>' : '')+
+              (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>' : '')+
+              (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+ic("link")+esc(t("rp_open_gmail"))+'</a>' : '') });
+}
 function threadListHtml(slug){
   const entries=buildThread(slug);
-  const when=ts=> fmtWhenHtml(ts) || esc(String(ts==null?"":ts));   // isolated date markup (bdi), never LTR-forced
+  const when=thWhen;
   const label=a=>{ const k="act_"+a; const v=t(k); return v===k? a : v; };
   if(!entries.length) return '<div class="mw-empty">'+ic("clock")+'<p>'+esc(t("mw_hist_empty"))+'</p></div>';
   function line(icn, what, detail, ts){
@@ -6375,64 +6485,8 @@ function threadListHtml(slug){
       (detail? '<span class="th-detail" dir="auto">'+detail+'</span>':'')+
       '<span class="th-when">'+when(ts)+'</span></li>';
   }
-  // Part 1: ONE bubble component, used for every message. Our send and their reply route through the SAME
-  // builder, so the two sides share one header/body/foot skeleton and differ only by side. The header is its
-  // own ruled-off row: a lead (a #number and the latest mark, or nothing), the sender name taking the width,
-  // and the timestamp pinned to the opposite edge so the two never collide. The address sits on its own line
-  // beneath the header; the body follows with even spacing. Our-send and their-reply are told apart by
-  // opposite alignment AND a distinct surface tint, both set in CSS from the side alone.
-  function msgBubble(o){
-    var isOut=o.side==="out";
-    var cardCls=isOut ? "msg-out" : ("rp-card"+(o.latest?" is-latest":""));
-    var bodyInner=(o.subjHtml||"")+(o.bodyHtml||"");
-    return '<li class="'+(isOut?"th-sent":"th-reply")+'" data-bubble="msgBubble"'+(o.rid? ' data-rid="'+esc(o.rid)+'"' : '')+'>'+
-      '<div class="'+cardCls+'">'+
-        '<div class="rp-head">'+
-          '<div class="rp-top">'+(o.leadHtml||"")+
-            '<span class="rp-who" dir="auto">'+o.whoHtml+'</span>'+
-            '<span class="rp-when">'+when(o.ts)+'</span>'+
-          '</div>'+
-          (o.addr? '<div class="rp-from mono">'+ltr(esc(o.addr))+'</div>' : '')+
-        '</div>'+
-        (bodyInner ? '<div class="rp-body">'+bodyInner+'</div>' : '')+
-        (o.footHtml ? '<div class="rp-foot">'+o.footHtml+'</div>' : '')+
-      '</div></li>';
-  }
-  // A send is our side: the far-edge outgoing bubble, read from the R10 message model. The header names the
-  // sender then the recipient; the subject is its OWN emphasized line (never the body); the compiled body
-  // the ledger stored is its own block beneath it (the fix: a send used to show only its subject, so its
-  // real words were visible only when the reply quoted them). Opens and stage notes stay quiet event lines.
-  function sentCard(e){
-    var msg=buildMessage(e);
-    return msgBubble({ side:"out", ts:msg.time, addr:msg.toAddr,
-      whoHtml: msgWhoLine(msg),
-      subjHtml: (msg.subject? '<div class="rp-subj" dir="auto">'+esc(msg.subject)+'</div>' : ''),
-      bodyHtml: renderMessageBody(msg)+(e.channel? '<div class="rp-chan"><span class="th-chan">'+esc(e.channel)+'</span></div>' : '') });
-  }
-  // Part 3: each reply carries its per-opportunity number (arrival order), the same number the card badge
-  // and the inbox show, so a reply is the same "#N" everywhere.
-  var __repNumByWho={}, __repMax=0; repliesForOpp(slug).forEach(function(x){ __repNumByWho[x.addr]=x.num; if(x.num>__repMax) __repMax=x.num; });
-  // Their reply is the reading-start incoming bubble, routed through the SAME msgBubble: its lead is the #N
-  // and the latest mark, the who is the sender, the body is the subject then the structured answer (the new
-  // text first and full, the quoted original in a collapsed block), the foot carries the rule and Gmail link.
-  function replyCard(r){
-    var rn=__repNumByWho[String(r.from||"").trim().toLowerCase()];
-    // Part 4: the newest reply (the highest per-opportunity number) is marked, only when there is more than
-    // one (a lone reply is trivially the latest).
-    var latest=(rn && __repMax>1 && rn===__repMax);
-    // Read the reply through the SAME R10 model as our send: the header names sender then recipient, the
-    // subject is its own line, the answer is its own block, and the quoted original collapses beneath it.
-    var msg=buildMessage(r);
-    return msgBubble({ side:"in", rid:r.id||"", latest:latest, ts:msg.time, addr:msg.fromAddr,
-      leadHtml: (rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
-                (latest? '<span class="rp-latest">'+esc(t("rp_latest"))+'</span>' : ''),
-      whoHtml: msgWhoLine(msg),
-      subjHtml: (msg.subject? '<div class="rp-subj" dir="auto">'+esc(msg.subject)+'</div>' : ''),
-      bodyHtml: renderMessageBody(msg),
-      footHtml: (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>' : '')+
-                (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>' : '')+
-                (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+ic("link")+esc(t("rp_open_gmail"))+'</a>' : '') });
-  }
+  const sentCard=e=>thSentBubble(e);
+  const replyCard=r=>thReplyBubble(r, slug);
   // Runtime self-identification: the conversation list names the exact function and file that built it, so
   // the mounted renderer can be read straight off the DOM on device (the proof that ends fixing a blind copy).
   let html='<ol class="th-list" data-renderer="threadListHtml" data-file="library/app.js">', lastCh=0;
@@ -6447,6 +6501,85 @@ function threadListHtml(slug){
     else if(e.kind==="act") html+=line("clock", label(e.action), e.detail? '<span dir="auto">'+esc(e.detail)+'</span>':"", e.ts);
   });
   return html+'</ol>';
+}
+
+/* ---------- P21 · R15: the card activity trail ----------
+   The card's memory of what happened to it: who edited, who sent, when, what changed. It is one merged,
+   newest-first list. Sends and replies are DERIVED from the ledger (never a second stored row); a legacy
+   'email' activity row is dropped here so a send is represented exactly once. Only genuinely new operations
+   (edit, save, page upload, contact confirmed, merge, archive, restore) are stored as activity rows. */
+var ACT_DERIVED={ email:1 };                 // a send is a ledger event: its activity row (if any legacy exists) is dropped
+var ACT_ICON={ draft_save:"edit", edit:"edit", upload:"page", page:"page", activate:"globe",
+  contact:"channel", merge:"link", archive:"archive", restore:"undo", rematch:"link", attach:"link", clear:"trash" };
+function cardActivity(slug){
+  slug=String(slug||"");
+  var entries=buildThread(slug).filter(function(e){
+    return !(e && e.kind==="act" && ACT_DERIVED[e.action]);   // never double-store a ledger event as an activity row
+  });
+  return entries.slice().sort(function(x,y){ var dx=tsMs(x.ts)||0, dy=tsMs(y.ts)||0; return dy-dx; });  // newest-first
+}
+/* Render the trail, quiet typography, no chrome. A send or reply is a tappable entry that expands IN PLACE
+   to the full message, rendered through the ONE P12 path (thSentBubble / thReplyBubble) - never a copy, and
+   never a second surface. Every entry carries its actor and time. */
+function activityTrailHtml(slug){
+  slug=String(slug||"");
+  var entries=cardActivity(slug);
+  var label=function(a){ var k="act_"+a; var v=t(k); return v===k? a : v; };
+  var opName=function(uid){ try{ return resolveOperator(uid)||""; }catch(e){ return ""; } };
+  if(!entries.length) return '<div class="mw-empty">'+ic("clock")+'<p>'+esc(t("mw_hist_empty"))+'</p></div>';
+  function metaHtml(who, ts){
+    return '<span class="tr-meta">'+
+      (who? '<span class="tr-actor" dir="auto">'+esc(who)+'</span>' : '')+
+      '<span class="tr-when">'+thWhen(ts)+'</span></span>';
+  }
+  function quiet(icn, what, sum, who, ts){
+    return '<li class="tr-item tr-line"><span class="tr-icn">'+ic(icn)+'</span>'+
+      '<span class="tr-what">'+esc(what)+(sum? ' <span class="tr-sum" dir="auto">'+esc(sum)+'</span>' : '')+'</span>'+
+      metaHtml(who, ts)+'</li>';
+  }
+  function msgRow(kind, iconName, what, sum, who, ts, bubbleHtml){
+    return '<li class="tr-item tr-msg" data-tr="'+kind+'">'+
+      '<button type="button" class="tr-head" aria-expanded="false">'+
+        '<span class="tr-icn">'+ic(iconName)+'</span>'+
+        '<span class="tr-what">'+esc(what)+(sum? ' <span class="tr-sum" dir="auto">'+esc(sum)+'</span>' : '')+'</span>'+
+        metaHtml(who, ts)+
+        '<span class="tr-chev" aria-hidden="true">'+ic("chevron")+'</span>'+
+      '</button>'+
+      '<div class="tr-expand" hidden><ol class="th-list th-embed">'+bubbleHtml+'</ol></div>'+
+    '</li>';
+  }
+  var html='<ol class="tr-list" data-renderer="activityTrailHtml" data-file="library/app.js">';
+  entries.forEach(function(e){
+    if(e.kind==="sent"){
+      var to=(e.toName||e.to||"").trim();
+      var sum=[to, e.subject].filter(Boolean).join(" · ");
+      html+=msgRow("sent", "send", t("tr_sent"), sum, opName(e.actor), e.ts, thSentBubble(e));
+    } else if(e.kind==="reply"){
+      html+=msgRow("reply", "mail", t("tr_reply"), e.subject||"", (e.from||"").trim(), e.ts, thReplyBubble(e, slug));
+    } else if(e.kind==="open"){
+      html+=quiet("globe", t("th_opened"), "", "", e.ts);
+    } else if(e.kind==="auto"){
+      html+=quiet("alert", t(e.bounce==="hard"?"rp_bounce_hard":e.bounce==="soft"?"rp_bounce_soft":"rp_auto"), "", "", e.ts);
+    } else if(e.kind==="act"){
+      html+=quiet(ACT_ICON[e.action]||"clock", label(e.action), e.detail||"", opName(e.actor)||"", e.ts);
+    }
+  });
+  return html+'</ol>';
+}
+if(typeof window!=="undefined"){ window.activityTrailHtml=activityTrailHtml; window.cardActivity=cardActivity; }
+/* Wire the inline expand/collapse for the trail's message entries: tapping a header toggles its in-place
+   expansion (the pre-rendered P12 bubble), one scroll, no modal. Idempotent per render. */
+function wireActivityTrail(box){
+  if(!box) return;
+  var heads=box.querySelectorAll(".tr-msg > .tr-head");
+  for(var i=0;i<heads.length;i++){ (function(btn){
+    btn.addEventListener("click", function(){
+      var item=btn.parentNode; var exp=item.querySelector(".tr-expand");
+      var open=item.classList.toggle("is-open");
+      btn.setAttribute("aria-expanded", open?"true":"false");
+      if(exp) exp.hidden=!open;
+    });
+  })(heads[i]); }
 }
 
 /* Part 2: smooth reading. Scroll the thread to its newest message, so opening the conversation (or sending
@@ -6664,6 +6797,25 @@ function activeChapterStage(o){
   if(getInbound().some(r=> r && r.opp===slug && r.kind!=="auto" && (r.chapter||1)===ch)) return "replied";
   const firstTs=sends.map(m=>m.ts).sort()[0];
   return opensSince(slug, firstTs)>0 ? "opened" : "sent";
+}
+
+/* ---------- P21: the per-user (actor-scoped) compose working-draft ----------
+   An unsaved edit is private to its author: it is stored under compose_draft.byActor[actor] on the synced
+   opportunity record, so a second operator opening the same card never sees another person's in-progress
+   message, and each author's draft is restored for that author on return. Additive over the legacy flat
+   compose_draft (still restored, once, for continuity), and it never touches another actor's slot. */
+function composeDraftGet(opp, actor){
+  var cd=opp && opp.compose_draft; if(!cd) return null;
+  if(cd.byActor && typeof cd.byActor==="object") return cd.byActor[actor] || null;   // v2 per-actor map: own slot only
+  // legacy flat draft (pre-multi-user, one operator): restore it as this actor's continuation
+  if(cd.subject!==undefined || cd.body_html!==undefined || cd.to!==undefined || cd.name!==undefined) return cd;
+  return null;
+}
+function composeDraftSet(slug, actor, draftOrNull){
+  var opp=getDraft(slug)||{}; var cd=opp.compose_draft;
+  var map=(cd && cd.byActor && typeof cd.byActor==="object") ? Object.assign({}, cd.byActor) : {};
+  if(draftOrNull===null) delete map[actor]; else map[actor]=draftOrNull;   // touch only this actor's slot
+  saveDraft({ slug:slug, compose_draft:{ byActor: map } });
 }
 
 async function initCompose(slugArg, opts){
@@ -7610,14 +7762,14 @@ async function initCompose(slugArg, opts){
     if(!slug || !composeDirty || restoring || replyCtx) return;   // no record, nothing typed, or a transient reply
     const s=composeState();
     if(!composeHasContent(s)) return;                 // an untouched composer writes nothing
-    saveDraft({ slug, compose_draft: Object.assign({}, s, { up:Date.now() }) });
+    composeDraftSet(slug, currentActor(), Object.assign({}, s, { up:Date.now() }));   // per-user: private to its author
     if(!composeLogged){ logActivity("draft_save", slug, ""); composeLogged=true; }  // one audit line per editing session
     if(savedTag){ savedTag.textContent=t("draft_saved"); savedTag.hidden=false; }
   }, 600);
   function touchCompose(){ if(restoring) return; composeDirty=true; persistCompose(); }
   // Once the message has gone out, the working draft is done: it is cleared from the record so a
   // reopen starts fresh rather than restoring a message already sent. Additive, keyed by slug.
-  function clearComposeDraft(){ if(replyCtx) return; if(slug) saveDraft({ slug, compose_draft:null }); composeDirty=false; composeLogged=false; if(savedTag) savedTag.hidden=true; }
+  function clearComposeDraft(){ if(replyCtx) return; if(slug) composeDraftSet(slug, currentActor(), null); composeDirty=false; composeLogged=false; if(savedTag) savedTag.hidden=true; }
   [["ebody","input"],["esubject","input"],["eto","input"],["ename","input"],
    ["emonth","input"],["etpl","change"],["ebrand","change"],["efirst","change"],
    ["plainBox","input"]].forEach(([id,ev])=>{ const e=el(id); if(e) e.addEventListener(ev, touchCompose); });
@@ -7626,7 +7778,7 @@ async function initCompose(slugArg, opts){
      restored to it exactly, over the fresh seed, so a reopen resumes rather than restarts. The
      restore is not an edit, so it neither marks the draft dirty nor writes anything back. */
   function restoreCompose(){
-    const d=oppObj && oppObj.compose_draft; if(!d) return false;
+    const d=composeDraftGet(oppObj, currentActor()); if(!d) return false;   // only this actor's own unsaved draft
     restoring=true;
     if(d.template && tplSel && [...tplSel.options].some(o=>o.value===d.template)) tplSel.value=d.template;
     if("subject" in d){ el("esubject").value=d.subject||""; subjectDirty=true; }
@@ -7839,17 +7991,23 @@ async function initCompose(slugArg, opts){
     // not yet (a signed-in write that failed), so the card sits in a visible outbox and graduates to Sent on
     // its own. Quota counts the delivery either way (once, not per attempt); the working draft is done.
     recordSend(); renderQuota();
-    logActivity("email", slug||"", to+" · "+subjectOut);
+    // R15: the send is a ledger event (the console_mail row). The activity trail DERIVES it from the ledger,
+    // so it is never written again here - one representation of the send, never a double-store.
     clearComposeDraft();                                  // the message went out, so the working draft is done
-    toast(res.status==="sent" ? t("cmp_sent") : t("cmp_sent_queued"));
     if(replyCtx){
-      // The reply is in the thread now: re-read the target and open a fresh greeting for the next reply,
-      // so the composer is ready rather than showing a message already sent.
+      // A thread reply stays in place: confirm it quietly and open a fresh greeting for the next reply, so
+      // the composer is ready rather than showing a message already sent.
+      toast(res.status==="sent" ? t("cmp_sent") : t("cmp_sent_queued"));
       replyCtx=replyTarget(slug);
       const g=replyGreeting(replyCtx);
       body.innerHTML='<div dir="'+(replyCtx.lang==="ar"?"rtl":"auto")+'">'+esc(g).split("\n").join("<br>")+'</div>';
       refreshLinks(); recordBody();
       if(onSent) try{ onSent(); }catch(_){}
+    } else {
+      // P21: an outreach brief has reached its destination. The send moment, then back to the board. The
+      // card's lane is already set by the ledger row; the return closes the modal directly, so the generic
+      // unsaved-edits dialog (edit flows only) can never appear on a send.
+      showSendMoment(function(){ returnToBoardAfterSend(); });
     }
   });
   try{ window.__composeReady=(window.__composeReady||0)+1; }catch(_){}   // test readiness signal; harmless in prod
@@ -11834,16 +11992,19 @@ function initModal(){
     // textarea rendered here; it is the full send editor, borrowed into #modalHost beneath this list by
     // switchTo (reply mode), so a reply has the same formatting, templates and preview as an outreach send.
     // When there is no address to answer, a gentle line stands in for the composer.
-    let html=threadListHtml(slug);
+    // P21: the History tab is the card's activity trail (newest-first, quiet, no chrome). Each entry carries
+    // its actor and time; a send or reply is a tappable entry that expands IN PLACE to its full message,
+    // rendered through the one P12 bubble path (thSentBubble / thReplyBubble) - one render path, one scroll,
+    // no second surface. The reply composer still mounts beneath in reply mode (switchTo).
+    let html=activityTrailHtml(slug);
     if(!(replyTarget(slug)||{}).addr) html+='<p class="th-noreply sub">'+esc(t("th_reply_no_addr"))+'</p>';
     // The renderer self-identifies: a low-contrast corner marker naming the mounted renderer, so on device it
-    // is obvious WHICH conversation renderer is on screen (the proof that ends fixing a blind copy). The
-    // container also carries a data-renderer attribute, and threadRendererReport() walks the rendered DOM to
-    // name the exact container that holds the reply text - so a second render path, if one ever exists, is
-    // caught at runtime rather than guessed at from source. Prepended here, in the one History renderer, so it
-    // shows even on an empty thread. aria-hidden: a diagnostic tag, not content read to a screen reader.
-    box.setAttribute("data-history-renderer", "renderHistory>threadListHtml@library/app.js");
+    // is obvious WHICH renderer is on screen (the proof that ends fixing a blind copy). The container carries a
+    // data-renderer attribute, and threadRendererReport() walks the rendered DOM to name the exact container -
+    // so a second render path, if one ever exists, is caught at runtime rather than guessed at from source.
+    box.setAttribute("data-history-renderer", "renderHistory>activityTrailHtml@library/app.js");
     box.innerHTML='<div class="th-ver" aria-hidden="true" data-renderer="renderHistory">'+esc(threadRendererTag())+' · renderHistory</div>'+html;
+    wireActivityTrail(box);                                // bind the inline expand/collapse toggles
     try{ if(window.console && console.info) console.info("[thread-renderer]", JSON.stringify(threadRendererReport())); }catch(_){}
   }
 

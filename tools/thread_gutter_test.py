@@ -64,7 +64,9 @@ with sync_playwright() as p:
             enter(pg, lang)
             try:
                 pg.evaluate("()=>window.thriveModal.open('madar','history','مدارس المدار الدولية')")
-                pg.wait_for_selector('#modalHistory .th-list', timeout=8000)
+                pg.wait_for_selector('#modalHistory .tr-list', timeout=8000)   # P21: the History tab is the activity trail
+                # expand the first sent entry IN PLACE, so its full P12 body bubble is on screen for the gutter check
+                pg.evaluate("()=>{ var h=document.querySelector('#modalHistory .tr-msg[data-tr=\\'sent\\'] .tr-head'); if(h) h.click(); }")
                 pg.wait_for_timeout(700)
             except Exception as e:
                 ck(f"{lang}/{tag}: the History conversation opens", False, str(e)); ctx.close(); continue
@@ -72,7 +74,7 @@ with sync_playwright() as p:
             m = pg.evaluate("""()=>{
               function contentBox(el){ if(!el) return null; var r=el.getBoundingClientRect(); var s=getComputedStyle(el);
                 return { left:r.left+parseFloat(s.paddingLeft), right:r.right-parseFloat(s.paddingRight) }; }
-              var list=document.querySelector('#modalHistory .th-list');
+              var list=document.querySelector('#modalHistory .tr-list');
               // the composer directly beneath: the send editor moved into #modalHost (its bounding panel)
               var comp=document.querySelector('#modalHost .compose-panel') || document.querySelector('#modalHost .panel') || document.querySelector('#modalHost .view');
               var lb=contentBox(list), cb=contentBox(comp);
@@ -84,7 +86,7 @@ with sync_playwright() as p:
                 rightGap:(lb&&cb)? Math.abs(lb.right-cb.right) : -1,
                 pageOverflow: de.scrollWidth - de.clientWidth,
                 histOverflow: hist? (hist.scrollWidth - hist.clientWidth) : 0,
-                bodyHasOutbound: !!(document.querySelector('#modalHistory .th-sent .rp-snip'))
+                bodyHasOutbound: (function(){ var s=document.querySelector('#modalHistory .th-sent .rp-snip'); return !!(s && s.offsetParent!==null); })()
               };
             }""")
             ck(f"{lang}/{tag}: the thread and the composer are both present in the window",

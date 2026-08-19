@@ -21,7 +21,14 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 784_000     # library/app.js today ~781 KB. Raised by P20 (the one signature system): the
+APP_JS_MAX   = 794_000     # library/app.js today ~791 KB. Raised by P21 (the send moment + the card activity
+                           # trail): the send-moment surface (sendMomentMark inline SVG + showSendMoment +
+                           # returnToBoardAfterSend), the ONE extracted message-bubble path (thMsgBubble /
+                           # thSentBubble / thReplyBubble, shared by the thread and the trail's inline expansion),
+                           # the R15 activity model + renderer (cardActivity / activityTrailHtml / wireActivityTrail),
+                           # and the per-actor compose draft (composeDraftGet / composeDraftSet). Net additive over a
+                           # removed send double-write. The module SPLIT remains the real fix. Prior: 784 KB.
+                           # Raised by P20 (the one signature system): the
                            # R14 per-sender signature store (sigStore / sigList / sigAdd / sigUpdate / sigRemove /
                            # sigSetDefault / renderSignature / signatureFor), the profile-page signature manager
                            # (renderSignatures + sigEditRow: list, live preview, set-default, inline edit, add
@@ -98,7 +105,11 @@ APP_JS_MAX   = 784_000     # library/app.js today ~781 KB. Raised by P20 (the on
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_834_000   # dist/thrive-console.html today ~1.832 MB, tracking app.js. Raised by P20 (the one
+DIST_MAX     = 1_850_000   # dist/thrive-console.html today ~1.846 MB, tracking app.js. Raised by P21 (the send
+                           # moment + activity trail): the app.js additions above, plus the .sm-* send-moment CSS
+                           # (radiate + reduced-motion) and the .tr-* activity-trail CSS, and the send_moment_line /
+                           # act_* / tr_* strings in both languages. Additive over a removed send double-write.
+                           # Prior: 1.834 MB. Raised by P20 (the one
                            # signature system): the R14 per-sender store + profile signature manager + composer
                            # picker in app.js, the signature-manager markup in profile.html and the picker markup
                            # in compose.html, the sig_* strings in both languages, and the .sig-list / .sig-item /

@@ -52,7 +52,8 @@ with sync_playwright() as p:
             pg = ctx.new_page(); enter(pg, lang)
             try:
                 pg.evaluate("()=>window.thriveModal.open('madar','history','مدارس المدار الدولية')")
-                pg.wait_for_selector('#modalHistory .th-list', timeout=8000)
+                pg.wait_for_selector('#modalHistory .tr-list', timeout=8000)
+                pg.evaluate("()=>{ var h=document.querySelector('#modalHistory .tr-msg .tr-head'); if(h) h.click(); }")
                 pg.wait_for_timeout(700)
             except Exception as e:
                 print(f"{lang}/{tag}: open failed: {e}")
