@@ -36,6 +36,7 @@ const VIEWS = [
   { id: "templates", file: "templates.html", init: "initTemplates", key: "nav_templates" },
   { id: "activity",  file: "activity.html",  init: "initActivity",  key: "nav_activity" },
   { id: "batches",   file: "batches.html",   init: "initBatches",   key: "nav_batches" },
+  { id: "oversight", file: "oversight.html", init: "initOversight", key: "nav_oversight" },
   { id: "profile",   file: "profile.html",   init: "initProfile",   key: "nav_profile" },
   { id: "settings",  file: "settings.html",  init: "initSettings",  key: "nav_settings" },
 ];
@@ -307,9 +308,16 @@ ${body}
   }
   function current(){ return (location.hash||"").replace(/^#/,"").split("?")[0] || VIEWS[0].id; }
 
+  // P27: owner-only views. A member (or any not-yet-owner session) is refused, including a direct hash
+  // navigation, and the URL is corrected to the board so it can never rest on an owner-only route. The
+  // real boundary is the database (RLS on console_members); this is the honest UI half of it. ownerOK
+  // fails CLOSED (owner status must be explicitly true), so a view is never shown before the role is known.
+  var OWNER_ONLY = { oversight:1 };
+  function ownerOK(){ try{ return !!(window.isOwnerMember && window.isOwnerMember()); }catch(e){ return false; } }
   function show(id){
     var found = VIEWS.some(function(v){ return v.id === id; });
     if(!found) id = VIEWS[0].id;
+    if(OWNER_ONLY[id] && !ownerOK()){ id = VIEWS[0].id; try{ if((location.hash||"").replace(/^#/,"").split("?")[0]==="oversight") location.replace("#"+VIEWS[0].id); }catch(e){} }
     // Going somewhere closes the sheet you were working in, and the sheet hands its view back.
     if(window.thriveModal && window.thriveModal.isOpen && window.thriveModal.isOpen())
       window.thriveModal.close(true);   // now, not after the transition: the view is needed here
@@ -354,6 +362,9 @@ ${body}
     }
     stale[id] = 1;
   };
+  // P27: once the role is known (loaded async after sign-in), re-evaluate the current route so an owner who
+  // deep-linked or clicked into an owner-only view lands correctly, and install the owner-only nav link.
+  window.thriveOwnerRecheck = function(){ try{ if(OWNER_ONLY[current()]) show(current()); }catch(e){} };
   window.addEventListener("hashchange", function(){ show(current()); });
   document.addEventListener("DOMContentLoaded", function(){
     snap();

@@ -1225,7 +1225,12 @@ var INSIGHTS_METRICS = {
   replies:      { def:"distinct replying people, incl. an extracted child",     source:"campaignStats.replies (console_inbound + recipientState)" },
   person_opens: { def:"a person's own token-bearing opens (P2), never the page total", source:"console_hits where data.r is one of the person's send ids" },
   anon_views:   { def:"page opens carrying no token; nobody is named",          source:"campaignStats.viewsAnon (console_hits, no r)" },
-  bounces:      { def:"hard/soft delivery failures naming the recipient",       source:"console_inbound kind=auto with bounce" }
+  bounces:      { def:"hard/soft delivery failures naming the recipient",       source:"console_inbound kind=auto with bounce" },
+  // P27: the per-member oversight numbers. Each is DERIVED from the same stamped stores the board reads,
+  // filtered to the member by the actor stamped on the write; no parallel counter, no invented rate.
+  reply_rate:   { def:"replies earned over the opportunities the member sent to, whole percent",  source:"replies / distinct opps in console_mail where actor is the member" },
+  pages:        { def:"pages the member produced (published or activated)",     source:"console_activity where actor is the member, action publish/activate" },
+  edits:        { def:"page edits the member saved",                            source:"console_activity where actor is the member, action edit/save" }
 };
 window.INSIGHTS_METRICS=INSIGHTS_METRICS;
 // P4: a campaign whose reply extracted to a child (D2) shows the reply count AND a note that the
@@ -1913,6 +1918,93 @@ window.operatorLedger = operatorLedger;
 window.ThriveProfile = { load:loadProfile, now:profileNow, pref:profilePref, mem:profileMem,
   setPref:setProfilePref, setMem:setProfileMem, setField:setProfileField,
   loadTier:loadAdminTier, isOwner:isOwnerTier, uid:profileUid, email:profileEmail, stats:operatorStats };
+
+/* ---------- P27: members, roles, and the per-member oversight numbers -----------------------------
+   The console is multi-user. A member's identity is their Supabase auth.uid() (currentActor()); the roster
+   and role live in console_members (owner | member). Two roles only. The owner sees the oversight room; a
+   member sees only their own performance. Every number here is DERIVED from the same stamped stores the
+   board reads, filtered to the member by the actor on the write: no parallel counter, no invented rate. The
+   roster read is owner-scoped at the database (RLS); the UI gates the room and a member's view to own data.
+   This is authored natively for Thrive; nothing is read from or reused out of any other project. */
+var MEMBERS_KEY="thrive_members_v1";                       // a local cache of the roster projection (read-only)
+var __members=null;
+function membersCache(){ if(__members) return __members; try{ __members=JSON.parse(localStorage.getItem(MEMBERS_KEY)||"null"); }catch(e){ __members=null; } return (__members=Array.isArray(__members)?__members:null); }
+function membersCacheWrite(list){ __members=Array.isArray(list)?list:[]; try{ localStorage.setItem(MEMBERS_KEY, JSON.stringify(__members)); }catch(e){} }
+async function hydrateMembers(){
+  if(!supaOn()) return membersDerived();
+  try{
+    var rows=await window.ThriveSupa.rest("console_members", { query:"select=id,name,email,role,active&order=role.asc" });
+    if(rows && rows.length){ var list=rows.map(function(r){ return { id:String(r.id||""), name:String(r.name||"").trim(), email:String(r.email||"").trim(), role:(r.role==="owner"?"owner":"member"), active:r.active!==false }; });
+      membersCacheWrite(list); return list; }
+  }catch(e){}
+  return membersDerived();
+}
+// A fallback roster when console_members is not present yet (the SQL is applied device-side): derive the
+// known operators from the name map so the room still lists real people. Roles default to member; the
+// signed-in owner is known from the owner tier. Never invents a person.
+function membersDerived(){
+  var cached=membersCache(); if(cached && cached.length) return cached;
+  var out=[], seen={}, names=operatorNames(); var me=currentActor();
+  Object.keys(names).forEach(function(uid){ if(uid && uid!==ACTOR && !seen[uid]){ seen[uid]=1; out.push({ id:uid, name:(names[uid].name||names[uid].email||""), email:names[uid].email||"", role:"member", active:true }); } });
+  if(me && me!==ACTOR && !seen[me]){ out.push({ id:me, name:(resolveOperator(me)||""), email:profileEmail()||"", role:"member", active:true }); seen[me]=1; }
+  if(isOwnerTier()) out.forEach(function(m){ if(m.id===me) m.role="owner"; });
+  return out;
+}
+function membersRoster(){ var c=membersCache(); return (c && c.length)? c : membersDerived(); }
+function memberRole(uid){ uid=String(uid||currentActor()); var r=membersRoster().find(function(m){ return m.id===uid; }); if(r) return r.role; if(uid===currentActor() && isOwnerTier()) return "owner"; return "member"; }
+function isOwnerMember(){ return isOwnerTier() || memberRole(currentActor())==="owner"; }
+function memberName(uid){ var r=membersRoster().find(function(m){ return m.id===uid; }); return (r && (r.name||r.email)) || resolveOperator(uid); }
+try{ window.hydrateMembers=hydrateMembers; window.membersRoster=membersRoster; window.memberRole=memberRole; window.isOwnerMember=isOwnerMember; window.memberName=memberName; }catch(_){}
+
+// The per-member windowed numbers. sinceDays=0 means all time; 1/7/30 are the daily/weekly/monthly windows
+// the oversight room and the member's own panel read. Every field reuses the board's own readers, so a
+// member's numbers can never disagree with the board.
+var PAGE_ACTIONS=/^(publish|publish_offer|tpl_publish|lc_publish|activate)$/;
+var EDIT_ACTIONS=/^(draft_save|save|edit|opp_add|upload)$/;
+function memberMetrics(uid, sinceDays){
+  uid=String(uid||currentActor());
+  var cutoff = sinceDays>0 ? (Date.now()-sinceDays*86400000) : 0;
+  function inWin(ts){ if(!cutoff) return true; var tt=Date.parse(String(ts||"")); return isFinite(tt) && tt>=cutoff; }
+  var mail=getMailLog();
+  var mine=mail.filter(function(m){ return m && m.actor===uid && m.direction!=="in" && m.status==="sent" && inWin(m.ts); });
+  var oppSet={}; mine.forEach(function(m){ if(m.opp) oppSet[m.opp]=1; });
+  var opps=Object.keys(oppSet);
+  var replies=0; opps.forEach(function(slug){ try{ if(hasReply(slug)) replies++; }catch(e){} });
+  var replyRate=opps.length ? Math.round((replies/opps.length)*100) : 0;
+  // Opens: token-bearing opens (P2) whose HIT landed in the window, attributed to one of the member's send
+  // ids (all-time send ids, since a token minted anytime can be opened in the window).
+  var myIds={}; mail.forEach(function(m){ if(m && m.actor===uid && m.direction!=="in"){ var id=m.mid||m.id; if(id) myIds[id]=1; } });
+  var opens=0; try{ allHits().forEach(function(h){ if(!h || h.self) return; if(h.type&&h.type!=="open") return; if(h.r && myIds[h.r] && inWin(h.ts)) opens++; }); }catch(e){}
+  var acts=getActivity().filter(function(a){ return a && a.actor===uid && inWin(a.ts); });
+  var pages=acts.filter(function(a){ return PAGE_ACTIONS.test(a.action||""); }).length;
+  var edits=acts.filter(function(a){ return EDIT_ACTIONS.test(a.action||""); }).length;
+  return { sends:mine.length, opps:opps.length, replies:replies, replyRate:replyRate, opens:opens, pages:pages, edits:edits };
+}
+// A small daily-sends trend for a member (last n days, oldest to newest), for the sparkline.
+function memberSendTrend(uid, days){
+  uid=String(uid||currentActor()); days=days||14;
+  var byDay={}; getMailLog().forEach(function(m){ if(m && m.actor===uid && m.direction!=="in" && m.status==="sent"){ var d=String(m.ts||"").slice(0,10); if(d) byDay[d]=(byDay[d]||0)+1; } });
+  var out=[], now=new Date();
+  for(var i=days-1;i>=0;i--){ var dt=new Date(now.getTime()-i*86400000); var key=dt.toISOString().slice(0,10); out.push(byDay[key]||0); }
+  return out;
+}
+try{ window.memberMetrics=memberMetrics; window.memberSendTrend=memberSendTrend; }catch(_){}
+
+// An in-repo sparkline: a static SVG polyline (no animation; a still line is reduced-motion by nature, and
+// the CSS honors the query regardless). No number ever appears inside the SVG, so nothing to isolate.
+function sparklineSvg(series, opts){
+  series=(series||[]).map(function(n){ return Number(n)||0; }); opts=opts||{};
+  var w=opts.w||120, h=opts.h||28, pad=2, n=series.length;
+  if(n<2) return '<svg class="spark" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" aria-hidden="true"></svg>';
+  var max=Math.max.apply(null, series.concat([1]));
+  var dx=(w-pad*2)/(n-1);
+  var pts=series.map(function(v,i){ var x=pad+i*dx; var y=h-pad-(v/max)*(h-pad*2); return (Math.round(x*10)/10)+","+(Math.round(y*10)/10); }).join(" ");
+  var last=series[n-1], lx=pad+(n-1)*dx, ly=h-pad-(last/max)*(h-pad*2);
+  return '<svg class="spark" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" aria-hidden="true" preserveAspectRatio="none">'+
+    '<polyline points="'+pts+'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'+
+    '<circle cx="'+(Math.round(lx*10)/10)+'" cy="'+(Math.round(ly*10)/10)+'" r="2" fill="currentColor"/></svg>';
+}
+try{ window.sparklineSvg=sparklineSvg; }catch(_){}
 // Read on sign-in; write on change. Language is the clearest per-person setting; the board view state
 // (thrive_board_v1) rides along. Both already exist in the UI; no new setting is invented here. The
 // onThrive registrations live below, after __hooks is declared (registerOpPrefHooks).
@@ -2305,6 +2397,32 @@ onThrive("unlock","supahydrate", function(){
    record and the count moves. Deferred so hydrate/flush settle first; idempotent. */
 onThrive("unlock","mailreconcile", function(){
   setTimeout(function(){ try{ if(supaOn() && supaSignedIn()) reconcileMailToServer(); }catch(_){} }, 2500);
+});
+/* P27: the owner-only oversight entry. The role loads async on unlock; a member never gets the link, and the
+   router refuses the route regardless (ownerOK fails closed, so a member's direct URL lands on the board).
+   Once the role is known, the nav link is installed for the owner and the route is re-evaluated so an owner
+   already on the board sees the link appear. */
+function installOwnerNav(){
+  try{
+    var nav=document.querySelector("header.top .nav"); if(!nav) return;
+    var existing=nav.querySelector('a[data-view="oversight"]');
+    var owner=isOwnerMember();
+    if(owner && !existing){
+      var a=document.createElement("a"); a.href="#oversight"; a.setAttribute("data-view","oversight");
+      a.setAttribute("data-i18n","nav_oversight"); a.textContent=t("nav_oversight");
+      var libLink=nav.querySelector('a[data-view="library"]');
+      if(libLink && libLink.parentNode) libLink.parentNode.insertBefore(a, libLink.nextSibling); else nav.insertBefore(a, nav.firstChild);
+    } else if(!owner && existing && existing.parentNode){ existing.parentNode.removeChild(existing); }
+  }catch(e){}
+}
+try{ window.installOwnerNav=installOwnerNav; }catch(_){}
+onThrive("unlock","p27role", function(){
+  (async function(){
+    try{ await loadAdminTier(); }catch(e){}
+    try{ await hydrateMembers(); }catch(e){}
+    try{ installOwnerNav(); }catch(e){}
+    try{ if(window.thriveOwnerRecheck) window.thriveOwnerRecheck(); }catch(e){}
+  })();
 });
 
 /* The header carries the signed-in operator email and a one-tap sign-out, and nothing else about who they
@@ -3392,6 +3510,10 @@ function getDraft(slug){ return getDrafts().find(x=>x.slug===slug); }
 function saveDraft(rec){
   rec.up=Date.now();                                     // freshness stamp for cross-device merge
   const a=getDraftsLocal(); const i=a.findIndex(x=>x.slug===rec.slug);   // merge against the current store, always
+  // P27: attribution on the opportunity write itself, additive. Every write carries the member who made it
+  // (edited_by); a first write also records the creator (created_by). So no opp write bypasses the actor, and
+  // an existing creator is never overwritten (created_by is only set when the record is new).
+  try{ rec.edited_by=currentActor(); rec.edited_at=new Date().toISOString(); if(i<0 && !rec.created_by) rec.created_by=currentActor(); }catch(_){}
   const merged = (i>=0) ? {...a[i], ...rec} : rec;
   if(i>=0) a[i]=merged; else a.push(merged); setDrafts(a);
   try{ supaCachePut(merged); }catch(_){}                 // keep the read cache consistent after a write
@@ -3414,6 +3536,7 @@ function commitDraftsBatch(records){
   records.forEach(rec=>{
     rec.up=Date.now();
     const i=idx[rec.slug];
+    try{ rec.edited_by=currentActor(); rec.edited_at=new Date().toISOString(); if(i===undefined && !rec.created_by) rec.created_by=currentActor(); }catch(_){}   // P27 attribution, additive
     const m = (i>=0) ? {...a[i], ...rec} : rec;
     if(i>=0) a[i]=m; else { idx[rec.slug]=a.length; a.push(m); }
     merged.push(m);
@@ -8723,6 +8846,93 @@ async function connCheck(candidate, onStep){
    nothing dead-ends. Preferences persist to console_profiles; Performance derives from the one source
    (operatorStats); the infrastructure zone is present-and-functional for the owner and removed for
    every other operator, whose tier is refused at the database (console_admins), not merely hidden. */
+/* ---------- P27: the oversight room + the shared member performance panel ------------------------------
+   The owner's private surface. Per member: precise numbers first (daily / weekly / monthly windows), each
+   carrying its definition from the ONE metric dictionary (INSIGHTS_METRICS), then a calm sparkline trend and
+   the operations trail. The member's own-performance panel reuses memberPanelHtml with own data only, so the
+   two surfaces read identical definitions from the same derivations, and a member never sees another's
+   numbers. Nothing here is invented; every field comes from memberMetrics (which reuses the board readers). */
+var OV_WINDOWS=[ { lab:"ov_daily", days:1 }, { lab:"ov_weekly", days:7 }, { lab:"ov_monthly", days:30 } ];
+var OV_METRICS=[
+  { f:"sends",     lab:"ovm_sends",   tip:"mdef_sent" },
+  { f:"replies",   lab:"ovm_replies", tip:"mdef_replies" },
+  { f:"replyRate", lab:"ovm_rate",    tip:"mdef_reply_rate", pct:true },
+  { f:"opens",     lab:"ovm_opens",   tip:"mdef_opens" },
+  { f:"pages",     lab:"ovm_pages",   tip:"mdef_pages" },
+  { f:"edits",     lab:"ovm_edits",   tip:"mdef_edits" }
+];
+function ovCell(mk, mm){
+  var v=mm[mk.f]||0;
+  return '<div class="ov-cell"><span class="ov-cv">'+nIso(v)+(mk.pct?"%":"")+'</span>'+
+    '<span class="ov-ck">'+esc(t(mk.lab))+'<button type="button" class="info" data-tip="'+esc(t(mk.tip))+'" aria-label="'+esc(t(mk.tip))+'">i</button></span></div>';
+}
+function ovWindowHtml(uid, w){
+  var mm=memberMetrics(uid, w.days);
+  return '<div class="ov-win"><div class="ov-win-h">'+esc(t(w.lab))+'</div><div class="ov-cells">'+
+    OV_METRICS.map(function(mk){ return ovCell(mk, mm); }).join("")+'</div></div>';
+}
+/* One member panel, reused by the oversight room (trail:true) and the member's own profile (own:true). */
+function memberPanelHtml(member, opts){
+  opts=opts||{}; var uid=member.id, L=getLang();
+  var nm=member.name||memberName(uid)||resolveOperator(uid);
+  var roleTxt=member.role==="owner" ? t("pf_role_owner") : t("pf_role_operator");
+  var trend=memberSendTrend(uid, 14);
+  var head='<header class="ov-mh"><div class="ov-mid"><h3 class="ov-mn" dir="auto">'+esc(nm)+'</h3>'+
+    '<span class="ov-role chip-st">'+esc(roleTxt)+'</span></div>'+
+    '<div class="ov-trend" title="'+esc(t("ov_trend"))+'">'+sparklineSvg(trend,{w:132,h:30})+'</div></header>';
+  var wins='<div class="ov-wins">'+OV_WINDOWS.map(function(w){ return ovWindowHtml(uid, w); }).join("")+'</div>';
+  var trail="";
+  if(opts.trail){
+    var led=operatorLedger(uid, { limit:8 });
+    var rows=(led.rows||[]).map(function(r){
+      return '<div class="ov-tl-row"><span class="ov-tl-k chip-st">'+esc(t("pf_op_"+r.kind)||t("pf_op_other"))+'</span>'+
+        '<span class="ov-tl-d" dir="auto">'+esc(r.detail||r.opp||"")+'</span>'+
+        '<span class="ov-tl-t">'+fmtWhenHtml(r.ts)+'</span></div>';
+    }).join("");
+    trail='<details class="ov-trail"><summary class="ov-trail-s">'+ic("clock",14)+esc(t("ov_trail"))+' <span class="ov-tl-n">'+nIso(led.total)+'</span></summary>'+
+      '<div class="ov-tl-list">'+(rows||'<p class="mw-muted">'+esc(t("ov_trail_empty"))+'</p>')+'</div></details>';
+  }
+  var ownNote=opts.own ? '<p class="ov-own-note">'+esc(t("ov_own_note"))+'</p>' : "";
+  return '<section class="ov-member'+(opts.own?" is-own":"")+'" data-member="'+esc(uid)+'">'+head+ownNote+wins+trail+'</section>';
+}
+try{ window.memberPanelHtml=memberPanelHtml; }catch(_){}
+
+async function initOversight(){
+  var box=document.getElementById("ovRoom"); if(!box) return;
+  try{ await loadAdminTier(); }catch(e){}
+  try{ await hydrateOperatorNames(); }catch(e){}
+  try{ await hydrateMembers(); }catch(e){}
+  // The owner-only boundary, enforced in the UI as well as at the database (RLS). A member reaching this
+  // view by any means sees nothing and is returned to the board; the room does not exist for them.
+  if(!isOwnerMember()){
+    box.innerHTML='<div class="empty">'+esc(t("ov_denied"))+'</div>';
+    try{ location.replace("#board"); }catch(e){}
+    return;
+  }
+  var members=membersRoster().filter(function(m){ return m && m.active!==false; });
+  if(!members.length){ var me=currentActor(); members=[{ id:me, name:resolveOperator(me), role:"owner", active:true }]; }
+  // Owner first, then the rest, each newest-relevant; a stable, human order.
+  members.sort(function(a,b){ return (a.role==="owner"?0:1)-(b.role==="owner"?0:1); });
+  var panels=members.map(function(m){ return memberPanelHtml(m, { trail:true }); }).join("");
+  // The roster: the owner's read-only member list (names, roles, active). Roles are set in the Supabase SQL
+  // (never self-granted from a session), so this lists rather than edits; the note says where to change them.
+  var roster='<section class="ov-roster"><h3 class="ov-roster-h">'+esc(t("ov_roster"))+'</h3><div class="ov-roster-list">'+
+    members.map(function(m){ return '<div class="ov-roster-row"><span class="ov-rn" dir="auto">'+esc(m.name||memberName(m.id))+'</span>'+
+      '<span class="ov-re mono-iso" dir="ltr">'+esc(m.email||"")+'</span>'+
+      '<span class="ov-rr chip-st">'+esc(m.role==="owner"?t("pf_role_owner"):t("pf_role_operator"))+'</span>'+
+      (m.active===false?'<span class="ov-ri chip-st">'+esc(t("ov_inactive"))+'</span>':"")+'</div>'; }).join("")+
+    '</div><p class="ov-roster-note">'+esc(t("ov_roster_note"))+'</p></section>';
+  // The pre-stamp console-history bucket, attributed to the owner by the stated mapping (see the SQL), shown
+  // as one labeled line so nothing is fabricated into a real member's numbers.
+  var hist=consoleHistoryStats(), histHtml="";
+  if(hist && (hist.sent||hist.moved)){
+    histHtml='<section class="ov-hist"><h3 class="ov-hist-h">'+esc(t("ov_history"))+'</h3>'+
+      '<p class="ov-hist-line">'+esc(t("ov_history_sub"))+' · '+esc(t("ovm_sends"))+' '+nIso(hist.sent)+' · '+esc(t("ovm_moves"))+' '+nIso(hist.moved)+'</p></section>';
+  }
+  box.innerHTML=panels+roster+histHtml;
+}
+window.initOversight=initOversight;
+
 async function initProfile(){
   const el=id=>document.getElementById(id);
   var signedIn=false; try{ signedIn=!!profileUid(); }catch(e){}
@@ -8779,6 +8989,11 @@ async function initProfile(){
   if(el("pfStMoved")) el("pfStMoved").textContent=String(s.moved);
   if(el("pfStClosed")) el("pfStClosed").textContent=String(s.closed);
   renderCadence(el("pfCadence"), s.cadence);
+  // P27: the member's OWN performance panel: the same windowed numbers (daily/weekly/monthly) and the same
+  // metric-dictionary definitions the oversight room shows, but scoped to this operator's own data only. A
+  // member sees exactly this one thing of the oversight surface, and never another member's numbers.
+  if(el("pfWindows")){ var meUid=currentActor();
+    el("pfWindows").innerHTML=memberPanelHtml({ id:meUid, name:(name||email||resolveOperator(meUid)), role:(isOwnerMember()?"owner":"member") }, { own:true }); }
   // the honest pre-stamp bucket: one labeled line, never fabricated into a real operator's numbers
   var hist=consoleHistoryStats();
   if(el("pfHistory")){ if(hist){ el("pfHistory").hidden=false;
