@@ -252,9 +252,12 @@ with sync_playwright() as p:
     ck("Step 2: the History thread renders a VISIBLE marker naming the mounted renderer (self-identifies on device)",
        marker["present"] and marker["text"].startswith("thread v2") and "renderHistory" in marker["text"] and marker["visible"], marker)
     rep = marker.get("report") or {}
-    ck("runtime probe: the reply's on-screen text is owned by threadListHtml (the mounted renderer, proven at runtime)",
-       rep.get("mounted") is True and rep.get("replyTextOwner")=="threadListHtml"
-       and rep.get("bubbles",0) >= 1 and "threadListHtml" in (rep.get("listRenderer") or ""), rep)
+    # P21: the History tab is now the activity trail (activityTrailHtml). A message expands IN PLACE to its
+    # full bubble through the one P12 path (thSentBubble/thReplyBubble). The runtime probe proves the trail is
+    # mounted and a message bubble (data-bubble=msgBubble) is present in it - one renderer, one bubble builder.
+    ck("runtime probe: the History renderer is the activity trail, and the message bubble is the one P12 path",
+       rep.get("mounted") is True and rep.get("replyTextOwner")=="activityTrailHtml"
+       and rep.get("bubbles",0) >= 1 and "activityTrailHtml" in (rep.get("listRenderer") or ""), rep)
 
     ctx.close(); b.close()
 httpd.shutdown()

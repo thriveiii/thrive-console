@@ -311,6 +311,35 @@ select{cursor:pointer}
   padding:6px 12px;cursor:pointer;flex:0 0 auto}
 .toast-act:hover{background:rgba(150,133,202,.18)}
 
+/* P21: the send moment. A calm, centred arrival card shown once an outreach send is confirmed: the
+   in-repo asterisk signature mark with a gentle radiate, and one line. Tap anywhere or wait to return to
+   the board. Above everything (z above the modal). The radiate is CSS only and stops under reduced motion. */
+.sm-scrim{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+  padding:var(--s-4);background:rgba(0,0,0,.62);backdrop-filter:blur(6px);
+  opacity:0;transition:opacity .24s ease;cursor:pointer;outline:none}
+.sm-scrim.on{opacity:1}
+.sm-card{inline-size:min(360px,90vw);background:var(--panel);border:1px solid var(--hair);
+  border-radius:var(--r-xl,20px);padding:var(--s-6,32px) var(--s-5,24px);text-align:center;
+  box-shadow:var(--el-raised,0 30px 80px rgba(0,0,0,.55));
+  transform:translateY(8px) scale(.98);transition:transform .28s cubic-bezier(.2,.7,.2,1)}
+.sm-scrim.on .sm-card{transform:none}
+.sm-mark-wrap{display:flex;align-items:center;justify-content:center;margin-block-end:var(--s-4,16px)}
+.sm-mark{color:var(--purple,#9685ca);display:block}
+.sm-mark .sm-rays{opacity:.95}
+.sm-mark .sm-core{opacity:.95}
+/* the two rings breathe outward and fade, staggered, so the mark reads as radiating not spinning */
+.sm-mark .sm-ring{transform-box:fill-box;transform-origin:center;opacity:0;
+  animation:sm-radiate 2.6s ease-out infinite}
+.sm-mark .sm-ring-2{animation-delay:1.3s}
+@keyframes sm-radiate{0%{transform:scale(.55);opacity:.55}70%{opacity:.12}100%{transform:scale(1.65);opacity:0}}
+.sm-line{margin:0;font-size:var(--fs-md,16px);line-height:var(--lh-base,1.55);color:var(--ink,#fff);font-weight:var(--w-head,600)}
+[dir="rtl"] .sm-line{letter-spacing:normal}
+@media (prefers-reduced-motion:reduce){
+  .sm-scrim{transition:none}
+  .sm-scrim.on .sm-card{transition:none}
+  .sm-mark .sm-ring{animation:none;opacity:.2;transform:scale(1.2)}   /* a still ring, no radiate */
+}
+
 /* templates gallery */
 .tpl{display:grid;grid-template-columns:1fr;gap:16px}
 .tpl .item{display:grid;grid-template-columns:220px 1fr;gap:18px;background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:16px}
@@ -2156,6 +2185,30 @@ body.is-dragging{ cursor:grabbing; user-select:none }
 .th-detail{ font-size:var(--fs-xs); color:var(--ink-4); min-width:0; word-break:break-word; flex:1 1 auto }
 .th-when{ font-size:var(--fs-micro); color:var(--ink-4); flex:0 0 auto; margin-inline-start:auto }
 .th-chan{ color:var(--ink-4) }
+/* P21 · the card activity trail: quiet typography, no chrome, newest-first. Each entry is a calm row of
+   icon + what + optional summary, with the actor and time trailing. A send/reply is a full-width button that
+   expands its message IN PLACE (the pre-rendered P12 bubble) - one scroll, no modal, no second surface. */
+.tr-list{ list-style:none; margin:0; padding:0; display:grid; gap:0 }
+.tr-line, .tr-head{ display:flex; gap:var(--s-3); align-items:baseline; inline-size:100%;
+  padding:var(--s-2) var(--s-3); border:0; background:transparent; text-align:start; font:inherit; color:inherit;
+  border-block-end:1px solid var(--hair-2) }
+.tr-item:last-child > .tr-line, .tr-item:last-child > .tr-head{ border-block-end:0 }
+.tr-head{ cursor:pointer; border-radius:var(--r-sm); transition:background .15s }
+.tr-head:hover{ background:var(--hair-2) }
+.tr-icn{ flex:0 0 auto; color:var(--ink-4); display:inline-flex; align-items:center; transform:translateY(2px) }
+.tr-what{ font-size:var(--fs-sm); color:var(--ink); font-weight:var(--w-head); min-inline-size:0; overflow-wrap:anywhere }
+.tr-sum{ font-weight:400; color:var(--ink-3) }
+.tr-meta{ margin-inline-start:auto; display:inline-flex; gap:var(--s-2); align-items:baseline; flex:0 0 auto; white-space:nowrap }
+.tr-actor{ font-size:var(--fs-micro); color:var(--ink-3) }
+.tr-when{ font-size:var(--fs-micro); color:var(--ink-4) }
+.tr-chev{ flex:0 0 auto; color:var(--ink-4); display:inline-flex; align-items:center; transition:transform .2s }
+.tr-item.is-open .tr-chev{ transform:rotate(90deg) }
+.tr-expand{ padding:var(--s-1,4px) var(--s-3) var(--s-3) }
+.tr-expand[hidden]{ display:none }
+.th-embed{ margin:0 }
+[dir="rtl"] .tr-item.is-open .tr-chev{ transform:rotate(-90deg) }
+[dir="rtl"] .tr-actor, [dir="rtl"] .tr-when{ letter-spacing:normal }
+@media (prefers-reduced-motion:reduce){ .tr-chev{ transition:none } }
 /* Part 1: the thread is a list of message bubbles, ONE component for every message. Our send and their
    reply share the same header/body skeleton and are told apart by TWO signals at once: opposite alignment
    (our send at the far edge, their reply at the reading-start edge) AND a distinct surface tint (our send on

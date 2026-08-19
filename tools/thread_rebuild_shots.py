@@ -54,7 +54,8 @@ with sync_playwright() as p:
       # open the conversation (History tab) on madar and let the thread + composer settle
       try:
         pg.evaluate("()=>window.thriveModal.open('madar','history','مدارس المدار الدولية')")
-        pg.wait_for_selector('#modalHistory .th-list', timeout=6000)
+        pg.wait_for_selector('#modalHistory .tr-list', timeout=6000)
+        pg.evaluate("()=>{ var h=document.querySelector('#modalHistory .tr-msg .tr-head'); if(h) h.click(); }")
         pg.wait_for_timeout(700)
       except Exception as e:
         print(f"{lang}/{tag}: open failed: {e}")
