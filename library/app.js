@@ -236,7 +236,10 @@ const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thriv
   thrive_email_templates_v1:1, thrive_templates_v1:1, thrive_removed_v1:1, thrive_etpl_seed_v1:1,
   /* R16 (P25): custom missions the operator opened. The seeds are implicit; only custom missions are
      stored, and they travel so a third shelf appears on every device. */
-  thrive_missions_v1:1 };
+  thrive_missions_v1:1,
+  /* R17 (P26): the daily drop's batch records (its documents and the opportunities it produced). The
+     documents are the batch's audit trail, evidence about the day's work, so they travel with every device. */
+  thrive_batches_v1:1 };
 /* WebKit deletes ALL script writeable storage for an origin with no user interaction in the
    last seven days of browser use. Not part of it: all of it, at once. And localStorage throws
    past roughly 5 MiB. So a write that fails is not a detail, it is the moment the console stops
@@ -5081,9 +5084,33 @@ async function ingWriteRows(batch, host){
   const rows=batch.report.rows.filter(ingStorable);
   let existing={};
   try{ existing=oppExistingMeta(await mergedOpps()); }catch(_){}
+  // R17 (P26): mint ONE batch id + date so every opportunity this drop writes links to it, and the drop's
+  // documents ride with it. A numbered batch (a document says "Batch 13") is idempotent by its number, so a
+  // re-drop updates the same record. The id/date are threaded through the existing writeImport -> toRecord
+  // ctx.batch, so the opp link needs no new write path.
+  const _docs=batch.documents||[];
+  const _n=batchNumberFrom(_docs);
+  const _date=today();
+  const _bid=batchIdFor(_n, Date.now());
+  const _bctx=Object.assign({}, batch.batch, { id:_bid, date:_date });
   // R13: the row's action decision (restore / import-as-new for an archived slug) rides to the writer.
-  return writeImport(rows.map(r=>({ entry:r.entry, host: host? ingHostable(r) : false, decision:r.decision })),
-    { existing:existing, notes:batch.notes, batch:batch.batch });
+  const tally=await writeImport(rows.map(r=>({ entry:r.entry, host: host? ingHostable(r) : false, decision:r.decision })),
+    { existing:existing, notes:batch.notes, batch:_bctx });
+  // Keep the drop whole: persist the batch record (its documents + the slugs it produced). Only when the
+  // drop actually landed opportunities or carried documents; a no-op drop writes no batch. A document NEVER
+  // becomes a card here - this stores the files beside the cards, it does not import them.
+  try{
+    if((tally.slugs&&tally.slugs.length) || _docs.length){
+      const prev=getBatch(_bid)||{};
+      const slugs=Array.from(new Set([].concat(prev.slugs||[], tally.slugs||[])));
+      saveBatch({ id:_bid, date:(prev.date||_date), n:_n||prev.n||0,
+        title:(batch.batch&&batch.batch.title)||prev.title||"",
+        documents:_docs.length?_docs:(prev.documents||[]),
+        slugs:slugs, up:Date.now() });
+      logActivity("in_batch", _bid, _docs.length+" documents, "+(tally.slugs||[]).length+" opportunities");
+    }
+  }catch(_){}
+  return tally;
 }
 
 /* ---------- editor ---------- */
@@ -9311,6 +9338,131 @@ function missionOf(o){
 function missionName(m, lang){ if(!m) return ""; return (lang==="ar")? (m.name_ar||m.name_en||m.id) : (m.name_en||m.name_ar||m.id); }
 try{ window.getMissions=getMissions; window.getMission=getMission; window.addMission=addMission; window.removeMission=removeMission; window.missionOf=missionOf; window.MISSION_SEED=MISSION_SEED; }catch(_){}
 
+/* ---------- R17 (P26): the daily drop's batch records ------------------------------------------------
+   A drop ships more than opportunities: its research-and-messages md, a market assessment, a playbook or
+   notes, a README. The ingest ladder (P11..P17) correctly refuses to make cards from those documents, and
+   until now they were LOST, though they are the batch's audit trail (sources, freshness, the owner's-eye
+   review). One batch record keeps them: { id, date, n, title, documents:[{name,type,text}], slugs:[...] }.
+   Every opportunity the drop creates or updates links to the batch id (record.batch_id, stamped in
+   toRecord). Additive: one synced key, read newest-first (R6); no document ever becomes a card. */
+const BATCHES_KEY="thrive_batches_v1";
+function getBatches(){
+  var list=[]; try{ list=JSON.parse(localStorage.getItem(BATCHES_KEY)||"[]"); }catch(e){ list=[]; }
+  if(!Array.isArray(list)) list=[];
+  return list.slice().sort(function(a,b){ return (b.up||0)-(a.up||0) || String(b.date||"").localeCompare(String(a.date||"")); });
+}
+function getBatch(id){ if(!id) return null; var l=getBatches(); for(var i=0;i<l.length;i++){ if(l[i].id===id) return l[i]; } return null; }
+function saveBatch(rec){
+  if(!rec || !rec.id) return null;
+  var list=[]; try{ list=JSON.parse(localStorage.getItem(BATCHES_KEY)||"[]"); }catch(e){ list=[]; }
+  if(!Array.isArray(list)) list=[];
+  var i=list.findIndex(function(x){ return x && x.id===rec.id; });
+  if(i>=0) list[i]=Object.assign({}, list[i], rec); else list.push(rec);
+  try{ lsSet(BATCHES_KEY, JSON.stringify(list)); }catch(e){}
+  return rec;
+}
+// The batch's own number, read from a document's filename or first lines ("Batch 13"), so a re-drop of the
+// same numbered batch updates in place instead of piling up. Returns 0 when no number is present.
+function batchNumberFrom(documents){
+  var docs=documents||[];
+  for(var i=0;i<docs.length;i++){
+    var m=String(docs[i].name||"").match(/batch[^0-9]*0*(\d+)/i) || String(docs[i].text||"").slice(0,400).match(/batch[^0-9]*0*(\d+)/i);
+    if(m) return parseInt(m[1],10);
+  }
+  return 0;
+}
+// A numbered batch is idempotent by its number; an unnumbered drop gets a timestamp id so two same-day drops
+// stay distinct.
+function batchIdFor(n, stamp){ return n>0 ? ("batch-"+n) : ("b-"+(stamp||Date.now()).toString(36)); }
+// The opportunities a batch produced, resolved at READ time from the opp store by their stamped batch_id (a
+// batch's own slugs list is the authoritative record; this reader lets the view show live business names).
+function oppsOfBatch(id, all){
+  if(!id) return [];
+  return (all||[]).filter(function(o){ return o && o.batch_id===id; });
+}
+// A small, safe, read-only markdown renderer for a batch document. It ESCAPES everything (no HTML from a
+// document ever runs), isolates each line with dir="auto" so an Arabic line reads RTL and a Latin line LTR
+// in the same document, and gives headings / list items / fenced code a light treatment. No third-party
+// markdown library ships on this console by design.
+function inlineMd(s){ return esc(String(s==null?"":s)).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"); }
+function renderDocMd(text){
+  var lines=String(text==null?"":text).split(/\r?\n/), out=[], inCode=false;
+  for(var i=0;i<lines.length;i++){
+    var raw=lines[i];
+    if(/^\s*```/.test(raw)){ if(inCode){ out.push("</pre>"); inCode=false; } else { out.push('<pre class="doc-code" dir="ltr">'); inCode=true; } continue; }
+    if(inCode){ out.push(esc(raw)+"\n"); continue; }
+    var h=raw.match(/^(#{1,6})\s+(.*)$/);
+    if(h){ out.push('<p class="doc-h doc-h'+h[1].length+'" dir="auto">'+inlineMd(h[2])+'</p>'); continue; }
+    if(/^\s*[-*]\s+/.test(raw)){ out.push('<p class="doc-li" dir="auto">'+inlineMd(raw.replace(/^\s*[-*]\s+/,""))+'</p>'); continue; }
+    if(/^\s*$/.test(raw)){ out.push('<p class="doc-gap"></p>'); continue; }
+    out.push('<p class="doc-p" dir="auto">'+inlineMd(raw)+'</p>');
+  }
+  if(inCode) out.push("</pre>");
+  return out.join("");
+}
+// The i18n label for a document type (research, market, playbook, notes, readme, document).
+function docTypeLabel(type){ return t("bdoc_"+(type||"document")) || t("bdoc_document"); }
+try{ window.getBatches=getBatches; window.getBatch=getBatch; window.saveBatch=saveBatch; window.batchNumberFrom=batchNumberFrom; window.batchIdFor=batchIdFor; window.oppsOfBatch=oppsOfBatch; window.renderDocMd=renderDocMd; }catch(_){}
+
+/* ---------- R17 (P26): the Batches view ------------------------------------------------------------
+   The daily drop, whole. Each batch is listed newest-first (R6) with its documents (rendered read-only on
+   demand, RTL safe) and the opportunities it produced. Read-only: this view renders the batch records and
+   the opp store, and turns no document into a card. Searchable by date and business. */
+async function initBatches(){
+  const box=document.getElementById("batchList"); if(!box) return;
+  const search=document.getElementById("batchSearch");
+  const refresh=document.getElementById("batchRefresh");
+  let all=[]; try{ all=await mergedOpps(); }catch(_){ all=[]; }
+  const want=(viewParams().get("b")||"").trim();       // an opened batch (from a card's chip): expand it
+
+  function docHtml(d, openIt){
+    return '<details class="bdoc"'+(openIt?" open":"")+'><summary class="bdoc-s">'+
+      '<span class="bdoc-type">'+esc(docTypeLabel(d.type))+'</span>'+
+      '<span class="bdoc-name mono-iso" dir="ltr">'+esc(d.name||"")+'</span></summary>'+
+      '<div class="bdoc-body">'+renderDocMd(d.text||"")+'</div></details>';
+  }
+  function batchHtml(b, opps, openIt){
+    const L=getLang();
+    const docs=(b.documents||[]);
+    const label = b.n>0 ? (esc(t("batches_n"))+" "+nIso(b.n)) : esc(t("batches_drop"));
+    const oppChips = opps.length
+      ? opps.map(function(o){ return '<button type="button" class="bopp-chip" data-bopp="'+esc(o.slug)+'" dir="auto">'+esc(o.business||o.slug)+'</button>'; }).join("")
+      : '<span class="mw-muted">'+esc(t("batches_no_opps"))+'</span>';
+    return '<section class="batch'+(openIt?" open":"")+'" data-batch="'+esc(b.id)+'">'+
+      '<header class="batch-h"><div class="batch-id"><h2 class="batch-t">'+label+'</h2>'+
+        '<span class="batch-date" dir="ltr">'+esc(b.date||"")+'</span></div>'+
+        '<div class="batch-counts">'+
+          '<span class="batch-count">'+nIso(docs.length)+' '+esc(t("batches_docs"))+'</span>'+
+          '<span class="batch-count">'+nIso(opps.length)+' '+esc(t("batches_opps"))+'</span>'+
+        '</div></header>'+
+      (b.title? '<p class="batch-tag" dir="auto">'+esc(b.title)+'</p>' : '')+
+      '<div class="batch-docs">'+(docs.length? docs.map(function(d){ return docHtml(d, openIt); }).join("") : '<p class="mw-muted">'+esc(t("batches_no_docs"))+'</p>')+'</div>'+
+      '<div class="batch-opps"><span class="batch-opps-h">'+esc(t("batches_produced"))+'</span><div class="bopp-list">'+oppChips+'</div></div>'+
+      '</section>';
+  }
+  function render(){
+    const q=(search&&search.value||"").trim().toLowerCase();
+    const batches=getBatches();
+    const rows=batches.map(function(b){ return { b:b, opps:oppsOfBatch(b.id, all) }; }).filter(function(r){
+      if(!q) return true;
+      const hay=[r.b.date, r.b.title, ("batch "+(r.b.n||"")), (r.b.documents||[]).map(function(d){ return d.name+" "+d.type; }).join(" "),
+        r.opps.map(function(o){ return o.business||o.slug; }).join(" ")].join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+    if(!rows.length){ box.innerHTML='<div class="empty">'+esc(t(batches.length? "batches_none_match" : "batches_empty"))+'</div>'; return; }
+    box.innerHTML=rows.map(function(r){ return batchHtml(r.b, r.opps, want && r.b.id===want); }).join("");
+    box.querySelectorAll("[data-bopp]").forEach(function(btn){ btn.addEventListener("click", function(){
+      var slug=btn.getAttribute("data-bopp");
+      try{ if(window.thriveModal) window.thriveModal.open(slug, "overview", slug); else goTo("compose","slug="+encodeURIComponent(slug)); }catch(_){}
+    }); });
+    if(want){ var t0=box.querySelector('[data-batch="'+CSS.escape(want)+'"]'); if(t0){ try{ t0.scrollIntoView({block:"start"}); }catch(_){} } }
+  }
+  if(search) search.addEventListener("input", render);
+  if(refresh) refresh.addEventListener("click", async function(){ try{ all=await mergedOpps(); }catch(_){} render(); });
+  render();
+}
+try{ window.initBatches=initBatches; }catch(_){}
+
 function initTemplates(){
   const el=id=>document.getElementById(id);
   let pendingHTML=null;
@@ -12596,6 +12748,12 @@ function initModal(){
     if(o.location) rows.push(row(t("mw_o_where"), esc(o.location)));
     if(o.template) rows.push(row(t("mw_o_tpl"), esc(o.template)));
     if(o.sent_on) rows.push(row(t("mw_o_made"), ltr(o.sent_on)));
+    // R17 (P26): a quiet "from batch <date>" chip. The card never carries the documents; the chip opens the
+    // Batches view for this drop, where its documents render read-only on demand. The date is isolated LTR so
+    // an Arabic phrase never reverses the Western numerals.
+    if(o.batch_id && getBatch(o.batch_id)) rows.push(row(t("mw_o_batch"),
+      '<button type="button" class="mw-batch-chip" data-batchopen="'+esc(o.batch_id)+'">'+ic("page",13)+
+      '<span class="mw-batch-d" dir="ltr">'+esc(o.batch_date||o.batch_id)+'</span></button>'));
     // The live link has a permanent home here: Activated, the address, and a small Open and Copy, so
     // it never has to be hunted for again. The gradient border sweeps once the first time this record
     // shows the activated state, then calms.
@@ -12634,6 +12792,10 @@ function initModal(){
     box.querySelectorAll("[data-retryrec]").forEach(b=>b.addEventListener("click", ()=>{
       try{ retryRecord(b.getAttribute("data-retryrec")); }catch(_){}
       try{ if(window.thriveModal && window.thriveModal.reread) window.thriveModal.reread(); }catch(_){}
+    }));
+    box.querySelectorAll("[data-batchopen]").forEach(b=>b.addEventListener("click", ()=>{
+      try{ if(window.thriveModal && window.thriveModal.close) window.thriveModal.close(); }catch(_){}
+      try{ goTo("batches","b="+encodeURIComponent(b.getAttribute("data-batchopen"))); }catch(_){}
     }));
     box.querySelectorAll("[data-ovcopy]").forEach(b=>b.addEventListener("click", async ()=>{
       var okc=await copyToClipboard(liveUrl(b.getAttribute("data-ovcopy")));
