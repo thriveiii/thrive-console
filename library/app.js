@@ -1773,9 +1773,10 @@ function opPrefRemember(k, v){
    and writes only their own. It follows the Stage-4 pattern: read on sign-in, cache on device, write
    debounced. On the first read it defaults from the existing op_prefs:<uid> row and the shared
    signature, so no operator loses what they had (D2: the signature is per-operator from here on,
-   seeded by what was shared). The owner tier is a database fact: console_admins holds a row per owner,
-   readable only for one's own uid and writable by no client, so the tier can never be self-granted and
-   no admin address is ever a client literal. */
+   seeded by what was shared). The owner tier is a database fact: console_members carries the role
+   (owner | member) per operator, readable only for one's own uid (RLS read_own) and writable by no
+   client, so the tier can never be self-granted and no owner address is ever a client literal. The
+   legacy console_admins table is honored too when present, but console_members.role is the authority. */
 var __profile=null, __profileLoaded=false, __adminTier=null, __profSaveT=null;
 function profileUid(){ try{ return (window.ThriveSupa && ThriveSupa.authUid && ThriveSupa.authUid()) || ""; }catch(e){ return ""; } }
 function profileEmail(){ try{ return (window.ThriveSupa && ThriveSupa.authEmail && ThriveSupa.authEmail()) || ""; }catch(e){ return ""; } }
@@ -1837,12 +1838,25 @@ function setProfilePrefNS(ns, v){ setProfilePref(nsKey(ns), v); }
 window.ThriveProfileKeys = { mem:profileMemNS, setMem:setProfileMemNS, pref:profilePrefNS, setPref:setProfilePrefNS, ns:nsKey };
 async function loadAdminTier(){
   var uid=profileUid();
-  if(!uid || !supaOn()){ __adminTier=false; return false; }
-  try{ var rows=await window.ThriveSupa.rest("console_admins", { query:"uid=eq."+encodeURIComponent(uid)+"&select=uid" }); __adminTier=!!(rows && rows.length); }
-  catch(e){ __adminTier=false; }
-  return __adminTier;
+  if(!uid || !supaOn()){ __adminTier=false; __adminTierResolved=false; return false; }
+  var owner=false;
+  // Primary authority: this operator's own role in console_members (RLS read_own permits reading one's own
+  // row). This is the live source of the owner tier. console_admins is a LEGACY optional table, probed only
+  // if console_members did not already establish the tier, so a project without it works and one with it
+  // still honors it. Either way the tier is a database fact, never a client literal or a self-granted flag.
+  try{ var mrows=await window.ThriveSupa.rest("console_members", { query:"id=eq."+encodeURIComponent(uid)+"&select=role" });
+       if(mrows && mrows.length && mrows[0] && mrows[0].role==="owner") owner=true; }catch(e){}
+  if(!owner){ try{ var arows=await window.ThriveSupa.rest("console_admins", { query:"uid=eq."+encodeURIComponent(uid)+"&select=uid" });
+       if(arows && arows.length) owner=true; }catch(e){} }
+  __adminTier=owner; __adminTierResolved=true; return __adminTier;
 }
 function isOwnerTier(){ return __adminTier===true; }
+// Whether the owner tier has been established from the database yet (as opposed to the null "not asked" and
+// the false "asked, not owner"). The router uses this so a slow or failed role read never BOUNCES a possible
+// owner: an owner-only route is refused outright only once the role is resolved-and-not-owner.
+var __adminTierResolved=false;
+function ownerTierResolved(){ return __adminTierResolved===true; }
+try{ window.ownerTierResolved=ownerTierResolved; }catch(_){}
 
 /* The operator's own numbers, from the SAME derivation the board and Insights use, filtered to the
    operator by the actor stamped on the send (currentActor). No parallel store: opens and replies come
@@ -8845,7 +8859,7 @@ async function connCheck(candidate, onStep){
    (Preferences, Memory, Performance), then the owner-only infrastructure zone. Every region is filled,
    nothing dead-ends. Preferences persist to console_profiles; Performance derives from the one source
    (operatorStats); the infrastructure zone is present-and-functional for the owner and removed for
-   every other operator, whose tier is refused at the database (console_admins), not merely hidden. */
+   every other operator, whose tier is refused at the database (console_members.role), not merely hidden. */
 /* ---------- P27: the oversight room + the shared member performance panel ------------------------------
    The owner's private surface. Per member: precise numbers first (daily / weekly / monthly windows), each
    carrying its definition from the ONE metric dictionary (INSIGHTS_METRICS), then a calm sparkline trend and

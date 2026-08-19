@@ -116,7 +116,10 @@ function grabConst(re) { const m = app.match(re); if (!m) throw new Error("const
   // --- Router + view gating: owner-only, fails closed, refuses a member ---
   ck("B9 the router marks the oversight view owner-only", /OWNER_ONLY *= *\{ *oversight:1/.test(bundle));
   ck("B10 ownerOK fails CLOSED (owner must be explicitly true)", /function ownerOK\(\)\{[^}]*isOwnerMember && window\.isOwnerMember\(\)/.test(bundle));
-  ck("B11 a member's direct hash is corrected to the board", /if\(OWNER_ONLY\[id\] && !ownerOK\(\)\)\{ id = VIEWS\[0\]\.id/.test(bundle));
+  ck("B11 a resolved non-owner's direct hash is corrected to the board (but only once resolved)",
+    /if\(OWNER_ONLY\[id\] && !ownerOK\(\) && ownerResolved\(\)\)\{/.test(bundle) && /id = VIEWS\[0\]\.id/.test(bundle));
+  ck("B11b the router does NOT bounce a pending owner (owner-only route allowed through until role resolves)",
+    /ownerResolved\(\)\{ try\{ return !!\(window\.ownerTierResolved/.test(bundle));
   ck("B12 the oversight room refuses a non-owner and returns to the board",
     /function initOversight[\s\S]*if\(!isOwnerMember\(\)\)[\s\S]*location\.replace\("#board"\)/.test(app));
   ck("B13 the owner-only nav link is installed for the owner only", /function installOwnerNav[\s\S]*isOwnerMember\(\)/.test(app) && /data-view="oversight"/.test(app));
@@ -144,5 +147,53 @@ function grabConst(re) { const m = app.match(re); if (!m) throw new Error("const
   ck("B23 the shipped client references no other project (no 'lotus')", !/lotus/i.test(shipped));
 }
 
-console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");
-process.exit(fails === 0 ? 0 : 1);
+/* ============ Part D: the owner tier reads from console_members.role, console_admins optional ============ */
+async function partD() {
+  // Lift the real loadAdminTier + isOwnerTier + ownerTierResolved. Stub ThriveSupa.rest so console_admins is
+  // ABSENT (throws, like a missing table) and console_members carries the role by uid via read_own.
+  // grabFn matches on "function <name>(", so it drops the leading `async` from `async function
+  // loadAdminTier` and ends a capture at the next "\n}" in column 0 (which over-captures one-liner
+  // functions like isOwnerTier / ownerTierResolved that close their brace on the same line). So:
+  // re-add `async ` to loadAdminTier, and inline the two one-liners verbatim from library/app.js.
+  const src = "var __adminTier=null, __adminTierResolved=false;\n" +
+    "async " + grabFn("loadAdminTier") +
+    "\nfunction isOwnerTier(){ return __adminTier===true; }" +
+    "\nfunction ownerTierResolved(){ return __adminTierResolved===true; }";
+  const ROLES = { owner1: "owner", owner2: "owner", memberX: "member" };
+  const calls = { console_admins: 0, console_members: 0 };
+  const sandbox = { encodeURIComponent, String, __uid: "" };
+  sandbox.profileUid = () => sandbox.__uid;
+  sandbox.supaOn = () => true;
+  sandbox.window = { ThriveSupa: { rest: async (table, opts) => {
+    calls[table] = (calls[table] || 0) + 1;
+    if (table === "console_admins") throw new Error("relation \"console_admins\" does not exist");   // absent
+    if (table === "console_members") {
+      const m = String((opts && opts.query) || "").match(/id=eq\.([^&]+)/);
+      const uid = m ? decodeURIComponent(m[1]) : "";
+      return (uid in ROLES) ? [{ role: ROLES[uid] }] : [];
+    }
+    return [];
+  } } };
+  vm.createContext(sandbox);
+  vm.runInContext(src + "\nthis.loadAdminTier=loadAdminTier; this.isOwnerTier=isOwnerTier; this.ownerTierResolved=ownerTierResolved;", sandbox);
+
+  async function tierFor(uid) { sandbox.__uid = uid; await sandbox.loadAdminTier(); return { owner: sandbox.isOwnerTier(), resolved: sandbox.ownerTierResolved() }; }
+
+  const o1 = await tierFor("owner1");
+  ck("D1 an owner (role=owner) is recognized with console_admins ABSENT", o1.owner === true && o1.resolved === true, o1);
+  const o2 = await tierFor("owner2");
+  ck("D2 the second owner identity is recognized identically", o2.owner === true && o2.resolved === true, o2);
+  const mx = await tierFor("memberX");
+  ck("D3 a member (role=member) is NOT the owner tier, and the read resolved (fail-closed)", mx.owner === false && mx.resolved === true, mx);
+  const unknown = await tierFor("nobody");
+  ck("D4 an unknown uid is not owner (no row, no admins table)", unknown.owner === false && unknown.resolved === true, unknown);
+  ck("D5 console_members.role is the primary read (console_admins probed only as fallback)",
+    calls.console_members >= 4 && calls.console_admins >= 1, calls);
+  // Prove console_admins truly optional: even when its probe throws every time, the owner is still recognized.
+  ck("D6 a throwing/absent console_admins never breaks owner recognition", o1.owner === true && o2.owner === true);
+}
+
+partD().then(() => {
+  console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");
+  process.exit(fails === 0 ? 0 : 1);
+}).catch((e) => { console.log("FAIL partD threw"); console.log(String(e)); process.exit(1); });
