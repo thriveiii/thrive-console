@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="21275772">
-<meta name="thrive-built-at" content="2026-08-18T08:36:23Z">
+<meta name="thrive-build" content="7e4b79f6">
+<meta name="thrive-built-at" content="2026-08-19T05:48:29Z">
 <!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
      bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
      in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
@@ -35,7 +35,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=d9a15f29e5">
+<link rel="stylesheet" href="styles.css?v=fe7708d2c9">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -57,7 +57,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
      second which code is live and when it was built; every device capture is now labeled. Low contrast and
      pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
      the Arabic layout cannot reorder them. -->
-<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">21275772</bdi> · <bdi class="mono-iso">2026-08-18T08:36:23Z</bdi></div>
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">7e4b79f6</bdi> · <bdi class="mono-iso">2026-08-19T05:48:29Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
 
@@ -481,13 +481,14 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
       <!-- The bottom of the email is a real object, not a fixed string nobody sees until send. It
            previews, it is editable for this message only, one saved block per DOCUMENT language. §5.1. -->
       <details class="mw-more" id="sigWrap">
-        <summary data-i18n="sig_h">Closing block</summary>
+        <summary data-i18n="sig_h">Signature</summary>
         <p class="hint" data-i18n="sig_sub"></p>
-        <div class="field"><label for="sigBox" data-i18n="sig_this">This message only</label>
-          <textarea id="sigBox" class="input oc-body" rows="4"></textarea></div>
+        <div class="field" id="sigPickField"><label for="sigPick" data-i18n="sig_pick">Signing as</label>
+          <select id="sigPick" class="input"></select></div>
+        <div class="field"><label for="sigBox" data-i18n="sig_preview">Preview</label>
+          <textarea id="sigBox" class="input oc-body sig-preview" rows="4" readonly></textarea></div>
         <div class="bar">
-          <button class="btn ghost sm" type="button" id="sigSave" data-i18n="sig_save">Save as my block for this language</button>
-          <button class="btn ghost sm" type="button" id="sigReset" data-i18n="sig_reset">Back to the saved block</button>
+          <a class="btn ghost sm" id="sigManage" href="#settings" data-i18n="sig_manage">Manage my signatures</a>
         </div>
         <span class="sig-loc" id="sigLoc"></span>
       </details>
@@ -696,13 +697,23 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
       <label class="pf-check"><input type="checkbox" id="pfDigest"> <span data-i18n="pf_digest">Send me a weekly digest of my activity</span></label>
 
-      <div class="field pf-sig">
-        <label for="pfSigEn" data-i18n="pf_sig_en">Signature (English)</label>
-        <textarea id="pfSigEn" class="input" rows="3" dir="ltr"></textarea>
-      </div>
-      <div class="field pf-sig">
-        <label for="pfSigAr" data-i18n="pf_sig_ar">Signature (Arabic)</label>
-        <textarea id="pfSigAr" class="input" rows="3" dir="rtl"></textarea>
+      <div class="pf-sig-mgr">
+        <div class="pf-sig-head">
+          <h3 class="pf-sig-h" data-i18n="sig_h">Signature</h3>
+          <p class="pf-region-sub" data-i18n="sig_mgr_sub">Your name above the agency block. Pick one as your default; the composer adds it once.</p>
+        </div>
+        <ul class="sig-list" id="pfSigList"></ul>
+        <div class="sig-add">
+          <div class="field">
+            <label for="pfSigNewEn" data-i18n="sig_name_en">Your name (English)</label>
+            <input id="pfSigNewEn" class="input" type="text" autocomplete="off" dir="ltr" data-i18n-ph="sig_name_en_ph">
+          </div>
+          <div class="field">
+            <label for="pfSigNewAr" data-i18n="sig_name_ar">Your name (Arabic)</label>
+            <input id="pfSigNewAr" class="input" type="text" autocomplete="off" dir="rtl" data-i18n-ph="sig_name_ar_ph">
+          </div>
+          <button type="button" class="btn" id="pfSigAdd" data-i18n="sig_add">Add signature</button>
+        </div>
       </div>
       <p class="pf-saved" id="pfSaved" hidden data-i18n="pf_saved">Saved.</p>
     </section>
@@ -965,7 +976,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
 <script src="config.js?v=806f4221bf"></script>
 <script src="icons.js?v=f4b0d9edc8"></script>
-<script src="i18n.js?v=d511a46684"></script>
+<script src="i18n.js?v=a97fe55b22"></script>
 <script src="gate.js?v=fec6036cc5"></script>
 <script src="stage-model.js?v=1f1786d20e"></script>
 <script src="lifecycle.js?v=df368247ea"></script>
@@ -977,7 +988,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=98de384c69"></script>
+<script src="app.js?v=8556d727e7"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

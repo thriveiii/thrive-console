@@ -5458,31 +5458,141 @@ function threeWay(title, body, choices){
   });
 }
 
-/* ---------- the closing block ----------
-   It was a fixed string built inside brandWrap and invisible until send. It is
-   now a stored object with one block PER LOCALE, chosen by the opportunity's
-   document language rather than by the chrome, so writing in Arabic chrome to an
-   English prospect still signs off in English. WO-013 §5.1. */
-const SIGN="thrive_signature_v1";
-function getSignatures(){
-  try{ return JSON.parse(localStorage.getItem(SIGN)||"{}"); }catch(e){ return {}; }
+/* ---------- R14 (P20): the one signature system, per sender ----------
+   A signature is a saved text block: a sender DISPLAY NAME (the only variable) plus a FIXED agency block
+   (Thrive Digital Solutions, thriveiii.com). Each member (Thyab, Agha, Basel, ...) manages their own set,
+   stored per ACTOR in the profile prefs under the namespaced signature.v1 key - additive, synced, never a
+   schema change. The compile path appends EXACTLY ONE of these (the sender's default, or the one chosen for
+   that send); the legacy closing block and every template-embedded sign-off are removed from the pipeline so
+   a second closing is structurally impossible. The compliance footer (POSTAL) stays separate, appended once.
+   Rendered as clean text, EN or AR to match the message, no images, no styling beyond the existing tokens. */
+const AGENCY_NAME = "Thrive Digital Solutions";    // the fixed agency name (never per-user)
+const AGENCY_SITE = "thriveiii.com";               // the fixed site
+const SIGN = "thrive_signature_v1";                // legacy per-device {EN,AR} blob, read only to migrate
+function sigLegacyName(loc){
+  try{ var all=JSON.parse(localStorage.getItem(SIGN)||"{}"); var v=all[(loc==="AR")?"AR":"EN"];
+    if(typeof v==="string" && v.trim()) return v.split("\n")[0].trim(); }catch(e){}
+  return "";
 }
-function defaultSignature(loc){
-  const name=getFromName();
-  return loc==="AR"
-    ? name+"\nthriveiii.com"
-    : name+"\nthriveiii.com";
+function sigSeedName(){ try{ return (resolveOperator(currentActor())||getFromName()||"").trim(); }catch(e){ return (getFromName()||"").trim(); } }
+function sigNewId(){ return "sig-"+Date.now().toString(36)+"-"+Math.floor(Math.random()*1e6).toString(36); }
+// The ONE store: the signed-in actor's signature set, {list:[{id,label,name_en,name_ar}], def:id}. Seeded
+// additively from the legacy blob or the operator's resolved name, so no one loses the block they had.
+function sigStore(){
+  var st=null;
+  try{ st = (typeof profilePrefNS==="function") ? profilePrefNS("signature", null) : null; }catch(e){}
+  if(st && Array.isArray(st.list) && st.list.length) return { list:st.list.slice(), def:st.def||st.list[0].id };
+  var en=sigLegacyName("EN")||sigSeedName(), ar=sigLegacyName("AR")||en;
+  var seed={ id:"sig-default", label:(en||ar||"Signature"), name_en:en, name_ar:ar };
+  return { list:[seed], def:seed.id };
 }
-function signatureFor(loc){
-  const L=(loc==="AR")?"AR":"EN";
-  const all=getSignatures();
-  const v=all[L];
-  return (typeof v==="string" && v.trim()) ? v : defaultSignature(L);
+function sigList(){ return sigStore().list; }
+function sigById(id){ var l=sigList(); for(var i=0;i<l.length;i++){ if(l[i].id===id) return l[i]; } return null; }
+function sigDefault(){ var st=sigStore(); return sigById(st.def) || st.list[0] || null; }
+function sigPersist(st){ try{ if(typeof setProfilePrefNS==="function") setProfilePrefNS("signature", st); }catch(e){} }
+function sigAdd(name_en, name_ar){
+  var st=sigStore(); var s={ id:sigNewId(), label:(String(name_en||name_ar||"").trim()||"Signature"),
+    name_en:String(name_en||"").trim(), name_ar:String(name_ar||"").trim() };
+  st.list.push(s); if(!st.def) st.def=s.id; sigPersist(st); return s;
 }
-function setSignature(loc, text){
-  const L=(loc==="AR")?"AR":"EN";
-  const all=getSignatures(); all[L]=String(text||"");
-  return lsSet(SIGN, JSON.stringify(all));
+function sigUpdate(id, patch){
+  var st=sigStore(); for(var i=0;i<st.list.length;i++){ if(st.list[i].id===id){
+    st.list[i]=Object.assign({}, st.list[i], patch);
+    if(patch.name_en!==undefined || patch.name_ar!==undefined)
+      st.list[i].label=(st.list[i].name_en||st.list[i].name_ar||"Signature").trim()||"Signature";
+    sigPersist(st); return st.list[i]; } }
+  return null;
+}
+function sigRemove(id){
+  var st=sigStore(); st.list=st.list.filter(function(s){ return s.id!==id; });
+  if(st.def===id) st.def=(st.list[0]||{}).id||""; sigPersist(st);
+}
+function sigSetDefault(id){ var st=sigStore(); if(sigById(id)){ st.def=id; sigPersist(st); } }
+// Render ONE signature as clean text in the message's language: the sender name (Arabic name for an Arabic
+// send, English otherwise) above the fixed agency block. No images, no styling.
+function renderSignature(sig, loc){
+  if(!sig) return "";
+  var nm=(loc==="AR") ? (sig.name_ar||sig.name_en) : (sig.name_en||sig.name_ar);
+  nm=String(nm||"").trim();
+  return (nm ? nm+"\n" : "") + AGENCY_NAME + "\n" + AGENCY_SITE;
+}
+// The ONE resolver kept by name for its call sites: the actor's default signature, in the given locale.
+function signatureFor(loc){ return renderSignature(sigDefault(), (loc==="AR")?"AR":"EN"); }
+function signatureForId(id, loc){ return renderSignature(sigById(id)||sigDefault(), (loc==="AR")?"AR":"EN"); }
+/* The per-sender signature manager, rendered into the profile page. Lists the actor's own signatures with
+   a live preview of each (name above the fixed agency block), a set-default control, inline edit of the
+   name only, and delete; below the list, one add form. Every mutation goes through the sig* helpers (which
+   persist per-actor, additively) and then re-renders, so the surface always mirrors the store. `flash` is
+   the "Saved." pulse from initProfile; it may be omitted (a no-op) when called from elsewhere. */
+function renderSignatures(flash){
+  var host=document.getElementById("pfSigList"); if(!host) return;
+  var ping=(typeof flash==="function") ? flash : function(){};
+  var def=sigDefault(), defId=def? def.id : "";
+  var list=sigList(), rows="";
+  for(var i=0;i<list.length;i++){
+    var s=list[i], isDef=(s.id===defId);
+    var prev=esc(renderSignature(s, (getLang && getLang()==="ar")?"AR":"EN"));
+    rows+='<li class="sig-item'+(isDef?" sig-item-def":"")+'" data-id="'+esc(s.id)+'">'
+      + '<div class="sig-item-top">'
+      +   '<span class="sig-item-label">'+esc(s.label||s.name_en||s.name_ar||t("sig_h"))+'</span>'
+      +   (isDef ? '<span class="sig-item-badge" data-i18n="sig_default">'+esc(t("sig_default"))+'</span>' : '')
+      + '</div>'
+      + '<pre class="sig-item-prev oc-body">'+prev+'</pre>'
+      + '<div class="sig-item-act">'
+      +   (isDef ? '' : '<button type="button" class="btn ghost sm" data-sig-act="default" data-i18n="sig_make_default">'+esc(t("sig_make_default"))+'</button>')
+      +   '<button type="button" class="btn ghost sm" data-sig-act="edit" data-i18n="edit">'+esc(t("edit"))+'</button>'
+      +   (list.length>1 ? '<button type="button" class="btn ghost sm danger" data-sig-act="remove" data-i18n="remove">'+esc(t("remove"))+'</button>' : '')
+      + '</div>'
+      + '</li>';
+  }
+  host.innerHTML=rows;
+  // per-row actions (default / edit / remove), delegated once per render
+  var items=host.querySelectorAll(".sig-item");
+  for(var j=0;j<items.length;j++){ (function(li){
+    var id=li.getAttribute("data-id");
+    var btns=li.querySelectorAll("[data-sig-act]");
+    for(var k=0;k<btns.length;k++){ (function(btn){
+      btn.addEventListener("click", function(){
+        var act=btn.getAttribute("data-sig-act");
+        if(act==="default"){ sigSetDefault(id); ping(); renderSignatures(flash); }
+        else if(act==="remove"){ sigRemove(id); ping(); renderSignatures(flash); }
+        else if(act==="edit"){ sigEditRow(li, id, flash); }
+      });
+    })(btns[k]); }
+  })(items[j]); }
+  // add form (present once in the markup, re-wired idempotently by a guard flag)
+  var addBtn=document.getElementById("pfSigAdd");
+  if(addBtn && !addBtn.__wired){ addBtn.__wired=true;
+    addBtn.addEventListener("click", function(){
+      var en=document.getElementById("pfSigNewEn"), ar=document.getElementById("pfSigNewAr");
+      var ve=en? en.value.trim() : "", va=ar? ar.value.trim() : "";
+      if(!ve && !va) return;
+      sigAdd(ve, va); if(en) en.value=""; if(ar) ar.value="";
+      ping(); renderSignatures(flash);
+    });
+  }
+}
+/* Inline edit of one row: swap the preview for two name inputs (EN/AR) plus save/cancel. Only the sender
+   name is editable; the agency block is fixed and never surfaced as an input. */
+function sigEditRow(li, id, flash){
+  var s=sigById(id); if(!s) return;
+  var ping=(typeof flash==="function") ? flash : function(){};
+  li.innerHTML='<div class="sig-item-edit">'
+    + '<label class="sig-edit-l" data-i18n="sig_name_en">'+esc(t("sig_name_en"))+'</label>'
+    + '<input type="text" class="input" dir="ltr" data-sig-en value="'+esc(s.name_en||"")+'">'
+    + '<label class="sig-edit-l" data-i18n="sig_name_ar">'+esc(t("sig_name_ar"))+'</label>'
+    + '<input type="text" class="input" dir="rtl" data-sig-ar value="'+esc(s.name_ar||"")+'">'
+    + '<div class="sig-item-act">'
+    +   '<button type="button" class="btn sm" data-sig-save data-i18n="sig_save">'+esc(t("sig_save"))+'</button>'
+    +   '<button type="button" class="btn ghost sm" data-sig-cancel data-i18n="sig_cancel">'+esc(t("sig_cancel"))+'</button>'
+    + '</div></div>';
+  var enI=li.querySelector("[data-sig-en]"), arI=li.querySelector("[data-sig-ar]");
+  li.querySelector("[data-sig-save]").addEventListener("click", function(){
+    sigUpdate(id, { name_en:enI.value.trim(), name_ar:arI.value.trim() });
+    ping(); renderSignatures(flash);
+  });
+  li.querySelector("[data-sig-cancel]").addEventListener("click", function(){ renderSignatures(flash); });
+  if(enI) enI.focus();
 }
 /* Plain text, generated from the rich body rather than typed twice. Two copies a
    person maintains by hand are two copies that disagree. */
@@ -5510,9 +5620,10 @@ function brandWrap(inner, branded, sigText){
     ? esc(sig).split("\n").join("<br>")
     : "";
   const font='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
-  const closing = sigHtml
-    ? '<div style="margin-top:18px;color:#444">'+sigHtml+'</div>'
-    : '<div style="margin-top:18px;color:#444">'+name+'<br><a href="https://thriveiii.com" style="color:#444;text-decoration:none">thriveiii.com</a></div>';
+  // R14 (P20): the closing is the ONE signature the compile resolved and nothing else. There is NO invented
+  // name/site fallback here any more - that was the second closing source. A body with no signature simply
+  // has no closing, never a fabricated one, so a second sign-off is structurally impossible.
+  const closing = sigHtml ? '<div style="margin-top:18px;color:#444">'+sigHtml+'</div>' : '';
   if(!branded){
     return '<div style="font-family:'+font+';font-size:15px;line-height:1.6;color:#222">'
       +inner+closing+'</div>';
@@ -5521,8 +5632,7 @@ function brandWrap(inner, branded, sigText){
   return '<div style="font-family:'+font+';max-width:600px;margin:0 auto;padding:10px 4px">'
     +'<img src="'+logo+'" width="42" height="42" alt="'+name+'" style="display:block;border-radius:10px;margin-bottom:16px">'
     +'<div style="font-size:15px;line-height:1.7;color:#111827">'+inner+'</div>'
-    +'<div style="margin-top:24px;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#9aa0aa">'
-      +(sigHtml||(name+' · thriveiii.com'))+'</div>'
+    +(sigHtml? '<div style="margin-top:24px;padding-top:14px;border-top:1px solid #eee;font-size:12px;color:#9aa0aa">'+sigHtml+'</div>' : '')
     +'</div>';
 }
 
@@ -5531,23 +5641,23 @@ const ETPL = "thrive_email_templates_v1";
 /* The monthly template is month-aware ({{MONTH}}: the composer asks which month) and ships
    with NO embedded opportunity link: the writer decides which words carry it (guided flow). */
 const ETPL_MONTHLY = { id:"monthly", locale:"EN", name:"Monthly update", subject:"{{MONTH}} at Thrive",
-  html:'Hi {{NAME}},<br><br>End of the month, so here is {{MONTH}} at Thrive. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!<br><br>Abdullah Thyab<br>thriveiii.com' };
+  html:'Hi {{NAME}},<br><br>End of the month, so here is {{MONTH}} at Thrive. We take on the work we think we’ll be proud of. If that could be yours, just say hi.<br><br>See you next month!' };
 /* Arabic edition of the stock template, a real Arabic message, not a translation of labels
    around English text. Greeting is «مرحبًا فلان،», not "Hi …". */
 const ETPL_MONTHLY_AR = { id:"monthly-ar", locale:"AR", name:"التحديث الشهري", subject:"{{MONTH}} في ثرايف",
-  html:'مرحبًا {{NAME}}،<br><br>مع نهاية الشهر، هذا هو {{MONTH}} في ثرايف. نحن نختار العمل الذي نفخر به. إن كان ذلك يناسبك، تكفي كلمة.<br><br>إلى الشهر القادم!<br><br>عبدالله ذياب<br>thriveiii.com' };
+  html:'مرحبًا {{NAME}}،<br><br>مع نهاية الشهر، هذا هو {{MONTH}} في ثرايف. نحن نختار العمل الذي نفخر به. إن كان ذلك يناسبك، تكفي كلمة.<br><br>إلى الشهر القادم!' };
 /* The two that matter on the day you publish a page: the message that sends it, and the one
    that follows up when nothing came back. Both carry the link inside real words rather than
    as a bare URL, and neither states anything about the recipient: every fact in them is a
    merge field or something you type. They are a starting point, and you edit them. */
 const ETPL_OPP = { id:"opp-intro", locale:"EN", name:"Send an opportunity page", subject:"{{BIZ}} x Thrive",
-  html:'Hi {{NAME}},<br><br>I put together <a href="{{LINK}}">a short page for {{BIZ}}</a>. One screen, no form to fill in. It says what I noticed and what I would do about it.<br><br>If it is worth a conversation, just reply. If not, no reply needed.<br><br>Abdullah Thyab<br>thriveiii.com' };
+  html:'Hi {{NAME}},<br><br>I put together <a href="{{LINK}}">a short page for {{BIZ}}</a>. One screen, no form to fill in. It says what I noticed and what I would do about it.<br><br>If it is worth a conversation, just reply. If not, no reply needed.' };
 const ETPL_OPP_AR = { id:"opp-intro-ar", locale:"AR", name:"إرسال صفحة فرصة", subject:"{{BIZ}} مع ثرايف",
-  html:'مرحبًا {{NAME}}،<br><br>أعددت <a href="{{LINK}}">صفحة قصيرة لـ {{BIZ}}</a>. شاشة واحدة، بلا نموذج تملؤه. فيها ما لاحظته وما أقترح فعله.<br><br>إن كانت تستحق حديثًا، يكفي أن تردّ. وإن لم تكن، فلا حاجة للرد.<br><br>عبدالله ذياب<br>thriveiii.com' };
+  html:'مرحبًا {{NAME}}،<br><br>أعددت <a href="{{LINK}}">صفحة قصيرة لـ {{BIZ}}</a>. شاشة واحدة، بلا نموذج تملؤه. فيها ما لاحظته وما أقترح فعله.<br><br>إن كانت تستحق حديثًا، يكفي أن تردّ. وإن لم تكن، فلا حاجة للرد.' };
 const ETPL_NUDGE = { id:"opp-nudge", locale:"EN", name:"Follow up once", subject:"Re: {{BIZ}} x Thrive",
-  html:'Hi {{NAME}},<br><br>Bringing <a href="{{LINK}}">the page for {{BIZ}}</a> back to the top of your inbox, in case it arrived on a busy day.<br><br>If the timing is wrong, tell me and I will leave it there.<br><br>Abdullah Thyab<br>thriveiii.com' };
+  html:'Hi {{NAME}},<br><br>Bringing <a href="{{LINK}}">the page for {{BIZ}}</a> back to the top of your inbox, in case it arrived on a busy day.<br><br>If the timing is wrong, tell me and I will leave it there.' };
 const ETPL_NUDGE_AR = { id:"opp-nudge-ar", locale:"AR", name:"متابعة واحدة", subject:"إعادة: {{BIZ}} مع ثرايف",
-  html:'مرحبًا {{NAME}}،<br><br>أعيد <a href="{{LINK}}">صفحة {{BIZ}}</a> إلى أعلى بريدك، فربما وصلت في يوم مزدحم.<br><br>وإن كان التوقيت غير مناسب، أخبرني وأتركها عند هذا الحد.<br><br>عبدالله ذياب<br>thriveiii.com' };
+  html:'مرحبًا {{NAME}}،<br><br>أعيد <a href="{{LINK}}">صفحة {{BIZ}}</a> إلى أعلى بريدك، فربما وصلت في يوم مزدحم.<br><br>وإن كان التوقيت غير مناسب، أخبرني وأتركها عند هذا الحد.' };
 
 /* Which stock templates this console has already been offered. Without it, deleting one
    brought it back on the next load, which is a console overruling a decision you made. */
@@ -5974,8 +6084,9 @@ function replyTarget(slug){
 function replyGreeting(tgt){
   const ar=(tgt && tgt.lang==="ar"); const nm=(tgt && tgt.name)? (" "+String(tgt.name).trim()) : "";
   const hi = ar ? ("مرحبًا"+nm+"،") : ("Hi"+nm+",");
-  const bye = ar ? "تحياتي،\nفريق ثرايف" : "Best,\nThrive Digital Solutions";
-  return hi+"\n\n\n"+bye;
+  // R14 (P20): no sign-off scaffolded into the reply body - the signature is appended ONCE by compile, so a
+  // hand-typed "Best, Thrive Digital Solutions" here would be the second closing. Just the greeting and room.
+  return hi+"\n\n";
 }
 
 // The thread as HTML: each message escaped and isolated in its own direction. Pure and testable.
@@ -7209,24 +7320,30 @@ async function initCompose(slugArg, opts){
      schedules, sequences, tests variants, or adds a tracking pixel: those change
      what Thrive is, and WO-013 §5.3 says not to. */
 
-  /* The closing block: previewed, editable for THIS message only, and saved per
-     locale by the DOCUMENT language rather than the chrome. */
-  const sigBox=el("sigBox"), sigLoc=el("sigLoc");
+  /* R14 (P20): the signature the send will carry. The sender PICKS one of their managed signatures (default
+     preselected); the box shows it as read-only preview text in the document's language. It is managed
+     (add/edit/delete/default) in Settings, not free-typed here, so the closing is one saved block, not an
+     ad-hoc second source. editorContent reads sigBox.value, so preview equals sent by construction. */
+  const sigBox=el("sigBox"), sigLoc=el("sigLoc"), sigPick=el("sigPick");
   const docLoc=()=> (oppObj ? docLang(oppObj) : (getLang()==="ar"?"AR":"EN"));
+  function sigChosenId(){ return (sigPick && sigPick.value) ? sigPick.value : ((sigDefault()||{}).id||""); }
+  function fillSigPicker(){
+    if(!sigPick) return;
+    const list=sigList(), def=(sigDefault()||{}).id||"";
+    sigPick.innerHTML=list.map(s=>'<option value="'+esc(s.id)+'"'+(s.id===def?" selected":"")+'>'+esc(s.label||s.name_en||s.name_ar||"")+'</option>').join("");
+    const one = list.length<2;                             // a single signature needs no chooser
+    sigPick.hidden = one;
+    const field=el("sigPickField"); if(field) field.hidden = one;
+  }
   function loadSignature(){
     if(!sigBox) return;
-    sigBox.value=signatureFor(docLoc());
+    sigBox.value=signatureForId(sigChosenId(), docLoc());
     if(sigLoc) sigLoc.textContent=t("sig_using")+" "+t("loc_"+docLoc().toLowerCase());
   }
-  loadSignature();
-  const sigSave=el("sigSave");
-  if(sigSave) sigSave.addEventListener("click", ()=>{
-    setSignature(docLoc(), sigBox.value);
-    toast(t("sig_saved")); refreshPreview();
-  });
-  const sigReset=el("sigReset");
-  if(sigReset) sigReset.addEventListener("click", ()=>{ loadSignature(); refreshPreview(); });
-  if(sigBox) sigBox.addEventListener("input", debounce(()=>refreshPreview(), 300));
+  fillSigPicker(); loadSignature();
+  if(sigPick) sigPick.addEventListener("change", ()=>{ loadSignature(); refreshPreview(); });
+  const sigManage=el("sigManage");
+  if(sigManage) sigManage.addEventListener("click", (e)=>{ e.preventDefault(); goTo("settings"); });
 
   /* Personalisation tokens, resolved live. Nobody sends "Hi {name}". */
   const TOKENS={ NAME:()=>recipientName()||"", BIZ:()=>(oppObj&&oppObj.business)||"",
@@ -7925,16 +8042,16 @@ async function initProfile(){
   setVal("pfView", profilePref("view","board"));
   setVal("pfTz", profilePref("tz",""));
   if(el("pfDigest")) el("pfDigest").checked=!!profilePref("digest",false);
-  setVal("pfSigEn", profilePref("sig_en", (function(){ try{ return signatureFor("EN"); }catch(e){ return ""; } })()));
-  setVal("pfSigAr", profilePref("sig_ar", (function(){ try{ return signatureFor("AR"); }catch(e){ return ""; } })()));
   function flashSaved(){ var s=el("pfSaved"); if(s){ s.hidden=false; clearTimeout(s.__t); s.__t=setTimeout(function(){ s.hidden=true; }, 1400); } }
+  // ---- R14 (P20): the per-sender signature manager. Each member curates their own signatures here; the
+  // composer appends the chosen one, once. The agency block (Thrive Digital Solutions, thriveiii.com) is
+  // fixed, appended by the renderer, so only the sender NAME is edited. ----
+  renderSignatures(flashSaved);
   function bindPref(id,key,ev,get){ var e=el(id); if(!e) return; e.addEventListener(ev||"change", function(){ setProfilePref(key, get? get(e) : e.value); flashSaved(); }); }
   bindPref("pfDensity","density");
   bindPref("pfView","view");
   bindPref("pfTz","tz","input");
   bindPref("pfDigest","digest","change", function(e){ return !!e.checked; });
-  bindPref("pfSigEn","sig_en","input");
-  bindPref("pfSigAr","sig_ar","input");
   // Language applies immediately, per person, and rides the existing op_prefs bus as it did before.
   if(el("pfLang")) el("pfLang").addEventListener("change", function(){
     var v=el("pfLang").value; setProfilePref("lang", v); flashSaved();
@@ -8665,7 +8782,7 @@ function initTemplates(){
     el("et_id").value = rec?rec.id:"";
     el("et_id").readOnly = !!rec;                          // ids are stable once created (compose links use them)
     el("et_subject").value = rec?(rec.subject||""):"{{MONTH}} at Thrive";
-    el("et_body").value = rec?(rec.html||""):"Hi {{NAME}},\n\n\n\nAbdullah Thyab\nthriveiii.com";
+    el("et_body").value = rec?(rec.html||""):"Hi {{NAME}},\n\n";   // R14: no embedded sign-off; the signature is appended once by compile
     el("etHint").textContent = rec && rec.id==="monthly" ? t("et_default_note") : "";
     etBox.hidden=false;
     etBox.scrollIntoView({behavior:"smooth", block:"nearest"});

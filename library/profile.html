@@ -70,13 +70,23 @@
 
       <label class="pf-check"><input type="checkbox" id="pfDigest"> <span data-i18n="pf_digest">Send me a weekly digest of my activity</span></label>
 
-      <div class="field pf-sig">
-        <label for="pfSigEn" data-i18n="pf_sig_en">Signature (English)</label>
-        <textarea id="pfSigEn" class="input" rows="3" dir="ltr"></textarea>
-      </div>
-      <div class="field pf-sig">
-        <label for="pfSigAr" data-i18n="pf_sig_ar">Signature (Arabic)</label>
-        <textarea id="pfSigAr" class="input" rows="3" dir="rtl"></textarea>
+      <div class="pf-sig-mgr">
+        <div class="pf-sig-head">
+          <h3 class="pf-sig-h" data-i18n="sig_h">Signature</h3>
+          <p class="pf-region-sub" data-i18n="sig_mgr_sub">Your name above the agency block. Pick one as your default; the composer adds it once.</p>
+        </div>
+        <ul class="sig-list" id="pfSigList"></ul>
+        <div class="sig-add">
+          <div class="field">
+            <label for="pfSigNewEn" data-i18n="sig_name_en">Your name (English)</label>
+            <input id="pfSigNewEn" class="input" type="text" autocomplete="off" dir="ltr" data-i18n-ph="sig_name_en_ph">
+          </div>
+          <div class="field">
+            <label for="pfSigNewAr" data-i18n="sig_name_ar">Your name (Arabic)</label>
+            <input id="pfSigNewAr" class="input" type="text" autocomplete="off" dir="rtl" data-i18n-ph="sig_name_ar_ph">
+          </div>
+          <button type="button" class="btn" id="pfSigAdd" data-i18n="sig_add">Add signature</button>
+        </div>
       </div>
       <p class="pf-saved" id="pfSaved" hidden data-i18n="pf_saved">Saved.</p>
     </section>
