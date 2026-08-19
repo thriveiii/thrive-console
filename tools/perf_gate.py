@@ -21,7 +21,14 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 774_000     # library/app.js today ~772 KB. Raised by P19 (the opportunity lifecycle): the
+APP_JS_MAX   = 784_000     # library/app.js today ~781 KB. Raised by P20 (the one signature system): the
+                           # R14 per-sender signature store (sigStore / sigList / sigAdd / sigUpdate / sigRemove /
+                           # sigSetDefault / renderSignature / signatureFor), the profile-page signature manager
+                           # (renderSignatures + sigEditRow: list, live preview, set-default, inline edit, add
+                           # form), and the composer's read-only signature picker (fillSigPicker / sigChosenId /
+                           # loadSignature). This REPLACED the flat closing block and every template-embedded
+                           # sign-off, so the pipeline still has exactly one signature injection site. Prior: 774 KB.
+                           # Raised by P19 (the opportunity lifecycle): the
                            # R12 delete law (hasLedgerHistory / oppExistingMeta / canHardDelete, the gated
                            # deleteOppFlow and its close-set control) and the R13 re-import writer (the plan
                            # switch in writeImport, the action badges + decision buttons in the report). The
@@ -91,7 +98,12 @@ APP_JS_MAX   = 774_000     # library/app.js today ~772 KB. Raised by P19 (the op
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_822_000   # dist/thrive-console.html today ~1.820 MB, tracking app.js. Raised by P19 (the
+DIST_MAX     = 1_834_000   # dist/thrive-console.html today ~1.832 MB, tracking app.js. Raised by P20 (the one
+                           # signature system): the R14 per-sender store + profile signature manager + composer
+                           # picker in app.js, the signature-manager markup in profile.html and the picker markup
+                           # in compose.html, the sig_* strings in both languages, and the .sig-list / .sig-item /
+                           # .sig-preview CSS. Additive over a removed closing block, one injection site. Prior: 1.822 MB.
+                           # Raised by P19 (the
                            # opportunity lifecycle): the R12 delete law + R13 re-import writer in app.js, the
                            # importPlan classifier + report actions in intake.js, the lc_delete / in_act / in_dec
                            # strings in both languages, the trash glyph, and the action-badge / delete CSS the

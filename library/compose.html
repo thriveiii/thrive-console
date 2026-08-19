@@ -126,13 +126,14 @@
       <!-- The bottom of the email is a real object, not a fixed string nobody sees until send. It
            previews, it is editable for this message only, one saved block per DOCUMENT language. §5.1. -->
       <details class="mw-more" id="sigWrap">
-        <summary data-i18n="sig_h">Closing block</summary>
+        <summary data-i18n="sig_h">Signature</summary>
         <p class="hint" data-i18n="sig_sub"></p>
-        <div class="field"><label for="sigBox" data-i18n="sig_this">This message only</label>
-          <textarea id="sigBox" class="input oc-body" rows="4"></textarea></div>
+        <div class="field" id="sigPickField"><label for="sigPick" data-i18n="sig_pick">Signing as</label>
+          <select id="sigPick" class="input"></select></div>
+        <div class="field"><label for="sigBox" data-i18n="sig_preview">Preview</label>
+          <textarea id="sigBox" class="input oc-body sig-preview" rows="4" readonly></textarea></div>
         <div class="bar">
-          <button class="btn ghost sm" type="button" id="sigSave" data-i18n="sig_save">Save as my block for this language</button>
-          <button class="btn ghost sm" type="button" id="sigReset" data-i18n="sig_reset">Back to the saved block</button>
+          <a class="btn ghost sm" id="sigManage" href="#settings" data-i18n="sig_manage">Manage my signatures</a>
         </div>
         <span class="sig-loc" id="sigLoc"></span>
       </details>
