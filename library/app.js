@@ -2779,6 +2779,38 @@ async function pullInbound(ep, auth){
 let __inboxScan=null;
 function inboxScanInfo(){ return __inboxScan; }
 
+/* P22: reconciliation, read-only and throttled. The relay's inbox_reconcile compares the mailbox against
+   what is filed and returns the gap. It runs a Gmail search, so the console asks at most every thirty
+   minutes; the result feeds the board's loud "replies not filed" notice. Absent on a v5 relay, which just
+   leaves the gap unknown and the notice silent. */
+let __inboxRecon=null, __lastReconAt=0;
+async function maybeReconcileInbound(){
+  var now=Date.now();
+  if(now - __lastReconAt < 30*60000) return;
+  __lastReconAt=now;
+  try{ var j=await relayOp("inbox_reconcile", { days:2 }); if(j && j.ok) __inboxRecon=j; }catch(_){}
+}
+function inboxReconInfo(){ return __inboxRecon; }
+
+/* The ONE inbound-health read, from the heartbeat the relay stamps every sweep plus the reconciliation
+   gap. delayed: the last sweep is older than three sweep intervals, so the poll may have stalled (an
+   unauthorised trigger, an old deployment). backlog: the last sweep hit its read cap, or reconciliation
+   found replies the mailbox has and the store does not. Silence becomes detectable. */
+function inboundHealth(){
+  var s=__inboxScan, out={ delayed:false, backlog:0, everyMin:15 };
+  if(!s || !s.ts) return out;
+  var every=Number(s.everyMin)||15; out.everyMin=every;
+  var age=Date.now()-Date.parse(String(s.ts));
+  if(isFinite(age) && age > every*3*60000) out.delayed=true;
+  var gap=(__inboxRecon && Number(__inboxRecon.gap)>0) ? Number(__inboxRecon.gap) : 0;
+  if(gap>0) out.backlog=gap;
+  else if(s.capped) out.backlog=-1;   // capped: more may be waiting than one sweep reads, count unknown
+  return out;
+}
+/* test hooks; harmless in prod (read-only health + seams to inject a heartbeat/reconciliation for a check) */
+try{ if(typeof window!=="undefined"){ window.inboundHealth=inboundHealth;
+  window.__inboxScanSet=function(s){ __inboxScan=s; }; window.__inboxReconSet=function(r){ __inboxRecon=r; }; } }catch(_){}
+
 async function doSyncRound(ep, auth){
   const g=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
     body:relayBody({ op:"state_get", auth:auth }) });
@@ -2805,6 +2837,7 @@ async function doSyncRound(ep, auth){
   // Replies ride the same round. A reply that arrives fifteen minutes after a
   // send should be on the board before the next time anybody looks at it.
   try{ await pullInbound(ep, auth); }catch(e){}
+  try{ await maybeReconcileInbound(); }catch(e){}
   // P8: reconcile the campaign ledger from the relay's send queue on the same heartbeat (no new timer), so
   // a queued row that the relay has since sent shows as sent the next time anybody syncs. The device that
   // started the campaign can be closed; any device that syncs advances the truth.
@@ -6470,9 +6503,22 @@ function thReplyBubble(r, slug){
     whoHtml: msgWhoLine(msg),
     subjHtml: (msg.subject? '<div class="rp-subj" dir="auto">'+esc(msg.subject)+'</div>' : ''),
     bodyHtml: renderMessageBody(msg),
-    footHtml: (r.rule? '<span class="rp-rule">'+esc(t("rp_rule_"+r.rule))+'</span>' : '')+
+    footHtml: replyBasisHtml(r)+
               (r.ambiguous? '<span class="rp-ambig" data-icon="alert">'+esc(t("rp_ambiguous"))+'</span>' : '')+
               (r.gmail? '<a class="btn ghost sm" href="'+esc(r.gmail)+'" target="_blank" rel="noopener">'+ic("link")+esc(t("rp_open_gmail"))+'</a>' : '') });
+}
+
+/* How this reply was joined to its opportunity, shown from the ONE derivation (ThriveInbound.joinBasis)
+   so the board, the thread and the tests read one answer. A DETERMINISTIC basis (plus-address, references,
+   a hand attachment) shows inline with a certain mark; a HEURISTIC basis (sender, subject) is a tap-open
+   disclosure that names itself a guess, so an operator sees at a glance which replies are certain. */
+function replyBasisHtml(r){
+  var jb=(typeof ThriveInbound!=="undefined" && ThriveInbound.joinBasis) ? ThriveInbound.joinBasis(r) : null;
+  if(!jb || jb.basis==="unresolved") return jb ? '<span class="rp-basis is-none">'+esc(t("basis_unresolved"))+'</span>' : '';
+  var lbl=t("basis_"+jb.basis.replace(/-/g,"_"));
+  if(jb.deterministic) return '<span class="rp-basis is-det" title="'+esc(t("basis_certain"))+'">'+ic("check")+'<span>'+esc(lbl)+'</span></span>';
+  return '<details class="rp-basis is-heur"><summary>'+ic("alert")+'<span>'+esc(lbl)+'</span></summary>'+
+         '<span class="rp-basis-why" dir="auto">'+esc(t("basis_heuristic_why"))+'</span></details>';
 }
 function threadListHtml(slug){
   const entries=buildThread(slug);
@@ -9909,6 +9955,33 @@ async function initBoard(){
     badge.innerHTML=ic("alert",13)+" "+txt("board_drift", d.count);
   }
 
+  /* P22: the inbound heartbeat, on the board. A stalled poll or an unfiled reply must never be silent, so a
+     badge shows beside the sync pill the moment inboundHealth() says so: a quiet clock for "inbound delayed"
+     (the sweep is stale), a loud alert for a backlog (the sweep hit its cap, or reconciliation found a gap).
+     Created lazily beside #boardSync like the drift badge; hidden when inbound is healthy. The count is
+     bidi-isolated (txt) so it never reorders in Arabic. */
+  function inboundHealthBadge(){
+    var anchor=el("boardSync"); if(!anchor || !anchor.parentNode) return;
+    var h; try{ h=inboundHealth(); }catch(_){ h=null; }
+    var badge=document.getElementById("boardInbound");
+    if(!h || (!h.delayed && !h.backlog)){ if(badge) badge.hidden=true; return; }
+    if(!badge){
+      badge=document.createElement("span");
+      badge.id="boardInbound"; badge.setAttribute("role","status");
+      anchor.parentNode.insertBefore(badge, anchor.nextSibling);
+    }
+    badge.hidden=false;
+    if(h.backlog){
+      badge.className="pill inbound-gap";                 // loud: a reply may be sitting unfiled
+      badge.title=t("inbound_gap_t");
+      badge.innerHTML=ic("alert",13)+" "+(h.backlog>0 ? txt("inbound_gap", h.backlog) : esc(t("inbound_backlog")));
+    } else {
+      badge.className="pill inbound-delay";               // quiet but visible: the sweep is stale
+      badge.title=t("inbound_delay_t");
+      badge.innerHTML=ic("clock",13)+" "+esc(t("inbound_delay"));
+    }
+  }
+
   /* Two counts, kept apart on purpose. opens is what answered a message you sent; views is
      every time the page was looked at. A page can be read before anybody was written to, and
      the board says so rather than promoting it into a lane it did not earn. */
@@ -10079,6 +10152,7 @@ async function initBoard(){
   function render(trigger, source){
     syncPill();
     driftBadge();
+    inboundHealthBadge();
     const b=build();
     // Sentinel Sweep 5, Layer 1: stamp this paint (no-op unless ?debug=paint or the localStorage switch is on).
     try{ ThrivePaintDebug.stamp("board", b, { trigger:trigger, src:(source&&source.kind) }); }catch(_){}

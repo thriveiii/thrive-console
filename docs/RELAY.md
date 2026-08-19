@@ -160,6 +160,17 @@ A tag naming a slug this console has never heard of is **not** a match. It is al
 deleted record, and attaching a reply to something that is gone loses it more quietly than leaving
 it unattributed.
 
+**v7 (P22) makes the threading tier a guarantee, and names the basis.** `sendMail_` now always puts a
+Message-ID on the wire (minting one on our own domain if the console did not) and returns it, so rule 2
+has something exact to match. The console projects the four rules onto one *join basis* vocabulary in a
+single function (`ThriveInbound.joinBasis`): `plus-address` (the tag) and `references` (the thread) are
+deterministic; `sender` and `subject-heuristic` are heuristic; a hand attachment is `manual`; nothing
+matched is `unresolved`. Precedence is fixed and a deterministic basis always wins for the same row. The
+thread shows a deterministic basis inline and a heuristic one as a tap-open disclosure, so an operator
+sees which replies are certain. The scan also stamps a heartbeat (its interval, whether it hit the read
+cap), and a read-only `inbox_reconcile` compares the mailbox against what is filed; the board surfaces a
+stale sweep as "inbound delayed" and an unfiled backlog loudly, so silence is detectable.
+
 ### What is never counted as a reply
 
 Bounces from `mailer-daemon`, anything with `Auto-Submitted` other than `no`, anything with

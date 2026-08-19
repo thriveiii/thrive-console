@@ -21,7 +21,10 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
 ROOT="/home/user/thrive-console"; CH="/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 # Ceilings: set a little above today's measured size so ordinary growth passes and real bloat trips.
-APP_JS_MAX   = 794_000     # library/app.js today ~791 KB. Raised by P21 (the send moment + the card activity
+APP_JS_MAX   = 801_000     # library/app.js today ~796 KB. Raised by P22 (inbound proven): the join-basis
+                           # display (replyBasisHtml, deterministic-vs-heuristic), the board inbound-health
+                           # badge + reconciliation throttle, and the health test hooks. Prior:
+APP_JS_MAX_P21 = 794_000   # library/app.js ~791 KB. Raised by P21 (the send moment + the card activity
                            # trail): the send-moment surface (sendMomentMark inline SVG + showSendMoment +
                            # returnToBoardAfterSend), the ONE extracted message-bubble path (thMsgBubble /
                            # thSentBubble / thReplyBubble, shared by the thread and the trail's inline expansion),
@@ -105,7 +108,9 @@ APP_JS_MAX   = 794_000     # library/app.js today ~791 KB. Raised by P21 (the se
                            # isolation and quote-boundary detector, and the optimistic inline reply; the
                            # find-the-renderer brief added the thread-version marker and the runtime renderer
                            # instrumentation, threadRendererReport + data-renderer tokens)
-DIST_MAX     = 1_850_000   # dist/thrive-console.html today ~1.846 MB, tracking app.js. Raised by P21 (the send
+DIST_MAX     = 1_866_000   # dist/thrive-console.html today ~1.860 MB, tracking app.js. Raised by P22 (inbound
+                           # proven), tracking the app.js growth above. Prior ceiling below.
+DIST_MAX_P21 = 1_850_000   # ~1.846 MB. Raised by P21 (the send
                            # moment + activity trail): the app.js additions above, plus the .sm-* send-moment CSS
                            # (radiate + reduced-motion) and the .tr-* activity-trail CSS, and the send_moment_line /
                            # act_* / tr_* strings in both languages. Additive over a removed send double-write.

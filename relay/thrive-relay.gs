@@ -43,15 +43,20 @@
  * send into a relay it does not match. Bump it whenever the request or response
  * shape changes, and only then, in the same commit as the change.
  */
-var RELAY_VERSION = 6;   // v6 adds the durable send queue (outbox_push / outbox_status / outbox_control) and the
-                         // sendQueue_ time-trigger worker (D6 + R3). The request/response shape changed, so the
-                         // number moves with it. The console keeps REQUIRED_RELAY = 5 for single sends, so a v5
-                         // relay still sends; the campaign queue is offered only when the console sees v6+.
+var RELAY_VERSION = 7;   // v7 (P22, inbound proven): sendMail_ GUARANTEES a Message-ID header on every send and
+                         // returns it (so the reply's In-Reply-To threads deterministically), the inbox scan
+                         // stamps its interval and whether it hit the read cap onto the heartbeat, and a read-only
+                         // inbox_reconcile op compares the mailbox against what is filed and reports the gap. All
+                         // additive on the response shape; the console keeps REQUIRED_RELAY = 5, so a v5 relay
+                         // still sends and the new inbound signals are simply absent on an older relay.
+                         // v6 added the durable send queue (outbox_push / outbox_status / outbox_control) and the
+                         // sendQueue_ time-trigger worker (D6 + R3).
 
 var TAG_LOCAL   = 'hi';
 var TAG_DOMAIN  = 'thriveiii.com';
 var STORE_NAME  = 'thrive-console-store.json';
 var INBOX_MAX   = 50;          // messages read per scan, so one run cannot run long
+var SCAN_EVERY_MIN = 15;       // the sweep interval; stamped on the heartbeat so the console knows what "stale" is
 var SNIPPET_MAX = 300;         // never the full body: private mail stays in Gmail
 var STATE_MAX   = 400000;      // the cap the console mirrors in SYNC_STATE_MAX
 
@@ -271,7 +276,7 @@ function scanInbox() {
        and 96 runs; a scan that always does the full pass would spend it. */
     if (!threads.length) {
       store.inboxScan = { ts: new Date().toISOString(), ms: new Date().getTime() - started,
-                          found: 0, added: 0, idle: true };
+                          found: 0, added: 0, idle: true, everyMin: SCAN_EVERY_MIN, capped: false };
       store.scanLog = (store.scanLog || []).concat([{ ms: new Date().getTime() - started, idle: true }]).slice(-96);
       return { ok: true, added: 0, idle: true };
     }
@@ -300,10 +305,14 @@ function scanInbox() {
        would drop a message that arrived during the run. */
     store.inboxSince = Utilities.formatDate(new Date(new Date().getTime() - 86400000),
                                             'UTC', 'yyyy/MM/dd');
+    /* Whether this run read as many messages as it is allowed to. A capped run means more may be waiting
+       than one sweep can file, which is the one condition the board should show loudly rather than let a
+       backlog build in silence. */
+    var capped = threads.length >= INBOX_MAX;
     store.inboxScan = { ts: new Date().toISOString(), ms: new Date().getTime() - started,
-                        found: scanned, added: added, idle: false };
+                        found: scanned, added: added, idle: false, everyMin: SCAN_EVERY_MIN, capped: capped };
     store.scanLog = (store.scanLog || []).concat([{ ms: new Date().getTime() - started, idle: false }]).slice(-96);
-    return { ok: true, added: added, scanned: scanned };
+    return { ok: true, added: added, scanned: scanned, capped: capped };
   });
   return out;
 }
@@ -352,6 +361,45 @@ function repairInbox_(days, dryRun) {
     store.inboxRepaired = new Date().toISOString();
     return { ok: true, count: found.length, byRule: byRule, auto: autos, days: days };
   });
+}
+
+/**
+ * Read-only reconciliation. Does the store hold a record for every reply the
+ * mailbox actually has? It walks the same window the sweep does, counts the
+ * messages that ARE replies (attributeMessage_ returns a record; our own
+ * outbound returns null and is not counted), and compares that set against what
+ * is filed, by Gmail id. The gap is the count of reply messages the mailbox has
+ * that the store does not. It WRITES NOTHING; the board surfaces a non-zero gap
+ * loudly, so a systematic miss becomes visible rather than silent. A run of
+ * scanInbox files the gap, so the gap is expected to fall back to zero.
+ */
+function inboxReconcile_(days) {
+  days = days || 2;
+  var after = Utilities.formatDate(new Date(new Date().getTime() - days * 86400000), 'UTC', 'yyyy/MM/dd');
+  var store = storeRead_();
+  var state = store.state || {};
+  var mail = state.mail || [];
+  var opps = state.opps || [];
+  var known = {};
+  for (var i = 0; i < opps.length; i++) if (opps[i] && opps[i].slug) known[opps[i].slug] = 1;
+
+  var filed = {};
+  var inbound = store.inbound || [];
+  for (var j = 0; j < inbound.length; j++) if (inbound[j] && inbound[j].gid) filed[inbound[j].gid] = 1;
+
+  var threads = GmailApp.search('in:inbox -in:chats after:' + after, 0, 500);
+  var mailbox = 0, missing = [];
+  for (var t = 0; t < threads.length; t++) {
+    var msgs = threads[t].getMessages();
+    for (var m = 0; m < msgs.length; m++) {
+      var rec = attributeMessage_(msgs[m], mail, known);
+      if (!rec) continue;                 // our own outbound, never a reply
+      mailbox++;
+      if (!filed[rec.gid]) missing.push(rec.gid);
+    }
+  }
+  return { ok: true, days: days, mailbox: mailbox, filed: mailbox - missing.length,
+           gap: missing.length, missing: missing.slice(0, 50), ts: new Date().toISOString() };
 }
 
 /**
@@ -477,8 +525,8 @@ function installScanTrigger() {
   for (var i = 0; i < all.length; i++) {
     if (all[i].getHandlerFunction() === 'scanInbox') ScriptApp.deleteTrigger(all[i]);
   }
-  ScriptApp.newTrigger('scanInbox').timeBased().everyMinutes(15).create();
-  return 'scanInbox now runs every 15 minutes';
+  ScriptApp.newTrigger('scanInbox').timeBased().everyMinutes(SCAN_EVERY_MIN).create();
+  return 'scanInbox now runs every ' + SCAN_EVERY_MIN + ' minutes';
 }
 
 /* ===================== the two ceilings, reported rather than assumed =========
@@ -543,7 +591,19 @@ function sendMail_(d) {
     reply_to: replyTo
   };
   if (d.text) payload.text = d.text;  // sent verbatim, footer included by the console
-  if (d.headers) payload.headers = d.headers;
+
+  /* THREADING, GUARANTEED. A reply is threaded deterministically only if the outbound message carried a
+     Message-ID that the reply then echoes in In-Reply-To/References. The console already mints one and
+     passes it as a header; this makes it a guarantee rather than a hope: whatever headers the console
+     sent are forwarded verbatim, and if none named a Message-ID the relay mints one so the wire message
+     always has a stable, own-domain id. The value is returned as messageId so the console records the
+     exact string it must later match. This is the fallback path for when a mailbox strips the plus tag. */
+  var hdrs = {};
+  if (d.headers) for (var hk in d.headers) if (Object.prototype.hasOwnProperty.call(d.headers, hk)) hdrs[hk] = d.headers[hk];
+  var messageId = '';
+  for (var nk in hdrs) if (Object.prototype.hasOwnProperty.call(hdrs, nk) && nk.toLowerCase() === 'message-id') messageId = String(hdrs[nk] || '');
+  if (!messageId) { messageId = mkMessageId_(); hdrs['Message-ID'] = messageId; }
+  payload.headers = hdrs;
 
   /* Exactly-once. The console sends one stable idempotency key per send INTENT (not per click). Forwarded
      to Resend as its Idempotency-Key header, a retried POST for the same intent is deduped by Resend and
@@ -562,7 +622,16 @@ function sendMail_(d) {
   var j = {};
   try { j = JSON.parse(body); } catch (e) {}
   if (res.getResponseCode() >= 300) throw new Error(j.message || body.slice(0, 200));
-  return { ok: true, id: j.id || '', replyTo: replyTo, delivered: true };
+  return { ok: true, id: j.id || '', messageId: messageId, replyTo: replyTo, delivered: true };
+}
+
+/* An own-domain Message-ID, the shape the console mints, so a reply's In-Reply-To can be matched against
+   it. Minted here only when the console did not send one (a legacy caller), so the wire message is never
+   without a stable id the relay can vouch for. */
+function mkMessageId_() {
+  var t = new Date().getTime().toString(36);
+  var r = Math.random().toString(36).slice(2, 10);
+  return '<c' + t + r + '@' + TAG_DOMAIN + '>';
 }
 
 /* ===================== the durable send queue (D6 + R3) ===================== */
@@ -810,6 +879,7 @@ function doPost(e) {
                                                scan: storeRead_().inboxScan || null });
     if (op === 'inbox_scan')    return json_(scanInbox());
     if (op === 'inbox_repair')  return json_(repairInbox_(d.days || 90, !!d.dryRun));
+    if (op === 'inbox_reconcile') return json_(inboxReconcile_(d.days || 2));
 
     /* The durable send queue (D6 + R3). The console pushes a compiled per-recipient batch and reads
        status; the sendQueue_ time trigger does the sending. outbox_run is a manual tick (a nudge, and
