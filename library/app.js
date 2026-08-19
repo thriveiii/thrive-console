@@ -233,7 +233,10 @@ const SYNCED_KEYS={ thrive_opps_v1:1, thrive_mail_v1:1, thrive_quota_v1:1, thriv
   /* The closing block is reused, so it travels: the Library rule applies to a
      signature exactly as it applies to a template. */
   thrive_signature_v1:1,
-  thrive_email_templates_v1:1, thrive_templates_v1:1, thrive_removed_v1:1, thrive_etpl_seed_v1:1 };
+  thrive_email_templates_v1:1, thrive_templates_v1:1, thrive_removed_v1:1, thrive_etpl_seed_v1:1,
+  /* R16 (P25): custom missions the operator opened. The seeds are implicit; only custom missions are
+     stored, and they travel so a third shelf appears on every device. */
+  thrive_missions_v1:1 };
 /* WebKit deletes ALL script writeable storage for an origin with no user interaction in the
    last seven days of browser use. Not part of it: all of it, at once. And localStorage throws
    past roughly 5 MiB. So a write that fails is not a detail, it is the moment the console stops
@@ -4461,7 +4464,10 @@ async function initDashboard(){
     if(state.stage) rows=rows.filter(o=>effStage(o)===state.stage);
     if(state.tmpl!=="all") rows=rows.filter(o=>o.template===state.tmpl);
     if(state.q){ const q=state.q.toLowerCase();
-      rows=rows.filter(o=>[o.business,o.location,o.template,o.slug].join(" ").toLowerCase().includes(q)); }
+      // R16 (P25): search over business name, slug, date and language (plus the legacy location/template),
+      // so an elegant search across the mission shelves finds a page by any of the facts on its card.
+      rows=rows.filter(o=>[o.business,o.location,o.template,o.slug,o.sent_on,(o.doc_lang||docLang(o)),
+        ((o.doc_lang||docLang(o))==="AR"?"arabic عربي":"english")].join(" ").toLowerCase().includes(q)); }
     rows.sort((a,b)=>{
       if(state.sort==="az") return (a.business||"").localeCompare(b.business||"");
       const da=(a.sent_on||""), db=(b.sent_on||"");
@@ -4512,7 +4518,7 @@ async function initDashboard(){
         STAGES.map(s=>`<option value="${s}"${s===declared?" selected":""}>${t("stage_"+s)}</option>`).join("")+`</select>`;
     }
     const halves=halfPublished();
-    grid.innerHTML = rows.map(o=>{
+    function cardHtml(o){
       const arch=o.archived, live=isLive(o), enc=encodeURIComponent(o.slug), fu=needsFollowup(o);
       /* Two different facts, told apart. The date on the record is the day the page was made.
          A send date exists only when a message actually went out, and only then is a view of
@@ -4573,7 +4579,56 @@ async function initDashboard(){
           </details>
         </div>
       </div>`;
-    }).join("");
+    }
+
+    /* R16 (P25): the Library is organized BY MISSION. The filtered, sorted rows are grouped onto their
+       mission shelves (missionOf), each shelf leading with its base template as the source of truth, its
+       requirements manifest (an external design is produced against it), then the filed pages. Both seeded
+       missions always show, with counts, even when a search empties one, so the two-shelf structure holds.
+       The card markup is UNCHANGED, so every data-* handler wired below on `grid` still finds every card. */
+    const L=getLang();
+    function manifestHtml(m){
+      const items=(m.manifest||[]).map(function(it){ return '<li class="mf-item">'+ic("check",13)+'<span>'+esc((L==="ar")?(it.ar||it.en):(it.en||it.ar))+'</span></li>'; }).join("");
+      if(!items) return "";
+      return '<details class="shelf-manifest"><summary class="shelf-manifest-s">'+ic("check",14)+esc(t("lib_manifest"))+'</summary>'+
+        '<p class="shelf-manifest-p">'+esc(t("lib_manifest_sub"))+'</p><ul class="mf-list">'+items+'</ul></details>';
+    }
+    function baseTemplateHtml(m){
+      const tpls=(m.templates||[]);
+      var body;
+      if(tpls.length){
+        body=tpls.map(function(id){ var ap=(typeof APPROVED_TEMPLATES!=="undefined")? APPROVED_TEMPLATES.find(function(x){ return x.id===id; }) : null;
+          var nm=ap? ((L==="ar")?(ap.name_ar||ap.name_en):(ap.name_en||ap.name_ar)) : id;
+          return '<a class="btn ghost sm" href="'+viewHref("editor","mission="+encodeURIComponent(m.id)+"&t="+encodeURIComponent(id))+'"><span class="mono-iso">'+esc(id)+'</span> · '+esc(nm)+'</a>'; }).join("");
+      } else {
+        body='<span class="shelf-base-note">'+esc(t("lib_base_upload"))+'</span>'+
+          '<a class="btn ghost sm" href="'+viewHref("editor","mission="+encodeURIComponent(m.id))+'" data-icon="import">'+esc(t("lib_base_new"))+'</a>';
+      }
+      return '<div class="shelf-base"><span class="shelf-base-tag">'+ic("check",13)+esc(t("lib_base_truth"))+'</span><div class="shelf-base-body">'+body+'</div></div>';
+    }
+    function shelfHtml(m, cards){
+      var count=cards.length;
+      var cardsHtml=count? cards.map(cardHtml).join("") : '<div class="shelf-empty">'+esc(t("lib_shelf_empty"))+'</div>';
+      var canDel=!(MISSION_SEED.some(function(s){ return s.id===m.id; }));
+      return '<section class="shelf" data-mission="'+esc(m.id)+'">'+
+        '<header class="shelf-h"><div class="shelf-id"><h2 class="shelf-t" dir="auto">'+esc(missionName(m,L))+'</h2>'+
+          '<span class="shelf-count">'+nIso(count)+' '+esc(t("lib_pages"))+'</span></div>'+
+          (canDel? '<button type="button" class="btn ghost sm danger shelf-del" data-mdel="'+esc(m.id)+'">'+esc(t("lib_mission_del"))+'</button>' : '')+'</header>'+
+        ((m.tagline_en||m.tagline_ar)? '<p class="shelf-tag" dir="auto">'+esc((L==="ar")?(m.tagline_ar||m.tagline_en):(m.tagline_en||m.tagline_ar))+'</p>' : '')+
+        baseTemplateHtml(m)+manifestHtml(m)+
+        '<div class="shelf-cards grid">'+cardsHtml+'</div></section>';
+    }
+    const _missions=getMissions();
+    const byMission={}; _missions.forEach(function(m){ byMission[m.id]=[]; });
+    rows.forEach(function(o){ var mid=missionOf(o); (byMission[mid]=byMission[mid]||[]).push(o); });
+    grid.className="shelves";
+    grid.innerHTML = _missions.map(function(m){ return shelfHtml(m, byMission[m.id]||[]); }).join("");
+    // A custom mission's shelf can be removed once empty (its pages, if any, fall back to the default shelf).
+    grid.querySelectorAll("[data-mdel]").forEach(function(b){ b.addEventListener("click", function(){
+      var id=b.getAttribute("data-mdel");
+      if(!confirm(t("lib_mission_del_confirm"))) return;
+      removeMission(id); render();
+    }); });
 
     grid.querySelectorAll(".stage-sel").forEach(sel=>sel.addEventListener("change",()=>{
       const slug=sel.getAttribute("data-stage"); const o=state.data.find(x=>x.slug===slug); if(!o) return;
@@ -5118,8 +5173,12 @@ async function initEditor(slugArg){
   if(dlSel) dlSel.addEventListener("change", ()=>{ applyDocLang(); debPreview&&debPreview(); });
   function record(){
     const slug = curSlug(); const v=values();
+    const mSelR=el("f_mission");
     return { slug, business:el("f_biz").value.trim(),
       template: mode==="upload"?"custom":el("f_template").value,
+      // R16 (P25): every page is filed under a mission. The select never rests on the "New mission"
+      // sentinel (the change-handler resolves it before it lands), so this is always a real mission id.
+      mission: (mSelR && mSelR.value && mSelR.value!=="__new__") ? mSelR.value : MISSION_DEFAULT,
       sent_on:el("f_sent").value, location:el("f_location").value.trim(),
       // INVARIANT I1: a record the editor builds is a page, not a send. It used to hardcode status:"sent",
       // so a brand-new or edited opportunity carried a phantom sent-status; the real Sent state comes from
@@ -5148,6 +5207,75 @@ async function initEditor(slugArg){
   el("mode_fill").addEventListener("click",()=>setMode("fill"));
   el("mode_upload").addEventListener("click",()=>setMode("upload"));
   applyMode();   // reflect the resting mode so the picker and quote state is never stale
+
+  /* R16 (P25): the mission this page is filed under, and the ONE-editor parameterization. The mission
+     select carries every mission plus a "New mission" option; choosing a mission binds the template family
+     (its base templates for a fill mission like the Prospect Offer, or upload mode for a ratified design
+     like the Monthly Report) and shows the requirements manifest. record() stamps the mission, so nothing
+     is ever filed unfiled. There is no per-mission editor fork: this is the same initEditor, parameterized. */
+  const mSel=el("f_mission"), mManifest=el("missionManifest");
+  const NEW_MISSION="__new__";
+  let lastMission = mSel ? mSel.value : MISSION_DEFAULT;
+  function fillMissionSelect(sel){
+    if(!mSel) return;
+    var cur=sel || mSel.value || MISSION_DEFAULT, L=getLang();
+    mSel.innerHTML=getMissions().map(function(m){ return '<option value="'+esc(m.id)+'">'+esc(missionName(m,L))+'</option>'; }).join("")+
+      '<option value="'+NEW_MISSION+'">'+esc(t("f_mission_new"))+'</option>';
+    if(cur && [].some.call(mSel.options,function(o){ return o.value===cur; })) mSel.value=cur;
+  }
+  function renderMissionManifest(){
+    if(!mManifest || !mSel) return;
+    var m=getMission(mSel.value); if(!m || !(m.manifest||[]).length){ mManifest.hidden=true; mManifest.innerHTML=""; return; }
+    var L=getLang();
+    mManifest.hidden=false;
+    mManifest.innerHTML='<summary class="ed-manifest-s">'+ic("check",14)+esc(t("lib_manifest"))+'</summary>'+
+      '<p class="shelf-manifest-p">'+esc(t("lib_manifest_sub"))+'</p><ul class="mf-list">'+
+      (m.manifest||[]).map(function(it){ return '<li class="mf-item">'+ic("check",13)+'<span>'+esc((L==="ar")?(it.ar||it.en):(it.en||it.ar))+'</span></li>'; }).join("")+'</ul>';
+  }
+  function applyMission(){
+    if(!mSel) return;
+    var m=getMission(mSel.value), tpls=(m&&m.templates)||[];
+    if(tpls.length){
+      // Bind the template picker to THIS mission's base-template family (drop other missions' built-ins,
+      // ensure the family is present); custom templates the operator added stay available.
+      [].slice.call(tsel.options).forEach(function(o){ if(APPROVED_TEMPLATES.some(function(a){ return a.id===o.value; }) && tpls.indexOf(o.value)<0) o.remove(); });
+      tpls.forEach(function(id){ if(![].some.call(tsel.options,function(o){ return o.value===id; })){ var ap=APPROVED_TEMPLATES.find(function(x){ return x.id===id; }); var o=document.createElement("option"); o.value=id; o.textContent=id+" · "+(ap?(getLang()==="ar"?ap.name_ar:ap.name_en):id); tsel.insertBefore(o, tsel.firstChild); } });
+      if(tpls.indexOf(tsel.value)<0) tsel.value=tpls[0];
+      var tf=el("templateField"); if(tf) tf.style.display="";
+    } else {
+      var tf2=el("templateField"); if(tf2) tf2.style.display="none";
+      if(mode!=="upload") setMode("upload");                 // a ratified report is uploaded against its manifest, not filled
+    }
+    renderMissionManifest();
+    if(typeof refreshLive==="function") refreshLive();
+  }
+  function openNewMissionPrompt(){
+    var name=window.prompt(t("f_mission_new_q"), "");
+    if(name===null || !String(name).trim()) return null;
+    name=String(name).trim();
+    var id=slugify(name)||("mission-"+Date.now().toString(36));
+    var seedM=getMission(MISSION_DEFAULT)||MISSION_SEED[0];
+    var m=addMission({ id:id, name_en:name, name_ar:name, manifest:(seedM.manifest||[]).slice() });
+    fillMissionSelect(m?m.id:MISSION_DEFAULT);
+    try{ logActivity("mission_new", "", name); }catch(_){}
+    return m;
+  }
+  fillMissionSelect();
+  var missionParam=viewParams().get("mission");
+  if(missionParam && getMission(missionParam) && mSel) mSel.value=missionParam;
+  if(mSel){
+    lastMission=mSel.value;
+    mSel.addEventListener("change", function(){
+      if(mSel.value===NEW_MISSION){
+        var m=openNewMissionPrompt();
+        if(!m){ mSel.value=lastMission; return; }
+        mSel.value=m.id;
+      }
+      lastMission=mSel.value;
+      applyMission();
+    });
+  }
+  applyMission();
 
   // upload handling. One finished .html is the single-page path (kept as it was). Anything else,
   // a zip or several files or a batch document, is a batch: read it, match by slug, and show the
@@ -5321,9 +5449,12 @@ async function initEditor(slugArg){
     const d=all.find(x=>x.slug===editSlug);
     if(d){
       editingLive = (!d._local || !!d.published);
+      // R16 (P25): the editor opens on the page's own mission, so an edit stays filed where it was.
+      // applyMission binds the mission's template family before the specific template value is restored.
+      if(mSel){ var pm=missionOf(d); if(getMission(pm)){ mSel.value=pm; lastMission=pm; applyMission(); } }
       el("f_biz").value=d.business||""; el("f_slug").value=d.slug; el("f_slug").dataset.touched="1";
       el("f_sent").value=d.sent_on||el("f_sent").value; el("f_location").value=d.location||""; el("f_phone").value=d.phone||"";
-      if(d.template && d.template!=="custom"){ el("f_template").value=d.template; }
+      if(d.template && d.template!=="custom" && [].some.call(el("f_template").options,function(o){return o.value===d.template;})){ el("f_template").value=d.template; }
       /* The document's own language, explicit if it has one and inferred if it does not, but
          never taken from the chrome. */
       if(el("f_doclang")){ el("f_doclang").value=docLang(d); applyDocLang(); }
@@ -9089,6 +9220,97 @@ const APPROVED_TEMPLATES = [
     desc_ar:"النسخة العربية RTL من موجز الإشارة، بخط اليمامة. البنية نفسها، من اليمين إلى اليسار.",
     example:"../templates/ar-opp1/preview.html" }
 ];
+/* ---------- R16 (P25): the mission model ----------------------------------------------------------
+   The Library is organized BY MISSION. A mission is a design family with a ratified base template, a
+   human-readable requirements manifest (the checklist an external design must satisfy so it can be
+   produced against it and uploaded without breakage), and the pages filed under it. Two missions ship
+   seeded: the Prospect Offer (the Signal Brief the page editor already embodies, templates en-opp1 /
+   ar-opp1) and the Thrive Monthly Report (a ratified design uploaded against its manifest; it has no
+   fill-template in this repo, so its pages arrive as uploads). Additive: missions are stored in one
+   synced key, seeded on first read; a page's mission is DERIVED from its template origin (missionOf) so
+   nothing is mutated and no page is ever unfiled, and an explicit `mission` field only overrides that
+   default when a page is filed through the mission question. Custom missions (a third shelf) append to
+   the store. The ratified templates themselves are NOT altered here. */
+const MISSIONS_KEY = "thrive_missions_v1";
+const MISSION_DEFAULT = "prospect-offer";
+// Each manifest item is one requirement, EN + AR, that an external design for the mission must satisfy.
+const MISSION_SEED = [
+  { id:"prospect-offer", seed:true, name_en:"Prospect Offer", name_ar:"عرض للعميل",
+    tagline_en:"The Signal Brief. A respect-first single page sent to one prospect.",
+    tagline_ar:"موجز الإشارة. صفحة واحدة تقود بالاحترام، تُرسل إلى عميل واحد.",
+    templates:["en-opp1","ar-opp1"],
+    manifest:[
+      { id:"identity", en:"Identity slots: the business name and the opportunity link (console.thriveiii.com/opp/<slug>).", ar:"خانات الهوية: اسم النشاط ورابط الفرصة (console.thriveiii.com/opp/<slug>)." },
+      { id:"blocks",   en:"Required blocks, in order: signal hero, one quote with attribution, three proof points, the gap, the six-part monthly system, one call to action.", ar:"الكتل المطلوبة بالترتيب: رمز إشاري، اقتباس مع نسبته، ثلاث نقاط إثبات، الفجوة، منظومة الأشهر الستة، دعوة واحدة للفعل." },
+      { id:"fonts",    en:"Typefaces: the console's Latin face for EN; the Alyamama face for the AR edition.", ar:"الخطوط: خط الكونسول اللاتيني للإنجليزية؛ خط اليمامة للنسخة العربية." },
+      { id:"rtl",      en:"RTL: the AR edition mirrors the layout, uses guillemets «», Western numerals, and no letter-spacing on Arabic.", ar:"الاتجاه: تعكس النسخة العربية التخطيط، وتستعمل «» والأرقام الغربية، وبلا تباعد بين الحروف العربية." },
+      { id:"overflow", en:"Overflow: one page, no horizontal scroll; every line wraps at any width.", ar:"الفيض: صفحة واحدة بلا تمرير أفقي؛ يلتف كل سطر عند أي عرض." }
+    ] },
+  { id:"monthly-report", seed:true, name_en:"Thrive Monthly Report", name_ar:"تقرير ثرايف الشهري",
+    tagline_en:"The monthly report sent to the Thrive community. A ratified design, uploaded against this manifest.",
+    tagline_ar:"التقرير الشهري المُرسل إلى مجتمع ثرايف. تصميم مُعتمد، يُرفع وفق هذا البيان.",
+    templates:[],
+    manifest:[
+      { id:"identity", en:"Identity slots: the Thrive brand header and the report period (the month or range).", ar:"خانات الهوية: ترويسة علامة ثرايف وفترة التقرير (الشهر أو المدى)." },
+      { id:"blocks",   en:"Required blocks: the period header, the highlights, the numbers, what shipped, what is next, and the footer.", ar:"الكتل المطلوبة: ترويسة الفترة، أبرز النقاط، الأرقام، ما أُنجز، ما هو قادم، والتذييل." },
+      { id:"fonts",    en:"Typefaces: the console's Latin face for EN; the Alyamama face for the AR edition.", ar:"الخطوط: خط الكونسول اللاتيني للإنجليزية؛ خط اليمامة للنسخة العربية." },
+      { id:"rtl",      en:"RTL: the AR edition mirrors the layout, uses guillemets «», Western numerals, and no letter-spacing on Arabic.", ar:"الاتجاه: تعكس النسخة العربية التخطيط، وتستعمل «» والأرقام الغربية، وبلا تباعد بين الحروف العربية." },
+      { id:"overflow", en:"Overflow: readable on a phone and a desktop; no horizontal scroll at any width.", ar:"الفيض: مقروء على الهاتف والحاسوب؛ بلا تمرير أفقي عند أي عرض." }
+    ] }
+];
+// The store: the seeds, plus any custom missions the operator opened, merged so a seed is never lost and a
+// custom mission persists and syncs. Seeded on first read (read-new, fall back to seed) per the memory
+// convention. Returns [{ id, name_en, name_ar, templates, manifest, seed?, up? }].
+function getMissions(){
+  var stored=[];
+  try{ stored=JSON.parse(localStorage.getItem(MISSIONS_KEY)||"[]"); }catch(e){ stored=[]; }
+  if(!Array.isArray(stored)) stored=[];
+  var byId={}; MISSION_SEED.forEach(function(m){ byId[m.id]=Object.assign({}, m); });
+  stored.forEach(function(m){ if(m && m.id){ byId[m.id]=Object.assign({}, byId[m.id]||{}, m); } });   // custom overrides/append
+  // Seed order first, then custom missions in insertion order.
+  var out=MISSION_SEED.map(function(m){ return byId[m.id]; });
+  stored.forEach(function(m){ if(m && m.id && !MISSION_SEED.some(function(s){ return s.id===m.id; })) out.push(byId[m.id]); });
+  return out;
+}
+function saveMissions(list){ try{ lsSet(MISSIONS_KEY, JSON.stringify(Array.isArray(list)?list:[])); }catch(e){} }
+function getMission(id){ var l=getMissions(); for(var i=0;i<l.length;i++){ if(l[i].id===id) return l[i]; } return null; }
+// Add a custom mission (the "new mission" flow). Only the non-seed missions are persisted; the seeds are
+// implicit, so the store stays small and a seed can never be corrupted. Idempotent by id.
+function addMission(m){
+  if(!m || !m.id) return null;
+  var stored=[];
+  try{ stored=JSON.parse(localStorage.getItem(MISSIONS_KEY)||"[]"); }catch(e){ stored=[]; }
+  if(!Array.isArray(stored)) stored=[];
+  if(MISSION_SEED.some(function(s){ return s.id===m.id; })) return getMission(m.id);   // never shadow a seed
+  var rec={ id:m.id, name_en:m.name_en||m.id, name_ar:m.name_ar||m.name_en||m.id,
+            tagline_en:m.tagline_en||"", tagline_ar:m.tagline_ar||"",
+            templates:Array.isArray(m.templates)?m.templates:[], manifest:Array.isArray(m.manifest)?m.manifest:[], up:Date.now() };
+  var i=stored.findIndex(function(x){ return x && x.id===m.id; });
+  if(i>=0) stored[i]=Object.assign({}, stored[i], rec); else stored.push(rec);
+  saveMissions(stored);
+  return getMission(m.id);
+}
+function removeMission(id){
+  if(MISSION_SEED.some(function(s){ return s.id===id; })) return false;   // a seed is permanent
+  var stored=[];
+  try{ stored=JSON.parse(localStorage.getItem(MISSIONS_KEY)||"[]"); }catch(e){ stored=[]; }
+  if(!Array.isArray(stored)) stored=[];
+  saveMissions(stored.filter(function(x){ return x && x.id!==id; }));
+  return true;
+}
+// The one resolver: which mission a page belongs to. An explicit mission wins (set when a page is filed
+// through the mission question); else the template origin (en-opp1/ar-opp1 -> prospect-offer); else the
+// default. So every page is filed, nothing is ever unfiled, and no record is mutated to achieve it.
+function missionOf(o){
+  if(!o) return MISSION_DEFAULT;
+  if(o.mission && getMission(o.mission)) return o.mission;
+  var tp=o.template||"";
+  if(tp){ var ms=getMissions(); for(var i=0;i<ms.length;i++){ if((ms[i].templates||[]).indexOf(tp)>=0) return ms[i].id; } }
+  return MISSION_DEFAULT;
+}
+function missionName(m, lang){ if(!m) return ""; return (lang==="ar")? (m.name_ar||m.name_en||m.id) : (m.name_en||m.name_ar||m.id); }
+try{ window.getMissions=getMissions; window.getMission=getMission; window.addMission=addMission; window.removeMission=removeMission; window.missionOf=missionOf; window.MISSION_SEED=MISSION_SEED; }catch(_){}
+
 function initTemplates(){
   const el=id=>document.getElementById(id);
   let pendingHTML=null;

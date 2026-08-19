@@ -206,6 +206,35 @@ select{cursor:pointer}
 
 .empty{text-align:center;color:var(--ink-3);padding:60px 20px;border:1px dashed var(--hair);border-radius:16px}
 
+/* R16 (P25): the Library organized by mission. Each shelf is a bounded section leading with its base
+   template (the source of truth) and its requirements manifest, then the filed pages in the card grid.
+   The card grid inside a shelf reuses .grid, so the cards themselves are unchanged. */
+.shelves{display:grid;gap:26px}
+.shelf{background:var(--panel);border:1px solid var(--hair);border-radius:var(--r-xl);padding:20px 22px}
+.shelf-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.shelf-id{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;min-width:0}
+.shelf-t{font-family:var(--font-display);font-size:var(--fs-lg);font-weight:800;color:var(--ink);margin:0;line-height:1.2}
+.shelf-count{font-size:var(--fs-xs);font-weight:700;color:var(--ink-3);white-space:nowrap}
+.shelf-count .n{font-weight:800;color:var(--ink-2)}
+.shelf-del{color:var(--state-err-t)}
+.shelf-tag{margin:6px 0 0;font-size:var(--fs-sm);color:var(--ink-3);line-height:var(--lh-read);max-width:70ch}
+.shelf-base{margin:16px 0 0;padding:14px 16px;background:var(--panel-2);border:1px solid var(--hair);border-radius:var(--r-lg)}
+.shelf-base-tag{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-micro);font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3)}
+[dir="rtl"] .shelf-base-tag{letter-spacing:normal;text-transform:none}
+.shelf-base-body{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.shelf-base-note{font-size:var(--fs-sm);color:var(--ink-3);line-height:var(--lh-read);flex:1 1 100%}
+.shelf-manifest{margin:12px 0 0}
+.shelf-manifest-s,.ed-manifest-s{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-xs);font-weight:800;color:var(--ink-2);user-select:none}
+.shelf-manifest-s::-webkit-details-marker,.ed-manifest-s::-webkit-details-marker{display:none}
+.shelf-manifest-p{margin:8px 0 0;font-size:var(--fs-xs);color:var(--ink-3);line-height:var(--lh-read)}
+.mf-list{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
+.mf-item{display:flex;align-items:flex-start;gap:8px;font-size:var(--fs-sm);color:var(--ink-2);line-height:var(--lh-read)}
+.mf-item .ic{flex:0 0 auto;margin-top:3px;color:var(--ink-4)}
+.shelf-cards{margin-top:18px}
+.shelf-empty{grid-column:1/-1;text-align:center;color:var(--ink-3);padding:28px 16px;border:1px dashed var(--hair);border-radius:var(--r-lg);font-size:var(--fs-sm)}
+.ed-manifest{margin:0 0 15px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--hair);border-radius:var(--r-md)}
+.ed-manifest[hidden]{display:none}
+
 /* editor */
 .editor{display:grid;grid-template-columns:minmax(0,420px) 1fr;gap:22px;align-items:start}
 @media(max-width:860px){.editor{grid-template-columns:1fr}}

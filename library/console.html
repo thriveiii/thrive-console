@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="3c1b696c">
-<meta name="thrive-built-at" content="2026-08-19T10:23:42Z">
+<meta name="thrive-build" content="d0c8696b">
+<meta name="thrive-built-at" content="2026-08-19T18:39:52Z">
 <!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
      bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
      in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
@@ -35,7 +35,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 :'The console could not start. Reload the page, and check your connection if it happens again.';
 (document.body||d).appendChild(p)},6000)})();</script>
 <link rel="stylesheet" href="fonts.css?v=4db13ad39c">
-<link rel="stylesheet" href="styles.css?v=a2016a7854">
+<link rel="stylesheet" href="styles.css?v=283a1e1a7a">
 <style>.view[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -57,7 +57,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
      second which code is live and when it was built; every device capture is now labeled. Low contrast and
      pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
      the Arabic layout cannot reorder them. -->
-<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">3c1b696c</bdi> · <bdi class="mono-iso">2026-08-19T10:23:42Z</bdi></div>
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">d0c8696b</bdi> · <bdi class="mono-iso">2026-08-19T18:39:52Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
 
@@ -307,6 +307,13 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
            what you are here to fill in; Proof and Activation wait, because they are real and
            occasional. WO-012 §7.3: the "too many boxes" complaint is a grouping problem. -->
       <h4 class="sec-h" data-icon="edit" data-i18n="ed_g_identity">Identity</h4>
+      <!-- R16 (P25): the mission this page is filed under. One editor, mission-parameterized: the mission
+           chooses the template family (its base templates, or upload for a ratified design) and shows the
+           requirements manifest below. Nothing lands unfiled; "New mission" opens a third shelf. -->
+      <div class="field" id="missionField"><label for="f_mission" data-i18n="f_mission">Mission</label>
+        <select id="f_mission"></select>
+        <div class="hint" data-i18n="f_mission_hint"></div></div>
+      <details class="ed-manifest" id="missionManifest" hidden></details>
       <div class="field" id="templateField"><label for="f_template" data-i18n="f_template">Page template</label>
         <select id="f_template"><option value="en-opp1">en-opp1 · The Signal Brief (EN)</option><option value="ar-opp1">ar-opp1 · موجز الإشارة (AR)</option></select></div>
       <!-- Never ambiguous which library you are editing, and never inherited from the chrome. -->
@@ -991,7 +998,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 
 <script src="config.js?v=806f4221bf"></script>
 <script src="icons.js?v=f4b0d9edc8"></script>
-<script src="i18n.js?v=3cded6f626"></script>
+<script src="i18n.js?v=2adf95629a"></script>
 <script src="gate.js?v=fec6036cc5"></script>
 <script src="stage-model.js?v=1f1786d20e"></script>
 <script src="lifecycle.js?v=df368247ea"></script>
@@ -1003,7 +1010,7 @@ p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل ال
 <script src="store.js?v=3cba9b8cff"></script>
 <script src="drafts.js?v=302cc5b4e6"></script>
 <script src="flows.js?v=377173fc32"></script>
-<script src="app.js?v=e77c448a1e"></script>
+<script src="app.js?v=3f9788b149"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

@@ -41,6 +41,13 @@
            what you are here to fill in; Proof and Activation wait, because they are real and
            occasional. WO-012 §7.3: the "too many boxes" complaint is a grouping problem. -->
       <h4 class="sec-h" data-icon="edit" data-i18n="ed_g_identity">Identity</h4>
+      <!-- R16 (P25): the mission this page is filed under. One editor, mission-parameterized: the mission
+           chooses the template family (its base templates, or upload for a ratified design) and shows the
+           requirements manifest below. Nothing lands unfiled; "New mission" opens a third shelf. -->
+      <div class="field" id="missionField"><label for="f_mission" data-i18n="f_mission">Mission</label>
+        <select id="f_mission"></select>
+        <div class="hint" data-i18n="f_mission_hint"></div></div>
+      <details class="ed-manifest" id="missionManifest" hidden></details>
       <div class="field" id="templateField"><label for="f_template" data-i18n="f_template">Page template</label>
         <select id="f_template"><option value="en-opp1">en-opp1 · The Signal Brief (EN)</option><option value="ar-opp1">ar-opp1 · موجز الإشارة (AR)</option></select></div>
       <!-- Never ambiguous which library you are editing, and never inherited from the chrome. -->
