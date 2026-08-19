@@ -1304,6 +1304,51 @@ function campaignSchedule(o, recipients, quota, nowMs){
   }
   return { rows:rows, todayCap:todayCap, warmCap:warmCap, deferred:rows.filter(function(r){return r.day>0;}).length };
 }
+/* P24: the campaign plan, computed WITHOUT side effects and WITHOUT randomness, so the operator sees the
+   deliverability discipline BEFORE a single row is queued: the jitter window, today's budget, the warm-ramp
+   cap, how many defer, and an estimated finish. It reuses the SAME warm-cap and jitter constants the real
+   scheduler (campaignSchedule) uses, so what is shown is what will run. Only the wall-clock finish is an
+   estimate, because the per-row gap is random within its stated band; the day boundaries are exact. This
+   adds NO send machinery: it reads the roster and the quota and reports, exactly like the queue would pace. */
+function campaignPlan(o, nowMs){
+  var now=nowMs||Date.now();
+  var recips=campaignRecipients(o);
+  var n=recips.length;
+  var cfg=campaignJitterCfg(o);
+  var warmCap=Math.max(1, Number((o&&o.campaign&&o.campaign.warmCap))||CAMPAIGN_WARM_CAP);
+  var quota=(typeof quotaUsage==="function")? quotaUsage() : { dayLeft:n };
+  var dayLeft=(quota && typeof quota.dayLeft==="number")? Math.max(0,quota.dayLeft) : n;
+  var todayCap=Math.max(0, Math.min(dayLeft, warmCap));
+  // The 0-based day index of the LAST recipient: today holds todayCap, each following day holds warmCap.
+  var days=0;
+  if(n>todayCap) days=1+Math.floor((n-todayCap-1)/warmCap);
+  var deferred=Math.max(0, n-todayCap);
+  var avgGapMs=cfg.baseMs+Math.floor(cfg.spreadMs/2);
+  var rowsLastDay=(days===0)? n : (n-todayCap-(days-1)*warmCap);
+  var withinMs=Math.max(0, (rowsLastDay-1))*avgGapMs;
+  var finishMs=now+days*DAY_MS+withinMs;
+  return { n:n, jitterMinS:Math.round(cfg.baseMs/1000), jitterMaxS:Math.round((cfg.baseMs+cfg.spreadMs)/1000),
+           dailyBudget:dayLeft, warmCap:warmCap, todayCap:todayCap, deferred:deferred, days:days, finishMs:finishMs };
+}
+try{ window.campaignPlan=campaignPlan; }catch(_){}
+// The campaign plan as a panel for the campaign screen (the composer, beside Start campaign). Empty for a
+// single-recipient opportunity, which has no campaign. Every number is isolated (nIso) so RTL never reorders.
+function campaignPlanHtml(o){
+  var recips=campaignRecipients(o);
+  if(recips.length<2) return "";
+  var now=Date.now(), pl=campaignPlan(o, now);
+  function line(k, val){ return '<div class="cpl-row"><span class="cpl-k">'+esc(t(k))+'</span><span class="cpl-v">'+val+'</span></div>'; }
+  var jitter='<bdi class="n">'+nIso(pl.jitterMinS)+'</bdi>–<bdi class="n">'+nIso(pl.jitterMaxS)+'</bdi> '+esc(t("cpl_sec"));
+  var budget='<bdi class="n">'+nIso(pl.todayCap)+'</bdi> / <bdi class="n">'+nIso(pl.dailyBudget)+'</bdi> '+esc(t("cpl_today"));
+  var warm='<bdi class="n">'+nIso(pl.warmCap)+'</bdi> '+esc(t("cpl_perday"));
+  var finish=pl.deferred
+    ? (esc(t("cpl_over"))+' '+fmtRelative("tok_days", pl.days+1))   // localized plural, numeral isolated
+    : esc(t("cpl_today_done"));
+  return '<section class="cg-panel cpl-panel"><h4 class="cg-h">'+ic("clock")+esc(t("cpl_h"))+' <span class="chip-st"><bdi class="n">'+nIso(pl.n)+'</bdi> '+esc(t("cpl_recips"))+'</span></h4>'+
+    line("cpl_jitter", jitter)+line("cpl_budget", budget)+line("cpl_warm", warm)+line("cpl_finish", finish)+
+    '<p class="mw-muted cpl-note">'+esc(t("cpl_note"))+'</p></section>';
+}
+try{ window.campaignPlanHtml=campaignPlanHtml; }catch(_){}
 // ── THE compile function: one home for the whole outgoing artifact ──────────────────────────────────
 // P9 (D8) collapsed the two P8-era compile entry points (single-send compileArtifact + campaign
 // compileCampaignRow) into this ONE `compile(recipient, content)`. Every send and the preview call it, so the
@@ -5615,6 +5660,81 @@ function threeWay(title, body, choices){
   });
 }
 
+/* ---------- P24: the two explicit send paths, offered as a choice ----------
+   The machinery for both a one-brief send and a dozens-campaign already exists (single Send and Start
+   campaign in the Outreach tab; the P5 roster in Overview; P6 personalize, P7 preview, P8 paced queue). What
+   was missing was the OFFER: a clear "Send" that names the two paths and routes into the right one. This is
+   pure navigation. It builds NO send machinery: it opens the existing composer for a single, and the existing
+   campaign screen (or the roster, if none is built yet) for a campaign, so the one system stays the one path.
+     - فردي (single): the Outreach tab, composer prefilled from the card's primary channel (P18).
+     - حملة (campaign): the campaign screen (Outreach) when a roster of many already exists, else the roster
+       editor (Overview) so the operator builds it first. From there: personalize, preview, the paced queue. */
+async function openSendChooser(slug, name){
+  var all=[]; try{ all=await mergedOpps(); }catch(e){}
+  function oppBySlug(s){ return all.find(function(x){ return x && x.slug===s; })||null; }
+  var scrim=document.getElementById("sendChoose"); if(scrim) scrim.remove();
+  scrim=document.createElement("div"); scrim.id="sendChoose"; scrim.className="tw-scrim send-scrim";
+  document.body.appendChild(scrim);
+  function close(){ if(scrim && scrim.parentNode) scrim.parentNode.removeChild(scrim); }
+  scrim.addEventListener("click", function(e){ if(e.target===scrim) close(); });
+  scrim.addEventListener("keydown", function(e){ if(e.key==="Escape"){ e.stopPropagation(); close(); } });
+  function go(s, tab, nm){ close(); if(window.thriveModal) window.thriveModal.open(s, tab, nm||s); }
+
+  function paths(o){
+    var addr=emailAddress(o), recips=campaignRecipients(o), group=recips.length>1;
+    var nm=o.business||o.slug||"";
+    var box=document.createElement("div"); box.className="tw-box send-box"; box.setAttribute("role","dialog"); box.setAttribute("aria-modal","true"); box.setAttribute("aria-labelledby","sendChooseT");
+    box.innerHTML='<h3 class="tw-t" id="sendChooseT">'+esc(t("send_which_h"))+'</h3>'+
+      '<p class="tw-p" dir="auto">'+esc(nm)+'</p>'+
+      '<div class="send-grid">'+
+        '<button class="send-card'+(addr?"":" is-off")+'" type="button" data-mode="single"'+(addr?"":' disabled')+'>'+
+          ic("mail",22)+'<span class="send-t">'+esc(t("send_single"))+'</span>'+
+          '<span class="send-d">'+esc(t("send_single_p"))+'</span>'+
+          '<span class="send-meta mono-iso">'+(addr? ltr(esc(bareAddress(addr))) : esc(t("send_no_email")))+'</span></button>'+
+        '<button class="send-card" type="button" data-mode="campaign">'+
+          ic("send",22)+'<span class="send-t">'+esc(t("send_campaign"))+'</span>'+
+          '<span class="send-d">'+esc(t("send_campaign_p"))+'</span>'+
+          '<span class="send-meta">'+(group? ('<bdi class="n">'+nIso(recips.length)+'</bdi> '+esc(t("send_recips"))) : esc(t("send_build_roster")))+'</span></button>'+
+      '</div>'+
+      '<div class="send-foot"><button class="btn ghost sm" type="button" data-cancel="1">'+esc(t("close"))+'</button></div>';
+    scrim.innerHTML=""; scrim.appendChild(box);
+    box.querySelector("[data-cancel]").addEventListener("click", close);
+    box.querySelectorAll("[data-mode]").forEach(function(b){ b.addEventListener("click", function(){
+      var mode=b.getAttribute("data-mode");
+      if(mode==="single"){ go(o.slug, "outreach", nm); }
+      else if(group){ go(o.slug, "outreach", nm); }                     // a roster of many exists: the campaign screen
+      else { go(o.slug, "overview", nm); toast(t("send_campaign_needroster")); }   // build the roster first (P5, in Overview)
+    }); });
+    var f=box.querySelector(".send-card:not([disabled])"); if(f) f.focus();
+  }
+
+  function picker(){
+    var sendable=all.filter(function(o){ return o && !(o.spawned_from && o.spawned_from.parent) && emailAddress(o); }).slice(0,12);
+    var box=document.createElement("div"); box.className="tw-box send-box"; box.setAttribute("role","dialog"); box.setAttribute("aria-modal","true"); box.setAttribute("aria-labelledby","sendChooseT");
+    box.innerHTML='<h3 class="tw-t" id="sendChooseT">'+esc(t("send_pick_h"))+'</h3>'+
+      '<p class="tw-p">'+esc(t("send_pick_p"))+'</p>'+
+      '<ul class="send-list">'+ (sendable.length
+        ? sendable.map(function(o){ var recips=campaignRecipients(o);
+            return '<li><button class="send-op" type="button" data-slug="'+esc(o.slug)+'"><span class="send-op-n" dir="auto">'+esc(o.business||o.slug)+'</span>'+
+              '<span class="send-op-m">'+(recips.length>1
+                ? ('<bdi class="n">'+nIso(recips.length)+'</bdi> '+esc(t("send_recips")))
+                : ('<span class="mono-iso">'+ltr(esc(bareAddress(emailAddress(o)||"")))+'</span>'))+'</span></button></li>';
+          }).join("")
+        : '<li class="send-empty">'+esc(t("send_pick_none"))+'</li>')+'</ul>'+
+      '<div class="send-foot"><button class="btn ghost sm" type="button" data-cancel="1">'+esc(t("close"))+'</button></div>';
+    scrim.innerHTML=""; scrim.appendChild(box);
+    box.querySelector("[data-cancel]").addEventListener("click", close);
+    box.querySelectorAll("[data-slug]").forEach(function(b){ b.addEventListener("click", function(){
+      var o=oppBySlug(b.getAttribute("data-slug")); if(o) paths(o);
+    }); });
+    var f=box.querySelector(".send-op"); if(f) f.focus();
+  }
+
+  var o=slug? oppBySlug(slug) : null;
+  if(o) paths(o); else picker();
+}
+try{ window.openSendChooser=openSendChooser; }catch(_){}
+
 /* ---------- R14 (P20): the one signature system, per sender ----------
    A signature is a saved text block: a sender DISPLAY NAME (the only variable) plus a FIXED agency block
    (Thrive Digital Solutions, thriveiii.com). Each member (Thyab, Agha, Basel, ...) manages their own set,
@@ -8116,6 +8236,15 @@ async function initCompose(slugArg, opts){
   }
   try{ window.__campaignTpl=buildCampaignTpl; }catch(_){}
 
+  // P24: the campaign plan sits on the campaign screen, beside Start campaign, so the deliverability
+  // discipline is visible before a dozens-send: the jitter window, today's budget, the warm-ramp cap, and
+  // the estimated finish. Shown only for a group opportunity; a single recipient has no campaign to pace.
+  (function fillCampaignPlan(){
+    var host=el("cmpPlan"); if(!host) return;
+    if(oppObj && typeof isGroupOpp==="function" && isGroupOpp(oppObj) && !replyCtx){
+      try{ host.innerHTML=campaignPlanHtml(oppObj); host.hidden=false; }catch(_){ host.hidden=true; }
+    } else { host.hidden=true; host.innerHTML=""; }
+  })();
   const campBtn=el("eCampaign");
   if(campBtn){
     if(oppObj && typeof isGroupOpp==="function" && isGroupOpp(oppObj)) campBtn.hidden=false;
@@ -10658,6 +10787,10 @@ async function initBoard(){
     try{ await syncNow(); }catch(e){}
     renderBoard("refresh-button");
   });
+  // P24: the top-bar Send (board toolbar and the Insights toolbar, both class js-send-open) opens the
+  // two-path chooser. With no card in context it lists the sendable opportunities to choose from; from a
+  // card, the card's own Send passes the slug straight through.
+  document.querySelectorAll(".js-send-open").forEach(b=>b.addEventListener("click", ()=>{ try{ openSendChooser(null); }catch(e){ toast(errText(e)); } }));
 
   // The replies inbox opens from the header. It is the one attribution surface; Settings only diagnoses
   // the relay now. Rendering it re-runs the badge count so an attach or a re-match updates the header.
@@ -12262,9 +12395,17 @@ function initModal(){
     if(isGroupOpp(o)) extra+=campaignControlHtml(o)+recipientsPanelHtml(o);   // P8: the in-flight campaign control sits above the roster
     if(o.spawned_from && o.spawned_from.parent) extra+=spawnedFromHtml(o);
     else extra+=rosterEditorHtml(o);                        // P5: the roster editor (D3), any non-child opp can build a campaign
+    // P24: the explicit Send, offered from the card. It opens the two-path chooser (one brief / a campaign),
+    // which routes into the existing composer or campaign screen. Hidden for a child card (it answers its
+    // parent's campaign) and while a campaign is already in flight (the control below owns that).
+    var canSend = !(o.spawned_from && o.spawned_from.parent) && !(o.campaign && o.campaign.state==="sending");
+    var sendBar = canSend ? '<div class="ov-send"><button type="button" class="btn ov-send-btn" data-sendchoose="'+esc(o.slug)+'">'+ic("send")+esc(t("send_which_cta"))+'</button></div>' : "";
     box.innerHTML=prohibitionBand(o)+recordNotes(o)+unrecordedNotice(o)+closedReplyNotice(o)+
-      '<dl class="mw-rows">'+rows.join("")+'</dl>'+extra+movesBar(o);
+      '<dl class="mw-rows">'+rows.join("")+'</dl>'+sendBar+extra+movesBar(o);
     try{ markCardSeen(o.slug); }catch(_){}                 // opening the card clears its badge (local only)
+    box.querySelectorAll("[data-sendchoose]").forEach(b=>b.addEventListener("click", ()=>{
+      try{ openSendChooser(b.getAttribute("data-sendchoose"), o.business||o.slug); }catch(e){ toast(errText(e)); }
+    }));
     try{ wireRosterEditor(box, o); }catch(_){}              // P5 roster editor handlers (paste / CSV / add / edit / remove)
     // The one retry for a failed send: retry the RECORD (not the relay POST). It re-enqueues the confirmed
     // write and flushes; the modal re-renders so the state reflects the outcome.

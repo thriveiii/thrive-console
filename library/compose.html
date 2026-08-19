@@ -190,6 +190,10 @@
       <button type="button" id="cmpPreviewBtn" class="btn ghost sm" aria-expanded="false" aria-controls="prevWrap" data-icon="eye" data-i18n="cmp_preview_btn">Preview</button>
     </div>
 
+    <!-- P24: the campaign plan (jitter, today's budget, warm-ramp cap, estimated finish) on the campaign
+         screen, beside Start campaign. Filled by initCompose for a group opportunity; hidden otherwise. -->
+    <div id="cmpPlan" class="cmp-plan" hidden></div>
+
     <div class="bar bar-actions">
       <button class="btn" id="eSend" data-icon="send" data-i18n="cmp_send">Send</button>
       <!-- P8/D6: start the durable campaign queue for a group opportunity. Shown only when the opp has more
