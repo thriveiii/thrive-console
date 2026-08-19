@@ -588,9 +588,10 @@ async function relayProbe(){
     out.signin  = v.kind==="signin";
     out.ver     = v.ver!=null? v.ver : null;
   }catch(e){ out.version="(unreachable: "+e.message+")"; }
-  /* The green light is "matches the version this build needs", read from
-     REQUIRED_RELAY, not the literal v4 this once tested for. */
-  out.v4=(out.ver===REQUIRED_RELAY);
+  /* The green light is "the relay is not older than this build needs", read from
+     REQUIRED_RELAY. A relay newer than required is fine (P23: the gate is >=, not
+     the strict === this once tested for). */
+  out.v4=(out.ver!=null && out.ver>=REQUIRED_RELAY);
   const auth=syncAuth();
   if(!auth){ out.state=out.hits="(not unlocked, no sync credential)"; return out; }
   try{
@@ -1319,10 +1320,65 @@ function mergeFieldsInto(str, name, ctx){
   out=out.split("{{MONTH}}").join((ctx&&ctx.month)||"");
   return out.replace(/<span data-m="[^"]*"[^>]*>([\s\S]*?)<\/span>/g,"$1");   // the sent body carries clean text, never editor spans
 }
+/* P23 attachments and rich links. Images are stored in Supabase Storage (console-attachments) and NEVER
+   base64-inlined into the body. compile() decides, in ONE place, how each stored image lands, from the
+   provider's own limits (Resend: 40 MB total per message), so preview equals sent by construction:
+     - at or under ATTACH_INLINE_MAX: a real email attachment (Resend fetches it from the Storage URL via
+       `path`, so the relay request stays small);
+     - over ATTACH_INLINE_MAX and at or under ATTACH_MAX: a hosted link in the body (a clean labelled link);
+     - over ATTACH_MAX: refused with the number, never silently dropped (the composer refuses at add time;
+       this is the compile-side floor so a stale draft can never smuggle one through).
+   Count and running total are capped too. Every limit is a stated constant, none silent. */
+const ATTACH_INLINE_MAX = 5 * 1024 * 1024;    // 5 MB: attach; above this, host and link (deliverability)
+const ATTACH_MAX        = 25 * 1024 * 1024;   // 25 MB: a single image larger than this is refused, by number
+const ATTACH_TOTAL_MAX  = 40 * 1024 * 1024;   // 40 MB: Resend's per-message ceiling across all attachments
+const ATTACH_COUNT_MAX  = 10;                 // a sane count so one message is not a bundle
+
+// The ONE partition. Given the stored attachment list (each already uploaded, with a url + byte size),
+// returns which land as real attachments (Resend `path`), which as a hosted link in the body, and which are
+// refused (with the limit that refused them). Pure and deterministic, so preview and send agree exactly.
+function planAttachments(list){
+  var items = Array.isArray(list) ? list : [];
+  var attach = [], hosted = [], refused = [], total = 0, count = 0;
+  for (var i = 0; i < items.length; i++){
+    var a = items[i] || {};
+    var size = Number(a.size) || 0;
+    var url  = String(a.url || "");
+    var name = String(a.filename || a.name || "image");
+    if (!url) continue;                                                            // not uploaded: not part of the send
+    if (size > ATTACH_MAX)      { refused.push({ filename:name, size:size, reason:"file",  limit:ATTACH_MAX });  continue; }
+    if (count >= ATTACH_COUNT_MAX){ refused.push({ filename:name, size:size, reason:"count", limit:ATTACH_COUNT_MAX }); continue; }
+    if (size <= ATTACH_INLINE_MAX && total + size <= ATTACH_TOTAL_MAX){
+      attach.push({ filename:name, path:url, contentType:a.contentType || "", size:size }); total += size; count++;
+    } else {
+      hosted.push({ filename:name, url:url, size:size }); count++;                 // too big to attach (or would burst the total): host it
+    }
+  }
+  return { attach:attach, hosted:hosted, refused:refused, totalBytes:total, count:count };
+}
+try{ window.planAttachments=planAttachments; window.__attachLimits={ inline:ATTACH_INLINE_MAX, max:ATTACH_MAX, total:ATTACH_TOTAL_MAX, count:ATTACH_COUNT_MAX }; }catch(_){}
+
+// A hosted image becomes a clean, labelled link in the body, baked per RECIPIENT language exactly as the
+// footer is (an inline ternary, not the UI-lang t()), so a per-recipient compile stays correct.
+function attachHostedBlockHtml(list, lang){
+  if(!list || !list.length) return "";
+  var label = (lang==="ar") ? "عرض الصورة" : "View image";
+  var rows = list.map(function(a){
+    return '<div style="margin:6px 0"><a href="'+esc(a.url)+'" target="_blank" rel="noopener">'+esc(label)+': '+esc(a.filename)+'</a></div>';
+  }).join("");
+  return '<div class="att-hosted" style="margin-top:14px">'+rows+'</div>';
+}
+function attachHostedBlockText(list, lang){
+  if(!list || !list.length) return "";
+  var label = (lang==="ar") ? "عرض الصورة" : "View image";
+  return "\n\n" + list.map(function(a){ return label+": "+a.filename+" "+a.url; }).join("\n");
+}
+
 // recipient: { addr, name, lang } (name is the FULL name; first-name-only is applied here from content).
 // content:   { innerTpl, subjectTpl, business, link, month, sig, branded, slug, track, tokenSlug, firstName,
-//              lang, rawText } -- the authored message, gathered from the live editor for a send/preview or
-//              from the captured template for the campaign queue. compile owns everything downstream of that.
+//              lang, rawText, attachments } -- the authored message, gathered from the live editor for a
+//              send/preview or from the captured template for the campaign queue. compile owns everything
+//              downstream of that, including how each attachment lands (attach vs hosted vs refused).
 function compile(recipient, content){
   recipient=recipient||{}; content=content||{};
   var full=String(recipient.name==null?"":recipient.name).trim();
@@ -1333,9 +1389,14 @@ function compile(recipient, content){
   var inner=mergeFieldsInto(content.innerTpl, name, ctx);
   var subject=mergeFieldsInto(content.subjectTpl, name, ctx).replace(/^\s+|\s+$/g,"");
   var sig=content.sig||"";
+  // P23: partition the attachments ONCE. Hosted images (too big to attach) become a clean link block in the
+  // body BEFORE the footer, so preview and send render the exact same body; the attach list rides out to the
+  // relay. Refused ones never reach here in a live send (the composer refuses them at add time).
+  var plan=planAttachments(content.attachments||[]);
+  if(plan.hosted.length) inner=inner+attachHostedBlockHtml(plan.hosted, lang);
   var html=brandWrap(inner, !!content.branded, sig)+ThriveStore.footerHtml(lang);
   // The footer (POSTAL) is attached in exactly ONE place, here, so no send can omit or diverge it.
-  var rawText=(content.rawText!=null)? content.rawText : toPlainText(inner, sig);
+  var rawText=(content.rawText!=null)? (content.rawText+attachHostedBlockText(plan.hosted, lang)) : toPlainText(inner, sig);
   var text=rawText+ThriveStore.footerText(lang);
   var tokenSlug=(content.tokenSlug!=null)? content.tokenSlug : (content.slug||"");
   var token=content.track ? recipientOpenToken(tokenSlug, addr, subject) : "";
@@ -1344,7 +1405,8 @@ function compile(recipient, content){
     html=html.split(base).join(tokd); text=text.split(base).join(tokd);   // channel 2: the page link carries the token
     html=html+openPixelHtml(content.slug, token, getSyncEndpoint());       // channel 1: one open pixel
   }
-  return { to:addr, name:name, subject:subject, html:html, text:text, token:token, lang:lang, inner:inner };
+  return { to:addr, name:name, subject:subject, html:html, text:text, token:token, lang:lang, inner:inner,
+           attachments:plan.attach, hosted:plan.hosted, refused:plan.refused };
 }
 try{ window.__compile=compile; window.mergeFieldsInto=mergeFieldsInto; }catch(_){}
 // The campaign's authored content, shaped for the ONE compile(recipient, content) -- the same content shape
@@ -1355,7 +1417,9 @@ function campaignContent(o, tpl){
   return { innerTpl:tpl.html||"", subjectTpl:tpl.subject||"",
            business:(o&&o.business)||"", link:liveUrl((o&&o.slug)||""), month:tpl.month||"",
            sig:tpl.sig||"", branded:!!tpl.branded, slug:(o&&o.slug)||"",
-           track:true, firstName:!!tpl.firstName, lang:tpl.lang||"en" };
+           track:true, firstName:!!tpl.firstName, lang:tpl.lang||"en",
+           attachments:(tpl.attachments||[]) };   // P23: the same images every recipient gets, through the one compile
+
 }
 try{ window.__campaignContent=campaignContent; }catch(_){}
 // Start (or top up) a campaign: write the queued ledger rows, record the day's committed sends against the
@@ -1378,7 +1442,8 @@ function startCampaignQueue(slug, tpl){
               mid:art.token, direction:"out", provider:"queue", due:dueIso, campaign:slug,
               preview:(art.text||"").replace(/\s+/g," ").trim().slice(0,120) });
     batch.push({ mid:art.token, opp:slug, campaign:slug, to:sr.addr, toName:sr.name,
-                 subject:art.subject, html:art.html, text:art.text, due:dueIso });
+                 subject:art.subject, html:art.html, text:art.text, due:dueIso,
+                 attachments:(art.attachments&&art.attachments.length? art.attachments : undefined) });
     if(sr.day===0 && typeof recordSend==="function"){ recordSend(); committedToday++; }   // budget counts at queue time
   });
   saveDraft({ slug:slug, campaign:{ state:"sending", started:new Date().toISOString(), n:recips.length,
@@ -6556,7 +6621,7 @@ function threadListHtml(slug){
    (edit, save, page upload, contact confirmed, merge, archive, restore) are stored as activity rows. */
 var ACT_DERIVED={ email:1 };                 // a send is a ledger event: its activity row (if any legacy exists) is dropped
 var ACT_ICON={ draft_save:"edit", edit:"edit", upload:"page", page:"page", activate:"globe",
-  contact:"channel", merge:"link", archive:"archive", restore:"undo", rematch:"link", attach:"link", clear:"trash" };
+  contact:"channel", merge:"link", archive:"archive", restore:"undo", rematch:"link", attach:"link", attach_add:"link", clear:"trash" };
 function cardActivity(slug){
   slug=String(slug||"");
   var entries=buildThread(slug).filter(function(e){
@@ -6765,6 +6830,9 @@ async function relaySend(intent){
   const headers=Object.assign({}, ThriveStore.outboundHeaders(opp), intent.headers||{}, { "Message-ID": msgid });
   const payload={ v:REQUIRED_RELAY, from:FROM_EMAIL, fromName:getFromName(), to:to, subject:subject,
     html:html, text:text, idempotencyKey:idem, headers:headers, slug:opp };
+  // P23: the images that land as real attachments (each { filename, path }, a Storage URL the relay hands to
+  // Resend to fetch, so this request stays small). Hosted-link images are already in the body, not here.
+  if(intent.attachments && intent.attachments.length) payload.attachments=intent.attachments;
   try{
     const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:JSON.stringify(payload) });
     const txt=await r.text();
@@ -6880,6 +6948,96 @@ async function initCompose(slugArg, opts){
   const slug=(slugArg!==undefined&&slugArg!==null&&slugArg!=="")?slugArg:params.get("slug");
   const oppUrl = slug ? liveUrl(slug) : "";
 
+  /* ---- P23: attachments (images from the device) --------------------------------------------------
+     The composer's attachment list. Each entry is an ALREADY-UPLOADED image, stored in Supabase Storage
+     (console-attachments) and referenced by URL, never base64-inlined: { key, name, type, size, url,
+     path }. editorContent hands this exact list to the ONE compile(), which decides per size how each
+     lands (a real attachment, a hosted link, or refused with the number), so the strip below and the
+     preview show precisely what the recipient receives. The list is persisted under compose_draft (per
+     author) so a reopen restores it. */
+  let composeAttachments = [];
+  let __attachKeyN = 0;
+  function attachmentsForContent(){
+    return composeAttachments.map(function(a){ return { filename:a.name, url:a.url, size:a.size, contentType:a.type }; });
+  }
+  // Test hook: seed the attachment list without a real upload (the sandbox cannot reach Storage), so the
+  // parity proof drives the SAME composeAttachments through both live builders (editorContent + campaignTpl).
+  try{ window.__seedComposeAttachments=function(list){ composeAttachments=(list||[]).map(function(a){ return { key:a.key||("a"+(++__attachKeyN)), name:a.name||a.filename||"image", type:a.type||a.contentType||"", size:Number(a.size)||0, url:a.url, path:a.path||"" }; }); renderAttachStrip(); }; }catch(_){}
+  function attachTotalBytes(){ return composeAttachments.reduce(function(s,a){ return s+(Number(a.size)||0); }, 0); }
+  function attachMB(bytes){ return (Math.round((Number(bytes)||0)/1048576*10)/10).toFixed(1); }   // Western numerals, one decimal
+  // How this image will land, decided by the SAME thresholds compile() uses, so the label never lies.
+  function attachLandingLabel(a){ return (Number(a.size)||0) <= ATTACH_INLINE_MAX ? t("cmp_att_attached") : t("cmp_att_hosted"); }
+  function renderAttachStrip(){
+    const host=el("eattach"); if(!host) return;
+    if(!composeAttachments.length){ host.hidden=true; host.innerHTML=""; return; }
+    host.hidden=false;
+    host.innerHTML='<div class="eattach-h">'+esc(t("cmp_att_h"))+' <span class="pill"><bdi class="n">'+nIso(composeAttachments.length)+'</bdi></span></div>'+
+      composeAttachments.map(function(a){
+        return '<div class="eatt-item"><img class="eatt-thumb" src="'+esc(a.url)+'" alt="" loading="lazy">'+
+          '<div class="eatt-info"><span class="eatt-name" dir="auto">'+esc(a.name)+'</span>'+
+          '<span class="eatt-meta"><span class="tag tag-plain">'+esc(attachLandingLabel(a))+'</span> '+
+          '<span class="eatt-size"><bdi class="n">'+nIso(attachMB(a.size))+'</bdi> '+esc(t("cmp_att_mb"))+'</span></span></div>'+
+          '<button type="button" class="btn ghost sm danger eatt-rm" data-rm="'+esc(a.key)+'">'+esc(t("cmp_link_remove"))+'</button></div>';
+      }).join("");
+    host.querySelectorAll("[data-rm]").forEach(function(b){ b.addEventListener("click", function(){ removeAttachment(b.getAttribute("data-rm")); }); });
+  }
+  function removeAttachment(key){
+    // Additive only: dropping it from the message never deletes the stored object (another draft may
+    // reference it, and Storage is append-only here). The strip and the compiled body simply stop citing it.
+    composeAttachments = composeAttachments.filter(function(a){ return a.key!==key; });
+    renderAttachStrip(); refreshDriveChip(); touchCompose(); refreshPreview();
+  }
+  async function addAttachmentFiles(fileList){
+    const files=[].slice.call(fileList||[]);
+    if(!files.length) return;
+    // Attachments change the send request shape and need a v8+ relay. Never drop them silently: if the
+    // deployed relay cannot carry them, refuse the add with the version the operator must deploy.
+    if(!relaySupportsAttachments()){ toast(t("attach_need_relay").replace("{ver}", String(ATTACH_MIN_RELAY))); return; }
+    for(let i=0;i<files.length;i++){
+      const f=files[i];
+      if(!/^image\//i.test(f.type||"")){ toast(t("cmp_att_only_images")); continue; }
+      if(composeAttachments.length>=ATTACH_COUNT_MAX){ toast(t("attach_refused_count").replace("{max}", String(ATTACH_COUNT_MAX))); break; }
+      if((f.size||0)>ATTACH_MAX){ toast(t("attach_refused").replace("{mb}", String(Math.round(ATTACH_MAX/1048576)))); continue; }   // refused, with the number
+      try{
+        const key="a"+(++__attachKeyN)+"-"+Date.now();
+        const up=await ThriveSupa.uploadAttachment(f, slug||"unfiled", key);
+        composeAttachments.push({ key:key, name:up.name, type:up.type||f.type||"", size:up.size||f.size||0, url:up.url, path:up.path });
+        if(slug) logActivity("attach_add", slug, up.name);       // every attachment enters the card's activity memory (P21), with its author
+        renderAttachStrip(); touchCompose(); refreshPreview();
+      }catch(e){ toast(t("cmp_att_upload_fail")+((e&&e.message)?(": "+e.message):"")); }
+    }
+  }
+
+  /* ---- P23: rich links -- recognize the destination, label it cleanly ------------------------------
+     A pasted or inserted link is recognized by its host (Instagram, X, TikTok, Facebook, LinkedIn,
+     YouTube, Google Drive, or a generic URL) so a bare link reads as a clean labelled word, and the
+     links manager names the type. A Google Drive link raises a sender-only reminder to check its
+     sharing before the message goes, so the recipient never hits a request-access wall. */
+  function linkKind(url){
+    let host="", u=String(url||"").trim();
+    try{ host=new URL(/^[a-z][a-z0-9+.-]*:/i.test(u)?u:("https://"+u)).hostname.replace(/^www\./,"").toLowerCase(); }catch(e){ host=""; }
+    const on=h=>host===h||host.slice(-(h.length+1))==="."+h;
+    if(/^mailto:/i.test(u)) return { type:"email",     label:t("cmp_lk_email") };
+    if(/^tel:/i.test(u))    return { type:"phone",     label:t("cmp_lk_phone") };
+    if(on("instagram.com"))                         return { type:"instagram", label:t("cmp_lk_instagram") };
+    if(on("x.com")||on("twitter.com")||on("t.co"))  return { type:"x",         label:t("cmp_lk_x") };
+    if(on("tiktok.com"))                            return { type:"tiktok",    label:t("cmp_lk_tiktok") };
+    if(on("facebook.com")||on("fb.com")||on("fb.watch")) return { type:"facebook", label:t("cmp_lk_facebook") };
+    if(on("linkedin.com")||on("lnkd.in"))           return { type:"linkedin",  label:t("cmp_lk_linkedin") };
+    if(on("youtube.com")||on("youtu.be"))           return { type:"youtube",   label:t("cmp_lk_youtube") };
+    if(on("drive.google.com")||on("docs.google.com")) return { type:"drive",   label:t("cmp_lk_drive") };
+    return { type:"url", label:t("cmp_lk_url") };
+  }
+  try{ window.__linkKind=linkKind; }catch(_){}
+  function refreshDriveChip(){
+    const chip=el("edrivechip"); if(!chip) return;
+    const anchors=[].slice.call((el("ebody")||{querySelectorAll:()=>[]}).querySelectorAll("a"));
+    const hasDrive=anchors.some(a=>linkKind(a.getAttribute("href")||"").type==="drive");
+    if(!hasDrive){ chip.hidden=true; chip.innerHTML=""; return; }
+    chip.hidden=false;
+    chip.innerHTML='<span class="edrive-ic">'+ic("alert")+'</span><span class="edrive-msg">'+esc(t("cmp_drive_reminder"))+'</span>';
+  }
+
   // rich editor: keep the selection alive when clicking toolbar buttons
   document.querySelectorAll(".etoolbar button").forEach(b=>b.addEventListener("mousedown",e=>e.preventDefault()));
   function cmd(c,v){ document.execCommand(c,false,v||null); }
@@ -6951,7 +7109,10 @@ async function initCompose(slugArg, opts){
       const a=document.createElement("a"); a.href=url; a.setAttribute("data-origin","custom");
       try{ a.appendChild(savedRange.extractContents()); savedRange.insertNode(a); }catch(e){}
     } else {                                             // insert a brand-new link (text or url)
-      const a=document.createElement("a"); a.href=url; a.setAttribute("data-origin","custom"); a.textContent=text||url;
+      // P23: a bare recognized link (Instagram, YouTube, Drive...) reads as its clean type word, never a
+      // raw URL; a generic link with no text still shows the URL, which is clearer than a vague "Link".
+      const lk=linkKind(url), auto=(lk.type!=="url")? lk.label : url;
+      const a=document.createElement("a"); a.href=url; a.setAttribute("data-origin","custom"); a.textContent=text||auto;
       if(savedRange){ try{ savedRange.deleteContents(); savedRange.insertNode(a); }catch(e){ body.appendChild(a); } }
       else body.appendChild(a);
     }
@@ -6967,8 +7128,11 @@ async function initCompose(slugArg, opts){
     linksBox.innerHTML='<div class="elinks-h">'+t("cmp_links_h")+' <span class="pill">'+anchors.length+'</span></div>'+
       anchors.map((a,i)=>{
         const tpl=a.getAttribute("data-origin")==="template";
-        const badge=tpl?'<span class="tag tag-templates">'+t("cmp_link_tpl")+'</span>':'<span class="tag tag-plain">'+t("cmp_link_custom")+'</span>';
-        return '<div class="elink-item"><div class="elink-info"><span class="elink-text">'+esc(a.textContent||"–")+'</span>'+badge+
+        const origin=tpl?'<span class="tag tag-templates">'+t("cmp_link_tpl")+'</span>':'<span class="tag tag-plain">'+t("cmp_link_custom")+'</span>';
+        // P23: name the recognized destination (Instagram, YouTube, Google Drive...) beside the origin.
+        const lk=linkKind(a.getAttribute("href")||"");
+        const kind=(lk.type!=="url")?'<span class="tag tag-kind lk-'+esc(lk.type)+'">'+esc(lk.label)+'</span>':'';
+        return '<div class="elink-item"><div class="elink-info"><span class="elink-text">'+esc(a.textContent||"–")+'</span>'+kind+origin+
           '<span class="elink-url mono">'+esc(a.getAttribute("href")||"")+'</span></div>'+
           '<div class="elink-acts"><button type="button" class="btn ghost sm" data-edit="'+i+'">'+t("cmp_link_edit")+'</button>'+
           '<button type="button" class="btn ghost sm danger" data-del="'+i+'">'+t("cmp_link_remove")+'</button></div></div>';
@@ -6981,9 +7145,22 @@ async function initCompose(slugArg, opts){
       const p=a.parentNode; while(a.firstChild) p.insertBefore(a.firstChild,a); p.removeChild(a); refreshLinks(); recordBody();
     }));
     renderOppStatus();
+    refreshDriveChip();                                  // P23: sender-only Drive-sharing reminder follows the links
   }
   el("tbLink").addEventListener("click",()=>{ closeBars(); openLinkBar(""); });
   el("tbUnlink").addEventListener("click",()=>{ cmd("unlink"); refreshLinks(); });
+  // P23: attach an image. The button gates on the relay's attachment support; the hidden input feeds
+  // addAttachmentFiles, which uploads to Storage and rebuilds the strip and the preview.
+  (function wireAttach(){
+    const btn=el("tbAttach"), inp=el("eAttachFile");
+    if(!btn || !inp) return;
+    btn.addEventListener("mousedown", e=>e.preventDefault());
+    btn.addEventListener("click", ()=>{
+      if(!relaySupportsAttachments()){ toast(t("attach_need_relay").replace("{ver}", String(ATTACH_MIN_RELAY))); return; }
+      inp.click();
+    });
+    inp.addEventListener("change", ()=>{ const fl=inp.files; inp.value=""; addAttachmentFiles(fl); });
+  })();
   el("elinkApply").addEventListener("click",applyLink);
   el("elinkCancel").addEventListener("click",()=>{ linkBar.hidden=true; editingAnchor=null; });
   linkUrl.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); applyLink(); } if(e.key==="Escape"){ linkBar.hidden=true; } });
@@ -7622,7 +7799,8 @@ async function initCompose(slugArg, opts){
       slug:(oppObj&&oppObj.slug)||"", tokenSlug:oppOf(),
       firstName:!!(firstEl && firstEl.checked), lang:(docLoc()==="AR"?"ar":"en"),
       track:!!(opts.track && !replyCtx),
-      rawText:(pbox && pbox.dataset.dirty==="1") ? pbox.value : null
+      rawText:(pbox && pbox.dataset.dirty==="1") ? pbox.value : null,
+      attachments:attachmentsForContent()          // P23: the composer's uploaded images ride into the ONE compile
     };
   }
   try{ window.__cmpCompile=function(rec, opts){ return compile(rec||fieldRecipient(), editorContent(opts||{})); }; }catch(_){}
@@ -7795,12 +7973,13 @@ async function initCompose(slugArg, opts){
       subject: el("esubject").value, body_html: htmlOut(),
       template: tplSel? tplSel.value : "", branded: isBranded(),
       first: !!(firstEl && firstEl.checked), month: monthVal(),
-      plain: (plainBox && plainBox.dataset.dirty==="1") ? plainBox.value : ""
+      plain: (plainBox && plainBox.dataset.dirty==="1") ? plainBox.value : "",
+      attachments: composeAttachments.slice()        // P23: persist the uploaded-image list (URLs only, never bytes)
     };
   }
   function composeHasContent(s){
     return !!(String(s.body_html||"").replace(/<[^>]*>/g,"").trim() || (s.subject||"").trim()
-              || s.to || s.name || (s.plain||"").trim());
+              || s.to || s.name || (s.plain||"").trim() || (s.attachments&&s.attachments.length));
   }
   const savedTag=el("draftSaved");
   let composeDirty=false, composeLogged=false, restoring=false;
@@ -7836,6 +8015,10 @@ async function initCompose(slugArg, opts){
     if("body_html" in d){ body.innerHTML=d.body_html||"";
       body.querySelectorAll("a").forEach(a=>{ if(!a.getAttribute("data-origin")) a.setAttribute("data-origin","custom"); }); }
     if(plainBox && d.plain){ plainBox.value=d.plain; plainBox.dataset.dirty="1"; }
+    if(Array.isArray(d.attachments)){                    // P23: restore the uploaded-image list (URLs, never bytes)
+      composeAttachments=d.attachments.filter(a=>a&&a.url).map(a=>({ key:a.key||("a"+(++__attachKeyN)), name:a.name||"image", type:a.type||"", size:Number(a.size)||0, url:a.url, path:a.path||"" }));
+      renderAttachStrip();
+    }
     refreshLinks();
     restoring=false;
     return true;
@@ -7928,7 +8111,8 @@ async function initCompose(slugArg, opts){
     var tp=currentTpl();
     var subjTpl=(tp && /\{\{\s*NAME\s*\}\}/.test(tp.subject||"")) ? tp.subject : el("esubject").value;
     return { subject:subjTpl, html:c.innerHTML, branded:isBranded(), sig:sigBox?sigBox.value:"",
-             firstName:!!(firstEl && firstEl.checked), month:monthVal(), lang:(docLoc()==="AR"?"ar":"en") };
+             firstName:!!(firstEl && firstEl.checked), month:monthVal(), lang:(docLoc()==="AR"?"ar":"en"),
+             attachments:attachmentsForContent() };   // P23: the same images compile per recipient through the one path
   }
   try{ window.__campaignTpl=buildCampaignTpl; }catch(_){}
 
@@ -7939,6 +8123,14 @@ async function initCompose(slugArg, opts){
       if(!oppObj || !isGroupOpp(oppObj)){ toast(t("cq_not_group")); return; }
       if(!(await ensureLive())) return;                    // the page must be proven live, exactly like a single send
       var tpl=buildCampaignTpl();
+      // P23: the same attachment discipline holds for a campaign. Refuse an oversize image by number, and
+      // refuse the whole campaign if the live relay cannot carry the attachments, rather than send some without.
+      var camPlan=planAttachments(tpl.attachments||[]);
+      if(camPlan.refused && camPlan.refused.length){ var cr=camPlan.refused[0];
+        var ck=(cr.reason==="count")?"attach_refused_count":"attach_refused";
+        var cn=(cr.reason==="count")?ATTACH_COUNT_MAX:Math.round((cr.limit||ATTACH_MAX)/1048576);
+        toast(t(ck).replace("{max}", String(cn)).replace("{mb}", String(cn))); return; }
+      if(camPlan.attach.length && !relaySupportsAttachments()){ toast(t("attach_need_relay").replace("{ver}", String(ATTACH_MIN_RELAY))); return; }
       campBtn.disabled=true;
       try{
         var res=startCampaignQueue(oppObj.slug, tpl);
@@ -7992,7 +8184,16 @@ async function initCompose(slugArg, opts){
     // is compiled so the open pixel and the tokenized page link both carry it, then cleared in finally.
     // The one compile: the send submits byte-for-byte what the preview showed for this recipient.
     const art=compile(fieldRecipient(), editorContent({track:true}));
-    const subjectOut=art.subject, sb={ html:art.html, text:art.text }, sendToken=art.token;
+    // P23: an oversize image is refused by number, never silently dropped. The composer refuses at add time;
+    // this is the floor for a stale or synced draft carrying one through compile.
+    if(art.refused && art.refused.length){ const r0=art.refused[0];
+      const k=(r0.reason==="count")?"attach_refused_count":"attach_refused";
+      const n=(r0.reason==="count")?ATTACH_COUNT_MAX:Math.round((r0.limit||ATTACH_MAX)/1048576);
+      toast(t(k).replace("{max}", String(n)).replace("{mb}", String(n))); return; }
+    // And a real attachment can never be silently dropped by an older relay: if the draft carries one but the
+    // live relay predates attachment support, refuse and name the version, rather than send it without.
+    if((art.attachments||[]).length && !relaySupportsAttachments()){ toast(t("attach_need_relay").replace("{ver}", String(ATTACH_MIN_RELAY))); return; }
+    const subjectOut=art.subject, sb={ html:art.html, text:art.text }, sendToken=art.token, sendAtts=art.attachments||[];
     // A stable Message-ID the reply's In-Reply-To will carry back, recorded on the row so the reply
     // threads by header (the strongest tier). Passed through the relay to Resend; whether Resend keeps it
     // verbatim is a device gate, so sender and subject stay the reliable tiers underneath it.
@@ -8022,8 +8223,9 @@ async function initCompose(slugArg, opts){
     try{
       res=await relaySend({ opp:oppOf(), to:to, toName:recName(), subject:subjectOut,
         html:sb.html, text:sb.text, msgid:msgid, headers:replyHeaders, preview:preview(),
-        chapter:sendChapter(oppOf()),
-        mailExtra:{ templateId:m.templateId, templateName:m.templateName, branded:isBranded(), mid:(sendToken||undefined) } });
+        chapter:sendChapter(oppOf()), attachments:sendAtts,
+        mailExtra:{ templateId:m.templateId, templateName:m.templateName, branded:isBranded(), mid:(sendToken||undefined),
+                    attach_n:(sendAtts.length||undefined), attach_names:(sendAtts.length? sendAtts.map(a=>a.filename).join(", ") : undefined) } });
     } finally { el("eSend").disabled=false; el("eSend").textContent=old; }
     // A completed send, refused by name: no second delivery.
     if(res.status==="duplicate"){ toast(t("cmp_dupe_block")); reconcileReply(); return; }
@@ -8090,7 +8292,8 @@ async function fetchT(url, opts, ms){
    It shows one banner, everywhere a send or a sync would appear, with the exact
    five taps that fix it, and it makes every relay-dependent action impossible to
    attempt. A send that would fail with `missing "to"` is refused before it leaves. */
-const REQUIRED_RELAY = 5;
+const REQUIRED_RELAY = 5;         // the OLDEST relay this console's request shapes work against
+const ATTACH_MIN_RELAY = 8;       // attachments need the relay that forwards them (v8); older relays never see one
 let __relaySeen = null;                 // the version the last relay response declared, or null
 let __relayChecked = false;             // whether we have parsed any relay response this session
 /* A relay response that omits relay_version is, by definition, older than the
@@ -8102,15 +8305,23 @@ function noteRelayVersion(j){
   __relaySeen = v; __relayChecked = true;
   return j;
 }
-/* null when no relay response has been seen yet (nothing to disagree with), or
-   when the versions match. An object {seen, need} the moment a parsed response
-   disagrees, which is what the banner and every gate read. */
+/* P23: the runtime gate reads "the relay is NOT OLDER than this console needs", `seen >= REQUIRED`, not
+   strict equality. A relay NEWER than REQUIRED is fine: it is backward-compatible with the older request
+   shape this console stamps (v:REQUIRED), and the relay's own request-version guard still refuses a NEWER
+   console against an OLDER relay by name. Strict `===` made every additive relay upgrade a mismatch, which
+   is why P8's queue and P22's inbound stayed dormant behind a v5 console. An OLDER (or absent) version is
+   still a mismatch and still refuses the send, naming both numbers. Returns null when ready. */
 function relayMismatch(){
   if(!__relayChecked) return null;
-  if(__relaySeen === REQUIRED_RELAY) return null;
-  return { seen: __relaySeen, need: REQUIRED_RELAY };
+  if(__relaySeen != null && __relaySeen >= REQUIRED_RELAY) return null;   // equal or newer: ready
+  return { seen: __relaySeen, need: REQUIRED_RELAY };                     // older or absent: refuse, name both
 }
 function relayReady(){ return relayMismatch() === null; }
+// The relay version we are actually talking to (null until a response is seen), and per-capability gates.
+function relaySeenVersion(){ return __relaySeen; }
+function relaySupportsAttachments(){ return __relaySeen != null && __relaySeen >= ATTACH_MIN_RELAY; }
+try{ window.relaySeenVersion=relaySeenVersion; window.relaySupportsAttachments=relaySupportsAttachments;
+     window.noteRelayVersion=noteRelayVersion; window.relayReady=relayReady; window.relayMismatch=relayMismatch; }catch(_){}   // test hooks for the version gate
 /* Stamp the request with the version it was written for, so a relay older than
    the request can refuse it by name (`request v6, relay v5`) instead of misreading
    the shape the way a v4 handler misread a v5 send. */
@@ -8139,7 +8350,9 @@ function classifyRelayBody(body){
   if(s.charAt(0)==="{" || s.charAt(0)==="["){
     try{ const j=JSON.parse(s);
       if(j && j.relay_version!=null){ const jv=Number(j.relay_version);
-        return { kind: jv===REQUIRED_RELAY? "current":"old", ver:jv, version:"Thrive relay v"+jv }; }
+        // P23: "current" means NOT OLDER than the console needs (jv >= REQUIRED), matching the send gate's
+        // `>=`. A NEWER relay (v8 against a v5 REQUIRED) is current, not "old"; only an older one is stale.
+        return { kind: jv>=REQUIRED_RELAY? "current":"old", ver:jv, version:"Thrive relay v"+jv }; }
     }catch(e){}
   }
   /* Fallback for a relay built before the contract, whose bare GET is the prose line. "current" is
@@ -8147,7 +8360,7 @@ function classifyRelayBody(body){
      have turned a correct deployment into a reported fault, which is the exact class of drift this ends. */
   if(/Thrive relay/i.test(s)){
     const m=/v(\d+)/i.exec(s); const ver=m? Number(m[1]) : null;
-    return { kind: ver===REQUIRED_RELAY? "current":"old", ver:ver, version:s.slice(0,90) };
+    return { kind: (ver!=null && ver>=REQUIRED_RELAY)? "current":"old", ver:ver, version:s.slice(0,90) };
   }
   // Only a Google page counts as "not open to Anyone". Any other HTML is simply the wrong URL.
   if(/accounts\.google\.com|ServiceLogin|Web word processing|Google Drive|Google Accounts|google\.com\/accounts/i.test(s))
@@ -8170,6 +8383,7 @@ async function connCheck(candidate, onStep){
   let body="";
   try{ const r=await fetchT(ep,{cache:"no-store"},9000); body=await r.text(); }catch(e){ body=""; }
   const v=classifyRelayBody(body);
+  if(v.ver!=null) noteRelayVersion({ relay_version:v.ver });   // P23: the checked version feeds the same one gate + the caps line
   if(!add("conn_v4", v.kind==="current",
           v.kind==="signin"? t("sy_v_signin") : (v.version||t("sy_err_net")),
           v.kind==="signin"? t("conn_v4_fix_access") : "")) return steps;
@@ -8365,7 +8579,34 @@ function initSettings(){
 
   /* ---- connection health panel ---- */
   const CONN_STEPS=["conn_url","conn_v4","conn_key","conn_sync","conn_push","conn_hits","conn_repo","conn_publish"];
+  /* P23 / Condition 2: the live relay version, always visible in Settings, with what each version lights up.
+     Reads the ONE authority (relaySeenVersion, set by every sync/send/check response). A version-gated feature
+     is never invisible again: P8's queue, P22's inbound signals, and P23's attachments each show live or
+     "waiting for a deploy". Each capability names the version it needs, and the version the relay serves. */
+  function renderRelayCaps(){
+    const host=el("relayCaps"); if(!host) return;
+    const seen=(typeof relaySeenVersion==="function")? relaySeenVersion() : null;
+    const CAPS=[
+      { key:"cap_send",    need:REQUIRED_RELAY },
+      { key:"cap_queue",   need:6 },
+      { key:"cap_inbound", need:7 },
+      { key:"cap_attach",  need:ATTACH_MIN_RELAY }
+    ];
+    const verLine=(seen==null)
+      ? '<span class="rc-ver rc-unknown">'+esc(t("relay_caps_unknown"))+'</span>'
+      : '<span class="rc-ver">'+esc(t("relay_caps_live"))+' <b class="rc-num">v<bdi class="n">'+nIso(seen)+'</bdi></b></span>';
+    const rows=CAPS.map(c=>{
+      const on=(seen!=null && seen>=c.need);
+      return '<li class="rc-cap '+(on?"on":"off")+'">'+
+        '<span class="rc-dot">'+(on?ic("check"):ic("clock"))+'</span>'+
+        '<span class="rc-name">'+esc(t(c.key))+'</span>'+
+        '<span class="rc-need">'+esc(on? t("relay_cap_on") : t("relay_cap_wait").replace("{ver}", String(c.need)))+'</span></li>';
+    }).join("");
+    host.hidden=false;
+    host.innerHTML='<div class="rc-head">'+verLine+'</div><ul class="rc-list">'+rows+'</ul>';
+  }
   function connRender(steps, running){
+    renderRelayCaps();
     const list=el("connList"); if(!list) return;
     const byKey={}; (steps||[]).forEach(s=>{ byKey[s.k]=s; });
     list.innerHTML=CONN_STEPS.map(k=>{
