@@ -6460,9 +6460,9 @@ function thSentBubble(e){
 // Their reply is the incoming bubble through the SAME builder: lead is the #N and latest mark, body is the
 // subject then the structured answer (new text first, quoted original collapsed), foot the rule and Gmail link.
 function thReplyBubble(r, slug){
-  var repNum={}, repMax=0; repliesForOpp(slug).forEach(function(x){ repNum[x.addr]=x.num; if(x.num>repMax) repMax=x.num; });
+  var repNum={}, __repMax=0; repliesForOpp(slug).forEach(function(x){ repNum[x.addr]=x.num; if(x.num>__repMax) __repMax=x.num; });
   var rn=repNum[String(r.from||"").trim().toLowerCase()];
-  var latest=(rn && repMax>1 && rn===repMax);   // the newest reply is marked only when there is more than one
+  var latest=(rn && __repMax>1 && rn===__repMax);   // the newest reply is marked only when there is more than one
   var msg=buildMessage(r);
   return thMsgBubble({ side:"in", rid:r.id||"", latest:latest, ts:msg.time, addr:msg.fromAddr,
     leadHtml: (rn? '<span class="rp-num">#'+esc(String(rn))+'</span>' : '')+
