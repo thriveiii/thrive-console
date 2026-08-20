@@ -31,6 +31,7 @@
           op_err_network: "Could not reach the service. Check your connection and try again.",
           op_err_unavailable: "The sign-in service is unavailable right now. Try again shortly.",
           op_retry: "Retry",
+          op_ephemeral: "Signed in for this tab only. Private mode or blocked storage means the session will not survive a reload.",
           resub: "Welcome back. Sign in again to continue." },
     ar: { title: "كونسول ثرايف", sub: "مساحة خاصة. أدخل رمز الدخول للمتابعة.",
           ph: "رمز الدخول", go: "فتح", err: "رمز غير صحيح. حاول مجددًا.",
@@ -44,6 +45,7 @@
           op_err_network: "تعذّر الوصول إلى الخدمة. تحقّق من اتصالك وحاول مجددًا.",
           op_err_unavailable: "خدمة تسجيل الدخول غير متوفرة الآن. حاول بعد قليل.",
           op_retry: "إعادة المحاولة",
+          op_ephemeral: "تم تسجيل الدخول لهذه النافذة فقط. الوضع الخاص أو تعذّر التخزين يعني أن الجلسة لن تبقى بعد إعادة التحميل.",
           resub: "مرحبًا بعودتك. سجّل الدخول من جديد." }
   };
   /* The build marker (bundle.js stamps meta[name=thrive-build]). Printed on the gate so a deploy
@@ -228,6 +230,21 @@
     reveal();
     if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) {} }
   }
+  /* P39: a persistent, dismissible one-line notice for a session that lives in memory only (storage
+     blocked). It is appended to the body, OUTSIDE #thriveGate, so it survives reveal() and stays until
+     the operator dismisses it or reloads. textContent only, so the message can never inject markup. */
+  function ephemeralNotice(msg) {
+    if (document.getElementById("thriveEphemeral")) return;   // one notice, not one per retry
+    var bar = document.createElement("div");
+    bar.id = "thriveEphemeral"; bar.className = "gate-ephemeral"; bar.setAttribute("role", "status");
+    bar.setAttribute("dir", lang() === "ar" ? "rtl" : "ltr");
+    var span = document.createElement("span"); span.textContent = msg || ""; bar.appendChild(span);
+    var x = document.createElement("button"); x.type = "button"; x.className = "gate-ephemeral-x";
+    x.setAttribute("aria-label", "×"); x.textContent = "×";
+    x.addEventListener("click", function () { try { bar.parentNode.removeChild(bar); } catch (e) {} });
+    bar.appendChild(x);
+    document.body.appendChild(bar);
+  }
 
   function showPasscodeStep(wrap) {
     var s = STR[lang()];
@@ -367,6 +384,10 @@
         showDiag(""); showRetry(false);
         opClearFails();
         if (typeof window.logActivity === "function") { try { window.logActivity("operator_login", "", "signed in"); } catch (ex) {} }
+        // P39: if the session could not be persisted (private mode / blocked storage), the sign-in still
+        // works for this tab (the token is held in memory, so reads carry it and the board populates),
+        // but say so plainly, once, with a persistent notice: it will not survive a reload.
+        try { if (S.sessionEphemeral && S.sessionEphemeral()) ephemeralNotice(s.op_ephemeral); } catch (ex) {}
         // Signing in lands on the board (the working surface), not wherever the hash last pointed (Settings).
         try { location.hash = "board"; } catch (ex) {}
         finish();
