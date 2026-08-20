@@ -170,21 +170,15 @@ function partC() {
   ck("C8 a shown gate card marks the boot as not-stuck (__thriveBooted)", /window\.__thriveBooted = true/.test(gateSrc));
   // Visible diagnostic: the raw error text is surfaced on the card, so a non-timeout reason is never hidden.
   ck("C9 the operator card has a diagnostic element (#gateDiag)", /id="gateDiag"/.test(gateSrc));
-  ck("C10 the failure is a STRUCTURED copyable block (stage / http / elapsed), not a generic line (P35)",
-    /function p35Block/.test(gateSrc) && /raw = p35Block\(ex, kind\)/.test(gateSrc) && /"stage: "/.test(gateSrc) && /"elapsed: "/.test(gateSrc) && /"http: "/.test(gateSrc));
+  ck("C10 the catch captures the raw error text, minimal (kind + message [+ status])",
+    /raw = \(kind \|\| "error"\) \+ ": " \+ \(\(ex && ex\.message\)/.test(gateSrc) && /raw \+= " \(HTTP " \+ ex\.status/.test(gateSrc));
   ck("C11 the raw diagnostic is shown on failure (showDiag(raw))", /showDiag\(raw\)/.test(gateSrc));
   ck("C12 the diagnostic writes textContent only (no markup injection)", /function showDiag[\s\S]*?diag\.textContent =/.test(gateSrc) && !/gateDiag[\s\S]{0,80}innerHTML/.test(gateSrc));
-  // P35: the exact server answer is captured verbatim and the boot session decision is logged, so the
-  // never-before-captured auth failure reason is revealed on device.
-  ck("C13 boot logs the session-restore vs cold-auth decision (P35)",
-    /function p35BootLine/.test(gateSrc) && /p35BootLine\(\);/.test(gateSrc) && /session-restore, NO auth call/.test(gateSrc) && /cold auth/.test(gateSrc));
-  ck("C14 a visible diagnostic panel is wired to window.__DIAG (P35)",
-    /window\.__DIAG = window\.__DIAG \|\| \{ log: p35log \}/.test(gateSrc) && /function ensureDiagPanel/.test(gateSrc));
-  ck("C15 supabase.js threads a diag observer and attaches it to the thrown/failed error (P35)",
-    /fetchJSON\(url, opts, ms, diag\)/.test(supaSrc) && /err\.diag = diag/.test(supaSrc) && /ex\.diag = diag/.test(supaSrc));
-  ck("C16 fetchJSON records stage, HTTP status, and the non-2xx body into diag (P35)",
-    /diag\.stage = "response-received"; diag\.status = res\.status/.test(supaSrc) && /diag\.body = String\(text/.test(supaSrc) && /diag\.stage = "fetch-rejected"/.test(supaSrc));
-  ck("C17 the request itself is unchanged (still the P34 apikey header shape)",
+  // P36 bare metal: ZERO diagnostic layers remain on the shipped auth/gate path.
+  ck("C13 gate.js has no diagnostic panel or logger (no p35/__DIAG/DIAG)", !/p35|__DIAG|\bDIAG\(/.test(gateSrc), (gateSrc.match(/p35|__DIAG|\bDIAG\(/) || [])[0]);
+  ck("C14 supabase.js has no auth instrumentation (no authDiag/__DIAG/diag observer)",
+    !/authDiag|__DIAG/.test(supaSrc) && !/fetchJSON\(url, opts, ms, diag\)/.test(supaSrc) && !/\.diag = diag/.test(supaSrc));
+  ck("C15 the auth request is the minimal standard header shape",
     /"apikey": c\.anon, "Authorization": "Bearer " \+ c\.anon, "Content-Type": "application\/json"/.test(supaSrc));
 }
 

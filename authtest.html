@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Thrive auth test</title>
+<style>
+  html,body{margin:0;background:#0a0a0c;color:#e5e7eb;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+  main{max-width:44rem;margin:0 auto;padding:20px}
+  h1{font-size:1.1rem} p{opacity:.8}
+  button{display:block;width:100%;margin:10px 0;padding:14px;border:0;border-radius:8px;background:#71BFCC;color:#04252b;font-weight:700;font-size:1rem;cursor:pointer}
+  pre{white-space:pre-wrap;word-break:break-word;background:#111318;border:1px solid #2a2f3a;border-radius:8px;padding:10px;font:12px/1.45 ui-monospace,Menlo,monospace;direction:ltr}
+</style></head>
+<body><main>
+<h1>Thrive auth test (standalone, no console code)</h1>
+<p>Same origin, same headers as the console. It never touches console JS. If a call here works, the delta is console code; if a call here hangs, the block is domain-level (service worker, CSP, network).</p>
+<button id="bHealth">1. health GET</button>
+<button id="bToken">2. token POST (wrong password on purpose)</button>
+<pre id="out">ready.</pre>
+<script>
+/* Public by design (RLS + sign-in protect the data, not these values). Kept literal so this page carries
+   ZERO console code and no shared module. Exactly the headers the console sign-in uses. */
+var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co";
+var ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
+var out = document.getElementById("out");
+function show(t){ out.textContent = t; }
+async function run(label, url, opts){
+  show(label + "\nrunning...");
+  var t0 = Date.now(), lines = [label];
+  try{
+    var res = await fetch(url, opts);
+    lines.push("elapsed: " + (Date.now()-t0) + "ms");
+    lines.push("status: " + res.status + " " + res.statusText);
+    var body = ""; try{ body = await res.text(); }catch(e){ body = "<body read failed: " + e + ">"; }
+    lines.push("body: " + String(body).slice(0, 500));
+  }catch(err){
+    lines.push("elapsed: " + (Date.now()-t0) + "ms");
+    lines.push("ERROR: " + (err && err.name) + ": " + (err && err.message));
+  }
+  show(lines.join("\n"));
+}
+document.getElementById("bHealth").addEventListener("click", function(){
+  run("health GET", URL_BASE + "/auth/v1/health", { method:"GET", headers:{ "apikey": ANON } });
+});
+document.getElementById("bToken").addEventListener("click", function(){
+  run("token POST (wrong password)", URL_BASE + "/auth/v1/token?grant_type=password", {
+    method:"POST",
+    headers:{ "apikey": ANON, "Authorization": "Bearer " + ANON, "Content-Type": "application/json" },
+    body: JSON.stringify({ email:"authtest@example.com", password:"definitely-wrong-"+Date.now() })
+  });
+});
+</script>
+</main></body></html>
