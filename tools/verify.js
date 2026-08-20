@@ -394,18 +394,31 @@ head("Arabic");
 /* ================= 4. copy gates (Brain/01 §7, Brain/03 §2, Brain/04 §3) ================= */
 head("Copy");
 {
-  const scanned = ALL.filter(p => /\.(html|js|css|json|md)$/.test(p) && !rel(p).startsWith("Brain"));
+  // library/vendor/ holds the unmodified official @supabase/supabase-js build (P33): a third-party
+  // vendored dependency, exempt from Thrive's own copy rules. It must stay byte-for-byte the published
+  // artifact (its sha256 is pinned in bundle.js), so we do not edit it to satisfy the em-dash or numeral
+  // gates. The vendor file itself is excluded from the scan; and because dist/thrive-console.html INLINES
+  // that same build, we also strip the vendored bytes out of every scanned file before checking, so the
+  // exemption follows the library wherever it is embedded, and nothing ELSE is exempted. Every byte of
+  // Thrive's own copy (library/*.js/*.css/*.html and the inlined shell) is still fully scanned.
+  const scanned = ALL.filter(p => /\.(html|js|css|json|md)$/.test(p) && !rel(p).startsWith("Brain") && !rel(p).startsWith("library/vendor"));
+  let VENDOR_SRC = "";
+  try { VENDOR_SRC = read(path.join(ROOT, "library", "vendor", "supabase-js.min.js")); } catch (e) {}
+  // Replace the vendored blob with a single newline so line counts before it are unaffected; the only lines
+  // that shift are those AFTER an inlined vendor, and any real offender there is also caught in its own
+  // source file (which is scanned) with a correct line number, so no authored-copy coverage is lost.
+  const copyText = p => VENDOR_SRC ? textOf(p).split(VENDOR_SRC).join("\n") : textOf(p);
 
   const em = [];
   for (const p of scanned) {
-    const s = textOf(p);
+    const s = copyText(p);
     s.split("\n").forEach((line, i) => { if (line.includes("—")) em.push(rel(p) + ":" + (i + 1)); });
   }
   em.length ? bad("zero em dashes (use a comma, colon, or parentheses)", em) : ok("zero em dashes");
 
   const east = [];
   for (const p of scanned) {
-    const s = textOf(p);
+    const s = copyText(p);
     s.split("\n").forEach((line, i) => { if (/[٠-٩]/.test(line)) east.push(rel(p) + ":" + (i + 1)); });
   }
   east.length ? bad("Western numerals only (no Eastern-Arabic digits)", east) : ok("Western numerals only");

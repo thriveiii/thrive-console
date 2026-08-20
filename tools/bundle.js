@@ -53,6 +53,11 @@ const gate = read(path.join(LIB, "gate.js"));
 const model = read(path.join(LIB, "stage-model.js"));
 const life = read(path.join(LIB, "lifecycle.js"));
 const intake = read(path.join(LIB, "intake.js"));
+/* The official @supabase/supabase-js UMD build, vendored unmodified (P33). Loaded BEFORE supabase.js in
+   both bundles so window.supabase.createClient exists when the client calls it. Its bytes are pinned by
+   the fingerprint and BUILD signature below exactly like any shipped asset, so a swapped-in build is
+   never served silently. */
+const supavendor = read(path.join(LIB, "vendor", "supabase-js.min.js"));
 const supabase = read(path.join(LIB, "supabase.js"));
 const numbers = read(path.join(LIB, "numbers.js"));
 const inbound = read(path.join(LIB, "inbound.js"));
@@ -76,7 +81,7 @@ const FP = {
   "fonts.css": fphash(fontsCss), "styles.css": fphash(stylesCss),
   "config.js": fphash(config), "icons.js": fphash(icons), "i18n.js": fphash(i18n), "gate.js": fphash(gate),
   "stage-model.js": fphash(model), "lifecycle.js": fphash(life), "intake.js": fphash(intake),
-  "supabase.js": fphash(supabase),
+  "vendor/supabase-js.min.js": fphash(supavendor), "supabase.js": fphash(supabase),
   "numbers.js": fphash(numbers), "inbound.js": fphash(inbound), "kinds.js": fphash(kinds),
   "store.js": fphash(store), "drafts.js": fphash(drafts), "flows.js": fphash(flows), "app.js": fphash(app)
 };
@@ -90,7 +95,7 @@ const fp = f => f + "?v=" + FP[f];
    giving the gate a value to print. Read it off the device gate footer and compare: same mark as
    the latest build means the device is current; an older mark means it is serving old bytes. */
 const BUILD = crypto.createHash("sha256")
-  .update([css, icons, i18n, gate, model, life, intake, supabase, numbers, inbound, kinds, drafts, flows, store, app].join("\x00"), "utf8")
+  .update([css, icons, i18n, gate, model, life, intake, supavendor, supabase, numbers, inbound, kinds, drafts, flows, store, app].join("\x00"), "utf8")
   .digest("hex").slice(0, 8);
 /* The deploy time, baked here at build time (never read at runtime). BUILD says WHICH code is live;
    BUILT_AT says WHEN it was built, so a capture from the device is labeled with both. This is the one
@@ -204,6 +209,7 @@ const body = inline
     '\n<script>\n' + gate + '\n</script>' +
     '\n<script>\n' + model + '\n</script>\n<script>\n' + life + '\n</script>'+
     '\n<script>\n' + intake + '\n</script>'+
+    '\n<script>\n' + supavendor + '\n</script>'+
     '\n<script>\n' + supabase + '\n</script>'+
     '\n<script>\n' + numbers + '\n</script>'+
     '\n<script>\n' + inbound + '\n</script>'+
@@ -214,7 +220,7 @@ const body = inline
     '\n<script>\n' + app + '\n</script>'
   : '<script src="' + fp("config.js") + '"></script>\n<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>\n<script src="' + fp("gate.js") + '"></script>' +
     '\n<script src="' + fp("stage-model.js") + '"></script>\n<script src="' + fp("lifecycle.js") + '"></script>' +
-    '\n<script src="' + fp("intake.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>'+
+    '\n<script src="' + fp("intake.js") + '"></script>\n<script src="' + fp("vendor/supabase-js.min.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>'+
     '\n<script src="' + fp("numbers.js") + '"></script>'+
     '\n<script src="' + fp("inbound.js") + '"></script>\n<script src="' + fp("kinds.js") + '"></script>'+
     '\n<script src="' + fp("store.js") + '"></script>\n<script src="' + fp("drafts.js") + '"></script>'+

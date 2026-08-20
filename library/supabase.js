@@ -138,29 +138,71 @@
     finally { clearTimeout(to.timer); if (to.fired) { try { if (ac) ac.abort(); } catch (x) {} } try { run.catch(function () {}); } catch (x) {} }
   }
 
+  /* ---- P33: the official @supabase/supabase-js client is the ONE auth transport --------------------
+     The sign-in hang was isolated to the hand-built auth token POST: its custom apikey header forced
+     a CORS OPTIONS preflight that never returned, so the POST promise was never created and neither the
+     P29 AbortController nor the P31 setTimeout race (both wrapping that promise) could ever end it. The
+     hand-built token fetch is gone. Sign-in and token refresh now go through the vendored official client
+     (library/vendor/supabase-js.min.js, exposed as global.supabase), so there is exactly one auth path.
+     The client is created lazily (the vendor script has loaded by first sign-in), with persistSession off
+     (the console keeps its own console_sb_session key via setSession, unchanged downstream), autoRefresh
+     off (we refresh explicitly), and no URL detection. rest() and the DB path are untouched: they still
+     use fetchJSON/fetchT above. */
+  var _client = null;
+  function ensureClient(fresh) {
+    if (typeof global === "undefined" || !global.supabase || typeof global.supabase.createClient !== "function") {
+      var ne = new Error("auth client unavailable"); ne.kind = "unavailable"; throw ne;
+    }
+    if (fresh) _client = null;   // a retry rebuilds the client so it opens a new connection, not a wedged one
+    if (!_client) {
+      var c = cfg();
+      _client = global.supabase.createClient(c.url, c.anon, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+      });
+    }
+    return _client;
+  }
+  /* The P31 setTimeout RACE, now wrapping the client call instead of a raw fetch. The device proved timers
+     keep running during the hang, so this bound WILL fire and REJECT (kind:"timeout") even if the client's
+     own fetch never settles: the "Signing in" state is released, never an infinite spinner. The abandoned
+     client promise's eventual rejection is swallowed so it never surfaces as an unhandled rejection. */
+  async function withTimeout(promise, ms) {
+    ms = ms || FETCH_TIMEOUT_MS;
+    var to = raceTimeout(ms);
+    try { return await Promise.race([promise, to.promise]); }
+    finally { clearTimeout(to.timer); try { Promise.resolve(promise).catch(function () {}); } catch (x) {} }
+  }
+
   async function signIn(email, password, opts) {
     opts = opts || {};
     var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
-    // P31: the auth response is never cached (cache:"no-store"), and a RETRY (opts.fresh) appends a nonce so
-    // the browser opens a new request rather than reusing a wedged HTTP/2 stream or a buffered intermediary,
-    // a known cause of the hang the device saw. A timeout or network failure REJECTS here (typed), never
-    // hangs; the gate releases the "Signing in" state and shows the specific reason.
-    var authUrl = c.url + "/auth/v1/token?grant_type=password" + (opts.fresh ? ("&_ts=" + Date.now()) : "");
-    var r = await fetchJSON(authUrl, {
-      method: "POST", headers: { "apikey": c.anon, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email, password: password }), cache: "no-store"
-    }, FETCH_TIMEOUT_MS);
-    var data = r.data;
-    if (!r.res.ok || !data || !data.access_token) {
-      var err = new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
-      err.status = r.res.status;
+    // The official client's signInWithPassword is the one auth transport (P33). It is wrapped in the P31
+    // race so a hung request REJECTS at the 15s bound (typed timeout), never hangs; the gate releases the
+    // "Signing in" state and shows the specific reason. A retry (opts.fresh) rebuilds the client so it
+    // opens a new connection rather than reusing a wedged one.
+    var cl = ensureClient(!!opts.fresh);
+    var res;
+    try {
+      res = await withTimeout(cl.auth.signInWithPassword({ email: email, password: password }), FETCH_TIMEOUT_MS);
+    } catch (ex) {
+      if (ex && ex.kind === "timeout") throw ex;   // the P31 race fired: bounded, typed, never a hang
+      var te = new Error((ex && ex.message) || "sign-in failed"); te.kind = "network"; throw te;
+    }
+    if (res && res.error) {
+      var e = res.error;
+      var err = new Error(e.message || "sign-in failed");
+      err.status = e.status || 0;
       // A 5xx (a paused project answers 503) is the service being unavailable, not a wrong password; a
-      // 400/401/422 is a credential rejection. Typed so the gate says WHICH and never throttles a blip.
-      err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
+      // 400/401/422 is a credential rejection; a status-0 (retryable fetch) error is a network fault.
+      // Typed so the gate says WHICH and offers Retry only where retrying can help, never throttling a blip.
+      err.kind = (err.status >= 500) ? "unavailable" : (err.status >= 400 ? "auth" : "network");
       throw err;
     }
-    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
-    return { ok: true, email: email };
+    var sess = res && res.data && res.data.session;
+    if (!sess || !sess.access_token) { var se = new Error("sign-in returned no session"); se.kind = "auth"; throw se; }
+    setSession({ access_token: sess.access_token, refresh_token: sess.refresh_token, expires_at: sess.expires_at,
+                 email: (sess.user && sess.user.email) || email, uid: (sess.user && sess.user.id) || "" });
+    return { ok: true, email: (sess.user && sess.user.email) || email };
   }
   async function signOut() {
     var c = cfg(), s = session();
@@ -168,19 +210,22 @@
     setSession(null); return true;
   }
   async function refresh() {
-    var c = cfg(), s = session(); if (!s || !s.refresh_token) return false;
+    var s = session(); if (!s || !s.refresh_token) return false;
     try {
-      var r = await fetchJSON(c.url + "/auth/v1/token?grant_type=refresh_token", {
-        method: "POST", headers: { "apikey": c.anon, "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: s.refresh_token })
-      }, FETCH_TIMEOUT_MS);
-      if (r.res.ok && r.data && r.data.access_token) {
-        setSession({ access_token: r.data.access_token, refresh_token: r.data.refresh_token, expires_at: r.data.expires_at, email: s.email, uid: s.uid || (r.data.user && r.data.user.id) || "" });
+      // P33: refresh through the same official client, wrapped in the P31 race. The hand-built
+      // refresh-token POST is gone; this is the one auth transport.
+      var cl = ensureClient();
+      var res = await withTimeout(cl.auth.refreshSession({ refresh_token: s.refresh_token }), FETCH_TIMEOUT_MS);
+      var sess = res && res.data && res.data.session;
+      if (!(res && res.error) && sess && sess.access_token) {
+        setSession({ access_token: sess.access_token, refresh_token: sess.refresh_token, expires_at: sess.expires_at,
+                     email: (sess.user && sess.user.email) || s.email, uid: s.uid || (sess.user && sess.user.id) || "" });
         return true;
       }
       // End the session ONLY on a definitive rejection: the refresh token is invalid or expired (400/401).
       // A transient failure (5xx, a proxy, a rate limit) keeps the session so a blip never ejects the operator.
-      if (r.res.status === 400 || r.res.status === 401) setSession(null);
+      var st = (res && res.error && res.error.status) || 0;
+      if (st === 400 || st === 401) setSession(null);
       return false;
     } catch (e) {
       // A timeout or network error is not a definitive rejection. Keep the session and let the next call
