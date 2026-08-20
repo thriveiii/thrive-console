@@ -62,6 +62,76 @@
     var bid = buildId();
     return bid ? '<p class="gate-build">' + s.build + ' <bdi>' + bid + "</bdi></p>" : "";
   }
+
+  /* ---- P35 diagnostic panel (TEMPORARY, reveal-only) --------------------------------------------
+     A persistent, copyable on-screen log so the EXACT auth failure and the boot session decision are
+     captured on device, not hidden behind a generic "could not start". window.__DIAG.log(msg) is already
+     a guarded no-op call site in supabase.js (authDiag) and below (DIAG); here we make it real and visible,
+     so the existing breadcrumbs and the structured failure block both surface. This build ONLY reveals; it
+     changes nothing about the request, the key, or the P31/P29 safety net. It is removed in a follow-up
+     once the ground-truth screenshot is captured, exactly as the P29->P31 instrumented build was. */
+  var __diagLines = [];
+  function ensureDiagPanel() {
+    try {
+      var el = document.getElementById("p35diag");
+      if (el) return el;
+      if (!document.body) return null;
+      el = document.createElement("textarea");
+      el.id = "p35diag"; el.readOnly = true; el.setAttribute("aria-hidden", "true"); el.setAttribute("dir", "ltr");
+      el.setAttribute("style", "position:fixed;left:6px;bottom:6px;width:min(94vw,540px);height:9rem;z-index:99998;" +
+        "background:rgba(10,10,12,.94);color:#8fe3c8;border:1px solid #2b6b57;border-radius:8px;" +
+        "font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;padding:6px 8px;white-space:pre;overflow:auto;" +
+        "opacity:.97;-webkit-user-select:text;user-select:text");
+      document.body.appendChild(el);
+      return el;
+    } catch (e) { return null; }
+  }
+  function p35log(msg) {
+    try {
+      __diagLines.push(String(msg));
+      if (__diagLines.length > 80) __diagLines.shift();
+      var el = ensureDiagPanel();
+      if (el) { el.value = __diagLines.join("\n"); el.scrollTop = el.scrollHeight; }
+    } catch (e) {}
+  }
+  try { if (typeof window !== "undefined") window.__DIAG = window.__DIAG || { log: p35log }; } catch (e) {}
+
+  // One boot line: did a stored Supabase session exist, and did boot restore it (no auth call) or fall
+  // through to the cold sign-in card? This confirms the iPad-vs-others split: the iPad should read
+  // "session-restore, NO auth call"; a fresh device should read "cold auth".
+  function p35BootLine() {
+    try {
+      var S = supa();
+      var sess = (S && S.session) ? S.session() : null;
+      var present = !!(sess && sess.access_token);
+      var t = ""; try { t = gateTarget(); } catch (e) { t = "?"; }
+      if (present && t === "board") p35log("boot: stored session FOUND -> session-restore, NO auth call (this is why the iPad works)");
+      else if (present) p35log("boot: stored session present, target=" + t + " -> refresh/re-auth path");
+      else p35log("boot: NO stored session -> cold auth, sign-in card will POST /auth/v1/token");
+      p35log("boot: build " + (buildId() || "?"));
+    } catch (e) {}
+  }
+  // Format the EXACT auth failure into a copyable block: which stage was last, the error name/message, the
+  // HTTP status + statusText if a Response came back, the GoTrue body on a non-2xx, and elapsed ms. Built
+  // from the diag object supabase.js attaches to the thrown error (err.diag). textContent only downstream.
+  function p35Block(ex, kind) {
+    var d = (ex && ex.diag) || {};
+    var stage = d.stage || "";
+    if (d.timedOut && (!stage || stage === "fetch-created")) stage = "timeout";
+    var en = d.errName || (ex && ex.name) || "";
+    var em = d.errMsg || (ex && ex.message) || "";
+    var L = [];
+    L.push("SIGN-IN FAILED (tap, select all, copy)");
+    L.push("stage: " + (stage || "?") + (d.timedOut ? (" [timed out at " + (d.timeoutMs || "?") + "ms]") : ""));
+    L.push("kind: " + (kind || "?"));
+    L.push("error: " + (en ? (en + ": ") : "") + (em || "(none)"));
+    L.push((d.status != null) ? ("http: " + d.status + " " + (d.statusText || "")) : "http: (no response received)");
+    if (d.body) L.push("body: " + d.body);
+    L.push("elapsed: " + (d.elapsedMs != null ? d.elapsedMs : "?") + "ms");
+    L.push("build: " + (buildId() || "?"));
+    return L.join("\n");
+  }
+
   function lang() { try { return localStorage.getItem("thrive_lang") === "ar" ? "ar" : "en"; } catch (e) { return "en"; } }
 
   async function pbkdf2Hex(pass, salt) {
@@ -333,7 +403,7 @@
     var retry = wrap.querySelector("#gateRetry");
     // P29 diagnostic surface: show the raw error text on the card so a non-timeout failure is never a
     // silent hang. textContent only (never innerHTML), so a server error string cannot inject markup.
-    function showDiag(t) { if (!diag) return; if (t) { diag.textContent = String(t).slice(0, 200); diag.hidden = false; } else { diag.textContent = ""; diag.hidden = true; } }
+    function showDiag(t) { if (!diag) return; if (t) { diag.textContent = String(t).slice(0, 900); diag.hidden = false; } else { diag.textContent = ""; diag.hidden = true; } }
     function showRetry(on) { if (retry) retry.hidden = !on; }
     var busy = false;
     setTimeout(function () { email.focus(); }, 50);
@@ -360,8 +430,10 @@
         try { await S.signIn(m, p, { fresh: !!fresh }); ok = S.signedIn && S.signedIn(); }
         catch (ex) {
           ok = false; kind = (ex && ex.kind) || "auth";
-          raw = (kind || "error") + ": " + ((ex && ex.message) || String(ex));
-          if (ex && ex.status) raw += " (HTTP " + ex.status + ")";
+          // P35: build the EXACT, copyable failure block (stage / error / HTTP + GoTrue body / elapsed)
+          // from err.diag, instead of a one-line generic. Still plain text (textContent), no markup.
+          raw = p35Block(ex, kind);
+          p35log(raw);
         }
       }
       busy = false; email.disabled = pass.disabled = false; btn.textContent = s.op_go;
@@ -413,6 +485,7 @@
   }
 
   function start() {
+    p35BootLine();   // P35: log the session-restore-vs-cold-auth decision before any gate step
     // One fixed order, decided once: board, else the lobby (operator step), else the passcode. The
     // graduated drops are enforced here so the session state always matches the step that is shown, and
     // the two gates can never disagree. Never a blank board (#84): a target is always chosen.
