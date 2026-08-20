@@ -69,12 +69,50 @@
      apikey header stays the anon key always, which Supabase requires even with a JWT. No secret is used
      as an access control; the token is a real session, refreshable and revocable. */
   var SESSION_KEY = "console_sb_session";
-  function session() { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (e) { return null; } }
-  function setSession(s) { try { s ? localStorage.setItem(SESSION_KEY, JSON.stringify(s)) : localStorage.removeItem(SESSION_KEY); } catch (e) {} }
+  /* P39 session integrity. The session is the operator's authenticated identity; a read that loses it
+     silently downgrades to the anon key and RLS returns an empty board with no error, which read as a
+     "stuck sign-in" for a full day. Two guards make that impossible:
+     - __memSession: an in-tab copy of the session. When localStorage is blocked (Safari private mode,
+       ITP, storage partitioning, Lockdown), the session lives here for the tab's lifetime, so the
+       operator can still work (reads carry the token), degraded, instead of facing an empty board.
+     - __sessionEphemeral: true when the last persist did NOT reach durable storage, so the gate can say
+       plainly that the session will not survive a reload rather than pretend it is saved.
+     - __signInSeen: true once a sign-in has succeeded in this tab. After that, a read with no session is
+       a defect, not an anon read, so bearer() refuses to substitute the anon key. */
+  var __memSession = null, __sessionEphemeral = false, __signInSeen = false;
+  // Durable store first (survives reload and is the cross-tab source of truth); fall back to the in-tab
+  // copy only when storage is empty or unreadable, so a blocked store never reads as "no session".
+  function session() {
+    try { var raw = localStorage.getItem(SESSION_KEY); if (raw) return JSON.parse(raw); } catch (e) {}
+    return __memSession;
+  }
+  /* Persist the session and VERIFY it landed (P39, no more swallowing). The old form was
+     `try { localStorage.setItem(...) } catch {}`: a blocked write threw, was swallowed, and signIn still
+     resolved ok while every later read went out as anon. Now the write is read back; if it did not stick
+     the session is held in memory for the tab and marked ephemeral, and the caller is told (returns
+     false) so it can surface the reason. Clearing (null) drops both copies and always succeeds.
+     Returns true when durably stored, false when in-memory only. */
+  function setSession(s) {
+    __memSession = s || null;
+    if (!s) { __sessionEphemeral = false; try { localStorage.removeItem(SESSION_KEY); } catch (e) {} return true; }
+    var json = JSON.stringify(s);
+    try { localStorage.setItem(SESSION_KEY, json); if (localStorage.getItem(SESSION_KEY) === json) { __sessionEphemeral = false; return true; } } catch (e) {}
+    __sessionEphemeral = true;   // stored in memory only: usable this tab, will not survive a reload
+    return false;
+  }
+  function sessionEphemeral() { return __sessionEphemeral; }
   function signedIn() { var s = session(); return !!(s && s.access_token); }
   function authEmail() { var s = session(); return (s && s.email) || ""; }
   function authUid() { var s = session(); return (s && s.uid) || ""; }   // the operator's Supabase user id, for per-operator prefs
-  function bearer() { var s = session(); var c = cfg(); return (s && s.access_token) ? s.access_token : c.anon; }
+  /* The bearer for a data call: the session JWT when signed in, the anon key ONLY on the pre-sign-in
+     public path. After a sign-in has occurred in this tab, a missing session is a bug, not an anon read:
+     refuse to downgrade and throw a typed error so the read surfaces it (the board then says "session
+     lost, sign in again") instead of silently fetching an empty, RLS-filtered result. */
+  function bearer() {
+    var s = session(); if (s && s.access_token) return s.access_token;
+    if (__signInSeen) { var e = new Error("session missing after sign-in"); e.kind = "session"; e.sessionLost = true; throw e; }
+    return cfg().anon;
+  }
 
   /* ---- P29 sign-in resilience: bounded fetch -----------------------------------------------------
      Every network call the auth and read path makes is BOUNDED by an AbortController. Without this an
@@ -169,13 +207,21 @@
       err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
       throw err;
     }
-    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
-    return { ok: true, email: email };
+    // The token is real; mark the tab so bearer() will never again downgrade a read to the anon key.
+    __signInSeen = true;
+    // Persist and check it landed. If storage is blocked the session is held in memory for the tab
+    // (reads still carry the token, so the board populates), and we report ephemeral so the gate can
+    // say plainly the session will not survive a reload. Working degraded beats an empty board, so this
+    // is NOT a failed sign-in: only a rejected token (above) fails. The apikey/DB path is untouched.
+    var durable = setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
+    return { ok: true, email: email, ephemeral: !durable };
   }
   async function signOut() {
     var c = cfg(), s = session();
     try { if (s && s.access_token) await fetchT(c.url + "/auth/v1/logout", { method: "POST", headers: { "apikey": c.anon, "Authorization": "Bearer " + s.access_token } }, FETCH_TIMEOUT_MS); } catch (e) {}
-    setSession(null); return true;
+    // Sign-out returns the tab to the public path: clear the flag so bearer() may use the anon key
+    // again (a signed-out board read is legitimately anon), and drop the in-memory copy.
+    __signInSeen = false; setSession(null); return true;
   }
   async function refresh() {
     var c = cfg(), s = session(); if (!s || !s.refresh_token) return false;
@@ -341,6 +387,7 @@
     upsert: upsert, del: del, listCol: listCol,
     uploadAttachment: uploadAttachment, attachPublicUrl: attachPublicUrl, ATTACH_BUCKET: ATTACH_BUCKET,
     signIn: signIn, signOut: signOut, session: session, signedIn: signedIn,
+    sessionEphemeral: sessionEphemeral,
     authEmail: authEmail, authUid: authUid, refresh: refresh, getSession: getSession,
     tables: function () { return Object.keys(TABLES); },
     URL_KEY: URL_KEY, ANON_KEY: ANON_KEY, FETCH_TIMEOUT_MS: FETCH_TIMEOUT_MS

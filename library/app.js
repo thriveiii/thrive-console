@@ -4315,7 +4315,9 @@ async function supaHydrate(){
     // apart from a network degrade, so the read layer prompts an honest sign-in and never a blank board.
     // Never while signed in: a 401/403 seen by a signed-in operator is a token or network fault to degrade
     // over, not a sign-in prompt, so the flag stays a pure function of "no session" at every assignment.
-    __supa.authRequired = !!(e && e.authRequired) && !supaSignedIn();
+    // P39: a session-lost error (bearer() refusing to downgrade to anon after sign-in) is also a sign-in
+    // prompt, so a session that dropped mid-use shows "sign in again", not the misleading "no data yet".
+    __supa.authRequired = !!(e && (e.authRequired || e.sessionLost)) && !supaSignedIn();
     __supa.degraded=true; __supa.hydrated=false; __supa.opps=null; __supa.mail=null; __supa.inbound=null; __supa.hits=null; __supa.comments=null; __supa.contacts=null;
     supaRecordDiverge("read", "hydrate", e&&e.message);
     try{ logActivity(__supa.authRequired ? "supa_auth_required" : "supa_read_degraded", "", String((e&&e.message)||"").slice(0,120)); }catch(_){}

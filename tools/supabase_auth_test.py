@@ -31,8 +31,12 @@ def ck(n, c, d=None):
 
 # ---- source: the token flow is explicit and the anon key is never used as an access token ----
 sup = open(os.path.join(ROOT, "library/supabase.js")).read()
+# P39: rest still sends the session bearer, and bearer() now REFUSES to silently downgrade to the anon key
+# after a sign-in (a lost session throws kind:"session" instead of reading as anon and returning []).
 ck("rest sends the session bearer, not always the anon key",
-   '"Authorization": "Bearer " + bearer()' in sup and "return (s && s.access_token) ? s.access_token : c.anon" in sup)
+   '"Authorization": "Bearer " + bearer()' in sup and "s && s.access_token" in sup and "return s.access_token" in sup)
+ck("P39: bearer() never downgrades to anon after sign-in (throws kind:'session' instead)",
+   "__signInSeen" in sup and 'e.kind = "session"' in sup and "return cfg().anon" in sup)
 ck("a persistent 401/403 is marked authRequired for an honest denial",
    "err.authRequired = true" in sup)
 ck("signIn/signOut/session are exported on ThriveSupa",

@@ -516,6 +516,15 @@ html.gate-locked .top,html.gate-locked .wrap{display:none!important}
 .gate-diag{color:var(--ink-3);font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin:6px 0 0;line-height:1.4;word-break:break-word;direction:ltr;text-align:start}
 .gate-note{color:var(--ink-3);font-size:11.5px;margin:16px 0 0;line-height:1.5}
 .gate-build{color:var(--muted);font-size:11px;margin:12px 0 0;opacity:.75;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+/* P39: the ephemeral-session notice. Pinned to the top over the live console, outside the gate, so it
+   survives reveal() and stays until dismissed. It says plainly that the session lives in this tab only. */
+.gate-ephemeral{position:fixed;top:0;left:0;right:0;z-index:9000;display:flex;align-items:center;gap:12px;
+  padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--hair);
+  box-shadow:0 8px 24px rgba(0,0,0,.35);color:var(--ink-1);font-size:12.5px;line-height:1.45}
+.gate-ephemeral span{flex:1}
+.gate-ephemeral-x{flex:none;width:26px;height:26px;border:0;border-radius:8px;background:transparent;
+  color:var(--ink-3);font-size:18px;line-height:1;cursor:pointer}
+.gate-ephemeral-x:hover{background:var(--hair);color:var(--ink-1)}
 .gate-build bdi{unicode-bidi:isolate}
 @keyframes shake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-5px)}40%,60%{transform:translateX(5px)}}
 
