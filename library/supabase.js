@@ -75,44 +75,101 @@
   function authEmail() { var s = session(); return (s && s.email) || ""; }
   function authUid() { var s = session(); return (s && s.uid) || ""; }   // the operator's Supabase user id, for per-operator prefs
   function bearer() { var s = session(); var c = cfg(); return (s && s.access_token) ? s.access_token : c.anon; }
+
+  /* ---- P29 sign-in resilience: bounded fetch -----------------------------------------------------
+     Every network call the auth and read path makes is BOUNDED by an AbortController. Without this an
+     auth POST or a REST read that never returns leaves the UI awaiting forever (the "Signing in" hang):
+     a paused free-tier project, a stalled response body, or a looping refresh becomes total paralysis.
+     On timeout the promise REJECTS with a typed error (err.kind === "timeout"), never hangs. The body
+     read runs inside the SAME timeout window, so a response whose headers arrived but whose body never
+     finishes is bounded too. The default is stated here, never a magic literal at the call site. */
+  var FETCH_TIMEOUT_MS = 15000;     // default bound for auth + REST calls (P29)
+  var UPLOAD_TIMEOUT_MS = 60000;    // attachments can be large: a longer, but still finite, bound
+  function timeoutError(ms) { var e = new Error("request timed out after " + ms + "ms"); e.kind = "timeout"; e.timeout = true; return e; }
+  function taggedNetworkError(e) { if (e && !e.kind) e.kind = "network"; return e; }
+  function newAbort() { try { return (typeof AbortController !== "undefined") ? new AbortController() : null; } catch (x) { return null; } }
+  function wasAborted(ac, e) { return !!(e && (e.name === "AbortError" || (ac && ac.signal && ac.signal.aborted))); }
+  // fetch + body read under ONE timeout. Returns { res, data, text }. Rejects with a typed timeout error if
+  // either the request OR the body read exceeds ms; a real network failure is tagged kind:"network".
+  async function fetchJSON(url, opts, ms) {
+    ms = ms || FETCH_TIMEOUT_MS;
+    var ac = newAbort(), timer = null, o = Object.assign({}, opts || {});
+    if (ac) { o.signal = ac.signal; timer = setTimeout(function () { try { ac.abort(); } catch (e) {} }, ms); }
+    try {
+      var res = await fetch(url, o);
+      var text = await res.text();
+      var data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+      return { res: res, data: data, text: text };
+    } catch (e) {
+      if (wasAborted(ac, e)) throw timeoutError(ms);
+      throw taggedNetworkError(e);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  // fetch only (no body read) under one timeout, for non-JSON paths (upload, logout). Same typed errors.
+  async function fetchT(url, opts, ms) {
+    ms = ms || FETCH_TIMEOUT_MS;
+    var ac = newAbort(), timer = null, o = Object.assign({}, opts || {});
+    if (ac) { o.signal = ac.signal; timer = setTimeout(function () { try { ac.abort(); } catch (e) {} }, ms); }
+    try { return await fetch(url, o); }
+    catch (e) { if (wasAborted(ac, e)) throw timeoutError(ms); throw taggedNetworkError(e); }
+    finally { if (timer) clearTimeout(timer); }
+  }
+
   async function signIn(email, password) {
-    var c = cfg(); if (!c.url || !c.anon) throw new Error("supabase not configured");
-    var res = await fetch(c.url + "/auth/v1/token?grant_type=password", {
+    var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
+    // A timeout or network failure REJECTS here with a typed error, never hangs; the gate releases the
+    // "Signing in" state and shows the specific reason.
+    var r = await fetchJSON(c.url + "/auth/v1/token?grant_type=password", {
       method: "POST", headers: { "apikey": c.anon, "Content-Type": "application/json" },
       body: JSON.stringify({ email: email, password: password })
-    });
-    var data = null; try { data = await res.json(); } catch (e) {}
-    if (!res.ok || !data || !data.access_token) {
-      throw new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + res.status));
+    }, FETCH_TIMEOUT_MS);
+    var data = r.data;
+    if (!r.res.ok || !data || !data.access_token) {
+      var err = new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
+      err.status = r.res.status;
+      // A 5xx (a paused project answers 503) is the service being unavailable, not a wrong password; a
+      // 400/401/422 is a credential rejection. Typed so the gate says WHICH and never throttles a blip.
+      err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
+      throw err;
     }
     setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
     return { ok: true, email: email };
   }
   async function signOut() {
     var c = cfg(), s = session();
-    try { if (s && s.access_token) await fetch(c.url + "/auth/v1/logout", { method: "POST", headers: { "apikey": c.anon, "Authorization": "Bearer " + s.access_token } }); } catch (e) {}
+    try { if (s && s.access_token) await fetchT(c.url + "/auth/v1/logout", { method: "POST", headers: { "apikey": c.anon, "Authorization": "Bearer " + s.access_token } }, FETCH_TIMEOUT_MS); } catch (e) {}
     setSession(null); return true;
   }
   async function refresh() {
     var c = cfg(), s = session(); if (!s || !s.refresh_token) return false;
     try {
-      var res = await fetch(c.url + "/auth/v1/token?grant_type=refresh_token", {
+      var r = await fetchJSON(c.url + "/auth/v1/token?grant_type=refresh_token", {
         method: "POST", headers: { "apikey": c.anon, "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: s.refresh_token })
-      });
-      var data = null; try { data = await res.json(); } catch (e) {}
-      if (res.ok && data && data.access_token) {
-        setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: s.email, uid: s.uid || (data.user && data.user.id) || "" });
+      }, FETCH_TIMEOUT_MS);
+      if (r.res.ok && r.data && r.data.access_token) {
+        setSession({ access_token: r.data.access_token, refresh_token: r.data.refresh_token, expires_at: r.data.expires_at, email: s.email, uid: s.uid || (r.data.user && r.data.user.id) || "" });
         return true;
       }
       // End the session ONLY on a definitive rejection: the refresh token is invalid or expired (400/401).
       // A transient failure (5xx, a proxy, a rate limit) keeps the session so a blip never ejects the operator.
-      if (res.status === 400 || res.status === 401) setSession(null);
+      if (r.res.status === 400 || r.res.status === 401) setSession(null);
       return false;
     } catch (e) {
-      // A network error is not a rejection. Keep the session and let the next call retry; do not eject.
+      // A timeout or network error is not a definitive rejection. Keep the session and let the next call
+      // retry; the boot self-heal (getSession) decides whether an unusable-now session drops to sign-in.
       return false;
     }
+  }
+  /* P29 boot self-heal check. Only called when the LOCAL access token has already expired, so it tries ONE
+     bounded refresh. Returns true if the session is usable now (refreshed), false otherwise (definitively
+     invalid, timed out, or errored). refresh() clears the session on a definitive 400/401; a false without
+     a clear is a transient failure the boot self-heal still treats as "not usable now, drop to sign-in". */
+  async function getSession() {
+    var s = session(); if (!s || !s.access_token || !s.refresh_token) return false;
+    try { return await refresh(); } catch (e) { return false; }
   }
 
   /* One REST call to the operator's own PostgREST endpoint. It carries the session JWT when signed in,
@@ -130,23 +187,23 @@
       "Authorization": "Bearer " + bearer(),
       "Content-Type": "application/json"
     }, opts.headers || {});
-    var res = await fetch(url, {
+    // Bounded (P29): a stalled read REJECTS with a typed timeout error, so a board settle awaiting this
+    // read never hangs forever; the caller degrades to the local cache instead.
+    var r = await fetchJSON(url, {
       method: opts.method || "GET",
       headers: headers,
       body: opts.body != null ? JSON.stringify(opts.body) : undefined
-    });
-    if ((res.status === 401 || res.status === 403) && !opts._retried && session() && session().refresh_token) {
+    }, FETCH_TIMEOUT_MS);
+    if ((r.res.status === 401 || r.res.status === 403) && !opts._retried && session() && session().refresh_token) {
       if (await refresh()) return rest(table, Object.assign({}, opts, { _retried: true }));
     }
-    var text = await res.text();
-    var data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
-    if (!res.ok) {
-      var err = new Error((data && data.message) || ("HTTP " + res.status));
-      err.status = res.status; err.body = data;
-      if (res.status === 401 || res.status === 403) err.authRequired = true;
+    if (!r.res.ok) {
+      var err = new Error((r.data && r.data.message) || ("HTTP " + r.res.status));
+      err.status = r.res.status; err.body = r.data;
+      if (r.res.status === 401 || r.res.status === 403) err.authRequired = true;
       throw err;
     }
-    return data;
+    return r.data;
   }
 
   /* Row-shaped helpers. A page is ONE ROW: console_pages.html is a text column, so a large page is a
@@ -213,18 +270,18 @@
     var safeName = String(file.name || "image").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "image";
     var path = safeSlug + "/" + String(key || "k") + "-" + safeName;
     var url = c.url + "/storage/v1/object/" + ATTACH_BUCKET + "/" + path.split("/").map(encodeURIComponent).join("/");
-    var res = await fetch(url, {
+    var res = await fetchT(url, {
       method: "POST",
       headers: { "apikey": c.anon, "Authorization": "Bearer " + bearer(), "Content-Type": file.type || "application/octet-stream", "x-upsert": "true" },
       body: file
-    });
+    }, UPLOAD_TIMEOUT_MS);   // bounded (P29): a stalled upload rejects, never hangs
     if ((res.status === 401 || res.status === 403) && session() && session().refresh_token) {
       if (await refresh()) {
-        res = await fetch(url, {
+        res = await fetchT(url, {
           method: "POST",
           headers: { "apikey": c.anon, "Authorization": "Bearer " + bearer(), "Content-Type": file.type || "application/octet-stream", "x-upsert": "true" },
           body: file
-        });
+        }, UPLOAD_TIMEOUT_MS);
       }
     }
     if (!res.ok) {
@@ -251,8 +308,8 @@
     upsert: upsert, del: del, listCol: listCol,
     uploadAttachment: uploadAttachment, attachPublicUrl: attachPublicUrl, ATTACH_BUCKET: ATTACH_BUCKET,
     signIn: signIn, signOut: signOut, session: session, signedIn: signedIn,
-    authEmail: authEmail, authUid: authUid, refresh: refresh,
+    authEmail: authEmail, authUid: authUid, refresh: refresh, getSession: getSession,
     tables: function () { return Object.keys(TABLES); },
-    URL_KEY: URL_KEY, ANON_KEY: ANON_KEY
+    URL_KEY: URL_KEY, ANON_KEY: ANON_KEY, FETCH_TIMEOUT_MS: FETCH_TIMEOUT_MS
   };
 })(typeof window !== "undefined" ? window : this);

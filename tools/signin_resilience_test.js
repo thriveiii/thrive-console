@@ -1,0 +1,177 @@
+/* P29 sign-in resilience test (Node, no browser).
+
+   Proves the auth + read path is BOUNDED and fails loud, never hangs:
+   - Part A lifts the REAL library/supabase.js into a vm sandbox with a controllable fetch and shrunk
+     timers, and drives signIn / rest / refresh / getSession through a stalled call, a bad credential, a
+     down service, and a healthy service, asserting each REJECTS with a typed error (or resolves) rather
+     than awaiting forever.
+   - Part B/C/D are source-structure assertions on supabase.js, gate.js, and the shipped bundle: every
+     network call goes through the bounded wrapper; the "Signing in" button is always released and a
+     transient failure is never throttled; and the 20s boot watchdog is present with a Retry / Sign out
+     exit. */
+const vm = require("vm"), fs = require("fs"), path = require("path");
+const ROOT = path.resolve(__dirname, "..");
+const supaSrc = fs.readFileSync(path.join(ROOT, "library", "supabase.js"), "utf8");
+const gateSrc = fs.readFileSync(path.join(ROOT, "library", "gate.js"), "utf8");
+const appSrc = fs.readFileSync(path.join(ROOT, "library", "app.js"), "utf8");
+const bundleSrc = fs.readFileSync(path.join(ROOT, "library", "console.html"), "utf8");
+
+let fails = 0;
+function ck(name, cond, detail) {
+  if (cond) { console.log("PASS " + name); }
+  else { fails++; console.log("FAIL " + name); if (detail !== undefined) console.log("     " + JSON.stringify(detail)); }
+}
+
+// ---- a sandbox that runs the REAL supabase.js with a controllable fetch and fast timers -------------
+function makeEnv(fetchImpl, seed) {
+  const store = Object.assign({ console_sb_url: "https://example.supabase.co", console_sb_anon: "anon-key" }, seed || {});
+  const localStorage = {
+    getItem: (k) => (k in store) ? store[k] : null,
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; }
+  };
+  const win = {};
+  const sandbox = {
+    window: win, fetch: fetchImpl, AbortController: AbortController, localStorage: localStorage,
+    console: console, JSON: JSON, encodeURIComponent: encodeURIComponent, TextEncoder: TextEncoder,
+    // Shrink the 15s bound so a timeout test resolves in milliseconds, not seconds. A real request
+    // (Promise.resolve) still wins the race; only a hung request reaches the (shrunk) abort.
+    setTimeout: (fn, ms) => setTimeout(fn, ms > 50 ? 5 : ms), clearTimeout: clearTimeout,
+    Date: Date, Object: Object, Array: Array, Error: Error, Promise: Promise, String: String, Number: Number
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(supaSrc, sandbox);
+  return { S: win.ThriveSupa, store };
+}
+// a fetch that never resolves on its own; rejects with a real AbortError when its signal aborts
+function hangingFetch() {
+  return function (url, opts) {
+    return new Promise(function (resolve, reject) {
+      if (opts && opts.signal) opts.signal.addEventListener("abort", function () { var e = new Error("aborted"); e.name = "AbortError"; reject(e); });
+    });
+  };
+}
+function makeRes(status, body) {
+  const text = (typeof body === "string") ? body : JSON.stringify(body);
+  return { ok: status >= 200 && status < 300, status: status, text: () => Promise.resolve(text) };
+}
+function replyFetch(status, body) { return function () { return Promise.resolve(makeRes(status, body)); }; }
+
+async function partA() {
+  // A1/A2: a stalled auth POST REJECTS with a typed timeout, never hangs.
+  {
+    const { S } = makeEnv(hangingFetch());
+    let caught = null;
+    try { await S.signIn("a@b.com", "pw"); } catch (e) { caught = e; }
+    ck("A1 signIn REJECTS on a stalled auth call (never hangs)", !!caught);
+    ck("A2 the rejection is typed as a timeout (err.kind === 'timeout')", !!(caught && caught.kind === "timeout"), caught && { kind: caught.kind, msg: caught.message });
+  }
+  // A3: a 400 (wrong credentials) is typed as auth, not a timeout.
+  {
+    const { S } = makeEnv(replyFetch(400, { error_description: "Invalid login credentials" }));
+    let caught = null;
+    try { await S.signIn("a@b.com", "bad"); } catch (e) { caught = e; }
+    ck("A3 a 400 is a credential rejection (err.kind === 'auth')", !!(caught && caught.kind === "auth" && caught.status === 400), caught && { kind: caught.kind, status: caught.status });
+  }
+  // A4: a 503 (paused / down project) is typed as unavailable, so the gate can say so.
+  {
+    const { S } = makeEnv(replyFetch(503, { message: "service unavailable" }));
+    let caught = null;
+    try { await S.signIn("a@b.com", "pw"); } catch (e) { caught = e; }
+    ck("A4 a 5xx is the service being unavailable (err.kind === 'unavailable')", !!(caught && caught.kind === "unavailable"), caught && { kind: caught.kind, status: caught.status });
+  }
+  // A5: a healthy service signs in and stores the session.
+  {
+    const { S, store } = makeEnv(replyFetch(200, { access_token: "tok", refresh_token: "ref", expires_at: 9999999999, user: { id: "u1" } }));
+    let ok = false, threw = false;
+    try { const r = await S.signIn("a@b.com", "pw"); ok = !!(r && r.ok); } catch (e) { threw = true; }
+    ck("A5 a healthy service signs in normally (no timeout, no throw)", ok && !threw);
+    ck("A5b the session is stored on success", !!store["console_sb_session"] && S.signedIn() === true);
+  }
+  // A6: a stalled REST read REJECTS (bounded), so a board settle awaiting it degrades instead of hanging.
+  {
+    const { S } = makeEnv(hangingFetch());
+    let caught = null;
+    try { await S.rest("console_board", { query: "select=slug" }); } catch (e) { caught = e; }
+    ck("A6 a stalled rest() read REJECTS with a timeout (the board never awaits forever)", !!(caught && caught.kind === "timeout"), caught && { kind: caught.kind });
+  }
+  // A7: refresh clears the session on a definitive 400 (invalid refresh token).
+  {
+    const { S, store } = makeEnv(replyFetch(400, { error: "invalid_grant" }), { console_sb_session: JSON.stringify({ access_token: "old", refresh_token: "r", expires_at: 1 }) });
+    const r = await S.refresh();
+    ck("A7 refresh returns false on a definitive rejection", r === false);
+    ck("A7b and clears the stale session (a corrupt token cannot persist)", !store["console_sb_session"]);
+  }
+  // A8: getSession heals an expired-but-refreshable token (returns true, updates the session).
+  {
+    const { S, store } = makeEnv(replyFetch(200, { access_token: "new", refresh_token: "r2", expires_at: 9999999999 }), { console_sb_session: JSON.stringify({ access_token: "old", refresh_token: "r1", expires_at: 1 }) });
+    const good = await S.getSession();
+    ck("A8 getSession heals an expired-but-refreshable token (true)", good === true);
+    ck("A8b the stored token is the refreshed one", (JSON.parse(store["console_sb_session"] || "{}").access_token) === "new");
+  }
+  // A9: getSession on a hung refresh returns false (not usable now) rather than hanging.
+  {
+    const { S } = makeEnv(hangingFetch(), { console_sb_session: JSON.stringify({ access_token: "old", refresh_token: "r", expires_at: 1 }) });
+    const good = await S.getSession();
+    ck("A9 getSession returns false on a hung refresh (never hangs)", good === false);
+  }
+  // A10: getSession with no session is a clean false.
+  {
+    const { S } = makeEnv(replyFetch(200, {}));
+    const good = await S.getSession();
+    ck("A10 getSession with no stored session is a clean false", good === false);
+  }
+}
+
+function partB() {
+  // Every network call in supabase.js goes through the bounded wrapper: the ONLY bare fetch( calls are the
+  // two inside the fetchJSON / fetchT helpers themselves.
+  const bare = (supaSrc.match(/\bfetch\(/g) || []).length;
+  ck("B1 the only bare fetch() calls are the 2 timeout wrappers (all else is bounded)", bare === 2, { bare: bare });
+  ck("B2 signIn uses the bounded fetchJSON", /async function signIn[\s\S]*?fetchJSON\(/.test(supaSrc));
+  ck("B3 refresh uses the bounded fetchJSON", /async function refresh[\s\S]*?fetchJSON\(/.test(supaSrc));
+  ck("B4 rest uses the bounded fetchJSON", /async function rest[\s\S]*?fetchJSON\(/.test(supaSrc));
+  ck("B5 signOut uses the bounded fetchT", /async function signOut[\s\S]*?fetchT\(/.test(supaSrc));
+  ck("B6 uploadAttachment uses the bounded fetchT", /async function uploadAttachment[\s\S]*?fetchT\(/.test(supaSrc));
+  ck("B7 a stated default timeout constant exists (15s)", /FETCH_TIMEOUT_MS\s*=\s*15000/.test(supaSrc));
+  ck("B8 the bound is enforced with an AbortController", /new AbortController\(\)/.test(supaSrc) && /\.abort\(\)/.test(supaSrc));
+  ck("B9 a timeout produces a typed error (kind:'timeout')", /kind\s*=\s*"timeout"/.test(supaSrc));
+  ck("B10 getSession is exported for the boot self-heal", /getSession:\s*getSession/.test(supaSrc));
+}
+
+function partC() {
+  // gate.js: specific messages, always-released button, no throttle on a transient failure, self-heal.
+  ck("C1 EN carries the three specific reasons (timeout/network/unavailable)",
+    /op_err_timeout:/.test(gateSrc) && /op_err_network:/.test(gateSrc) && /op_err_unavailable:/.test(gateSrc));
+  ck("C2 AR carries the three specific reasons too",
+    (gateSrc.match(/op_err_timeout:/g) || []).length >= 2 && (gateSrc.match(/op_err_unavailable:/g) || []).length >= 2);
+  // The button is restored to op_go UNCONDITIONALLY (before the ok/else branches), so "Signing in" is never the last word.
+  ck("C3 the button is released before branching (never a permanent spinner)",
+    /btn\.textContent = s\.op_go;\s*\n\s*if \(ok\)/.test(gateSrc));
+  // A transient kind shows its specific message and does NOT throttle (opRecordFail is only in the final else).
+  ck("C4 a transient failure is branched apart and shows a specific reason",
+    /else if \(kind === "timeout" \|\| kind === "network" \|\| kind === "unavailable"\)/.test(gateSrc));
+  const transientBlock = gateSrc.slice(gateSrc.indexOf('else if (kind === "timeout"'), gateSrc.indexOf("} else {", gateSrc.indexOf('else if (kind === "timeout"')));
+  ck("C5 the transient branch does NOT throttle the operator (no opRecordFail)", transientBlock.indexOf("opRecordFail") < 0);
+  // Boot self-heal for an expired stored session.
+  ck("C6 an expired stored token triggers a bounded self-heal", /sessionExpired\(\)\)\s*\{\s*healExpiredThenStart\(\)/.test(gateSrc));
+  ck("C7 the self-heal reveals on success, else clears once and shows the sign-in card",
+    /async function healExpiredThenStart[\s\S]*?getSession\(\)[\s\S]*?finish\(\)[\s\S]*?clearOperatorSession\(\)[\s\S]*?buildGate\("lobby"\)/.test(gateSrc));
+  ck("C8 a shown gate card marks the boot as not-stuck (__thriveBooted)", /window\.__thriveBooted = true/.test(gateSrc));
+}
+
+function partD() {
+  // The shipped bundle carries the 20s boot watchdog with a Retry / Sign out exit.
+  ck("D1 the bundle has a boot watchdog gated on __thriveBooted", /if\(window\.__thriveBooted\)return;/.test(bundleSrc));
+  ck("D2 it fires at a 20s bound", /\},20000\);/.test(bundleSrc));
+  ck("D3 the watchdog offers Retry (reload)", /wdRetry[\s\S]*?location\.reload\(\)/.test(bundleSrc));
+  ck("D4 the watchdog offers Sign out (clear session + reload)", /wdOut[\s\S]*?removeItem\('console_sb_session'\)[\s\S]*?location\.reload\(\)/.test(bundleSrc));
+  ck("D5 the watchdog panel is bilingual (EN + AR)", /The console is taking too long\./.test(bundleSrc) && /يستغرق الكونسول/.test(bundleSrc));
+  ck("D6 the board's first paint clears the watchdog (app.js render sets __thriveBooted)", /window\.__thriveBooted = true/.test(appSrc));
+}
+
+partA().then(function () {
+  partB(); partC(); partD();
+  console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");
+  process.exit(fails === 0 ? 0 : 1);
+}).catch(function (e) { console.log("FAIL partA threw"); console.log(String(e && e.stack || e)); process.exit(1); });
