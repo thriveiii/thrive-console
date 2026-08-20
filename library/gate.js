@@ -341,8 +341,10 @@
     // P31: one attempt, callable from the form submit and the Retry button. On a timeout the button is
     // released, the reason and raw diagnostic are shown, and a one-tap Retry appears. Retry passes
     // fresh=true so signIn opens a new connection (nonce + no-store) rather than reusing a wedged socket.
+    function DIAG(m) { try { if (window.__DIAG) window.__DIAG.log(m); } catch (e) {} }
     async function attempt(fresh) {
       if (busy) return;
+      DIAG("submit clicked (operator sign-in)" + (fresh ? " [retry, fresh connection]" : ""));
       var lock = opLockedForMs();
       if (lock > 0) { err.textContent = s.op_wait + fmtWait(lock); err.hidden = false; return; }
       var m = (email.value || "").trim(), p = pass.value || "";
@@ -363,6 +365,7 @@
         }
       }
       busy = false; email.disabled = pass.disabled = false; btn.textContent = s.op_go;
+      DIAG("sign-in settled: " + (ok ? "OK -> revealing board" : ("FAILED kind=" + kind + " :: " + raw)));
       if (ok) {
         showDiag(""); showRetry(false);
         opClearFails();

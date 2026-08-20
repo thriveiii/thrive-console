@@ -278,6 +278,34 @@ W.innerHTML='<div style="max-width:22rem"><p style="font-size:1.05rem;font-weigh
 try{document.getElementById('wdRetry').addEventListener('click',function(){location.reload();});}catch(e){}
 try{document.getElementById('wdOut').addEventListener('click',function(){try{localStorage.removeItem('console_sb_session');}catch(e){}location.reload();});}catch(e){}
 },20000);})();</script>
+<script>
+/* ===== P32 preflight verification panel (temporary; remove once confirmed on device) ================
+   Shows, on the sign-in card, that the auth request is now a CORS "simple request" (no custom headers,
+   apikey in the query, text/plain body), which by the CORS spec means the browser sends NO OPTIONS
+   preflight. JS cannot directly observe a preflight, so this panel shows the request classification and
+   timing; the DEFINITIVE on-device confirmation is the Network tab showing NO 'OPTIONS' row for
+   /auth/v1/token. A heartbeat counts up while the loop is alive. This is a genuine test: if sign-in still
+   hangs with no preflight, the hanging OPTIONS was NOT the cause and we look elsewhere. */
+(function(){
+  try{
+    var t0=Date.now(), panel=null, logEl=null, hbEl=null;
+    function ensure(){
+      if(panel||!(document.body||document.documentElement)) return;
+      panel=document.createElement('div'); panel.id='__preflightDiag'; panel.setAttribute('dir','ltr');
+      panel.setAttribute('style','position:fixed;left:0;right:0;top:0;z-index:2147483647;max-height:46vh;overflow:auto;background:rgba(6,8,12,.95);color:#c7f9cc;font:11px/1.45 ui-monospace,Menlo,monospace;padding:6px 8px;border-bottom:2px solid #71BFCC;white-space:pre-wrap;word-break:break-word');
+      var head=document.createElement('div'); head.setAttribute('style','color:#71BFCC;font-weight:700'); head.textContent='PREFLIGHT CHECK  build ${BUILD}  (auth is a CORS-simple request: no OPTIONS expected)';
+      hbEl=document.createElement('div'); hbEl.setAttribute('style','color:#fde68a'); hbEl.textContent='heartbeat: starting';
+      logEl=document.createElement('div');
+      panel.appendChild(head); panel.appendChild(hbEl); panel.appendChild(logEl);
+      (document.body||document.documentElement).appendChild(panel);
+    }
+    window.__DIAG={ log:function(msg){ try{ ensure(); if(!logEl) return; var l=document.createElement('div'); l.textContent='[+'+(Date.now()-t0)+'ms] '+String(msg); logEl.appendChild(l); if(panel) panel.scrollTop=panel.scrollHeight; }catch(e){} } };
+    var hb=0; setInterval(function(){ try{ ensure(); if(hbEl){ hb++; hbEl.textContent='heartbeat: '+hb+' (loop alive) @ +'+(Date.now()-t0)+'ms  |  check Network tab: NO OPTIONS row = preflight gone'; } }catch(e){} },1000);
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',ensure); else setTimeout(ensure,0);
+    window.__DIAG.log('preflight check ready (build ${BUILD})');
+  }catch(e){}
+})();
+</script>
 ${head}
 </head>
 <body>
