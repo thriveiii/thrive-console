@@ -157,7 +157,7 @@ function partC() {
     (gateSrc.match(/op_err_timeout:/g) || []).length >= 2 && (gateSrc.match(/op_err_unavailable:/g) || []).length >= 2);
   // The button is restored to op_go UNCONDITIONALLY (before the ok/else branches), so "Signing in" is never the last word.
   ck("C3 the button is released before branching (never a permanent spinner)",
-    /btn\.textContent = s\.op_go;\s*\n\s*if \(ok\)/.test(gateSrc));
+    /btn\.textContent = s\.op_go;\s*\n(\s*DIAG\([^\n]*\);\s*\n)?\s*if \(ok\)/.test(gateSrc));
   // A transient kind shows its specific message and does NOT throttle (opRecordFail is only in the final else).
   ck("C4 a transient failure is branched apart and shows a specific reason",
     /else if \(kind === "timeout" \|\| kind === "network" \|\| kind === "unavailable"\)/.test(gateSrc));
@@ -223,10 +223,45 @@ async function partE() {
   ck("E7 abort is still called on timeout to free the socket", /ac\.abort\(\)/.test(supaSrc));
   // E8: gate offers a one-tap Retry that re-attempts with fresh=true.
   ck("E8 the gate offers a one-tap Retry (fresh connection)", /id="gateRetry"/.test(gateSrc) && /attempt\(true\)/.test(gateSrc) && /op_retry/.test(gateSrc));
-  ck("E9 signIn passes the fresh flag through to the connection", /S\.signIn\(m, p, \{ fresh:/.test(gateSrc) && /opts\.fresh \? \("&_ts="/.test(supaSrc));
+  ck("E9 signIn passes the fresh flag through to the connection", /S\.signIn\(m, p, \{ fresh:/.test(gateSrc) && /fresh \? \("&_ts="/.test(supaSrc));
 }
 
-partA().then(partE).then(function () {
+/* ============ Part F: P32 no-preflight CORS-simple auth request ============ */
+async function partF() {
+  // F1-F4: the sign-in request is a CORS "simple request": NO custom headers, apikey in the query string,
+  // a plain-string body (so fetch sets the safelisted text/plain content type). This is what makes the
+  // browser send NO OPTIONS preflight.
+  {
+    const cf = captureFetch(200, { access_token: "t", refresh_token: "r", expires_at: 9999999999, user: { id: "u" } });
+    const { S } = makeEnv(cf);
+    await S.signIn("a@b.com", "pw");
+    const call = cf.calls[0] || {};
+    ck("F1 the auth request sets NO custom headers (a CORS-simple request, no preflight)", !!call.opts && (call.opts.headers === undefined || Object.keys(call.opts.headers || {}).length === 0), call.opts && call.opts.headers);
+    ck("F2 the anon key rides in the query string (?apikey=), not a header", /[?&]apikey=/.test(call.url || ""), call.url);
+    ck("F3 the body is a plain JSON string (so fetch sets safelisted text/plain, no preflight)", typeof call.opts.body === "string" && call.opts.body.indexOf("password") >= 0);
+    ck("F4 the token URL carries grant_type=password", /grant_type=password/.test(call.url || ""));
+  }
+  // F5: refresh uses the same no-header shape, so a boot refresh triggers no preflight either.
+  {
+    const cf = captureFetch(200, { access_token: "n", refresh_token: "r2", expires_at: 9999999999 });
+    const { S } = makeEnv(cf, { console_sb_session: JSON.stringify({ access_token: "old", refresh_token: "r1", expires_at: 1 }) });
+    await S.refresh();
+    const call = cf.calls[0] || {};
+    ck("F5 refresh is also a CORS-simple request (no custom headers, apikey in query)", !!call.opts && (call.opts.headers === undefined || Object.keys(call.opts.headers || {}).length === 0) && /[?&]apikey=/.test(call.url || "") && /grant_type=refresh_token/.test(call.url || ""));
+  }
+  // F6: source structure. The token POST must NOT set apikey / Content-Type headers (that shape caused the
+  // preflight). It goes through authTokenPost, which passes no headers object.
+  ck("F6 the token call object has ONLY method/body/cache (no headers key)", /return fetchJSON\(authTokenUrl\([^)]*\), \{ method: "POST", body: JSON\.stringify\(payload\), cache: "no-store" \}/.test(supaSrc));
+  ck("F7 no /auth/v1/token call sets an apikey or application/json header", !/"apikey": c\.anon[\s\S]{0,120}auth\/v1\/token/.test(supaSrc) && !/auth\/v1\/token[\s\S]{0,200}"Content-Type": "application\/json"/.test(supaSrc));
+  // F8: still a healthy sign-in stores the session (behavior preserved through the shape change).
+  {
+    const { S, store } = makeEnv(replyFetch(200, { access_token: "t", refresh_token: "r", expires_at: 9999999999, user: { id: "u1" } }));
+    let ok = false; try { const r = await S.signIn("a@b.com", "pw"); ok = !!(r && r.ok); } catch (e) {}
+    ck("F8 a healthy sign-in still stores the session with the new shape", ok && S.signedIn() === true && !!store["console_sb_session"]);
+  }
+}
+
+partA().then(partE).then(partF).then(function () {
   partB(); partC(); partD();
   console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");
   process.exit(fails === 0 ? 0 : 1);

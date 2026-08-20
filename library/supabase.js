@@ -138,24 +138,40 @@
     finally { clearTimeout(to.timer); if (to.fired) { try { if (ac) ac.abort(); } catch (x) {} } try { run.catch(function () {}); } catch (x) {} }
   }
 
+  function authDiag(m) { try { if (typeof window !== "undefined" && window.__DIAG) window.__DIAG.log(m); } catch (e) {} }
+  /* P32: kill the auth preflight. The old token call set custom headers (apikey, Content-Type:
+     application/json), which forces a CORS OPTIONS preflight before the POST. The device (build 35060e6d,
+     three browsers, Wi-Fi and cellular) proved that preflight hangs for this endpoint, so sign-in never
+     returns and neither P29's abort nor P31's race could end it (they wrap the POST promise, but the OPTIONS
+     never completes). This shapes the token call as a CORS "SIMPLE request": the anon key rides in the query
+     string (?apikey=), and the body is a plain string so fetch sets the safelisted Content-Type
+     text/plain;charset=UTF-8, with NO custom header present. The browser therefore sends NO OPTIONS preflight
+     at all. cache:"no-store" and the AbortController signal are fetch options, not headers, so they do not
+     reintroduce a preflight. GoTrue accepts the apikey query param and parses the JSON body regardless of the
+     text/plain content type. The P31 timeout race still wraps it, so a rejected shape fails fast, never hangs. */
+  function authTokenUrl(c, grant, fresh) {
+    return c.url + "/auth/v1/token?grant_type=" + grant + "&apikey=" + encodeURIComponent(c.anon) + (fresh ? ("&_ts=" + Date.now()) : "");
+  }
+  function authTokenPost(c, grant, payload, fresh) {
+    // NO headers object: a string body makes fetch set the CORS-safelisted text/plain content type, so the
+    // request stays simple and triggers no preflight. Do not add apikey/Authorization/Content-Type here.
+    return fetchJSON(authTokenUrl(c, grant, fresh), { method: "POST", body: JSON.stringify(payload), cache: "no-store" }, FETCH_TIMEOUT_MS);
+  }
+
   async function signIn(email, password, opts) {
     opts = opts || {};
     var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
-    // P31: the auth response is never cached (cache:"no-store"), and a RETRY (opts.fresh) appends a nonce so
-    // the browser opens a new request rather than reusing a wedged HTTP/2 stream or a buffered intermediary,
-    // a known cause of the hang the device saw. A timeout or network failure REJECTS here (typed), never
-    // hangs; the gate releases the "Signing in" state and shows the specific reason.
-    var authUrl = c.url + "/auth/v1/token?grant_type=password" + (opts.fresh ? ("&_ts=" + Date.now()) : "");
-    var r = await fetchJSON(authUrl, {
-      method: "POST", headers: { "apikey": c.anon, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email, password: password }), cache: "no-store"
-    }, FETCH_TIMEOUT_MS);
+    authDiag("auth: sending CORS-SIMPLE sign-in (no custom headers, apikey in query, text/plain body) -> browser sends NO OPTIONS preflight" + (opts.fresh ? " [fresh]" : ""));
+    // A timeout or network failure REJECTS here (typed) via the P31 race, never hangs; the gate releases the
+    // "Signing in" state and shows the specific reason with a one-tap Retry.
+    var r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh);
+    authDiag("auth: sign-in response HTTP " + r.res.status + " (no preflight was needed for a simple request)");
     var data = r.data;
     if (!r.res.ok || !data || !data.access_token) {
       var err = new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
       err.status = r.res.status;
       // A 5xx (a paused project answers 503) is the service being unavailable, not a wrong password; a
-      // 400/401/422 is a credential rejection. Typed so the gate says WHICH and never throttles a blip.
+      // 400/401/422/415 is a credential-or-shape rejection. Typed so the gate says WHICH and never throttles.
       err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
       throw err;
     }
@@ -170,10 +186,8 @@
   async function refresh() {
     var c = cfg(), s = session(); if (!s || !s.refresh_token) return false;
     try {
-      var r = await fetchJSON(c.url + "/auth/v1/token?grant_type=refresh_token", {
-        method: "POST", headers: { "apikey": c.anon, "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: s.refresh_token })
-      }, FETCH_TIMEOUT_MS);
+      // P32: same CORS-simple shape as sign-in, so a boot refresh of an expired token triggers no preflight.
+      var r = await authTokenPost(c, "refresh_token", { refresh_token: s.refresh_token }, false);
       if (r.res.ok && r.data && r.data.access_token) {
         setSession({ access_token: r.data.access_token, refresh_token: r.data.refresh_token, expires_at: r.data.expires_at, email: s.email, uid: s.uid || (r.data.user && r.data.user.id) || "" });
         return true;
