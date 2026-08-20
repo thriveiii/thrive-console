@@ -2382,12 +2382,7 @@ function onThrive(kind, key, fn){ (__hooks[kind]||(__hooks[kind]={}))[key]=fn; }
 function offThrive(kind, key){ if(__hooks[kind]) delete __hooks[kind][key]; }   // Brief A (F16): a view can drop its own listener on teardown
 function fireThrive(kind){
   const h=__hooks[kind]||{};
-  const __d = (kind==="unlock");   // DIAGNOSTIC: trace each unlock handler's synchronous prefix
-  Object.keys(h).forEach(k=>{
-    try{ if(__d && window.__DIAG) window.__DIAG.log("unlock handler '"+k+"' start"); }catch(e){}
-    try{ h[k](); }catch(e){ try{ if(__d && window.__DIAG) window.__DIAG.log("unlock handler '"+k+"' THREW: "+((e&&e.message)||e)); }catch(_){} }
-    try{ if(__d && window.__DIAG) window.__DIAG.log("unlock handler '"+k+"' returned"); }catch(e){}
-  });
+  Object.keys(h).forEach(k=>{ try{ h[k](); }catch(e){} });
 }
 window.onThriveSync  = function(){ fireThrive("sync"); };
 window.onLangApplied = function(){ fireThrive("lang"); renderOperatorChip(); };
@@ -11132,7 +11127,6 @@ async function initBoard(){
     // reads resolve), so the console is up. If a read had hung forever, render would never be reached and the
     // 20s watchdog would offer a way out. The gate sets this too when a sign-in card shows.
     try{ window.__thriveBooted = true; }catch(_){}
-    try{ if(window.__DIAG && !window.__diagPainted){ window.__diagPainted=1; window.__DIAG.log("board painted (render trigger="+trigger+")"); } }catch(_){}
     syncPill();
     driftBadge();
     inboundHealthBadge();

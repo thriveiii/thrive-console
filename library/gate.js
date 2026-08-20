@@ -30,6 +30,7 @@
           op_err_timeout: "Sign-in timed out. Check your connection and try again.",
           op_err_network: "Could not reach the service. Check your connection and try again.",
           op_err_unavailable: "The sign-in service is unavailable right now. Try again shortly.",
+          op_retry: "Retry",
           resub: "Welcome back. Sign in again to continue." },
     ar: { title: "كونسول ثرايف", sub: "مساحة خاصة. أدخل رمز الدخول للمتابعة.",
           ph: "رمز الدخول", go: "فتح", err: "رمز غير صحيح. حاول مجددًا.",
@@ -42,6 +43,7 @@
           op_err_timeout: "انتهت مهلة تسجيل الدخول. تحقّق من اتصالك وحاول مجددًا.",
           op_err_network: "تعذّر الوصول إلى الخدمة. تحقّق من اتصالك وحاول مجددًا.",
           op_err_unavailable: "خدمة تسجيل الدخول غير متوفرة الآن. حاول بعد قليل.",
+          op_retry: "إعادة المحاولة",
           resub: "مرحبًا بعودتك. سجّل الدخول من جديد." }
   };
   /* The build marker (bundle.js stamps meta[name=thrive-build]). Printed on the gate so a deploy
@@ -223,11 +225,8 @@
     if (needsOperator()) showOperatorStep(wrap); else finish();
   }
   function finish() {
-    try { if (window.__DIAG) window.__DIAG.log("finish(): revealing gate + firing unlock"); } catch (e) {}
     reveal();
-    try { if (window.__DIAG) window.__DIAG.log("finish(): gate revealed, calling onGateUnlocked"); } catch (e) {}
-    if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) { try { if (window.__DIAG) window.__DIAG.log("onGateUnlocked THREW: " + (ex && ex.message || ex)); } catch (e) {} } }
-    try { if (window.__DIAG) window.__DIAG.log("finish(): onGateUnlocked returned (unlock handlers dispatched)"); } catch (e) {}
+    if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) {} }
   }
 
   function showPasscodeStep(wrap) {
@@ -319,6 +318,7 @@
       '  <input class="gate-input" id="gatePass" type="password" autocomplete="current-password" ' +
       '         placeholder="' + s.op_pass + '" aria-label="' + s.op_pass + '">' +
       '  <button class="gate-btn" type="submit">' + s.op_go + "</button>" +
+      '  <button class="gate-btn ghost" type="button" id="gateRetry" hidden>' + s.op_retry + "</button>" +
       '  <p class="gate-err" id="gateErr" hidden>' + s.op_err + "</p>" +
       '  <p class="gate-diag mono-iso" id="gateDiag" dir="ltr" hidden></p>' +
       '  <p class="gate-note">' + s.note + "</p>" +
@@ -330,44 +330,41 @@
     var err = wrap.querySelector("#gateErr");
     var diag = wrap.querySelector("#gateDiag");
     var btn = wrap.querySelector(".gate-btn");
+    var retry = wrap.querySelector("#gateRetry");
     // P29 diagnostic surface: show the raw error text on the card so a non-timeout failure is never a
     // silent hang. textContent only (never innerHTML), so a server error string cannot inject markup.
     function showDiag(t) { if (!diag) return; if (t) { diag.textContent = String(t).slice(0, 200); diag.hidden = false; } else { diag.textContent = ""; diag.hidden = true; } }
+    function showRetry(on) { if (retry) retry.hidden = !on; }
     var busy = false;
     setTimeout(function () { email.focus(); }, 50);
 
-    function DIAG(m) { try { if (window.__DIAG) window.__DIAG.log(m); } catch (e) {} }
-    form.addEventListener("submit", async function (e) {
-      e.preventDefault();
-      DIAG("submit clicked (operator step)");
-      if (busy) { DIAG("submit ignored: already busy"); return; }
+    // P31: one attempt, callable from the form submit and the Retry button. On a timeout the button is
+    // released, the reason and raw diagnostic are shown, and a one-tap Retry appears. Retry passes
+    // fresh=true so signIn opens a new connection (nonce + no-store) rather than reusing a wedged socket.
+    async function attempt(fresh) {
+      if (busy) return;
       var lock = opLockedForMs();
-      if (lock > 0) { DIAG("submit blocked: locked for " + lock + "ms"); err.textContent = s.op_wait + fmtWait(lock); err.hidden = false; return; }
+      if (lock > 0) { err.textContent = s.op_wait + fmtWait(lock); err.hidden = false; return; }
       var m = (email.value || "").trim(), p = pass.value || "";
       // A missing field is the same neutral failure as a wrong one: the gate reveals nothing about why.
       busy = true; email.disabled = pass.disabled = true; btn.textContent = s.op_busy;
-      err.hidden = true; showDiag("");   // clear any prior failure before this attempt
-      DIAG("fields read: hasEmail=" + !!m + " hasPass=" + !!p + " S=" + (S ? "present" : "MISSING"));
+      err.hidden = true; showDiag(""); showRetry(false);   // clear any prior failure before this attempt
       var ok = false, kind = "", raw = "";
-      // signIn is bounded (P29): it resolves on success, or REJECTS with a typed error (kind = timeout /
-      // network / unavailable / auth) on a slow or down service. The button state is ALWAYS released below,
-      // on success and on every failure, so "Signing in" can never be the last word. The raw error text is
-      // captured for the visible diagnostic so a non-timeout reason (a CORS block, a config error, a real
-      // 4xx message) is surfaced on the card rather than hidden behind the neutral line.
+      // signIn is bounded by a setTimeout RACE (P31): it resolves on success, or REJECTS with a typed error
+      // (kind = timeout / network / unavailable / auth) at the 15s bound even if the browser ignores the
+      // AbortController on a wedged socket. The button state is ALWAYS released below, so "Signing in" can
+      // never be the last word; the raw error text is captured for the visible diagnostic.
       if (m && p) {
-        DIAG("awaiting S.signIn(...)");
-        try { await S.signIn(m, p); ok = S.signedIn && S.signedIn(); DIAG("S.signIn RESOLVED; signedIn=" + ok); }
+        try { await S.signIn(m, p, { fresh: !!fresh }); ok = S.signedIn && S.signedIn(); }
         catch (ex) {
           ok = false; kind = (ex && ex.kind) || "auth";
           raw = (kind || "error") + ": " + ((ex && ex.message) || String(ex));
           if (ex && ex.status) raw += " (HTTP " + ex.status + ")";
-          DIAG("S.signIn THREW: " + raw);
         }
-      } else { DIAG("skipped signIn: missing field"); }
+      }
       busy = false; email.disabled = pass.disabled = false; btn.textContent = s.op_go;
-      DIAG("button released to op_go; branching ok=" + ok + " kind=" + kind);
       if (ok) {
-        showDiag("");
+        showDiag(""); showRetry(false);
         opClearFails();
         if (typeof window.logActivity === "function") { try { window.logActivity("operator_login", "", "signed in"); } catch (ex) {} }
         // Signing in lands on the board (the working surface), not wherever the hash last pointed (Settings).
@@ -375,11 +372,11 @@
         finish();
       } else if (kind === "timeout" || kind === "network" || kind === "unavailable") {
         // A transient service condition is NOT a wrong password: say specifically what happened, do NOT
-        // throttle it as a failed attempt, and let the operator retry at once. The button is already back
-        // to "Sign in" (released above), so this is never a permanent spinner.
+        // throttle it as a failed attempt, and offer a one-tap Retry that opens a fresh connection.
         err.textContent = kind === "timeout" ? s.op_err_timeout : (kind === "unavailable" ? s.op_err_unavailable : s.op_err_network);
         err.hidden = false;
-        showDiag(raw);   // the actual error text, for on-device diagnosis
+        showDiag(raw);       // the actual error text, for on-device diagnosis
+        showRetry(true);     // one-tap retry with a fresh connection
         (m ? pass : email).focus();
       } else {
         // A real credential rejection (or a missing field): neutral message and the existing throttle.
@@ -393,7 +390,9 @@
         setTimeout(function () { form.classList.remove("shake"); }, 400);
         (m ? pass : email).focus();
       }
-    });
+    }
+    form.addEventListener("submit", function (e) { e.preventDefault(); attempt(false); });
+    if (retry) retry.addEventListener("click", function () { attempt(true); });   // fresh connection on retry
   }
 
   // P29: an expired stored token at warm boot. Keep the console hidden, try ONE bounded refresh, and either

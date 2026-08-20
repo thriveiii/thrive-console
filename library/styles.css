@@ -507,6 +507,9 @@ html.gate-locked .top,html.gate-locked .wrap{display:none!important}
 .gate-input.shake{animation:shake .4s}
 .gate-btn{width:100%;margin-top:12px;padding:12px 18px;border:0;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;color:#15121b;background:var(--grad);box-shadow:0 8px 24px rgba(150,133,202,.28);font-family:inherit}
 .gate-btn:active{transform:scale(.99)}
+/* P31: the one-tap Retry after a sign-in timeout. A quiet secondary button (no gradient), so it reads as
+   a recovery action, not the primary sign-in. It opens a fresh connection on tap. */
+.gate-btn.ghost{color:var(--ink-1);background:transparent;box-shadow:none;border:1px solid var(--line);margin-top:8px}
 .gate-err{color:var(--pink);font-size:12.5px;font-weight:700;margin:12px 0 0}
 /* P29 diagnostic: the raw error text under the human message, so a non-timeout reason is never hidden by a
    silent hang. Muted, monospace, wraps, and stays LTR so an ASCII error is not reordered in an RTL card. */

@@ -278,38 +278,6 @@ W.innerHTML='<div style="max-width:22rem"><p style="font-size:1.05rem;font-weigh
 try{document.getElementById('wdRetry').addEventListener('click',function(){location.reload();});}catch(e){}
 try{document.getElementById('wdOut').addEventListener('click',function(){try{localStorage.removeItem('console_sb_session');}catch(e){}location.reload();});}catch(e){}
 },20000);})();</script>
-<script>
-/* ===== SIGN-IN DIAGNOSTIC (temporary, additive; revert after capture) ==========================
-   A visible on-screen log of the sign-in sequence with timestamps, plus a heartbeat that keeps
-   counting up while the event loop is alive. Reading the panel:
-   - If the HEARTBEAT freezes, the main thread is blocked (a synchronous hang) and the last log line
-     is where it froze; the 15s AbortController cannot fire while the loop is dead.
-   - If the heartbeat keeps ticking but the log stalls at 'signIn: fetch sending', the network call is
-     hung; the 15s timeout should then log 'ABORTED (timeout fired)'. If it never does past 15s with a
-     live heartbeat, the AbortController is being swallowed by the browser.
-   - If 'fetch returned HTTP 200' + 'session stored' + 'unlock fired' appear but 'board painted' does
-     not, the hang is AFTER auth success (a downstream regression), and 'Signing in' is a frozen frame.
-   Created before gate.js runs; the overlay attaches as soon as the body exists. */
-(function(){
-  try{
-    var t0=Date.now(), panel=null, logEl=null, hbEl=null;
-    function ensure(){
-      if(panel||!(document.body||document.documentElement)) return;
-      panel=document.createElement('div'); panel.id='__signinDiag'; panel.setAttribute('dir','ltr');
-      panel.setAttribute('style','position:fixed;left:0;right:0;top:0;z-index:2147483647;max-height:46vh;overflow:auto;background:rgba(6,8,12,.95);color:#c7f9cc;font:11px/1.45 ui-monospace,Menlo,monospace;padding:6px 8px;border-bottom:2px solid #71BFCC;white-space:pre-wrap;word-break:break-word');
-      var head=document.createElement('div'); head.setAttribute('style','color:#71BFCC;font-weight:700'); head.textContent='SIGN-IN DIAGNOSTIC  build ${BUILD}';
-      hbEl=document.createElement('div'); hbEl.setAttribute('style','color:#fde68a'); hbEl.textContent='heartbeat: starting';
-      logEl=document.createElement('div');
-      panel.appendChild(head); panel.appendChild(hbEl); panel.appendChild(logEl);
-      (document.body||document.documentElement).appendChild(panel);
-    }
-    window.__DIAG={ log:function(msg){ try{ ensure(); if(!logEl){ return; } var l=document.createElement('div'); l.textContent='[+'+(Date.now()-t0)+'ms] '+String(msg); logEl.appendChild(l); if(panel) panel.scrollTop=panel.scrollHeight; }catch(e){} } };
-    var hb=0; setInterval(function(){ try{ ensure(); if(hbEl){ hb++; hbEl.textContent='heartbeat: '+hb+' (loop alive) @ +'+(Date.now()-t0)+'ms'; } }catch(e){} },1000);
-    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',ensure); else setTimeout(ensure,0);
-    window.__DIAG.log('diag ready (build ${BUILD})');
-  }catch(e){}
-})();
-</script>
 ${head}
 </head>
 <body>

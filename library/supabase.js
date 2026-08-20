@@ -89,52 +89,67 @@
   function taggedNetworkError(e) { if (e && !e.kind) e.kind = "network"; return e; }
   function newAbort() { try { return (typeof AbortController !== "undefined") ? new AbortController() : null; } catch (x) { return null; } }
   function wasAborted(ac, e) { return !!(e && (e.name === "AbortError" || (ac && ac.signal && ac.signal.aborted))); }
-  // fetch + body read under ONE timeout. Returns { res, data, text }. Rejects with a typed timeout error if
-  // either the request OR the body read exceeds ms; a real network failure is tagged kind:"network".
+  /* P31: the timeout is a setTimeout-based RACE, not the AbortController alone. The device (build
+     35060e6d) proved on three browsers that AbortController.abort() does NOT reliably reject a fetch
+     whose socket WebKit has wedged: past 20s no abort ever fired. The independent setTimeout wins the
+     race and rejects at ms REGARDLESS of whether the browser honors the abort, and the heartbeat proved
+     timers keep running during the hang, so this bound WILL fire. We still call abort() to free the
+     socket where the browser respects it; the race is what guarantees the promise settles. */
+  function raceTimeout(ms) {
+    var h = {};
+    h.promise = new Promise(function (_, reject) { h.timer = setTimeout(function () { h.fired = true; reject(timeoutError(ms)); }, ms); });
+    return h;
+  }
+  // fetch + body read under ONE timeout race. Returns { res, data, text }. Rejects with a typed timeout
+  // error if the request OR the body read exceeds ms; a real network failure is tagged kind:"network".
   async function fetchJSON(url, opts, ms) {
     ms = ms || FETCH_TIMEOUT_MS;
-    var ac = newAbort(), timer = null, o = Object.assign({}, opts || {});
-    var __diag = /\/auth\/v1\/token/.test(url);   // DIAGNOSTIC: only trace the auth call, not every read
-    function D(m) { try { if (__diag && window.__DIAG) window.__DIAG.log(m); } catch (e) {} }
-    if (ac) { o.signal = ac.signal; timer = setTimeout(function () { try { D("fetchJSON: 15s AbortController firing abort()"); ac.abort(); } catch (e) {} }, ms); }
-    try {
-      D("fetchJSON: fetch sent, awaiting response");
+    var ac = newAbort(), o = Object.assign({}, opts || {});
+    if (ac) o.signal = ac.signal;
+    var to = raceTimeout(ms);
+    var run = (async function () {
       var res = await fetch(url, o);
-      D("fetchJSON: fetch RESOLVED HTTP " + res.status + ", reading body");
       var text = await res.text();
-      D("fetchJSON: body read done (" + (text ? text.length : 0) + " bytes)");
       var data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
-      D("fetchJSON: json parsed");
       return { res: res, data: data, text: text };
+    })();
+    try {
+      return await Promise.race([run, to.promise]);
     } catch (e) {
-      if (wasAborted(ac, e)) { D("fetchJSON: ABORTED (timeout fired) after " + ms + "ms -> throwing typed timeout"); throw timeoutError(ms); }
-      D("fetchJSON: network error " + ((e && e.name) || "") + " " + ((e && e.message) || e));
+      if (to.fired || wasAborted(ac, e)) { try { if (ac) ac.abort(); } catch (x) {} throw timeoutError(ms); }
       throw taggedNetworkError(e);
     } finally {
-      if (timer) clearTimeout(timer);
+      clearTimeout(to.timer);
+      // If the timeout won, the fetch may still be pending: abort it to free the socket, and swallow its
+      // eventual rejection so it never surfaces as an unhandled rejection.
+      if (to.fired) { try { if (ac) ac.abort(); } catch (x) {} }
+      try { run.catch(function () {}); } catch (x) {}
     }
   }
-  // fetch only (no body read) under one timeout, for non-JSON paths (upload, logout). Same typed errors.
+  // fetch only (no body read) under one timeout race, for non-JSON paths (upload, logout). Same typed errors.
   async function fetchT(url, opts, ms) {
     ms = ms || FETCH_TIMEOUT_MS;
-    var ac = newAbort(), timer = null, o = Object.assign({}, opts || {});
-    if (ac) { o.signal = ac.signal; timer = setTimeout(function () { try { ac.abort(); } catch (e) {} }, ms); }
-    try { return await fetch(url, o); }
-    catch (e) { if (wasAborted(ac, e)) throw timeoutError(ms); throw taggedNetworkError(e); }
-    finally { if (timer) clearTimeout(timer); }
+    var ac = newAbort(), o = Object.assign({}, opts || {});
+    if (ac) o.signal = ac.signal;
+    var to = raceTimeout(ms);
+    var run = fetch(url, o);
+    try { return await Promise.race([run, to.promise]); }
+    catch (e) { if (to.fired || wasAborted(ac, e)) { try { if (ac) ac.abort(); } catch (x) {} throw timeoutError(ms); } throw taggedNetworkError(e); }
+    finally { clearTimeout(to.timer); if (to.fired) { try { if (ac) ac.abort(); } catch (x) {} } try { run.catch(function () {}); } catch (x) {} }
   }
 
-  async function signIn(email, password) {
-    function D(m) { try { if (window.__DIAG) window.__DIAG.log(m); } catch (e) {} }
-    var c = cfg(); if (!c.url || !c.anon) { D("signIn: NOT CONFIGURED (no url/anon)"); var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
-    D("signIn: sending fetch -> " + c.url + "/auth/v1/token");
-    // A timeout or network failure REJECTS here with a typed error, never hangs; the gate releases the
-    // "Signing in" state and shows the specific reason.
-    var r = await fetchJSON(c.url + "/auth/v1/token?grant_type=password", {
+  async function signIn(email, password, opts) {
+    opts = opts || {};
+    var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
+    // P31: the auth response is never cached (cache:"no-store"), and a RETRY (opts.fresh) appends a nonce so
+    // the browser opens a new request rather than reusing a wedged HTTP/2 stream or a buffered intermediary,
+    // a known cause of the hang the device saw. A timeout or network failure REJECTS here (typed), never
+    // hangs; the gate releases the "Signing in" state and shows the specific reason.
+    var authUrl = c.url + "/auth/v1/token?grant_type=password" + (opts.fresh ? ("&_ts=" + Date.now()) : "");
+    var r = await fetchJSON(authUrl, {
       method: "POST", headers: { "apikey": c.anon, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email, password: password })
+      body: JSON.stringify({ email: email, password: password }), cache: "no-store"
     }, FETCH_TIMEOUT_MS);
-    D("signIn: fetchJSON returned HTTP " + r.res.status + " ok=" + r.res.ok + " hasToken=" + !!(r.data && r.data.access_token));
     var data = r.data;
     if (!r.res.ok || !data || !data.access_token) {
       var err = new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
@@ -142,11 +157,9 @@
       // A 5xx (a paused project answers 503) is the service being unavailable, not a wrong password; a
       // 400/401/422 is a credential rejection. Typed so the gate says WHICH and never throttles a blip.
       err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
-      D("signIn: rejecting kind=" + err.kind + " HTTP " + err.status);
       throw err;
     }
     setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
-    D("signIn: session stored, returning ok");
     return { ok: true, email: email };
   }
   async function signOut() {

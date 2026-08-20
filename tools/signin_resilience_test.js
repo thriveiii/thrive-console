@@ -56,6 +56,16 @@ function makeRes(status, body) {
   return { ok: status >= 200 && status < 300, status: status, text: () => Promise.resolve(text) };
 }
 function replyFetch(status, body) { return function () { return Promise.resolve(makeRes(status, body)); }; }
+// A fetch that NEVER settles and IGNORES the abort signal entirely: the Safari signature the device saw,
+// where AbortController.abort() does not reject the promise. Only the setTimeout race can bound this.
+function deadFetch() { return function () { return new Promise(function () {}); }; }
+// A fetch that records the (url, opts) it was called with, then replies.
+function captureFetch(status, body) {
+  const calls = [];
+  const fn = function (url, opts) { calls.push({ url: url, opts: opts }); return Promise.resolve(makeRes(status, body)); };
+  fn.calls = calls;
+  return fn;
+}
 
 async function partA() {
   // A1/A2: a stalled auth POST REJECTS with a typed timeout, never hangs.
@@ -176,8 +186,48 @@ function partD() {
   ck("D6 the board's first paint clears the watchdog (app.js render sets __thriveBooted)", /window\.__thriveBooted = true/.test(appSrc));
 }
 
-partA().then(function () {
+/* ============ Part E: P31 setTimeout race + fresh-connection retry ============ */
+async function partE() {
+  // E1 is the crux: a fetch that NEVER settles and IGNORES abort (the device's Safari signature) is still
+  // bounded, because the setTimeout race rejects at the timeout independent of the AbortController.
+  {
+    const { S } = makeEnv(deadFetch());
+    let caught = null;
+    try { await S.signIn("a@b.com", "pw"); } catch (e) { caught = e; }
+    ck("E1 signIn REJECTS via the setTimeout race even when fetch never settles AND ignores abort", !!(caught && caught.kind === "timeout"), caught && { kind: caught.kind });
+  }
+  // E2/E3: a fresh retry opens a new connection (nonce + no-store), so a wedged socket is not reused.
+  {
+    const cf = captureFetch(200, { access_token: "t", refresh_token: "r", expires_at: 9999999999, user: { id: "u" } });
+    const { S } = makeEnv(cf);
+    await S.signIn("a@b.com", "pw", { fresh: true });
+    ck("E2 a fresh retry appends a cache-busting nonce to the auth URL", !!(cf.calls[0] && /[?&]_ts=\d+/.test(cf.calls[0].url)), cf.calls[0] && cf.calls[0].url);
+    ck("E3 the auth call sets cache:'no-store'", !!(cf.calls[0] && cf.calls[0].opts && cf.calls[0].opts.cache === "no-store"));
+  }
+  // E4: a normal (non-retry) sign-in still works and does NOT add a nonce.
+  {
+    const cf = captureFetch(200, { access_token: "t", refresh_token: "r", expires_at: 9999999999, user: { id: "u" } });
+    const { S } = makeEnv(cf);
+    await S.signIn("a@b.com", "pw");
+    ck("E4 a normal sign-in does NOT add a nonce (only retry opens a fresh connection)", !!(cf.calls[0] && !/_ts=/.test(cf.calls[0].url)));
+  }
+  // E5: a stalled REST read that ignores abort is bounded by the race too.
+  {
+    const { S } = makeEnv(deadFetch());
+    let caught = null;
+    try { await S.rest("console_board", { query: "select=slug" }); } catch (e) { caught = e; }
+    ck("E5 a stalled rest() that ignores abort is bounded by the race (typed timeout)", !!(caught && caught.kind === "timeout"), caught && { kind: caught.kind });
+  }
+  // E6/E7: source structure. The bound is a Promise.race against a setTimeout, and abort is still called.
+  ck("E6 the bound is a setTimeout RACE, not AbortController alone", /raceTimeout/.test(supaSrc) && /Promise\.race\(\[/.test(supaSrc) && /setTimeout\(/.test(supaSrc));
+  ck("E7 abort is still called on timeout to free the socket", /ac\.abort\(\)/.test(supaSrc));
+  // E8: gate offers a one-tap Retry that re-attempts with fresh=true.
+  ck("E8 the gate offers a one-tap Retry (fresh connection)", /id="gateRetry"/.test(gateSrc) && /attempt\(true\)/.test(gateSrc) && /op_retry/.test(gateSrc));
+  ck("E9 signIn passes the fresh flag through to the connection", /S\.signIn\(m, p, \{ fresh:/.test(gateSrc) && /opts\.fresh \? \("&_ts="/.test(supaSrc));
+}
+
+partA().then(partE).then(function () {
   partB(); partC(); partD();
   console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");
   process.exit(fails === 0 ? 0 : 1);
-}).catch(function (e) { console.log("FAIL partA threw"); console.log(String(e && e.stack || e)); process.exit(1); });
+}).catch(function (e) { console.log("FAIL partA/partE threw"); console.log(String(e && e.stack || e)); process.exit(1); });
