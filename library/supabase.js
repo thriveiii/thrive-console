@@ -102,28 +102,21 @@
   }
   // fetch + body read under ONE timeout race. Returns { res, data, text }. Rejects with a typed timeout
   // error if the request OR the body read exceeds ms; a real network failure is tagged kind:"network".
-  async function fetchJSON(url, opts, ms, diag) {
+  async function fetchJSON(url, opts, ms) {
     ms = ms || FETCH_TIMEOUT_MS;
     var ac = newAbort(), o = Object.assign({}, opts || {});
     if (ac) o.signal = ac.signal;
     var to = raceTimeout(ms);
-    // P35 (diagnostic, optional): record which stage the call last reached and the exact server answer, so
-    // a failure can be shown VERBATIM instead of a generic "could not start". Changes nothing about the
-    // request; only observes. stage moves fetch-created -> response-received -> body-read, or -> fetch-rejected.
-    if (diag) diag.stage = "fetch-created";
     var run = (async function () {
       var res = await fetch(url, o);
-      if (diag) { diag.stage = "response-received"; diag.status = res.status; diag.statusText = res.statusText || ""; }
       var text = await res.text();
-      if (diag) { diag.stage = "body-read"; if (!(res.status >= 200 && res.status < 300)) diag.body = String(text || "").slice(0, 200); }
       var data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
       return { res: res, data: data, text: text };
     })();
     try {
       return await Promise.race([run, to.promise]);
     } catch (e) {
-      if (to.fired || wasAborted(ac, e)) { try { if (ac) ac.abort(); } catch (x) {} if (diag) { diag.timedOut = true; diag.timeoutMs = ms; } throw timeoutError(ms); }
-      if (diag) { if (diag.stage === "fetch-created") diag.stage = "fetch-rejected"; diag.errName = (e && e.name) || ""; diag.errMsg = (e && e.message) || String(e); }
+      if (to.fired || wasAborted(ac, e)) { try { if (ac) ac.abort(); } catch (x) {} throw timeoutError(ms); }
       throw taggedNetworkError(e);
     } finally {
       clearTimeout(to.timer);
@@ -145,58 +138,28 @@
     finally { clearTimeout(to.timer); if (to.fired) { try { if (ac) ac.abort(); } catch (x) {} } try { run.catch(function () {}); } catch (x) {} }
   }
 
-  function authDiag(m) { try { if (typeof window !== "undefined" && window.__DIAG) window.__DIAG.log(m); } catch (e) {} }
-  /* P34: the auth token call uses the STANDARD Supabase request shape, the same one every other request in
-     this client already uses (rest(), signOut, uploads) and the same one the official supabase-js client
-     sends: the anon key in the "apikey" HEADER, plus "Authorization: Bearer <anon>" and
-     "Content-Type: application/json".
-
-     Why this is the fix. P32 tried to dodge the CORS preflight by sending the apikey ONLY in the query
-     string (?apikey=) with NO headers ("simple request"). That was proven wrong on device: GoTrue's token
-     endpoint does NOT honor a query-param-only apikey; it rejects it fast with {"message":"Invalid API
-     key"}. A direct browser GET to /auth/v1/token?apikey=<correct anon key> reproduced the exact rejection,
-     so it is the request SHAPE, not the key value and not the transport, that was wrong. The apikey HEADER
-     is required, so it is restored here. The custom headers DO trigger a CORS OPTIONS preflight, but the
-     device investigation proved that preflight harmless (a direct probe answered instantly); it was never
-     the cause of the earlier hang. The P31 setTimeout race (fetchJSON) and the P29 typed-error surface
-     still wrap this call, so a stalled or rejected request fails fast and never hangs. */
+  /* P36 (bare metal): the auth token call is the STANDARD Supabase request, the same shape every other
+     call in this client uses (rest(), signOut, uploads) and the official supabase-js client sends: the anon
+     key in the "apikey" HEADER, plus "Authorization: Bearer <anon>" and "Content-Type: application/json".
+     A header-less, query-param-only apikey is rejected by GoTrue as "Invalid API key" (P34, proven on
+     device), so the header is required. There is ZERO instrumentation on this path: it is wrapped ONLY by
+     the P31 setTimeout race (inside fetchJSON) and the P29 typed-error surface, both minimal. */
   function authTokenUrl(c, grant, fresh) {
     return c.url + "/auth/v1/token?grant_type=" + grant + (fresh ? ("&_ts=" + Date.now()) : "");
   }
-  function authTokenPost(c, grant, payload, fresh, diag) {
-    // The accepted shape: apikey HEADER + Authorization Bearer <anon> + JSON content type. A header-less,
-    // query-param-only apikey is rejected by GoTrue as "Invalid API key" (proven on device), so the header
-    // is mandatory here exactly as it is on rest() and every other call. `diag` is an optional observer
-    // (P35): fetchJSON records the stage and the server answer into it; nothing about the request changes.
+  function authTokenPost(c, grant, payload, fresh) {
     return fetchJSON(authTokenUrl(c, grant, fresh), {
       method: "POST",
       headers: { "apikey": c.anon, "Authorization": "Bearer " + c.anon, "Content-Type": "application/json" },
       body: JSON.stringify(payload), cache: "no-store"
-    }, FETCH_TIMEOUT_MS, diag);
+    }, FETCH_TIMEOUT_MS);
   }
-  function nowMs() { try { return Date.now(); } catch (e) { return 0; } }
 
   async function signIn(email, password, opts) {
     opts = opts || {};
     var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
-    // P35 (diagnostic): a fresh observer for THIS sign-in. On any failure it is attached to the thrown error
-    // as err.diag, so the gate can display the exact reason (stage, HTTP status + GoTrue body, elapsed ms)
-    // verbatim instead of a generic message. It records only; the request shape is unchanged.
-    var diag = { t0: nowMs() };
-    authDiag("auth: sending standard sign-in (apikey + Authorization + JSON headers)" + (opts.fresh ? " [fresh]" : ""));
-    // A timeout or network failure REJECTS here (typed) via the P31 race, never hangs; the gate releases the
-    // "Signing in" state and shows the specific reason with a one-tap Retry.
-    var r;
-    try {
-      r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh, diag);
-    } catch (ex) {
-      diag.elapsedMs = nowMs() - diag.t0;
-      try { if (ex && typeof ex === "object") ex.diag = diag; } catch (e) {}
-      authDiag("auth: sign-in FAILED " + (ex && ex.kind) + " stage=" + diag.stage + (diag.timedOut ? " (timed out)" : "") + " :: " + (ex && ex.message));
-      throw ex;
-    }
-    diag.elapsedMs = nowMs() - diag.t0;
-    authDiag("auth: sign-in response HTTP " + r.res.status + " in " + diag.elapsedMs + "ms");
+    // One fetch POST, bounded by the P31 race (a stall rejects at 15s, never hangs). No logging.
+    var r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh);
     var data = r.data;
     if (!r.res.ok || !data || !data.access_token) {
       var err = new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
@@ -204,7 +167,6 @@
       // A 5xx (a paused project answers 503) is the service being unavailable, not a wrong password; a
       // 400/401/422/415 is a credential-or-shape rejection. Typed so the gate says WHICH and never throttles.
       err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
-      err.diag = diag;   // P35: carries stage=body-read, status, statusText, body (the GoTrue error text)
       throw err;
     }
     setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
@@ -218,7 +180,7 @@
   async function refresh() {
     var c = cfg(), s = session(); if (!s || !s.refresh_token) return false;
     try {
-      // P32: same CORS-simple shape as sign-in, so a boot refresh of an expired token triggers no preflight.
+      // The same standard header shape as sign-in, so a boot refresh of an expired token authenticates identically.
       var r = await authTokenPost(c, "refresh_token", { refresh_token: s.refresh_token }, false);
       if (r.res.ok && r.data && r.data.access_token) {
         setSession({ access_token: r.data.access_token, refresh_token: r.data.refresh_token, expires_at: r.data.expires_at, email: s.email, uid: s.uid || (r.data.user && r.data.user.id) || "" });
