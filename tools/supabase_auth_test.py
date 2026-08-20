@@ -54,12 +54,15 @@ from playwright.sync_api import sync_playwright
 FAKE = r"""
 () => {
   window.__real_fetch = window.fetch.bind(window);
-  window.__auth = { denyRest:false, closed:false, rows:[], refreshOk:false, refreshCount:0, lastAuth:null, lastKey:null, calls:[] };
+  window.__auth = { denyRest:false, closed:false, rows:[], refreshOk:false, refreshCount:0, lastAuth:null, lastKey:null, calls:[], authReq:null };
   window.fetch = async (url, opts) => {
     const method = (opts&&opts.method)||'GET';
     const headers = (opts&&opts.headers)||{};
     const body = (opts&&opts.body) ? JSON.parse(opts.body) : {};
     if (typeof url==='string' && url.indexOf('/auth/v1/token')>=0) {
+      // P34 regression guard: record exactly how the auth call authenticated. GoTrue rejects a header-less,
+      // query-param-only apikey with "Invalid API key"; the assertions below prove the apikey HEADER is sent.
+      window.__auth.authReq = { apikey: headers['apikey']||'', authz: headers['Authorization']||'', ctype: (headers['Content-Type']||headers['content-type']||''), urlHasApikey: url.indexOf('apikey=')>=0 };
       if (url.indexOf('grant_type=password')>=0) {
         if (body.password==='right')
           return new Response(JSON.stringify({access_token:'jwt-good', refresh_token:'refresh-1', expires_at:9999999999}), {status:200, headers:{'Content-Type':'application/json'}});
@@ -127,6 +130,15 @@ with sync_playwright() as p:
        return { ok:r&&r.ok, inn:window.ThriveSupa.signedIn(), email:window.ThriveSupa.authEmail() }; }""")
     ck("the right password signs in", ok["ok"] == True and ok["inn"] == True, ok)
     ck("the signed-in email is remembered", ok["email"] == "op@x.com", ok)
+
+    # 3b. P34 REGRESSION GUARD: the sign-in POST must carry the standard headers. A header-less request that
+    #     puts the apikey only in the query string is what GoTrue rejects as "Invalid API key" (the P32
+    #     regression, proven on device). This proves the apikey HEADER (+ Authorization Bearer anon + JSON
+    #     content type) is sent, exactly as rest() and every other call do.
+    areq = pg.evaluate("()=>window.__auth.authReq")
+    ck("the sign-in POST sends the apikey HEADER (not query-param-only)", bool(areq) and areq["apikey"] == "anon-key", areq)
+    ck("the sign-in POST sends Authorization: Bearer <anon>", bool(areq) and areq["authz"] == "Bearer anon-key", areq)
+    ck("the sign-in POST sends Content-Type application/json", bool(areq) and "application/json" in (areq["ctype"] or ""), areq)
 
     # 4. Signed in, a data call carries the session JWT, NOT the anon key.
     r2 = pg.evaluate("""async ()=>{ window.__auth.lastAuth=null;

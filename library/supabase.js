@@ -139,33 +139,42 @@
   }
 
   function authDiag(m) { try { if (typeof window !== "undefined" && window.__DIAG) window.__DIAG.log(m); } catch (e) {} }
-  /* P32: kill the auth preflight. The old token call set custom headers (apikey, Content-Type:
-     application/json), which forces a CORS OPTIONS preflight before the POST. The device (build 35060e6d,
-     three browsers, Wi-Fi and cellular) proved that preflight hangs for this endpoint, so sign-in never
-     returns and neither P29's abort nor P31's race could end it (they wrap the POST promise, but the OPTIONS
-     never completes). This shapes the token call as a CORS "SIMPLE request": the anon key rides in the query
-     string (?apikey=), and the body is a plain string so fetch sets the safelisted Content-Type
-     text/plain;charset=UTF-8, with NO custom header present. The browser therefore sends NO OPTIONS preflight
-     at all. cache:"no-store" and the AbortController signal are fetch options, not headers, so they do not
-     reintroduce a preflight. GoTrue accepts the apikey query param and parses the JSON body regardless of the
-     text/plain content type. The P31 timeout race still wraps it, so a rejected shape fails fast, never hangs. */
+  /* P34: the auth token call uses the STANDARD Supabase request shape, the same one every other request in
+     this client already uses (rest(), signOut, uploads) and the same one the official supabase-js client
+     sends: the anon key in the "apikey" HEADER, plus "Authorization: Bearer <anon>" and
+     "Content-Type: application/json".
+
+     Why this is the fix. P32 tried to dodge the CORS preflight by sending the apikey ONLY in the query
+     string (?apikey=) with NO headers ("simple request"). That was proven wrong on device: GoTrue's token
+     endpoint does NOT honor a query-param-only apikey; it rejects it fast with {"message":"Invalid API
+     key"}. A direct browser GET to /auth/v1/token?apikey=<correct anon key> reproduced the exact rejection,
+     so it is the request SHAPE, not the key value and not the transport, that was wrong. The apikey HEADER
+     is required, so it is restored here. The custom headers DO trigger a CORS OPTIONS preflight, but the
+     device investigation proved that preflight harmless (a direct probe answered instantly); it was never
+     the cause of the earlier hang. The P31 setTimeout race (fetchJSON) and the P29 typed-error surface
+     still wrap this call, so a stalled or rejected request fails fast and never hangs. */
   function authTokenUrl(c, grant, fresh) {
-    return c.url + "/auth/v1/token?grant_type=" + grant + "&apikey=" + encodeURIComponent(c.anon) + (fresh ? ("&_ts=" + Date.now()) : "");
+    return c.url + "/auth/v1/token?grant_type=" + grant + (fresh ? ("&_ts=" + Date.now()) : "");
   }
   function authTokenPost(c, grant, payload, fresh) {
-    // NO headers object: a string body makes fetch set the CORS-safelisted text/plain content type, so the
-    // request stays simple and triggers no preflight. Do not add apikey/Authorization/Content-Type here.
-    return fetchJSON(authTokenUrl(c, grant, fresh), { method: "POST", body: JSON.stringify(payload), cache: "no-store" }, FETCH_TIMEOUT_MS);
+    // The accepted shape: apikey HEADER + Authorization Bearer <anon> + JSON content type. A header-less,
+    // query-param-only apikey is rejected by GoTrue as "Invalid API key" (proven on device), so the header
+    // is mandatory here exactly as it is on rest() and every other call.
+    return fetchJSON(authTokenUrl(c, grant, fresh), {
+      method: "POST",
+      headers: { "apikey": c.anon, "Authorization": "Bearer " + c.anon, "Content-Type": "application/json" },
+      body: JSON.stringify(payload), cache: "no-store"
+    }, FETCH_TIMEOUT_MS);
   }
 
   async function signIn(email, password, opts) {
     opts = opts || {};
     var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
-    authDiag("auth: sending CORS-SIMPLE sign-in (no custom headers, apikey in query, text/plain body) -> browser sends NO OPTIONS preflight" + (opts.fresh ? " [fresh]" : ""));
+    authDiag("auth: sending standard sign-in (apikey + Authorization + JSON headers)" + (opts.fresh ? " [fresh]" : ""));
     // A timeout or network failure REJECTS here (typed) via the P31 race, never hangs; the gate releases the
     // "Signing in" state and shows the specific reason with a one-tap Retry.
     var r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh);
-    authDiag("auth: sign-in response HTTP " + r.res.status + " (no preflight was needed for a simple request)");
+    authDiag("auth: sign-in response HTTP " + r.res.status);
     var data = r.data;
     if (!r.res.ok || !data || !data.access_token) {
       var err = new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
