@@ -60,16 +60,21 @@ FAKE = r"""
     const headers = (opts&&opts.headers)||{};
     const body = (opts&&opts.body) ? JSON.parse(opts.body) : {};
     if (typeof url==='string' && url.indexOf('/auth/v1/token')>=0) {
+      // The real GoTrue token endpoint returns the FULL session shape, including a user object,
+      // token_type and expires_in. The official @supabase/supabase-js client (P33) builds its session
+      // from that shape and rejects a response missing the user ("Auth session or user missing"), so the
+      // mock must emulate the real server faithfully, not the minimal subset the old hand-built read used.
+      const USER = {id:'op-1', aud:'authenticated', role:'authenticated', email:'op@x.com', app_metadata:{provider:'email'}, user_metadata:{}, created_at:'2024-01-01T00:00:00Z'};
       if (url.indexOf('grant_type=password')>=0) {
         if (body.password==='right')
-          return new Response(JSON.stringify({access_token:'jwt-good', refresh_token:'refresh-1', expires_at:9999999999}), {status:200, headers:{'Content-Type':'application/json'}});
-        return new Response(JSON.stringify({error_description:'Invalid login credentials'}), {status:400, headers:{'Content-Type':'application/json'}});
+          return new Response(JSON.stringify({access_token:'jwt-good', token_type:'bearer', expires_in:3600, refresh_token:'refresh-1', expires_at:9999999999, user:USER}), {status:200, headers:{'Content-Type':'application/json'}});
+        return new Response(JSON.stringify({error:'invalid_grant', error_description:'Invalid login credentials'}), {status:400, headers:{'Content-Type':'application/json'}});
       }
       if (url.indexOf('grant_type=refresh_token')>=0) {
         window.__auth.refreshCount++;
         if (window.__auth.refreshOk)
-          return new Response(JSON.stringify({access_token:'jwt-refreshed', refresh_token:'refresh-2', expires_at:9999999999}), {status:200, headers:{'Content-Type':'application/json'}});
-        return new Response(JSON.stringify({error:'bad refresh'}), {status:400, headers:{'Content-Type':'application/json'}});
+          return new Response(JSON.stringify({access_token:'jwt-refreshed', token_type:'bearer', expires_in:3600, refresh_token:'refresh-2', expires_at:9999999999, user:USER}), {status:200, headers:{'Content-Type':'application/json'}});
+        return new Response(JSON.stringify({error:'invalid_grant', error_description:'bad refresh'}), {status:400, headers:{'Content-Type':'application/json'}});
       }
     }
     if (typeof url==='string' && url.indexOf('/auth/v1/logout')>=0)

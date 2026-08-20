@@ -49,11 +49,11 @@ INIT = r"""
     if (typeof url==='string' && url.indexOf('/auth/v1/token')>=0) {
       if (url.indexOf('grant_type=password')>=0) {
         if (body.email==='op@thrive.co' && body.password==='right')
-          return new Response(JSON.stringify({access_token:'jwt-x', refresh_token:'r', expires_at:9999999999}), {status:200, headers:{'Content-Type':'application/json'}});
-        return new Response(JSON.stringify({error_description:'Invalid login credentials'}), {status:400, headers:{'Content-Type':'application/json'}});
+          return new Response(JSON.stringify({access_token:'jwt-x', token_type:'bearer', expires_in:3600, refresh_token:'r', expires_at:9999999999, user:{id:'uid-1', email:'op@thrive.co'}}), {status:200, headers:{'Content-Type':'application/json'}});
+        return new Response(JSON.stringify({error:'invalid_grant', error_description:'Invalid login credentials'}), {status:400, headers:{'Content-Type':'application/json'}});
       }
       if (url.indexOf('grant_type=refresh_token')>=0)
-        return new Response(JSON.stringify({access_token:'jwt-x2', refresh_token:'r2', expires_at:9999999999}), {status:200, headers:{'Content-Type':'application/json'}});
+        return new Response(JSON.stringify({access_token:'jwt-x2', token_type:'bearer', expires_in:3600, refresh_token:'r2', expires_at:9999999999, user:{id:'uid-1', email:'op@thrive.co'}}), {status:200, headers:{'Content-Type':'application/json'}});
     }
     if (typeof url==='string' && url.indexOf('/auth/v1/logout')>=0) return new Response('', {status:204});
     return real ? real(url, opts) : new Response('', {status:200});
