@@ -11123,6 +11123,10 @@ async function initBoard(){
   }
 
   function render(trigger, source){
+    // P29 boot watchdog signal: the board is actually painting (render runs only AFTER renderBoard's bounded
+    // reads resolve), so the console is up. If a read had hung forever, render would never be reached and the
+    // 20s watchdog would offer a way out. The gate sets this too when a sign-in card shows.
+    try{ window.__thriveBooted = true; }catch(_){}
     syncPill();
     driftBadge();
     inboundHealthBadge();

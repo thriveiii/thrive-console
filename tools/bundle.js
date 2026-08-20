@@ -257,7 +257,27 @@ var ar=false;try{ar=localStorage.getItem('thrive_lang')==='ar'}catch(e){}
 var p=document.createElement('p');p.className='bootfail';
 p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل الصفحة، وتحقق من الاتصال إن تكرر الأمر.'
 :'The console could not start. Reload the page, and check your connection if it happens again.';
-(document.body||d).appendChild(p)},6000)})();</script>
+(document.body||d).appendChild(p)},6000);
+/* P29 boot watchdog: if nothing interactive has painted within the bound, replace the screen with a plain
+   panel that ALWAYS offers a way out, so a degraded service (a paused project, a stalled read) is never an
+   infinite spinner. window.__thriveBooted is set by the gate the moment a sign-in card shows, and by the
+   board's first paint (app.js render); the watchdog fires only when neither has happened. Self-contained
+   and inline-styled so it works even if styles.css or app.js failed to load. */
+setTimeout(function(){if(window.__thriveBooted)return;
+var war=false;try{war=localStorage.getItem('thrive_lang')==='ar'}catch(e){}
+try{var wg=document.getElementById('thriveGate');if(wg&&wg.parentNode)wg.parentNode.removeChild(wg);}catch(e){}
+try{var wb=document.querySelector('.bootfail');if(wb&&wb.parentNode)wb.parentNode.removeChild(wb);}catch(e){}
+try{d.classList.remove('gate-locked');}catch(e){}
+var wt=war?'يستغرق الكونسول وقتًا أطول من المعتاد.':'The console is taking too long.';
+var ws=war?'تحقّق من اتصالك، ثم أعد المحاولة أو سجّل الخروج.':'Check your connection, then retry or sign out.';
+var wr=war?'إعادة المحاولة':'Retry';var wo=war?'تسجيل الخروج':'Sign out';
+var W=document.createElement('div');W.id='bootWatchdog';W.setAttribute('dir',war?'rtl':'ltr');
+W.setAttribute('style','position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0a0a0c;color:#e5e7eb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center');
+W.innerHTML='<div style="max-width:22rem"><p style="font-size:1.05rem;font-weight:600;margin:0 0 .4rem">'+wt+'</p><p style="opacity:.75;margin:0 0 1.2rem">'+ws+'</p><div style="display:flex;gap:.6rem;justify-content:center"><button id="wdRetry" type="button" style="padding:.6rem 1.1rem;border-radius:.5rem;border:0;background:#71BFCC;color:#04252b;font-weight:600;cursor:pointer">'+wr+'</button><button id="wdOut" type="button" style="padding:.6rem 1.1rem;border-radius:.5rem;border:1px solid #374151;background:transparent;color:#e5e7eb;cursor:pointer">'+wo+'</button></div></div>';
+(document.body||d).appendChild(W);
+try{document.getElementById('wdRetry').addEventListener('click',function(){location.reload();});}catch(e){}
+try{document.getElementById('wdOut').addEventListener('click',function(){try{localStorage.removeItem('console_sb_session');}catch(e){}location.reload();});}catch(e){}
+},20000);})();</script>
 ${head}
 </head>
 <body>
