@@ -158,6 +158,12 @@ function partC() {
   ck("C7 the self-heal reveals on success, else clears once and shows the sign-in card",
     /async function healExpiredThenStart[\s\S]*?getSession\(\)[\s\S]*?finish\(\)[\s\S]*?clearOperatorSession\(\)[\s\S]*?buildGate\("lobby"\)/.test(gateSrc));
   ck("C8 a shown gate card marks the boot as not-stuck (__thriveBooted)", /window\.__thriveBooted = true/.test(gateSrc));
+  // Visible diagnostic: the raw error text is surfaced on the card, so a non-timeout reason is never hidden.
+  ck("C9 the operator card has a diagnostic element (#gateDiag)", /id="gateDiag"/.test(gateSrc));
+  ck("C10 the catch captures the raw error text (kind + message [+ status])",
+    /raw = \(kind \|\| "error"\) \+ ": " \+ \(\(ex && ex\.message\)/.test(gateSrc) && /raw \+= " \(HTTP " \+ ex\.status/.test(gateSrc));
+  ck("C11 the raw diagnostic is shown on failure (showDiag(raw))", /showDiag\(raw\)/.test(gateSrc));
+  ck("C12 the diagnostic writes textContent only (no markup injection)", /function showDiag[\s\S]*?diag\.textContent =/.test(gateSrc) && !/gateDiag[\s\S]{0,80}innerHTML/.test(gateSrc));
 }
 
 function partD() {

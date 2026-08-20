@@ -317,6 +317,7 @@
       '         placeholder="' + s.op_pass + '" aria-label="' + s.op_pass + '">' +
       '  <button class="gate-btn" type="submit">' + s.op_go + "</button>" +
       '  <p class="gate-err" id="gateErr" hidden>' + s.op_err + "</p>" +
+      '  <p class="gate-diag mono-iso" id="gateDiag" dir="ltr" hidden></p>' +
       '  <p class="gate-note">' + s.note + "</p>" +
       buildMark(s) +
       "</form>";
@@ -324,7 +325,11 @@
     var email = wrap.querySelector("#gateEmail");
     var pass = wrap.querySelector("#gatePass");
     var err = wrap.querySelector("#gateErr");
+    var diag = wrap.querySelector("#gateDiag");
     var btn = wrap.querySelector(".gate-btn");
+    // P29 diagnostic surface: show the raw error text on the card so a non-timeout failure is never a
+    // silent hang. textContent only (never innerHTML), so a server error string cannot inject markup.
+    function showDiag(t) { if (!diag) return; if (t) { diag.textContent = String(t).slice(0, 200); diag.hidden = false; } else { diag.textContent = ""; diag.hidden = true; } }
     var busy = false;
     setTimeout(function () { email.focus(); }, 50);
 
@@ -336,13 +341,24 @@
       var m = (email.value || "").trim(), p = pass.value || "";
       // A missing field is the same neutral failure as a wrong one: the gate reveals nothing about why.
       busy = true; email.disabled = pass.disabled = true; btn.textContent = s.op_busy;
-      var ok = false, kind = "";
+      err.hidden = true; showDiag("");   // clear any prior failure before this attempt
+      var ok = false, kind = "", raw = "";
       // signIn is bounded (P29): it resolves on success, or REJECTS with a typed error (kind = timeout /
       // network / unavailable / auth) on a slow or down service. The button state is ALWAYS released below,
-      // on success and on every failure, so "Signing in" can never be the last word.
-      if (m && p) { try { await S.signIn(m, p); ok = S.signedIn && S.signedIn(); } catch (ex) { ok = false; kind = (ex && ex.kind) || "auth"; } }
+      // on success and on every failure, so "Signing in" can never be the last word. The raw error text is
+      // captured for the visible diagnostic so a non-timeout reason (a CORS block, a config error, a real
+      // 4xx message) is surfaced on the card rather than hidden behind the neutral line.
+      if (m && p) {
+        try { await S.signIn(m, p); ok = S.signedIn && S.signedIn(); }
+        catch (ex) {
+          ok = false; kind = (ex && ex.kind) || "auth";
+          raw = (kind || "error") + ": " + ((ex && ex.message) || String(ex));
+          if (ex && ex.status) raw += " (HTTP " + ex.status + ")";
+        }
+      }
       busy = false; email.disabled = pass.disabled = false; btn.textContent = s.op_go;
       if (ok) {
+        showDiag("");
         opClearFails();
         if (typeof window.logActivity === "function") { try { window.logActivity("operator_login", "", "signed in"); } catch (ex) {} }
         // Signing in lands on the board (the working surface), not wherever the hash last pointed (Settings).
@@ -354,6 +370,7 @@
         // to "Sign in" (released above), so this is never a permanent spinner.
         err.textContent = kind === "timeout" ? s.op_err_timeout : (kind === "unavailable" ? s.op_err_unavailable : s.op_err_network);
         err.hidden = false;
+        showDiag(raw);   // the actual error text, for on-device diagnosis
         (m ? pass : email).focus();
       } else {
         // A real credential rejection (or a missing field): neutral message and the existing throttle.
@@ -361,6 +378,7 @@
         var again = opLockedForMs();
         err.textContent = again > 0 ? (s.op_wait + fmtWait(again)) : s.op_err;   // identical for wrong email or wrong password
         err.hidden = false;
+        if (raw) showDiag(raw);   // surface the real reason (never a silent hang); empty for a missing field
         pass.value = "";
         form.classList.add("shake");
         setTimeout(function () { form.classList.remove("shake"); }, 400);

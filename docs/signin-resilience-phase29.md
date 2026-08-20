@@ -44,6 +44,12 @@ shown with its own message and is NOT counted as a failed attempt or throttled; 
 once. A real credential rejection keeps the existing neutral message and throttle. New strings, EN + AR:
 `op_err_timeout`, `op_err_network`, `op_err_unavailable`.
 
+**Visible diagnostic.** Alongside the human message, the catch surfaces the RAW error text on the card
+(`#gateDiag`: `kind: message (HTTP status)`, e.g. `timeout: request timed out after 15000ms` or
+`auth: Invalid login credentials (HTTP 400)`). So if a failure is not a timeout, the real reason (a CORS
+block, a config error, a genuine 4xx body) is on screen for on-device diagnosis, never a silent hang. It is
+`textContent` only (no markup injection), muted, monospace, LTR, and cleared on the next attempt or success.
+
 ### 3. Stale-session self-heal on boot (`gate.js` + `supabase.js` `getSession`)
 
 A fresh stored token reveals the board at once, with no network round trip, so warm-boot timing is
