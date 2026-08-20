@@ -170,10 +170,22 @@ function partC() {
   ck("C8 a shown gate card marks the boot as not-stuck (__thriveBooted)", /window\.__thriveBooted = true/.test(gateSrc));
   // Visible diagnostic: the raw error text is surfaced on the card, so a non-timeout reason is never hidden.
   ck("C9 the operator card has a diagnostic element (#gateDiag)", /id="gateDiag"/.test(gateSrc));
-  ck("C10 the catch captures the raw error text (kind + message [+ status])",
-    /raw = \(kind \|\| "error"\) \+ ": " \+ \(\(ex && ex\.message\)/.test(gateSrc) && /raw \+= " \(HTTP " \+ ex\.status/.test(gateSrc));
+  ck("C10 the failure is a STRUCTURED copyable block (stage / http / elapsed), not a generic line (P35)",
+    /function p35Block/.test(gateSrc) && /raw = p35Block\(ex, kind\)/.test(gateSrc) && /"stage: "/.test(gateSrc) && /"elapsed: "/.test(gateSrc) && /"http: "/.test(gateSrc));
   ck("C11 the raw diagnostic is shown on failure (showDiag(raw))", /showDiag\(raw\)/.test(gateSrc));
   ck("C12 the diagnostic writes textContent only (no markup injection)", /function showDiag[\s\S]*?diag\.textContent =/.test(gateSrc) && !/gateDiag[\s\S]{0,80}innerHTML/.test(gateSrc));
+  // P35: the exact server answer is captured verbatim and the boot session decision is logged, so the
+  // never-before-captured auth failure reason is revealed on device.
+  ck("C13 boot logs the session-restore vs cold-auth decision (P35)",
+    /function p35BootLine/.test(gateSrc) && /p35BootLine\(\);/.test(gateSrc) && /session-restore, NO auth call/.test(gateSrc) && /cold auth/.test(gateSrc));
+  ck("C14 a visible diagnostic panel is wired to window.__DIAG (P35)",
+    /window\.__DIAG = window\.__DIAG \|\| \{ log: p35log \}/.test(gateSrc) && /function ensureDiagPanel/.test(gateSrc));
+  ck("C15 supabase.js threads a diag observer and attaches it to the thrown/failed error (P35)",
+    /fetchJSON\(url, opts, ms, diag\)/.test(supaSrc) && /err\.diag = diag/.test(supaSrc) && /ex\.diag = diag/.test(supaSrc));
+  ck("C16 fetchJSON records stage, HTTP status, and the non-2xx body into diag (P35)",
+    /diag\.stage = "response-received"; diag\.status = res\.status/.test(supaSrc) && /diag\.body = String\(text/.test(supaSrc) && /diag\.stage = "fetch-rejected"/.test(supaSrc));
+  ck("C17 the request itself is unchanged (still the P34 apikey header shape)",
+    /"apikey": c\.anon, "Authorization": "Bearer " \+ c\.anon, "Content-Type": "application\/json"/.test(supaSrc));
 }
 
 function partD() {
@@ -226,38 +238,43 @@ async function partE() {
   ck("E9 signIn passes the fresh flag through to the connection", /S\.signIn\(m, p, \{ fresh:/.test(gateSrc) && /fresh \? \("&_ts="/.test(supaSrc));
 }
 
-/* ============ Part F: P32 no-preflight CORS-simple auth request ============ */
+/* ============ Part F: P34 standard auth request shape (apikey HEADER, not query-param) ============
+   GoTrue's token endpoint rejects a header-less, query-param-only apikey with "Invalid API key" (proven on
+   device). The accepted shape, sent by every other call and by the official client, is the apikey HEADER
+   plus Authorization: Bearer <anon> and Content-Type: application/json. P35 changes NOTHING about this. */
 async function partF() {
-  // F1-F4: the sign-in request is a CORS "simple request": NO custom headers, apikey in the query string,
-  // a plain-string body (so fetch sets the safelisted text/plain content type). This is what makes the
-  // browser send NO OPTIONS preflight.
+  // F1-F4: the sign-in request carries the apikey HEADER (+ Authorization Bearer + JSON), NOT a query apikey.
   {
     const cf = captureFetch(200, { access_token: "t", refresh_token: "r", expires_at: 9999999999, user: { id: "u" } });
     const { S } = makeEnv(cf);
     await S.signIn("a@b.com", "pw");
     const call = cf.calls[0] || {};
-    ck("F1 the auth request sets NO custom headers (a CORS-simple request, no preflight)", !!call.opts && (call.opts.headers === undefined || Object.keys(call.opts.headers || {}).length === 0), call.opts && call.opts.headers);
-    ck("F2 the anon key rides in the query string (?apikey=), not a header", /[?&]apikey=/.test(call.url || ""), call.url);
-    ck("F3 the body is a plain JSON string (so fetch sets safelisted text/plain, no preflight)", typeof call.opts.body === "string" && call.opts.body.indexOf("password") >= 0);
+    const h = (call.opts && call.opts.headers) || {};
+    ck("F1 the auth request sends the apikey HEADER (accepted shape, not query-only)", h["apikey"] === "anon-key", h);
+    ck("F2 it also sends Authorization: Bearer <anon> and Content-Type application/json",
+      h["Authorization"] === "Bearer anon-key" && String(h["Content-Type"] || "").indexOf("application/json") >= 0, h);
+    ck("F3 the anon key is NOT in the query string (the header carries it)", !/[?&]apikey=/.test(call.url || ""), call.url);
     ck("F4 the token URL carries grant_type=password", /grant_type=password/.test(call.url || ""));
   }
-  // F5: refresh uses the same no-header shape, so a boot refresh triggers no preflight either.
+  // F5: refresh uses the same header shape, so both token grants authenticate the accepted way.
   {
     const cf = captureFetch(200, { access_token: "n", refresh_token: "r2", expires_at: 9999999999 });
     const { S } = makeEnv(cf, { console_sb_session: JSON.stringify({ access_token: "old", refresh_token: "r1", expires_at: 1 }) });
     await S.refresh();
     const call = cf.calls[0] || {};
-    ck("F5 refresh is also a CORS-simple request (no custom headers, apikey in query)", !!call.opts && (call.opts.headers === undefined || Object.keys(call.opts.headers || {}).length === 0) && /[?&]apikey=/.test(call.url || "") && /grant_type=refresh_token/.test(call.url || ""));
+    const h = (call.opts && call.opts.headers) || {};
+    ck("F5 refresh also sends the apikey header (accepted shape)", h["apikey"] === "anon-key" && /grant_type=refresh_token/.test(call.url || ""), { h: h, url: call.url });
   }
-  // F6: source structure. The token POST must NOT set apikey / Content-Type headers (that shape caused the
-  // preflight). It goes through authTokenPost, which passes no headers object.
-  ck("F6 the token call object has ONLY method/body/cache (no headers key)", /return fetchJSON\(authTokenUrl\([^)]*\), \{ method: "POST", body: JSON\.stringify\(payload\), cache: "no-store" \}/.test(supaSrc));
-  ck("F7 no /auth/v1/token call sets an apikey or application/json header", !/"apikey": c\.anon[\s\S]{0,120}auth\/v1\/token/.test(supaSrc) && !/auth\/v1\/token[\s\S]{0,200}"Content-Type": "application\/json"/.test(supaSrc));
-  // F8: still a healthy sign-in stores the session (behavior preserved through the shape change).
+  // F6/F7: source structure. authTokenPost sets the apikey / Authorization / JSON headers, and the token URL
+  // builder does NOT append a query-param apikey.
+  ck("F6 the token call sends the apikey + Authorization + JSON headers",
+    /"apikey": c\.anon, "Authorization": "Bearer " \+ c\.anon, "Content-Type": "application\/json"/.test(supaSrc));
+  ck("F7 the token URL builder does NOT append a query-param apikey", !/authTokenUrl[\s\S]{0,160}\?[^\n"]*apikey=/.test(supaSrc) && /function authTokenUrl\(c, grant, fresh\) \{\s*return c\.url \+ "\/auth\/v1\/token\?grant_type="/.test(supaSrc));
+  // F8: still a healthy sign-in stores the session (behavior preserved through the shape).
   {
     const { S, store } = makeEnv(replyFetch(200, { access_token: "t", refresh_token: "r", expires_at: 9999999999, user: { id: "u1" } }));
     let ok = false; try { const r = await S.signIn("a@b.com", "pw"); ok = !!(r && r.ok); } catch (e) {}
-    ck("F8 a healthy sign-in still stores the session with the new shape", ok && S.signedIn() === true && !!store["console_sb_session"]);
+    ck("F8 a healthy sign-in still stores the session with the header shape", ok && S.signedIn() === true && !!store["console_sb_session"]);
   }
 }
 

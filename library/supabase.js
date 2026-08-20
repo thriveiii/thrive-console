@@ -102,21 +102,28 @@
   }
   // fetch + body read under ONE timeout race. Returns { res, data, text }. Rejects with a typed timeout
   // error if the request OR the body read exceeds ms; a real network failure is tagged kind:"network".
-  async function fetchJSON(url, opts, ms) {
+  async function fetchJSON(url, opts, ms, diag) {
     ms = ms || FETCH_TIMEOUT_MS;
     var ac = newAbort(), o = Object.assign({}, opts || {});
     if (ac) o.signal = ac.signal;
     var to = raceTimeout(ms);
+    // P35 (diagnostic, optional): record which stage the call last reached and the exact server answer, so
+    // a failure can be shown VERBATIM instead of a generic "could not start". Changes nothing about the
+    // request; only observes. stage moves fetch-created -> response-received -> body-read, or -> fetch-rejected.
+    if (diag) diag.stage = "fetch-created";
     var run = (async function () {
       var res = await fetch(url, o);
+      if (diag) { diag.stage = "response-received"; diag.status = res.status; diag.statusText = res.statusText || ""; }
       var text = await res.text();
+      if (diag) { diag.stage = "body-read"; if (!(res.status >= 200 && res.status < 300)) diag.body = String(text || "").slice(0, 200); }
       var data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
       return { res: res, data: data, text: text };
     })();
     try {
       return await Promise.race([run, to.promise]);
     } catch (e) {
-      if (to.fired || wasAborted(ac, e)) { try { if (ac) ac.abort(); } catch (x) {} throw timeoutError(ms); }
+      if (to.fired || wasAborted(ac, e)) { try { if (ac) ac.abort(); } catch (x) {} if (diag) { diag.timedOut = true; diag.timeoutMs = ms; } throw timeoutError(ms); }
+      if (diag) { if (diag.stage === "fetch-created") diag.stage = "fetch-rejected"; diag.errName = (e && e.name) || ""; diag.errMsg = (e && e.message) || String(e); }
       throw taggedNetworkError(e);
     } finally {
       clearTimeout(to.timer);
@@ -156,25 +163,40 @@
   function authTokenUrl(c, grant, fresh) {
     return c.url + "/auth/v1/token?grant_type=" + grant + (fresh ? ("&_ts=" + Date.now()) : "");
   }
-  function authTokenPost(c, grant, payload, fresh) {
+  function authTokenPost(c, grant, payload, fresh, diag) {
     // The accepted shape: apikey HEADER + Authorization Bearer <anon> + JSON content type. A header-less,
     // query-param-only apikey is rejected by GoTrue as "Invalid API key" (proven on device), so the header
-    // is mandatory here exactly as it is on rest() and every other call.
+    // is mandatory here exactly as it is on rest() and every other call. `diag` is an optional observer
+    // (P35): fetchJSON records the stage and the server answer into it; nothing about the request changes.
     return fetchJSON(authTokenUrl(c, grant, fresh), {
       method: "POST",
       headers: { "apikey": c.anon, "Authorization": "Bearer " + c.anon, "Content-Type": "application/json" },
       body: JSON.stringify(payload), cache: "no-store"
-    }, FETCH_TIMEOUT_MS);
+    }, FETCH_TIMEOUT_MS, diag);
   }
+  function nowMs() { try { return Date.now(); } catch (e) { return 0; } }
 
   async function signIn(email, password, opts) {
     opts = opts || {};
     var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
+    // P35 (diagnostic): a fresh observer for THIS sign-in. On any failure it is attached to the thrown error
+    // as err.diag, so the gate can display the exact reason (stage, HTTP status + GoTrue body, elapsed ms)
+    // verbatim instead of a generic message. It records only; the request shape is unchanged.
+    var diag = { t0: nowMs() };
     authDiag("auth: sending standard sign-in (apikey + Authorization + JSON headers)" + (opts.fresh ? " [fresh]" : ""));
     // A timeout or network failure REJECTS here (typed) via the P31 race, never hangs; the gate releases the
     // "Signing in" state and shows the specific reason with a one-tap Retry.
-    var r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh);
-    authDiag("auth: sign-in response HTTP " + r.res.status);
+    var r;
+    try {
+      r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh, diag);
+    } catch (ex) {
+      diag.elapsedMs = nowMs() - diag.t0;
+      try { if (ex && typeof ex === "object") ex.diag = diag; } catch (e) {}
+      authDiag("auth: sign-in FAILED " + (ex && ex.kind) + " stage=" + diag.stage + (diag.timedOut ? " (timed out)" : "") + " :: " + (ex && ex.message));
+      throw ex;
+    }
+    diag.elapsedMs = nowMs() - diag.t0;
+    authDiag("auth: sign-in response HTTP " + r.res.status + " in " + diag.elapsedMs + "ms");
     var data = r.data;
     if (!r.res.ok || !data || !data.access_token) {
       var err = new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
@@ -182,6 +204,7 @@
       // A 5xx (a paused project answers 503) is the service being unavailable, not a wrong password; a
       // 400/401/422/415 is a credential-or-shape rejection. Typed so the gate says WHICH and never throttles.
       err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
+      err.diag = diag;   // P35: carries stage=body-read, status, statusText, body (the GoTrue error text)
       throw err;
     }
     setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
