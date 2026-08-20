@@ -223,8 +223,11 @@
     if (needsOperator()) showOperatorStep(wrap); else finish();
   }
   function finish() {
+    try { if (window.__DIAG) window.__DIAG.log("finish(): revealing gate + firing unlock"); } catch (e) {}
     reveal();
-    if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) {} }
+    try { if (window.__DIAG) window.__DIAG.log("finish(): gate revealed, calling onGateUnlocked"); } catch (e) {}
+    if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) { try { if (window.__DIAG) window.__DIAG.log("onGateUnlocked THREW: " + (ex && ex.message || ex)); } catch (e) {} } }
+    try { if (window.__DIAG) window.__DIAG.log("finish(): onGateUnlocked returned (unlock handlers dispatched)"); } catch (e) {}
   }
 
   function showPasscodeStep(wrap) {
@@ -333,15 +336,18 @@
     var busy = false;
     setTimeout(function () { email.focus(); }, 50);
 
+    function DIAG(m) { try { if (window.__DIAG) window.__DIAG.log(m); } catch (e) {} }
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
-      if (busy) return;
+      DIAG("submit clicked (operator step)");
+      if (busy) { DIAG("submit ignored: already busy"); return; }
       var lock = opLockedForMs();
-      if (lock > 0) { err.textContent = s.op_wait + fmtWait(lock); err.hidden = false; return; }
+      if (lock > 0) { DIAG("submit blocked: locked for " + lock + "ms"); err.textContent = s.op_wait + fmtWait(lock); err.hidden = false; return; }
       var m = (email.value || "").trim(), p = pass.value || "";
       // A missing field is the same neutral failure as a wrong one: the gate reveals nothing about why.
       busy = true; email.disabled = pass.disabled = true; btn.textContent = s.op_busy;
       err.hidden = true; showDiag("");   // clear any prior failure before this attempt
+      DIAG("fields read: hasEmail=" + !!m + " hasPass=" + !!p + " S=" + (S ? "present" : "MISSING"));
       var ok = false, kind = "", raw = "";
       // signIn is bounded (P29): it resolves on success, or REJECTS with a typed error (kind = timeout /
       // network / unavailable / auth) on a slow or down service. The button state is ALWAYS released below,
@@ -349,14 +355,17 @@
       // captured for the visible diagnostic so a non-timeout reason (a CORS block, a config error, a real
       // 4xx message) is surfaced on the card rather than hidden behind the neutral line.
       if (m && p) {
-        try { await S.signIn(m, p); ok = S.signedIn && S.signedIn(); }
+        DIAG("awaiting S.signIn(...)");
+        try { await S.signIn(m, p); ok = S.signedIn && S.signedIn(); DIAG("S.signIn RESOLVED; signedIn=" + ok); }
         catch (ex) {
           ok = false; kind = (ex && ex.kind) || "auth";
           raw = (kind || "error") + ": " + ((ex && ex.message) || String(ex));
           if (ex && ex.status) raw += " (HTTP " + ex.status + ")";
+          DIAG("S.signIn THREW: " + raw);
         }
-      }
+      } else { DIAG("skipped signIn: missing field"); }
       busy = false; email.disabled = pass.disabled = false; btn.textContent = s.op_go;
+      DIAG("button released to op_go; branching ok=" + ok + " kind=" + kind);
       if (ok) {
         showDiag("");
         opClearFails();
