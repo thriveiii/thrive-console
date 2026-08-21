@@ -193,10 +193,14 @@
     }, FETCH_TIMEOUT_MS);
   }
 
+  // P44: the click path speaks. Each step of a sign-in sets window.__signMark (assignment only; the
+  // failsafe strip renders it live), so a hang names the exact step that never returned.
+  function signMark(v) { try { window.__signMark = v; } catch (e) {} }
   async function signIn(email, password, opts) {
     opts = opts || {};
     var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
     // One fetch POST, bounded by the P31 race (a stall rejects at 15s, never hangs). No logging.
+    signMark("token:sent");
     var r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh);
     var data = r.data;
     if (!r.res.ok || !data || !data.access_token) {
@@ -207,13 +211,23 @@
       err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
       throw err;
     }
+    signMark("token:ok");
     // The token is real; mark the tab so bearer() will never again downgrade a read to the anon key.
     __signInSeen = true;
     // Persist and check it landed. If storage is blocked the session is held in memory for the tab
     // (reads still carry the token, so the board populates), and we report ephemeral so the gate can
     // say plainly the session will not survive a reload. Working degraded beats an empty board, so this
     // is NOT a failed sign-in: only a rejected token (above) fails. The apikey/DB path is untouched.
-    var durable = setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
+    // P44 bound note: setSession is SYNCHRONOUS (localStorage set + read-back), so there is no await here
+    // that could hang; the extra try makes even a throwing storage engine resolve as ephemeral rather
+    // than propagate, so the persist step can neither hang nor reject. If an engine ever blocked inside
+    // the synchronous call itself, the strip frozen at "session:persist" names it, which no in-JS
+    // timeout could do better.
+    signMark("session:persist");
+    var durable = false;
+    try { durable = setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" }); }
+    catch (e) { durable = false; __memSession = { access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" }; __sessionEphemeral = true; }
+    signMark(durable ? "session:ok" : "session:ephemeral");
     return { ok: true, email: email, ephemeral: !durable };
   }
   async function signOut() {
