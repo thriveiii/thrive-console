@@ -17,7 +17,8 @@ function elem(tag) {
     set textContent(v) { this._text = String(v); }, get textContent() {
       return this._text + this.children.map(c => c.textContent).join(""); },
     setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k] != null ? this.attrs[k] : null; },
-    appendChild(c) { this.children.push(c); return c; } };
+    appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
+    removeChild(c) { var i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); c.parentNode = null; return c; } };
 }
 function makeEnv(opts) {
   opts = opts || {};
@@ -53,7 +54,8 @@ function makeEnv(opts) {
   global.setTimeout = (cb, ms) => { timers.push(cb); return timers.length; };
   // Evaluate a fresh copy of the IIFE against this environment.
   new Function(SRC)();
-  return { win, doc, root, findById: id => findById(root, id), fireTimers: () => timers.forEach(cb => cb()) };
+  const findAny = id => findById(root, id) || findById(doc.body, id);
+  return { win, doc, root, findById: id => findById(root, id), findAny, fireTimers: () => timers.forEach(cb => cb()) };
 }
 
 const TOKEN = "eyJhbGciOiJIUzI1NiJ9.SECRET-TOKEN-VALUE.sig";
@@ -121,6 +123,50 @@ ck("the panel renders at most once", () => {
   env.win.dispatch("error", { error: { name: "E2", message: "two", stack: "" } });
   let count = 0; (function walk(n){ if (n.id === "thriveFailsafe" || (n.attrs && n.attrs.id === "thriveFailsafe")) count++; n.children.forEach(walk); })(env.root);
   assert(count === 1, "expected exactly one panel, got " + count);
+});
+
+// ---- P41 heartbeat ----------------------------------------------------------------------------------
+
+// H1: a heartbeat strip renders at PARSE TIME with "boot <mark> · build <stamp>".
+ck("heartbeat renders at parse time with the mark and build", () => {
+  const env = makeEnv({ mark: "gate resolved", build: "b7788990" });
+  const hb = env.findAny("thriveHeartbeat");
+  assert(hb, "no heartbeat strip at parse");
+  assert(hb.textContent.indexOf("boot gate resolved") >= 0, "mark missing: " + hb.textContent);
+  assert(hb.textContent.indexOf("build b7788990") >= 0, "build missing");
+});
+
+// H2: assigning window.__bootMark (the app's existing P40 assignment) updates the strip. Branch B: a
+// frozen strip NAMES the blocked step.
+ck("assigning __bootMark drives the heartbeat (frozen mark = branch B step name)", () => {
+  const env = makeEnv({ mark: "gate resolved" });
+  env.win.__bootMark = "payload parsed";
+  assert(env.win.__bootMark === "payload parsed", "getter did not return the stored mark");
+  assert(env.findAny("thriveHeartbeat").textContent.indexOf("boot payload parsed") >= 0, "strip did not follow the mark");
+});
+
+// H3: at payload-parsed the strip appends the row COUNT, never row content.
+ck("heartbeat appends 'rows <n>' (count only) on __boardRows", () => {
+  const env = makeEnv({ mark: "payload parsed" });
+  env.win.__boardRows = 0;
+  const t = env.findAny("thriveHeartbeat").textContent;
+  assert(t.indexOf("rows 0") >= 0, "row count missing: " + t);
+});
+
+// H4: 3s after board-painted the strip removes itself (healthy boot shows a brief line and loses it).
+ck("heartbeat self-removes after the board paints", () => {
+  const env = makeEnv({ mark: "board request sent" });
+  assert(env.findAny("thriveHeartbeat"), "strip should exist before paint");
+  env.win.__bootPainted = true;   // schedules removal
+  env.fireTimers();               // fire the 3s timer
+  assert(!env.findAny("thriveHeartbeat"), "strip did not self-remove after paint");
+});
+
+// H5: the heartbeat NEVER contains a token value (only mark, build, count).
+ck("heartbeat never contains a token value", () => {
+  const env = makeEnv({ mark: "board painted", store: { console_sb_session: TOKEN } });
+  env.win.__boardRows = 7;
+  assert(env.findAny("thriveHeartbeat").textContent.indexOf(TOKEN) < 0, "token leaked into the heartbeat");
 });
 
 console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");
