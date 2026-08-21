@@ -20,6 +20,51 @@
   function boardRows() { try { return (typeof window.__boardRows === "number") ? String(window.__boardRows) : "unknown"; } catch (e) { return "unknown"; } }
   function checkpoint() { try { return String(window.__bootMark || "(none)"); } catch (e) { return "(none)"; } }
 
+  /* P41 heartbeat. A synchronous one-line strip created at PARSE TIME on every document, before any other
+     script, so its presence, its frozen value, or its absence is itself the datum when even the P40 panel
+     stays silent:
+       - never appears on the black screen  -> branch A: the post-sign-in document is dead (the failsafe
+         never ran there), a routing/404/stale-shell defect on that document;
+       - frozen at a mark                   -> branch B: the main thread is synchronously blocked, and the
+         mark NAMES the step holding it (parse / merge / paint);
+       - reaches "board painted" over black -> branch C: the board painted invisibly, a CSS/scope defect.
+     It shows "boot <mark> · build <stamp>", updates on every checkpoint, appends "rows <n>" at
+     payload-parsed (count only, never content), and REMOVES itself 3s after the board paints, so a healthy
+     boot shows a brief line and loses it (the P36 no-lingering-diagnostics spirit). It is driven off the
+     existing P40 checkpoint globals via accessors, so it needs ZERO further change to the app. Temporary:
+     deleted in the closing PR of this outage. */
+  var _mark; try { _mark = window.__bootMark; } catch (e) {}
+  var _rows; try { _rows = window.__boardRows; } catch (e) {}
+  var _painted; try { _painted = window.__bootPainted; } catch (e) {}
+  var strip = null, stripGone = false, removeTimer = null;
+  function stripText() {
+    var t = "boot " + (_mark || "start") + " · build " + buildStamp();
+    if (typeof _rows === "number") t += " · rows " + _rows;
+    return t;
+  }
+  function ensureStrip() {
+    if (strip || stripGone) return;
+    try {
+      strip = document.createElement("div");
+      strip.id = "thriveHeartbeat"; strip.setAttribute("dir", "ltr");
+      strip.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:2147483646;margin:0;padding:4px 10px;" +
+        "background:#111318;color:#9ca3af;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;" +
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;-webkit-text-size-adjust:100%";
+      strip.textContent = stripText();
+      (document.body || document.documentElement).appendChild(strip);
+    } catch (e) {}
+  }
+  function updateStrip() { if (strip && !stripGone) { try { strip.textContent = stripText(); } catch (e) {} } }
+  function removeStrip() { stripGone = true; try { if (strip && strip.parentNode) strip.parentNode.removeChild(strip); } catch (e) {} strip = null; }
+  // Intercept the assignments the app already makes (P40) so each one drives the heartbeat; reads still
+  // return the stored value, so the P40 panel and watchdog read exactly what they did before.
+  try {
+    Object.defineProperty(window, "__bootMark", { configurable: true, get: function () { return _mark; }, set: function (v) { _mark = v; ensureStrip(); updateStrip(); } });
+    Object.defineProperty(window, "__boardRows", { configurable: true, get: function () { return _rows; }, set: function (v) { _rows = v; updateStrip(); } });
+    Object.defineProperty(window, "__bootPainted", { configurable: true, get: function () { return _painted; }, set: function (v) { _painted = v; if (v) { try { if (removeTimer) clearTimeout(removeTimer); } catch (e) {} removeTimer = setTimeout(removeStrip, 3000); } } });
+  } catch (e) {}
+  ensureStrip();   // render the heartbeat NOW, at parse time, before any module runs
+
   // One datum, EN then AR. Arabic keeps letter-spacing normal and reads right to left.
   function pair(box, en, ar) {
     var e = document.createElement("p");
