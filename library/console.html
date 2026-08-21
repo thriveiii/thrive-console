@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="0d8217ce">
-<meta name="thrive-built-at" content="2026-08-21T03:51:40Z">
+<meta name="thrive-build" content="38330906">
+<meta name="thrive-built-at" content="2026-08-21T08:26:28Z">
 <!-- P40/P42: the failsafe reveal surface, FIRST script, before any module. Registers global error and
      unhandledrejection listeners (bubble AND capture, so a 404ing resource speaks too), a self-armed boot
      sentry, and the P41 heartbeat; a healthy boot ships no lingering pixel from it. Belt and suspenders:
@@ -56,10 +56,12 @@
   var _mark; try { _mark = window.__bootMark; } catch (e) {}
   var _rows; try { _rows = window.__boardRows; } catch (e) {}
   var _painted; try { _painted = window.__bootPainted; } catch (e) {}
+  var _sign; try { _sign = window.__signMark; } catch (e) {}   // P44: the CLICK path's own mark
   var strip = null, stripGone = false, removeTimer = null;
   function stripText() {
     var t = "boot " + (_mark || "start") + " · build " + buildStamp();
     if (typeof _rows === "number") t += " · rows " + _rows;
+    if (_sign) t += " · sign " + _sign;   // P44: sign-in progress, live on the device, no inspector
     return t;
   }
   function ensureStrip() {
@@ -82,8 +84,23 @@
     Object.defineProperty(window, "__bootMark", { configurable: true, get: function () { return _mark; }, set: function (v) { _mark = v; ensureStrip(); updateStrip(); } });
     Object.defineProperty(window, "__boardRows", { configurable: true, get: function () { return _rows; }, set: function (v) { _rows = v; updateStrip(); } });
     Object.defineProperty(window, "__bootPainted", { configurable: true, get: function () { return _painted; }, set: function (v) { _painted = v; if (v) { try { if (removeTimer) clearTimeout(removeTimer); } catch (e) {} removeTimer = setTimeout(removeStrip, 3000); } } });
+    // P44: the sign-in CLICK path's own mark. Every prior instrument watched the boot; the "Signing in"
+    // hang lives here. The gate and signIn() assign it at each step; the strip renders it live, and a
+    // sign-in click re-shows the strip even after a healthy boot removed it, so the progression is
+    // visible on the device with no inspector.
+    Object.defineProperty(window, "__signMark", { configurable: true, get: function () { return _sign; }, set: function (v) { _sign = v; stripGone = false; ensureStrip(); updateStrip(); } });
   } catch (e) {}
   ensureStrip();   // render the heartbeat NOW, at parse time, before any module runs
+
+  /* P44: the sign-in stall reporter. The gate calls this when its hard 15s race around the whole click
+     path fires (or when a step rejects in a way that must not stay silent): the panel names the LAST
+     __signMark reached, which is the exact step that never returned, alongside the standard storage and
+     ephemeral datums the panel already prints. */
+  window.__thriveSignStall = function (detail) {
+    var last = "(none)"; try { last = String(window.__signMark || "(none)"); } catch (e) {}
+    panel("Sign-in stalled", "توقّف تسجيل الدخول",
+      { name: "SignInStalled", message: "last step: " + last + (detail ? (" · " + detail) : ""), stack: "" }, true);
+  };
 
   // One datum, EN then AR. Arabic keeps letter-spacing normal and reads right to left.
   function pair(box, en, ar) {
@@ -103,15 +120,17 @@
      in a healthy boot by gate.js reveal(). A dead boot never reaches reveal(), so the failsafe removes it
      here, restores body scrolling, and drops any stranded gate overlay. Black becomes impossible: either
      the app painted, or the shell + this panel are visible. */
-  function revealShell() {
+  function revealShell(keepGate) {
     try { document.documentElement.classList.remove("gate-locked"); } catch (e) {}
     try { if (document.body) document.body.style.overflow = ""; } catch (e) {}
-    try { var g = document.getElementById("thriveGate"); if (g && g.parentNode) g.parentNode.removeChild(g); } catch (e) {}
+    // P44: a sign-in stall keeps the gate ON SCREEN beneath the panel: the operator needs the form to
+    // retry. Every other panel (boot death) still drops a stranded overlay so the shell is reachable.
+    if (!keepGate) { try { var g = document.getElementById("thriveGate"); if (g && g.parentNode) g.parentNode.removeChild(g); } catch (e) {} }
   }
 
-  function panel(headEn, headAr, err) {
+  function panel(headEn, headAr, err, keepGate) {
     if (shown) return; shown = true;
-    revealShell();
+    revealShell(keepGate);
     var root = document.documentElement;
     var box = document.createElement("div");
     box.id = "thriveFailsafe";
@@ -232,7 +251,7 @@
 })();
 
 </script>
-<script src="./failsafe.js?v=78889243e2"></script>
+<script src="./failsafe.js?v=1440c3adc9"></script>
 <!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
      bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
      in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
@@ -305,7 +324,7 @@ try{document.getElementById('wdOut').addEventListener('click',function(){try{loc
      second which code is live and when it was built; every device capture is now labeled. Low contrast and
      pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
      the Arabic layout cannot reorder them. -->
-<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">0d8217ce</bdi> · <bdi class="mono-iso">2026-08-21T03:51:40Z</bdi></div>
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">38330906</bdi> · <bdi class="mono-iso">2026-08-21T08:26:28Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
 
@@ -1266,18 +1285,18 @@ try{document.getElementById('wdOut').addEventListener('click',function(){try{loc
 <script src="./config.js?v=806f4221bf"></script>
 <script src="./icons.js?v=f4b0d9edc8"></script>
 <script src="./i18n.js?v=a6e6b42146"></script>
-<script src="./gate.js?v=b775e10b52"></script>
+<script src="./gate.js?v=e649511ee3"></script>
 <script src="./stage-model.js?v=1f1786d20e"></script>
 <script src="./lifecycle.js?v=df368247ea"></script>
 <script src="./intake.js?v=7a5d67423d"></script>
-<script src="./supabase.js?v=458d30036b"></script>
+<script src="./supabase.js?v=49c8288de1"></script>
 <script src="./numbers.js?v=2fa1ded9ee"></script>
 <script src="./inbound.js?v=885dc046a6"></script>
 <script src="./kinds.js?v=6ab99c4e8b"></script>
 <script src="./store.js?v=3cba9b8cff"></script>
 <script src="./drafts.js?v=302cc5b4e6"></script>
 <script src="./flows.js?v=377173fc32"></script>
-<script src="./app.js?v=31b2d0f988"></script>
+<script src="./app.js?v=eeac9817fa"></script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with

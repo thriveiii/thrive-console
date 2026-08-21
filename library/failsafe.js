@@ -41,10 +41,12 @@
   var _mark; try { _mark = window.__bootMark; } catch (e) {}
   var _rows; try { _rows = window.__boardRows; } catch (e) {}
   var _painted; try { _painted = window.__bootPainted; } catch (e) {}
+  var _sign; try { _sign = window.__signMark; } catch (e) {}   // P44: the CLICK path's own mark
   var strip = null, stripGone = false, removeTimer = null;
   function stripText() {
     var t = "boot " + (_mark || "start") + " · build " + buildStamp();
     if (typeof _rows === "number") t += " · rows " + _rows;
+    if (_sign) t += " · sign " + _sign;   // P44: sign-in progress, live on the device, no inspector
     return t;
   }
   function ensureStrip() {
@@ -67,8 +69,23 @@
     Object.defineProperty(window, "__bootMark", { configurable: true, get: function () { return _mark; }, set: function (v) { _mark = v; ensureStrip(); updateStrip(); } });
     Object.defineProperty(window, "__boardRows", { configurable: true, get: function () { return _rows; }, set: function (v) { _rows = v; updateStrip(); } });
     Object.defineProperty(window, "__bootPainted", { configurable: true, get: function () { return _painted; }, set: function (v) { _painted = v; if (v) { try { if (removeTimer) clearTimeout(removeTimer); } catch (e) {} removeTimer = setTimeout(removeStrip, 3000); } } });
+    // P44: the sign-in CLICK path's own mark. Every prior instrument watched the boot; the "Signing in"
+    // hang lives here. The gate and signIn() assign it at each step; the strip renders it live, and a
+    // sign-in click re-shows the strip even after a healthy boot removed it, so the progression is
+    // visible on the device with no inspector.
+    Object.defineProperty(window, "__signMark", { configurable: true, get: function () { return _sign; }, set: function (v) { _sign = v; stripGone = false; ensureStrip(); updateStrip(); } });
   } catch (e) {}
   ensureStrip();   // render the heartbeat NOW, at parse time, before any module runs
+
+  /* P44: the sign-in stall reporter. The gate calls this when its hard 15s race around the whole click
+     path fires (or when a step rejects in a way that must not stay silent): the panel names the LAST
+     __signMark reached, which is the exact step that never returned, alongside the standard storage and
+     ephemeral datums the panel already prints. */
+  window.__thriveSignStall = function (detail) {
+    var last = "(none)"; try { last = String(window.__signMark || "(none)"); } catch (e) {}
+    panel("Sign-in stalled", "توقّف تسجيل الدخول",
+      { name: "SignInStalled", message: "last step: " + last + (detail ? (" · " + detail) : ""), stack: "" }, true);
+  };
 
   // One datum, EN then AR. Arabic keeps letter-spacing normal and reads right to left.
   function pair(box, en, ar) {
@@ -88,15 +105,17 @@
      in a healthy boot by gate.js reveal(). A dead boot never reaches reveal(), so the failsafe removes it
      here, restores body scrolling, and drops any stranded gate overlay. Black becomes impossible: either
      the app painted, or the shell + this panel are visible. */
-  function revealShell() {
+  function revealShell(keepGate) {
     try { document.documentElement.classList.remove("gate-locked"); } catch (e) {}
     try { if (document.body) document.body.style.overflow = ""; } catch (e) {}
-    try { var g = document.getElementById("thriveGate"); if (g && g.parentNode) g.parentNode.removeChild(g); } catch (e) {}
+    // P44: a sign-in stall keeps the gate ON SCREEN beneath the panel: the operator needs the form to
+    // retry. Every other panel (boot death) still drops a stranded overlay so the shell is reachable.
+    if (!keepGate) { try { var g = document.getElementById("thriveGate"); if (g && g.parentNode) g.parentNode.removeChild(g); } catch (e) {} }
   }
 
-  function panel(headEn, headAr, err) {
+  function panel(headEn, headAr, err, keepGate) {
     if (shown) return; shown = true;
-    revealShell();
+    revealShell(keepGate);
     var root = document.documentElement;
     var box = document.createElement("div");
     box.id = "thriveFailsafe";

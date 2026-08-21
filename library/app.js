@@ -4088,9 +4088,9 @@ function indexBySlug(rows){ var by={}; (rows||[]).forEach(function(r){ if(r && r
 // them under its own generation guard. Throws on a read failure so the caller keeps the last-good map.
 async function readBoardViewRows(){
   var S=window.ThriveSupa; if(!S || typeof S.rest!=="function") return null;
-  try{ window.__bootMark="board request sent"; }catch(_){}   // P40 checkpoint (assignment only)
+  try{ window.__bootMark="board request sent"; window.__signMark="read:sent"; }catch(_){}   // P40/P44 checkpoints (assignments only)
   var rows=await S.rest("console_board", { query:BOARD_VIEW_COLS });
-  try{ window.__bootMark="board response received"; }catch(_){}   // P40 checkpoint (assignment only)
+  try{ window.__bootMark="board response received"; window.__signMark="read:ok"; }catch(_){}   // P40/P44 checkpoints (assignments only)
   return rows;
 }
 // Adopt view rows. A transient empty result never blanks a map that already loaded (adopt empty only before
