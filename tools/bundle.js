@@ -82,9 +82,13 @@ const FP = {
   "stage-model.js": fphash(model), "lifecycle.js": fphash(life), "intake.js": fphash(intake),
   "supabase.js": fphash(supabase),
   "numbers.js": fphash(numbers), "inbound.js": fphash(inbound), "kinds.js": fphash(kinds),
-  "store.js": fphash(store), "drafts.js": fphash(drafts), "flows.js": fphash(flows), "app.js": fphash(app)
+  "store.js": fphash(store), "drafts.js": fphash(drafts), "flows.js": fphash(flows), "app.js": fphash(app),
+  "failsafe.js": fphash(failsafe)
 };
-const fp = f => f + "?v=" + FP[f];
+// P42: one path convention for every linked tag. The explicit "./" prefix resolves byte-identically to
+// the old bare form against /library/, but every tag now states its convention rather than assuming the
+// document's directory; no tag on the page is left under a mixed style.
+const fp = f => "./" + f + "?v=" + FP[f];
 
 /* ---- build marker: a deploy is verifiable at a glance, on the device -------------------------
    Merge is not deploy: a green Pages build and a stale-looking device are indistinguishable
@@ -234,12 +238,15 @@ const out = `<!DOCTYPE html>
 <meta name="robots" content="noindex, nofollow">
 <meta name="thrive-build" content="${BUILD}">
 <meta name="thrive-built-at" content="${BUILT_AT}">
-<!-- P40: the failsafe reveal surface, FIRST script, before any module. Registers global error and
-     unhandledrejection listeners and a boot watchdog that paint a diagnostic panel ONLY on a failure;
-     a healthy boot ships no visible pixel from it. Inlined (not linked) so it needs no asset fetch. -->
+<!-- P40/P42: the failsafe reveal surface, FIRST script, before any module. Registers global error and
+     unhandledrejection listeners (bubble AND capture, so a 404ing resource speaks too), a self-armed boot
+     sentry, and the P41 heartbeat; a healthy boot ships no lingering pixel from it. Belt and suspenders:
+     the INLINE copy runs at parse time and cannot 404; the src TAG below re-loads the same file so even a
+     stale shell stripped of the inline still installs it. An idempotence guard makes the second copy a
+     no-op, so the pair can never double-register or double-paint. -->
 <script>
 ${failsafe}
-</script>
+</script>${inline ? "" : '\n<script src="' + fp("failsafe.js") + '"></script>'}
 <!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
      bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
      in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html

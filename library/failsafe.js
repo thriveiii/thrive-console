@@ -9,6 +9,11 @@
    This is P40's whole job: reveal, not fix. Zero behavior change to auth, session, reads, or rendering. */
 (function () {
   "use strict";
+  /* P42 idempotence. The shell carries this file BOTH inlined (parse-time, cannot 404) and as a first
+     src tag (survives a stale shell whose inline block was stripped). Whichever runs first installs the
+     failsafe and marks the tab; the second copy is a no-op, so there is never a second strip, a second
+     listener set, or a fought-over accessor. */
+  try { if (window.__thriveFailsafeLoaded) return; window.__thriveFailsafeLoaded = true; } catch (e) {}
   var shown = false;
 
   function meta(name) { try { var m = document.querySelector('meta[name="' + name + '"]'); return (m && m.getAttribute("content")) || ""; } catch (e) { return ""; } }
@@ -77,19 +82,38 @@
     a.textContent = ar; box.appendChild(a);
   }
 
+  /* P42 GAP 3, the reveal guarantee. Whenever the panel fires, the static shell must stop being hidden:
+     diagnostics over a black void help less than diagnostics over the visible shell. The shell is hidden
+     by the `gate-locked` class on <html> (styles.css: html.gate-locked .top/.wrap display:none), removed
+     in a healthy boot by gate.js reveal(). A dead boot never reaches reveal(), so the failsafe removes it
+     here, restores body scrolling, and drops any stranded gate overlay. Black becomes impossible: either
+     the app painted, or the shell + this panel are visible. */
+  function revealShell() {
+    try { document.documentElement.classList.remove("gate-locked"); } catch (e) {}
+    try { if (document.body) document.body.style.overflow = ""; } catch (e) {}
+    try { var g = document.getElementById("thriveGate"); if (g && g.parentNode) g.parentNode.removeChild(g); } catch (e) {}
+  }
+
   function panel(headEn, headAr, err) {
     if (shown) return; shown = true;
+    revealShell();
     var root = document.documentElement;
     var box = document.createElement("div");
     box.id = "thriveFailsafe";
     box.setAttribute("dir", "ltr");
-    box.style.cssText = "position:fixed;inset:0;z-index:2147483647;overflow:auto;-webkit-overflow-scrolling:touch;" +
-      "background:#0a0a0c;color:#e5e7eb;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;padding:22px;-webkit-text-size-adjust:100%";
+    // A top sheet, not a full-screen cover (P42): the revealed shell stays visible beneath it, so the
+    // photograph carries both the diagnostics and the state of the page they describe.
+    box.style.cssText = "position:fixed;top:0;left:0;right:0;max-height:75vh;z-index:2147483647;overflow:auto;-webkit-overflow-scrolling:touch;" +
+      "background:#0a0a0c;color:#e5e7eb;border-bottom:1px solid #2a2f3a;box-shadow:0 12px 40px rgba(0,0,0,.6);" +
+      "font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;padding:22px;-webkit-text-size-adjust:100%";
     var h = document.createElement("p");
     h.style.cssText = "margin:0 0 16px;font-weight:700;font-size:15px;line-height:1.4";
     h.textContent = headEn + "   ·   " + headAr; box.appendChild(h);
 
-    if (err) {
+    if (err && err.resourceUrl) {
+      // P42 GAP 1: a resource death names its URL (URL only, never content).
+      pair(box, "Resource failed: " + err.resourceUrl, "تعذّر تحميل المورد: " + err.resourceUrl);
+    } else if (err) {
       var name = (err && err.name) || "Error";
       var msg = (err && (err.message !== undefined ? err.message : String(err))) || "(no message)";
       pair(box, "Error: " + name + ": " + msg, "الخطأ: " + name + ": " + msg);
@@ -109,6 +133,17 @@
     var err = (e && e.error) || { name: "Error", message: (e && e.message) || "script error", stack: "" };
     panel("Console failed to start", "تعذّر بدء الكونسول", err);
   });
+  /* P42 GAP 1: a 404ing script or stylesheet fires its error on the ELEMENT, which never bubbles to the
+     window listener above; a document whose app.js 404s died mute by construction. Capture-phase sees it.
+     A resource target (script/link/img with a URL) panels with the failing URL only, never content; a
+     plain uncaught error passing through capture is left for the bubble listener above (same panel, and
+     `shown` guards a double-fire anyway). */
+  window.addEventListener("error", function (e) {
+    var t = e && e.target;
+    if (!t || t === window || !t.tagName) return;
+    var url = t.src || t.href || "";
+    panel("Console failed to start", "تعذّر بدء الكونسول", { resourceUrl: String(url || ("<" + t.tagName + ">")) });
+  }, true);
   window.addEventListener("unhandledrejection", function (e) {
     var r = e && e.reason;
     var err = (r && typeof r === "object") ? r : { name: "UnhandledRejection", message: (r != null ? String(r) : "promise rejected"), stack: "" };
@@ -128,4 +163,19 @@
       }, WATCHDOG_MS);
     } catch (e) {}
   };
+  /* P42 GAP 2, the self-armed sentry. The app-armed path above depends on the app being alive enough to
+     call it; if the bundle itself is dead, nothing ever arms and the death is mute. So on any document
+     that carries the app marker (the thrive-build meta), the failsafe arms its OWN fallback at parse
+     time. It stands down when anything legitimate painted: the board (__bootPainted) or an interactive
+     gate card (__thriveBooted, set by gate.js the moment the sign-in card shows), so a signed-out
+     operator reading the gate never sees it. Only a document where NOTHING painted and nothing errored
+     panels here. Whichever of the two arms fires first wins; `shown` guards a double-fire. */
+  try {
+    if (meta("thrive-build")) {
+      setTimeout(function () {
+        if (shown || window.__bootPainted || window.__thriveBooted) return;
+        panel("Console boot stalled", "توقّف بدء الكونسول", null);
+      }, WATCHDOG_MS);
+    }
+  } catch (e) {}
 })();

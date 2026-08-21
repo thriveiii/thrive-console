@@ -43,12 +43,17 @@ function makeEnv(opts) {
     for (var c of node.children) { var r = findById(c, id); if (r) return r; }
     return null;
   }
+  // Capture-aware listeners (P42): a window-targeted event reaches capture AND bubble listeners; a
+  // resource error fired on an ELEMENT reaches only the capture listener, exactly as in a browser.
   const win = {
     ThriveSupa: opts.supa,
-    __bootMark: opts.mark, __boardRows: opts.rows, __bootPainted: opts.painted,
-    addEventListener(ev, h) { (listeners[ev] = listeners[ev] || []).push(h); },
-    dispatch(ev, obj) { (listeners[ev] || []).forEach(h => h(obj)); }
+    __bootMark: opts.mark, __boardRows: opts.rows, __bootPainted: opts.painted, __thriveBooted: opts.booted,
+    addEventListener(ev, h, cap) { (listeners[ev] = listeners[ev] || []).push({ h, cap: !!cap }); },
+    dispatch(ev, obj) { (listeners[ev] || []).forEach(l => l.h(obj)); },
+    dispatchResource(ev, obj) { (listeners[ev] || []).forEach(l => { if (l.cap) l.h(obj); }); }
   };
+  root.classList = { _s: new Set(opts.locked ? ["gate-locked"] : []),
+    add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, contains(c) { return this._s.has(c); } };
   global.window = win; global.document = doc;
   global.localStorage = { getItem: k => (k in store ? store[k] : null) };
   global.setTimeout = (cb, ms) => { timers.push(cb); return timers.length; };
@@ -167,6 +172,60 @@ ck("heartbeat never contains a token value", () => {
   const env = makeEnv({ mark: "board painted", store: { console_sb_session: TOKEN } });
   env.win.__boardRows = 7;
   assert(env.findAny("thriveHeartbeat").textContent.indexOf(TOKEN) < 0, "token leaked into the heartbeat");
+});
+
+// ---- P42: the three silence gaps -------------------------------------------------------------------
+
+// G1 (capture phase): a 404ing script fires error on the ELEMENT; only capture sees it. The panel names
+// the failing URL, URL only, never content.
+ck("G1 a resource error (capture phase) panels with the failing URL", () => {
+  const env = makeEnv({ mark: "gate resolved", locked: true });
+  env.win.dispatchResource("error", { target: { tagName: "SCRIPT", src: "https://console.thriveiii.com/library/app.js?v=deadbeef" } });
+  const panel = env.findAny("thriveFailsafe");
+  assert(panel, "no panel on a resource error");
+  const t = panel.textContent;
+  assert(t.indexOf("Resource failed: https://console.thriveiii.com/library/app.js?v=deadbeef") >= 0, "URL missing: " + t);
+  assert(t.indexOf("تعذّر تحميل المورد") >= 0, "Arabic resource line missing");
+});
+
+// G2 (self-armed sentry): a document with the app marker arms its OWN watchdog; a dead bundle that never
+// calls __thriveFailsafeArm still panels. It stands down when the gate card painted (__thriveBooted).
+ck("G2 the self-armed sentry panels a dead document with no app arm", () => {
+  const env = makeEnv({ mark: undefined });   // nothing painted, app never arms
+  env.fireTimers();
+  const panel = env.findAny("thriveFailsafe");
+  assert(panel, "sentry did not fire on a dead document");
+  assert(panel.textContent.indexOf("Console boot stalled") >= 0, "stall header missing");
+});
+ck("G2b the sentry stands down when the gate card painted (signed-out gate is healthy)", () => {
+  const env = makeEnv({ booted: true });   // gate.js set __thriveBooted when the card showed
+  env.fireTimers();
+  assert(!env.findAny("thriveFailsafe"), "sentry fired over a healthy signed-out gate");
+});
+
+// G3 (reveal guarantee): when the panel fires, the gate-locked class is removed so the shell is visible
+// beneath the top-sheet panel. Black is impossible by construction.
+ck("G3 the panel removes gate-locked so the shell reveals beneath it", () => {
+  const env = makeEnv({ mark: "hydrate begun", locked: true });
+  assert(env.root.classList.contains("gate-locked"), "precondition: shell hidden");
+  env.win.dispatch("error", { error: { name: "TypeError", message: "boom", stack: "" } });
+  assert(env.findAny("thriveFailsafe"), "no panel");
+  assert(!env.root.classList.contains("gate-locked"), "gate-locked was not removed: shell still hidden");
+});
+
+// G4 (idempotence): evaluating the file twice (inline + src tag) yields ONE strip and ONE listener set.
+ck("G4 a second load of failsafe.js is a no-op (one strip, one listener set)", () => {
+  const env = makeEnv({ mark: "gate resolved" });
+  new Function(SRC)();   // second copy against the SAME window/document (the src tag after the inline)
+  function countIn(id) {
+    let c = 0;
+    (function walk(n){ if (!n) return; if (n.id === id || (n.attrs && n.attrs.id === id)) c++; (n.children||[]).forEach(walk); })(env.root);
+    (function walk(n){ if (!n) return; if (n.id === id || (n.attrs && n.attrs.id === id)) c++; (n.children||[]).forEach(walk); })(env.doc.body);
+    return c;
+  }
+  assert(countIn("thriveHeartbeat") === 1, "expected exactly one heartbeat strip, got " + countIn("thriveHeartbeat"));
+  env.win.dispatch("error", { error: { name: "E", message: "once", stack: "" } });
+  assert(countIn("thriveFailsafe") === 1, "expected exactly one panel, got " + countIn("thriveFailsafe"));
 });
 
 console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");
