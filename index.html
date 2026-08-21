@@ -4,16 +4,29 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Thrive</title>
-<meta http-equiv="refresh" content="0; url=./library/console.html?v=a6a10b4b">
+<!-- P43: the meta refresh is the JS-off FALLBACK only, delayed so the convergence script below (which
+     checks version.json for the CURRENT build) wins the race in every normal boot. Previously this fired
+     at 0s with the BAKED build: a stale cached index.html chain-pinned console.html to an old ?v forever,
+     which is exactly how one device stayed a week behind. -->
+<meta http-equiv="refresh" content="6; url=./library/console.html?v=0d8217ce">
 <link rel="icon" href="./assets/thrive-logo.png">
 <style>html,body{margin:0;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;height:100%}
 .c{height:100%;display:flex;align-items:center;justify-content:center;gap:12px}
 img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 a{color:#71BFCC}</style></head>
-<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=a6a10b4b">Thrive Opportunity Library</a>…</span></div>
-<script>(function(){/* Carry any incoming query params (and the hash) across the redirect, so a device
-  opened at ?debug=paint reaches the shell WITH the flag rather than losing it at the version bounce. The
-  script wins the redirect race with the meta-refresh, so this is the path that actually runs. */
-  var q=location.search||"";if(q.charAt(0)==="?")q=q.slice(1);
-  var u="./library/console.html?v=a6a10b4b"+(q?("&"+q):"")+(location.hash||"");
-  location.replace(u);})();</script></body></html>
+<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=0d8217ce">Thrive Opportunity Library</a>…</span></div>
+<script>(function(){/* P43 version convergence at the front door. This document's baked build may be STALE
+  (a cached index.html outlives its deploy), so before redirecting it asks the server which build is
+  current: fetch version.json with cache:"no-store" (written by the same bundling step that stamps the
+  build) and use THAT build in the console.html URL, falling back to the baked value only when the fetch
+  fails (offline, first deploy). A stale front door can no longer chain-pin the shell to an old version.
+  Query params (minus any stale v/vr) and the hash still carry across, so ?debug=paint survives. */
+  var baked="0d8217ce";
+  var q=(location.search||"").replace(/^\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0;}).join("&");
+  function go(b){ location.replace("./library/console.html?v="+b+(q?("&"+q):"")+(location.hash||"")); }
+  try{
+    fetch("./version.json",{cache:"no-store"})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(j){ go((j&&j.build)||baked); })
+      .catch(function(){ go(baked); });
+  }catch(e){ go(baked); }})();</script></body></html>

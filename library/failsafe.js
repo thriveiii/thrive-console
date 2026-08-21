@@ -150,6 +150,42 @@
     panel("Console failed to start", "تعذّر بدء الكونسول", err);
   });
 
+  /* P43 version convergence, the first act of boot. The application now verifies ITS OWN freshness:
+     fetch /version.json (written by the bundler beside the build stamp) with cache:"no-store", compare its
+     build to this document's baked stamp, and if they differ replace the location with the same URL
+     carrying ?v=<current build> (old v dropped, other params and the hash preserved), which forces
+     revalidated HTML. The one-shot guard is a URL flag (vr=1), NOT storage, so it survives where storage
+     is blocked: if vr=1 is already present and the stamps STILL differ, we never loop; the failsafe panel
+     reports "Mixed build" with both stamps instead, so the state is self-reporting, never silent. If
+     version.json is unreachable (offline copy, first deploy, network), boot proceeds untouched:
+     convergence is best-effort, never a wall.
+     Module-level note: per-module build stamps are impossible by construction here (BUILD is a content
+     hash of the modules; stamping it into them changes the content, changing BUILD), and every module URL
+     carries its per-file content hash, so a NEW document can never load OLD module bytes: the only mixed
+     state possible is an OLD DOCUMENT, which is exactly what this check catches and heals. */
+  try {
+    var docBuild = buildStamp();
+    if (docBuild && docBuild !== "(unknown)" && typeof fetch === "function") {
+      fetch("../version.json", { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          var server = j && j.build;
+          if (!server || server === docBuild) return;
+          if (/(^|[?&])vr=1(&|$)/.test(location.search || "")) {
+            // Already force-converged once this navigation and the stamps still differ: report, never loop.
+            panel("Mixed build detected", "تم اكتشاف بناء مختلط",
+              { name: "MixedBuild", message: "document " + docBuild + " · server " + server, stack: "" });
+            return;
+          }
+          var parts = (location.search || "").replace(/^\?/, "").split("&")
+            .filter(function (p) { return p && p.indexOf("v=") !== 0 && p.indexOf("vr=") !== 0; });
+          parts.unshift("v=" + server); parts.push("vr=1");
+          location.replace(location.pathname + "?" + parts.join("&") + (location.hash || ""));
+        })
+        .catch(function () {});
+    }
+  } catch (e) {}
+
   /* The boot watchdog. It is ARMED by the app only once the gate has resolved and the boot proper begins,
      so a signed-out gate (a legitimate non-painted state) never triggers it. If, WATCHDOG_MS after arming,
      no board state has painted (window.__bootPainted) and nothing has errored, the stall panel appears with
