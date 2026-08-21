@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="a6a10b4b">
-<meta name="thrive-built-at" content="2026-08-21T03:08:52Z">
+<meta name="thrive-build" content="0d8217ce">
+<meta name="thrive-built-at" content="2026-08-21T03:51:40Z">
 <!-- P40/P42: the failsafe reveal surface, FIRST script, before any module. Registers global error and
      unhandledrejection listeners (bubble AND capture, so a 404ing resource speaks too), a self-armed boot
      sentry, and the P41 heartbeat; a healthy boot ships no lingering pixel from it. Belt and suspenders:
@@ -165,6 +165,42 @@
     panel("Console failed to start", "تعذّر بدء الكونسول", err);
   });
 
+  /* P43 version convergence, the first act of boot. The application now verifies ITS OWN freshness:
+     fetch /version.json (written by the bundler beside the build stamp) with cache:"no-store", compare its
+     build to this document's baked stamp, and if they differ replace the location with the same URL
+     carrying ?v=<current build> (old v dropped, other params and the hash preserved), which forces
+     revalidated HTML. The one-shot guard is a URL flag (vr=1), NOT storage, so it survives where storage
+     is blocked: if vr=1 is already present and the stamps STILL differ, we never loop; the failsafe panel
+     reports "Mixed build" with both stamps instead, so the state is self-reporting, never silent. If
+     version.json is unreachable (offline copy, first deploy, network), boot proceeds untouched:
+     convergence is best-effort, never a wall.
+     Module-level note: per-module build stamps are impossible by construction here (BUILD is a content
+     hash of the modules; stamping it into them changes the content, changing BUILD), and every module URL
+     carries its per-file content hash, so a NEW document can never load OLD module bytes: the only mixed
+     state possible is an OLD DOCUMENT, which is exactly what this check catches and heals. */
+  try {
+    var docBuild = buildStamp();
+    if (docBuild && docBuild !== "(unknown)" && typeof fetch === "function") {
+      fetch("../version.json", { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          var server = j && j.build;
+          if (!server || server === docBuild) return;
+          if (/(^|[?&])vr=1(&|$)/.test(location.search || "")) {
+            // Already force-converged once this navigation and the stamps still differ: report, never loop.
+            panel("Mixed build detected", "تم اكتشاف بناء مختلط",
+              { name: "MixedBuild", message: "document " + docBuild + " · server " + server, stack: "" });
+            return;
+          }
+          var parts = (location.search || "").replace(/^\?/, "").split("&")
+            .filter(function (p) { return p && p.indexOf("v=") !== 0 && p.indexOf("vr=") !== 0; });
+          parts.unshift("v=" + server); parts.push("vr=1");
+          location.replace(location.pathname + "?" + parts.join("&") + (location.hash || ""));
+        })
+        .catch(function () {});
+    }
+  } catch (e) {}
+
   /* The boot watchdog. It is ARMED by the app only once the gate has resolved and the boot proper begins,
      so a signed-out gate (a legitimate non-painted state) never triggers it. If, WATCHDOG_MS after arming,
      no board state has painted (window.__bootPainted) and nothing has errored, the stall panel appears with
@@ -196,7 +232,7 @@
 })();
 
 </script>
-<script src="./failsafe.js?v=5f48e27bf5"></script>
+<script src="./failsafe.js?v=78889243e2"></script>
 <!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
      bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
      in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
@@ -269,7 +305,7 @@ try{document.getElementById('wdOut').addEventListener('click',function(){try{loc
      second which code is live and when it was built; every device capture is now labeled. Low contrast and
      pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
      the Arabic layout cannot reorder them. -->
-<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">a6a10b4b</bdi> · <bdi class="mono-iso">2026-08-21T03:08:52Z</bdi></div>
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">0d8217ce</bdi> · <bdi class="mono-iso">2026-08-21T03:51:40Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
 
