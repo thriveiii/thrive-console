@@ -4088,13 +4088,19 @@ function indexBySlug(rows){ var by={}; (rows||[]).forEach(function(r){ if(r && r
 // them under its own generation guard. Throws on a read failure so the caller keeps the last-good map.
 async function readBoardViewRows(){
   var S=window.ThriveSupa; if(!S || typeof S.rest!=="function") return null;
-  return await S.rest("console_board", { query:BOARD_VIEW_COLS });
+  try{ window.__bootMark="board request sent"; }catch(_){}   // P40 checkpoint (assignment only)
+  var rows=await S.rest("console_board", { query:BOARD_VIEW_COLS });
+  try{ window.__bootMark="board response received"; }catch(_){}   // P40 checkpoint (assignment only)
+  return rows;
 }
 // Adopt view rows. A transient empty result never blanks a map that already loaded (adopt empty only before
 // the first successful read, a genuinely empty account), so a momentary [] cannot read the board as empty.
 function adoptBoardView(rows){
   if(rows==null) return false;
   var by=indexBySlug(rows);
+  // P40: record the COUNT of rows the console_board read returned (never the row content), so the failsafe
+  // panel can say whether an authenticated 200 carried zero rows (mechanism A) or data (mechanism B).
+  try{ window.__boardRows=(rows && rows.length!=null) ? rows.length : Object.keys(by).length; window.__bootMark="payload parsed"; }catch(_){}
   if(Object.keys(by).length || !__boardViewReady) __boardView=by;
   __boardViewReady=true; return true;
 }
@@ -4251,6 +4257,7 @@ function reconcileCanonical(){
   } finally { __syncApplying=prevApplying; __reconciling=false; }
 }
 async function supaHydrate(){
+  try{ window.__bootMark="hydrate begun"; }catch(_){}   // P40 checkpoint (assignment only)
   if(!supaOn()){ __supa.hydrated=false; return false; }
   try{
     var S=window.ThriveSupa;
@@ -11297,6 +11304,10 @@ async function initBoard(){
     if(el("boardAuth")) el("boardAuth").hidden=!authReq;
     el("boardEmpty").hidden=!empty;
     el("boardLanes").hidden=empty||authReq;
+    // P40: one of the three board states (auth prompt / empty / lanes) has now been decided and shown, so
+    // the boot has PAINTED. The failsafe watchdog reads this flag; set it here means a healthy boot never
+    // trips the stall panel. Assignment only, no behavior change.
+    try{ window.__bootPainted=true; window.__bootMark="board painted"; }catch(_){}
     if(el("boardTabs")) el("boardTabs").hidden=empty||authReq;
     if(el("boardPipeline")) el("boardPipeline").hidden=empty||authReq;   // all zeros is noise on an empty board
     el("boardChips").hidden=empty||authReq;

@@ -227,6 +227,11 @@
     if (needsOperator()) showOperatorStep(wrap); else finish();
   }
   function finish() {
+    // P40 checkpoint + watchdog arm (string assignment + one call, no behavior change): the boot proper
+    // begins now that the gate has resolved. Arming here means a signed-out gate never trips the stall
+    // watchdog (a legitimate non-painted state); only a passed gate whose board never paints does.
+    try { window.__bootMark = "gate resolved"; } catch (ex) {}
+    try { if (typeof window.__thriveFailsafeArm === "function") window.__thriveFailsafeArm(); } catch (ex) {}
     reveal();
     if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) {} }
   }

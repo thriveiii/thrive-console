@@ -61,6 +61,10 @@ const drafts = read(path.join(LIB, "drafts.js"));
 const flows = read(path.join(LIB, "flows.js"));
 const store = read(path.join(LIB, "store.js"));
 const app = read(path.join(LIB, "app.js"));
+/* P40: the failsafe reveal surface. Inlined as the FIRST script on every page (both builds), before any
+   module, so it registers its error listeners with zero dependency on an asset fetch and can speak even
+   when everything else fails to load. */
+const failsafe = read(path.join(LIB, "failsafe.js"));
 
 /* ---- cache busting: a content fingerprint per linked asset -----------------
    The served shell console.html LINKS these files by name, and GitHub Pages serves them cacheable,
@@ -90,7 +94,7 @@ const fp = f => f + "?v=" + FP[f];
    giving the gate a value to print. Read it off the device gate footer and compare: same mark as
    the latest build means the device is current; an older mark means it is serving old bytes. */
 const BUILD = crypto.createHash("sha256")
-  .update([css, icons, i18n, gate, model, life, intake, supabase, numbers, inbound, kinds, drafts, flows, store, app].join("\x00"), "utf8")
+  .update([css, icons, i18n, gate, model, life, intake, supabase, numbers, inbound, kinds, drafts, flows, store, app, failsafe].join("\x00"), "utf8")
   .digest("hex").slice(0, 8);
 /* The deploy time, baked here at build time (never read at runtime). BUILD says WHICH code is live;
    BUILT_AT says WHEN it was built, so a capture from the device is labeled with both. This is the one
@@ -230,6 +234,12 @@ const out = `<!DOCTYPE html>
 <meta name="robots" content="noindex, nofollow">
 <meta name="thrive-build" content="${BUILD}">
 <meta name="thrive-built-at" content="${BUILT_AT}">
+<!-- P40: the failsafe reveal surface, FIRST script, before any module. Registers global error and
+     unhandledrejection listeners and a boot watchdog that paint a diagnostic panel ONLY on a failure;
+     a healthy boot ships no visible pixel from it. Inlined (not linked) so it needs no asset fetch. -->
+<script>
+${failsafe}
+</script>
 <!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
      bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
      in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
