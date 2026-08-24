@@ -16,6 +16,7 @@ const SUPA = path.join(ROOT, "library/supabase.js");
 const FS_SRC = read("library/failsafe.js");
 const GATE = read("library/gate.js");
 const APP = read("library/app.js");
+const SUPA_SRC = read("library/supabase.js");
 
 let fails = 0;
 function ck(n, fn) { try { fn(); console.log("PASS " + n); } catch (e) { fails++; console.log("FAIL " + n + "\n     " + (e && e.message || e)); } }
@@ -135,6 +136,24 @@ function loadSupa(store, captured) {
   });
   ck("G4 the board read still carries its checkpoints where the read happens (failsafe strip input)", () => {
     assert(/__signMark="read:sent"/.test(APP) && /__signMark="read:ok"/.test(APP), "read marks missing in app.js");
+  });
+  // P48 gate-first boot: gate.js must not wait for DOMContentLoaded (that waited for app.js), and must
+  // start immediately behind a double-init guard.
+  ck("G5 the gate starts immediately (no DOMContentLoaded wait), guarded against double init", () => {
+    assert(!/addEventListener\("DOMContentLoaded", start\)/.test(GATE), "the gate still waits for DOMContentLoaded");
+    assert(/window\.__gateStarted/.test(GATE) && /start\(\);/.test(GATE), "the guarded immediate start() is missing");
+  });
+  // P48: gate-first means a WARM session resolves before app.js defines onGateUnlocked, so finish() must
+  // leave a pending flag and app.js must drain it, or the warm-boot unlock hydrate (P111) is silently lost.
+  ck("G6 a warm-boot unlock is never lost: gate leaves __gateUnlockedPending and app.js drains it", () => {
+    assert(/__gateUnlockedPending = true/.test(GATE), "gate.js finish() does not record a pending unlock");
+    assert(/__gateUnlockedPending\b[\s\S]{0,120}onGateUnlocked\(\)/.test(APP), "app.js does not drain the pending unlock");
+  });
+  // P48 device instrument (the one temporary diagnostic kept until a device photo shows token:ok): signIn
+  // sets the token:sent and token:ok strip marks. These are weightless window assignments, no request change.
+  ck("G7 signIn sets the token:sent and token:ok strip marks (the kept device instrument)", () => {
+    assert(/__signMark = "token:sent"/.test(SUPA_SRC), "token:sent mark missing from signIn");
+    assert(/__signMark = "token:ok"/.test(SUPA_SRC), "token:ok mark missing from signIn");
   });
 
   console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");

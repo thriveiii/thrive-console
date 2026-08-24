@@ -200,19 +200,55 @@ const nav = VIEWS.filter(v => TOPBAR.indexOf(v.id) >= 0).map(v =>
 
 const GATE_HASH = "0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8";
 
+/* P48 critical gate CSS. The gate is the first boot boundary and must paint a correct login card WITHOUT
+   waiting on fonts.css (~327 KB) or styles.css (~201 KB). This minimal, self-sufficient block is emitted
+   into the head of the SERVED (non-inline) build only; the offline (inline) build already inlines all CSS
+   and needs nothing here. It is a faithful subset of the gate selectors in styles.css, with literal colour
+   values (the CSS custom properties live in styles.css, not yet loaded at this moment) and a SYSTEM font
+   stack so first paint never blocks on a webfont. It is placed BEFORE the fonts/styles links, so once the
+   full stylesheet loads its equal-specificity rules (later in document order) win and govern the final
+   look; this block only rules the pre-stylesheet frame. This is a boot correction, not a redesign. */
+const criticalGateCss =
+  'html,body{background:#0a0a0c}' +
+  'body{margin:0;color:#fff;font-family:-apple-system,Segoe UI,Roboto,sans-serif}' +
+  'html.gate-locked .top,html.gate-locked .wrap{display:none!important}' +
+  '#thriveGate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:22px;' +
+  'background:radial-gradient(1200px 600px at 50% -10%,rgba(150,133,202,.18),transparent 60%),#0a0a0c}' +
+  '.gate-card{width:100%;max-width:360px;background:#111116;border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:30px 26px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.55)}' +
+  '.gate-logo{width:40px;height:40px;display:block;margin:0 auto 14px}' +
+  '.gate-title{font-size:20px;font-weight:800;color:#fff;margin:0 0 6px}' +
+  '.gate-sub{font-size:13px;color:#9ca3af;margin:0 0 18px}' +
+  '.gate-input{width:100%;background:#16161d;border:1px solid rgba(255,255,255,.10);border-radius:10px;color:#fff;padding:12px 14px;font-size:15px;font-family:inherit;outline:none;text-align:center;letter-spacing:.02em}' +
+  '.gate-input:focus{border-color:#9685CA}' +
+  '.gate-btn{width:100%;margin-top:12px;padding:12px 18px;border:0;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;color:#15121b;' +
+  'background:linear-gradient(120deg,#72BECE,#5D7FB7,#9685CA,#EE8C9D,#A78CA7,#71BFCC);box-shadow:0 8px 24px rgba(150,133,202,.28);font-family:inherit}' +
+  '.gate-btn.ghost{color:#d1d5db;background:transparent;box-shadow:none;border:1px solid rgba(255,255,255,.10);margin-top:8px}' +
+  '.gate-err{color:#EE8C9D;font-size:12.5px;font-weight:700;margin:12px 0 0}' +
+  '.gate-diag{color:#9ca3af;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin:6px 0 0;line-height:1.4;word-break:break-word;direction:ltr;text-align:start}' +
+  '.gate-note{color:#9ca3af;font-size:11.5px;margin:16px 0 0;line-height:1.5}' +
+  '.gate-build{color:#6b7280;font-size:11px;margin:12px 0 0;opacity:.75;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
+  '.gate-build bdi{unicode-bidi:isolate}' +
+  '.build-stamp{position:fixed;inset-block-end:6px;inset-inline-end:8px;z-index:5;pointer-events:none;font:10px/1.3 ui-monospace,Menlo,Consolas,monospace;color:#6b7280;opacity:.42;letter-spacing:.02em;white-space:nowrap;max-inline-size:96vw;overflow:hidden;text-overflow:ellipsis}' +
+  '.build-stamp bdi{unicode-bidi:isolate}';
+
 function build(inline){
 const head = inline
   ? '<style>\n' + css + '\n.view[hidden]{display:none!important}\n</style>'
-  : '<link rel="stylesheet" href="' + fp("fonts.css") + '">\n<link rel="stylesheet" href="' + fp("styles.css") + '">' +
+  : '<style id="gate-critical">' + criticalGateCss + '</style>' +
+    '\n<link rel="stylesheet" href="' + fp("fonts.css") + '">\n<link rel="stylesheet" href="' + fp("styles.css") + '">' +
     '\n<style>.view[hidden]{display:none!important}</style>';
+// P48 boot order: config -> supabase -> gate load and run BEFORE the heavy app modules, so the login
+// door paints as the first boot boundary rather than after app.js (~874 KB) finishes parsing. gate.js'
+// dependencies (config's THRIVE_CONFIG, supabase's ThriveSupa) are satisfied before gate runs; every
+// module below is still present exactly once, only reordered.
 const body = inline
   ? '<script>window.THRIVE_SYNC_JSON = ' + JSON.stringify(published) + ';</script>' +
     '\n<script>\n' + config + '\n</script>' +
-    '\n<script>\n' + icons + '\n</script>\n<script>\n' + i18n + '\n</script>' +
+    '\n<script>\n' + supabase + '\n</script>' +
     '\n<script>\n' + gate + '\n</script>' +
+    '\n<script>\n' + icons + '\n</script>\n<script>\n' + i18n + '\n</script>' +
     '\n<script>\n' + model + '\n</script>\n<script>\n' + life + '\n</script>'+
     '\n<script>\n' + intake + '\n</script>'+
-    '\n<script>\n' + supabase + '\n</script>'+
     '\n<script>\n' + numbers + '\n</script>'+
     '\n<script>\n' + inbound + '\n</script>'+
     '\n<script>\n' + kinds + '\n</script>'+
@@ -220,9 +256,10 @@ const body = inline
     '\n<script>\n' + drafts + '\n</script>'+
     '\n<script>\n' + flows + '\n</script>'+
     '\n<script>\n' + app + '\n</script>'
-  : '<script src="' + fp("config.js") + '"></script>\n<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>\n<script src="' + fp("gate.js") + '"></script>' +
+  : '<script src="' + fp("config.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>\n<script src="' + fp("gate.js") + '"></script>' +
+    '\n<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>' +
     '\n<script src="' + fp("stage-model.js") + '"></script>\n<script src="' + fp("lifecycle.js") + '"></script>' +
-    '\n<script src="' + fp("intake.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>'+
+    '\n<script src="' + fp("intake.js") + '"></script>'+
     '\n<script src="' + fp("numbers.js") + '"></script>'+
     '\n<script src="' + fp("inbound.js") + '"></script>\n<script src="' + fp("kinds.js") + '"></script>'+
     '\n<script src="' + fp("store.js") + '"></script>\n<script src="' + fp("drafts.js") + '"></script>'+
@@ -238,15 +275,15 @@ const out = `<!DOCTYPE html>
 <meta name="robots" content="noindex, nofollow">
 <meta name="thrive-build" content="${BUILD}">
 <meta name="thrive-built-at" content="${BUILT_AT}">
-<!-- P40/P42: the failsafe reveal surface, FIRST script, before any module. Registers global error and
-     unhandledrejection listeners (bubble AND capture, so a 404ing resource speaks too), a self-armed boot
-     sentry, and the P41 heartbeat; a healthy boot ships no lingering pixel from it. Belt and suspenders:
-     the INLINE copy runs at parse time and cannot 404; the src TAG below re-loads the same file so even a
-     stale shell stripped of the inline still installs it. An idempotence guard makes the second copy a
-     no-op, so the pair can never double-register or double-paint. -->
+<!-- P40/P42/P48: the failsafe reveal surface, FIRST script, before any module. Registers global error and
+     unhandledrejection listeners (bubble AND capture, so a 404ing resource speaks too) and the P41
+     heartbeat/sign-step strip; a healthy boot ships no lingering pixel from it. P48: this is now the ONE
+     failsafe copy. The inline block runs at parse time and cannot 404, so the duplicate external
+     <script src="failsafe.js"> is gone; failsafe.js keeps its window.__thriveFailsafeLoaded idempotence
+     guard regardless, so nothing can double-register or double-paint. -->
 <script>
 ${failsafe}
-</script>${inline ? "" : '\n<script src="' + fp("failsafe.js") + '"></script>'}
+</script>
 <!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
      bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
      in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
@@ -269,31 +306,28 @@ try{var __l=localStorage.getItem('thrive_lang');d.setAttribute('lang',__l==='ar'
 try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){try{r.unregister();}catch(e){}});}).catch(function(){});}}catch(e){}
 function lock(){d.classList.add('gate-locked')}
 try{if(sessionStorage.getItem('thrive_gate_v2')!=='${GATE_HASH}')lock()}catch(e){lock()}
-setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;
-var ar=false;try{ar=localStorage.getItem('thrive_lang')==='ar'}catch(e){}
-var p=document.createElement('p');p.className='bootfail';
-p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل الصفحة، وتحقق من الاتصال إن تكرر الأمر.'
-:'The console could not start. Reload the page, and check your connection if it happens again.';
-(document.body||d).appendChild(p)},6000);
-/* P29 boot watchdog: if nothing interactive has painted within the bound, replace the screen with a plain
-   panel that ALWAYS offers a way out, so a degraded service (a paused project, a stalled read) is never an
-   infinite spinner. window.__thriveBooted is set by the gate the moment a sign-in card shows, and by the
-   board's first paint (app.js render); the watchdog fires only when neither has happened. Self-contained
-   and inline-styled so it works even if styles.css or app.js failed to load. */
+/* P48 single watchdog: the redundant 6s bootfail timeout was removed (it competed with the one watchdog
+   below). This 20s bootWatchdog is now the ONLY head watchdog. If nothing interactive has painted within
+   the bound, it replaces the screen with a plain panel that offers a way out, so a degraded service (a
+   paused project, a stalled read) is never an infinite spinner. window.__thriveBooted is set by the gate
+   the moment a sign-in card shows, and by the board's first paint (app.js render); the watchdog fires only
+   when neither has happened. P48: Retry-only, so it never starts a second auth/sign-out state machine.
+   Self-contained and inline-styled so it works even if styles.css or app.js failed to load. */
 setTimeout(function(){if(window.__thriveBooted)return;
 var war=false;try{war=localStorage.getItem('thrive_lang')==='ar'}catch(e){}
 try{var wg=document.getElementById('thriveGate');if(wg&&wg.parentNode)wg.parentNode.removeChild(wg);}catch(e){}
 try{var wb=document.querySelector('.bootfail');if(wb&&wb.parentNode)wb.parentNode.removeChild(wb);}catch(e){}
 try{d.classList.remove('gate-locked');}catch(e){}
 var wt=war?'يستغرق الكونسول وقتًا أطول من المعتاد.':'The console is taking too long.';
-var ws=war?'تحقّق من اتصالك، ثم أعد المحاولة أو سجّل الخروج.':'Check your connection, then retry or sign out.';
-var wr=war?'إعادة المحاولة':'Retry';var wo=war?'تسجيل الخروج':'Sign out';
+var ws=war?'تحقّق من اتصالك، ثم أعد المحاولة.':'Check your connection, then retry.';
+var wr=war?'إعادة المحاولة':'Retry';
 var W=document.createElement('div');W.id='bootWatchdog';W.setAttribute('dir',war?'rtl':'ltr');
 W.setAttribute('style','position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0a0a0c;color:#e5e7eb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center');
-W.innerHTML='<div style="max-width:22rem"><p style="font-size:1.05rem;font-weight:600;margin:0 0 .4rem">'+wt+'</p><p style="opacity:.75;margin:0 0 1.2rem">'+ws+'</p><div style="display:flex;gap:.6rem;justify-content:center"><button id="wdRetry" type="button" style="padding:.6rem 1.1rem;border-radius:.5rem;border:0;background:#71BFCC;color:#04252b;font-weight:600;cursor:pointer">'+wr+'</button><button id="wdOut" type="button" style="padding:.6rem 1.1rem;border-radius:.5rem;border:1px solid #374151;background:transparent;color:#e5e7eb;cursor:pointer">'+wo+'</button></div></div>';
+/* P48: Retry only. The watchdog must never start a second auth/sign-out state machine, so the former
+   "Sign out" button and its handler are gone; Retry simply reloads. */
+W.innerHTML='<div style="max-width:22rem"><p style="font-size:1.05rem;font-weight:600;margin:0 0 .4rem">'+wt+'</p><p style="opacity:.75;margin:0 0 1.2rem">'+ws+'</p><div style="display:flex;gap:.6rem;justify-content:center"><button id="wdRetry" type="button" style="padding:.6rem 1.1rem;border-radius:.5rem;border:0;background:#71BFCC;color:#04252b;font-weight:600;cursor:pointer">'+wr+'</button></div></div>';
 (document.body||d).appendChild(W);
 try{document.getElementById('wdRetry').addEventListener('click',function(){location.reload();});}catch(e){}
-try{document.getElementById('wdOut').addEventListener('click',function(){try{localStorage.removeItem('console_sb_session');}catch(e){}location.reload();});}catch(e){}
 },20000);})();</script>
 ${head}
 </head>
@@ -454,32 +488,27 @@ const rootIndex = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Thrive</title>
-<!-- P43: the meta refresh is the JS-off FALLBACK only, delayed so the convergence script below (which
-     checks version.json for the CURRENT build) wins the race in every normal boot. Previously this fired
-     at 0s with the BAKED build: a stale cached index.html chain-pinned console.html to an old ?v forever,
-     which is exactly how one device stayed a week behind. -->
-<meta http-equiv="refresh" content="6; url=./library/console.html?v=${BUILD}">
+<!-- P48: the root is now an IMMEDIATE redirect. The meta refresh (JS-off fallback) fires at 0s straight to
+     console.html?v=BUILD, and the inline JS below does location.replace at once with NO version.json probe
+     in the critical path: the front door no longer waits on a fetch. The in-shell P43 convergence
+     (failsafe.js still fetches version.json inside console.html) is the stale-client safety net, so a
+     device that somehow loads an old shell still converges from within it. -->
+<meta http-equiv="refresh" content="0; url=./library/console.html?v=${BUILD}">
 <link rel="icon" href="./assets/thrive-logo.png">
 <style>html,body{margin:0;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;height:100%}
 .c{height:100%;display:flex;align-items:center;justify-content:center;gap:12px}
 img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 a{color:#71BFCC}</style></head>
 <body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=${BUILD}">Thrive Opportunity Library</a>…</span></div>
-<script>(function(){/* P43 version convergence at the front door. This document's baked build may be STALE
-  (a cached index.html outlives its deploy), so before redirecting it asks the server which build is
-  current: fetch version.json with cache:"no-store" (written by the same bundling step that stamps the
-  build) and use THAT build in the console.html URL, falling back to the baked value only when the fetch
-  fails (offline, first deploy). A stale front door can no longer chain-pin the shell to an old version.
-  Query params (minus any stale v/vr) and the hash still carry across, so ?debug=paint survives. */
+<script>(function(){/* P48 immediate redirect. The root does NOT probe version.json (no fetch, no wait): it
+  replaces the location straight to the current shell. version.json is still written and is the in-shell
+  P43 convergence net (failsafe.js fetches it from inside console.html), so a stale-cached front door can
+  no longer chain-pin the shell AND the shell can still self-correct if it is stale. Query params (minus
+  any stale v/vr) and the hash still carry across, so ?debug=paint survives. */
   var baked="${BUILD}";
   var q=(location.search||"").replace(/^\\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0;}).join("&");
-  function go(b){ location.replace("./library/console.html?v="+b+(q?("&"+q):"")+(location.hash||"")); }
-  try{
-    fetch("./version.json",{cache:"no-store"})
-      .then(function(r){return r.ok?r.json():null;})
-      .then(function(j){ go((j&&j.build)||baked); })
-      .catch(function(){ go(baked); });
-  }catch(e){ go(baked); }})();</script></body></html>
+  location.replace("./library/console.html?v="+baked+(q?("&"+q):"")+(location.hash||""));
+})();</script></body></html>
 `;
 fs.writeFileSync(path.join(ROOT, "index.html"), rootIndex);
 console.log("wrote index.html  (redirect -> console.html?v=" + BUILD + ")");

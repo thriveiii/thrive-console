@@ -7,8 +7,8 @@
      than awaiting forever.
    - Part B/C/D are source-structure assertions on supabase.js, gate.js, and the shipped bundle: every
      network call goes through the bounded wrapper; the "Signing in" button is always released and a
-     transient failure is never throttled; and the 20s boot watchdog is present with a Retry / Sign out
-     exit. */
+     transient failure is never throttled; and the 20s boot watchdog is present with a Retry-only exit
+     (P48 removed the watchdog's Sign out button: the watchdog never starts a second auth state machine). */
 const vm = require("vm"), fs = require("fs"), path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const supaSrc = fs.readFileSync(path.join(ROOT, "library", "supabase.js"), "utf8");
@@ -187,11 +187,12 @@ function partC() {
 }
 
 function partD() {
-  // The shipped bundle carries the 20s boot watchdog with a Retry / Sign out exit.
+  // P48: the shipped bundle carries the 20s boot watchdog as the SINGLE, Retry-ONLY exit. The former
+  // "Sign out" button is removed so the watchdog never starts a second auth/sign-out state machine.
   ck("D1 the bundle has a boot watchdog gated on __thriveBooted", /if\(window\.__thriveBooted\)return;/.test(bundleSrc));
   ck("D2 it fires at a 20s bound", /\},20000\);/.test(bundleSrc));
   ck("D3 the watchdog offers Retry (reload)", /wdRetry[\s\S]*?location\.reload\(\)/.test(bundleSrc));
-  ck("D4 the watchdog offers Sign out (clear session + reload)", /wdOut[\s\S]*?removeItem\('console_sb_session'\)[\s\S]*?location\.reload\(\)/.test(bundleSrc));
+  ck("D4 P48: the watchdog is Retry-only, with NO Sign out button or session-clearing handler", !/wdOut/.test(bundleSrc) && !/removeItem\('console_sb_session'\)/.test(bundleSrc));
   ck("D5 the watchdog panel is bilingual (EN + AR)", /The console is taking too long\./.test(bundleSrc) && /يستغرق الكونسول/.test(bundleSrc));
   ck("D6 the board's first paint clears the watchdog (app.js render sets __thriveBooted)", /window\.__thriveBooted = true/.test(appSrc));
 }

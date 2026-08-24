@@ -98,17 +98,17 @@ ck("unhandledrejection renders the panel", () => {
   assert(panel.textContent.indexOf("Session in storage: null") >= 0, "absent session should read null");
 });
 
-// 4. The watchdog fires only when the board never painted.
-ck("watchdog fires the stall panel when the board never painted", () => {
+// 4. P48: the boot-stall watchdog no longer lives in failsafe.js. The single watchdog is the head
+// bootWatchdog (bundle.js). failsafe.js keeps __thriveFailsafeArm DEFINED as a safe no-op only because
+// gate.js finish() still calls it; arming it must never render a stall panel from here.
+ck("__thriveFailsafeArm is a safe no-op that renders no stall panel (P48 single head watchdog)", () => {
   const env = makeEnv({ mark: "hydrate begun", rows: undefined, painted: false });
-  env.win.__thriveFailsafeArm();
+  assert(typeof env.win.__thriveFailsafeArm === "function", "__thriveFailsafeArm must stay defined for gate.js");
+  env.win.__thriveFailsafeArm();   // gate.js finish() calls this; it must not throw
   env.fireTimers();
-  const panel = env.findById("thriveFailsafe");
-  assert(panel, "stall panel did not appear");
-  assert(panel.textContent.indexOf("Console boot stalled") >= 0, "stall header missing");
-  assert(panel.textContent.indexOf("Board rows: unknown") >= 0, "unknown rows should read 'unknown'");
+  assert(!env.findById("thriveFailsafe"), "failsafe.js must not self-arm a stall panel any more");
 });
-ck("watchdog stays SILENT once the board painted (healthy boot ships no pixel)", () => {
+ck("arming stays SILENT once the board painted (healthy boot ships no pixel)", () => {
   const env = makeEnv({ mark: "board painted", rows: 4, painted: true });
   env.win.__thriveFailsafeArm();
   env.fireTimers();
@@ -188,19 +188,18 @@ ck("G1 a resource error (capture phase) panels with the failing URL", () => {
   assert(t.indexOf("تعذّر تحميل المورد") >= 0, "Arabic resource line missing");
 });
 
-// G2 (self-armed sentry): a document with the app marker arms its OWN watchdog; a dead bundle that never
-// calls __thriveFailsafeArm still panels. It stands down when the gate card painted (__thriveBooted).
-ck("G2 the self-armed sentry panels a dead document with no app arm", () => {
+// G2 (P48): the self-armed sentry that used to live in failsafe.js is REMOVED. failsafe.js no longer
+// installs any boot-stall timer at parse time; the single watchdog is the head bootWatchdog (bundle.js).
+// So even a dead document with nothing painted renders no stall panel FROM failsafe.js on a timer flush.
+ck("G2 failsafe.js installs no self-armed stall timer (P48 single head watchdog)", () => {
   const env = makeEnv({ mark: undefined });   // nothing painted, app never arms
   env.fireTimers();
-  const panel = env.findAny("thriveFailsafe");
-  assert(panel, "sentry did not fire on a dead document");
-  assert(panel.textContent.indexOf("Console boot stalled") >= 0, "stall header missing");
+  assert(!env.findAny("thriveFailsafe"), "failsafe.js still self-arms a stall panel");
 });
-ck("G2b the sentry stands down when the gate card painted (signed-out gate is healthy)", () => {
+ck("G2b no stall panel over a healthy signed-out gate either (still true with no timer)", () => {
   const env = makeEnv({ booted: true });   // gate.js set __thriveBooted when the card showed
   env.fireTimers();
-  assert(!env.findAny("thriveFailsafe"), "sentry fired over a healthy signed-out gate");
+  assert(!env.findAny("thriveFailsafe"), "a stall panel fired over a healthy signed-out gate");
 });
 
 // G3 (reveal guarantee): when the panel fires, the gate-locked class is removed so the shell is visible

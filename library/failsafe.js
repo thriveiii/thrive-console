@@ -1,10 +1,14 @@
 /* P40 failsafe: a first-script, zero-dependency reveal surface. It exists to make a silent client death
    SPEAK. It NEVER paints a pixel in a healthy boot; it appears only on (a) an uncaught error, (b) an
-   unhandled promise rejection, or (c) a boot that stalls past the watchdog after the gate resolved. It
-   prints DIAGNOSTICS ONLY: error name/message/first stack line, the build stamp, the boot checkpoint, a
-   ROW COUNT for the board read, and whether a session blob EXISTS in storage. It NEVER prints or embeds a
-   token value or any row content. It depends on no app CSS, no app module, and no render path: it builds
-   its own panel imperatively on documentElement, so it still speaks when everything else has failed.
+   unhandled promise rejection, or (c) a resource (script/stylesheet) that failed to load. It prints
+   DIAGNOSTICS ONLY: error name/message/first stack line, the build stamp, the boot checkpoint, a ROW COUNT
+   for the board read, and whether a session blob EXISTS in storage. It NEVER prints or embeds a token value
+   or any row content. It depends on no app CSS, no app module, and no render path: it builds its own panel
+   imperatively on documentElement, so it still speaks when everything else has failed.
+
+   P48: the boot-stall WATCHDOG that used to live here is gone; the single watchdog is now the 20s
+   bootWatchdog in the head boot script. This file keeps the reveal panel, the P41 heartbeat / sign-step
+   strip, the P43 version convergence, and __thriveFailsafeArm as a safe no-op (gate.js still calls it).
 
    This is P40's whole job: reveal, not fix. Zero behavior change to auth, session, reads, or rendering. */
 (function () {
@@ -205,32 +209,11 @@
     }
   } catch (e) {}
 
-  /* The boot watchdog. It is ARMED by the app only once the gate has resolved and the boot proper begins,
-     so a signed-out gate (a legitimate non-painted state) never triggers it. If, WATCHDOG_MS after arming,
-     no board state has painted (window.__bootPainted) and nothing has errored, the stall panel appears with
-     the checkpoint, the row count, and the storage datum, so the operator photographs WHERE it stopped. */
-  var WATCHDOG_MS = 12000;
-  window.__thriveFailsafeArm = function () {
-    try {
-      setTimeout(function () {
-        if (shown || window.__bootPainted) return;
-        panel("Console boot stalled", "توقّف بدء الكونسول", null);
-      }, WATCHDOG_MS);
-    } catch (e) {}
-  };
-  /* P42 GAP 2, the self-armed sentry. The app-armed path above depends on the app being alive enough to
-     call it; if the bundle itself is dead, nothing ever arms and the death is mute. So on any document
-     that carries the app marker (the thrive-build meta), the failsafe arms its OWN fallback at parse
-     time. It stands down when anything legitimate painted: the board (__bootPainted) or an interactive
-     gate card (__thriveBooted, set by gate.js the moment the sign-in card shows), so a signed-out
-     operator reading the gate never sees it. Only a document where NOTHING painted and nothing errored
-     panels here. Whichever of the two arms fires first wins; `shown` guards a double-fire. */
-  try {
-    if (meta("thrive-build")) {
-      setTimeout(function () {
-        if (shown || window.__bootPainted || window.__thriveBooted) return;
-        panel("Console boot stalled", "توقّف بدء الكونسول", null);
-      }, WATCHDOG_MS);
-    }
-  } catch (e) {}
+  /* P48: the two failsafe watchdog timers (the app-armed __thriveFailsafeArm timeout and the self-armed
+     thrive-build sentry) are removed. The SINGLE boot watchdog is now the 20s bootWatchdog in the head
+     boot script (bundle.js), so there is exactly one watchdog surface and they cannot compete. But gate.js
+     finish() still calls window.__thriveFailsafeArm(), so it is kept DEFINED as a safe no-op: the call
+     never throws, and it no longer starts a second stall timer. The error / unhandledrejection / resource
+     reveal panel above remains the one "speak on silent death" surface, guarded by `shown`. */
+  window.__thriveFailsafeArm = function () {};
 })();

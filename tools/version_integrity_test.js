@@ -26,14 +26,18 @@ ck("V1 version.json exists and matches the shell meta and the index redirect", (
   assert(idx.indexOf('?v=' + v.build) >= 0, "index redirect does not carry the current build");
 });
 
-// V2: the front door converges (source contract).
-ck("V2 index.html fetches version.json no-store and prefers the served build", () => {
+// V2 (P48): the front door is now an IMMEDIATE redirect with NO version.json probe in the critical path.
+// The meta refresh fires at 0s (JS-off fallback), the inline JS does location.replace at once to the
+// current shell (baked build), and the in-shell P43 convergence (V3, failsafe.js) is the stale-client net.
+ck("V2 index.html redirects immediately to the current shell with no version.json probe", () => {
   const idx = read("index.html");
-  assert(/fetch\("\.\/version\.json",\s*\{cache:"no-store"\}\)/.test(idx), "no-store fetch missing");
-  assert(/\(j&&j\.build\)\|\|baked/.test(idx), "served build is not preferred over the baked one");
-  assert(/catch\(function\(\)\{ go\(baked\); \}\)/.test(idx), "no baked fallback on fetch failure");
+  assert(!/fetch\s*\(/.test(idx), "P48: the front door must not fetch (no version.json probe) in the critical path");
+  assert(/location\.replace\("\.\/library\/console\.html\?v="\+baked/.test(idx), "immediate location.replace to the baked shell missing");
   const mr = /<meta http-equiv="refresh" content="(\d+);/.exec(idx);
-  assert(mr && Number(mr[1]) >= 3, "meta refresh must be delayed so the convergence script wins the race");
+  assert(mr && Number(mr[1]) === 0, "P48: meta refresh must be immediate (content=\"0; ...\")");
+  // query-param carry-over (stale v/vr dropped) and hash carry-over must still be present
+  assert(/indexOf\("v="\)!==0&&p\.indexOf\("vr="\)!==0/.test(idx), "stale v/vr param stripping missing");
+  assert(/\(location\.hash\|\|""\)/.test(idx), "hash carry-over missing");
 });
 
 // V3: the shell verifies itself (source contract in failsafe.js).
