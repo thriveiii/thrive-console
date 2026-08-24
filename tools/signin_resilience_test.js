@@ -159,10 +159,10 @@ function partC() {
   ck("C3 the button is released before branching (never a permanent spinner)",
     /btn\.textContent = s\.op_go;\s*\n(\s*DIAG\([^\n]*\);\s*\n)?\s*if \(ok\)/.test(gateSrc));
   // A transient kind shows its specific message and does NOT throttle (opRecordFail is only in the final else).
-  // P44: the transient branch also carries the hard-race "stall" kind, so a stalled click gets Retry,
-  // never the credential throttle.
+  // P47 restore: the last-good transient branch is timeout / network / unavailable (the P44 hard-race
+  // "stall" kind was removed with the outer Promise.race).
   ck("C4 a transient failure is branched apart and shows a specific reason",
-    /else if \(kind === "timeout" \|\| kind === "network" \|\| kind === "unavailable" \|\| kind === "stall"\)/.test(gateSrc));
+    /else if \(kind === "timeout" \|\| kind === "network" \|\| kind === "unavailable"\)/.test(gateSrc) && !/kind === "stall"/.test(gateSrc));
   const transientBlock = gateSrc.slice(gateSrc.indexOf('else if (kind === "timeout"'), gateSrc.indexOf("} else {", gateSrc.indexOf('else if (kind === "timeout"')));
   ck("C5 the transient branch does NOT throttle the operator (no opRecordFail)", transientBlock.indexOf("opRecordFail") < 0);
   // Boot self-heal for an expired stored session.
@@ -172,10 +172,10 @@ function partC() {
   ck("C8 a shown gate card marks the boot as not-stuck (__thriveBooted)", /window\.__thriveBooted = true/.test(gateSrc));
   // Visible diagnostic: the raw error text is surfaced on the card, so a non-timeout reason is never hidden.
   ck("C9 the operator card has a diagnostic element (#gateDiag)", /id="gateDiag"/.test(gateSrc));
-  // P44: the raw diagnostic now leads with the sign-in step in flight ("at <step> · kind: message"), so a
-  // rejection names WHERE it happened, not just what; the HTTP status suffix stays.
-  ck("C10 the catch captures the raw error text with the step in flight (at <step> · kind + message [+ status])",
-    /raw = \(step \? \("at " \+ step \+ " · "\) : ""\) \+ \(kind \|\| "error"\) \+ ": " \+ \(\(ex && ex\.message\)/.test(gateSrc) && /raw \+= " \(HTTP " \+ ex\.status/.test(gateSrc));
+  // P47 restore: the last-good raw diagnostic is "kind: message [ (HTTP status)]" (the P44 "at <step> ·"
+  // prefix was removed with the step marks); the HTTP status suffix stays.
+  ck("C10 the catch captures the raw error text (kind + message [+ status]), no step prefix",
+    /raw = \(kind \|\| "error"\) \+ ": " \+ \(\(ex && ex\.message\)/.test(gateSrc) && /raw \+= " \(HTTP " \+ ex\.status/.test(gateSrc) && !/"at " \+ step \+ " · "/.test(gateSrc));
   ck("C11 the raw diagnostic is shown on failure (showDiag(raw))", /showDiag\(raw\)/.test(gateSrc));
   ck("C12 the diagnostic writes textContent only (no markup injection)", /function showDiag[\s\S]*?diag\.textContent =/.test(gateSrc) && !/gateDiag[\s\S]{0,80}innerHTML/.test(gateSrc));
   // P36 bare metal: ZERO diagnostic layers remain on the shipped auth/gate path.
