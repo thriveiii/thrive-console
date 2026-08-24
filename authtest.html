@@ -3,51 +3,112 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Thrive auth test</title>
+<title>Thrive auth probe</title>
 <style>
   html,body{margin:0;background:#0a0a0c;color:#e5e7eb;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
-  main{max-width:44rem;margin:0 auto;padding:20px}
-  h1{font-size:1.1rem} p{opacity:.8}
-  button{display:block;width:100%;margin:10px 0;padding:14px;border:0;border-radius:8px;background:#71BFCC;color:#04252b;font-weight:700;font-size:1rem;cursor:pointer}
-  pre{white-space:pre-wrap;word-break:break-word;background:#111318;border:1px solid #2a2f3a;border-radius:8px;padding:10px;font:12px/1.45 ui-monospace,Menlo,monospace;direction:ltr}
+  main{max-width:46rem;margin:0 auto;padding:20px}
+  h1{font-size:1.15rem;margin:0 0 4px} p{opacity:.82;margin:.4rem 0}
+  .k{opacity:.6;font-size:.85rem}
+  button{display:block;width:100%;margin:9px 0;padding:14px;border:0;border-radius:8px;background:#71BFCC;color:#04252b;font-weight:700;font-size:1rem;cursor:pointer}
+  button.alt{background:#2a2f3a;color:#e5e7eb}
+  pre{white-space:pre-wrap;word-break:break-word;background:#111318;border:1px solid #2a2f3a;border-radius:8px;padding:12px;font:12px/1.5 ui-monospace,Menlo,monospace;direction:ltr}
+  .sum{border-color:#3a4150;background:#0f1620}
 </style></head>
 <body><main>
-<h1>Thrive auth test (standalone, no console code)</h1>
-<p>Same origin, same headers as the console. It never touches console JS. If a call here works, the delta is console code; if a call here hangs, the block is domain-level (service worker, CSP, network).</p>
-<button id="bHealth">1. health GET</button>
-<button id="bToken">2. token POST (wrong password on purpose)</button>
+<h1>Thrive auth probe (standalone, zero console code)</h1>
+<p>Same origin, same values as the console sign-in. It shares no console module. Its one job is to answer,
+on the device that hangs, a single question: <b>is the CORS preflight (OPTIONS) the thing that hangs?</b></p>
+<p class="k">P2 is the exact shape the console builds (an <code>apikey</code> header + JSON body): a NON-simple
+request, so the browser sends an OPTIONS preflight before it. P3 is a CORS-simple request (apikey in the
+query string, <code>text/plain</code> body, no custom header): the browser sends NO preflight. P4 is the
+official <code>@supabase/supabase-js</code> shape (apikey + Authorization + Content-Type + X-Client-Info): a
+HEAVIER preflight. Read the result like this: if <b>P3 completes fast while P2/P4 time out</b>, the preflight
+is the block, and the official client (P4's shape) would hang too. If <b>P2 also completes</b>, the hang is
+not the request shape. Photograph the summary.</p>
+<button id="bAll">Run all probes (then photograph the summary)</button>
+<button class="alt" id="b1">P1 health GET (simple, baseline reachability)</button>
+<button class="alt" id="b2">P2 token POST, console shape (apikey header + JSON) - PREFLIGHT</button>
+<button class="alt" id="b3">P3 token POST, CORS-simple (apikey query + text/plain) - NO PREFLIGHT</button>
+<button class="alt" id="b4">P4 token POST, official-client shape (+Authorization +X-Client-Info) - PREFLIGHT</button>
+<pre id="sum" class="sum">summary: not run yet.</pre>
 <pre id="out">ready.</pre>
 <script>
-/* Public by design (RLS + sign-in protect the data, not these values). Kept literal so this page carries
-   ZERO console code and no shared module. Exactly the headers the console sign-in uses. */
+/* Public by design (RLS and the sign-in protect the data, not these values). Kept literal so this page
+   carries ZERO console code and no shared module. */
 var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co";
 var ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
+var TOKEN_URL = URL_BASE + "/auth/v1/token?grant_type=password";
+var BOUND_MS = 12000;   // a hung preflight never settles; this bound turns the hang into a printed datum
 var out = document.getElementById("out");
+var sum = document.getElementById("sum");
+var summary = [];
+
 function show(t){ out.textContent = t; }
-async function run(label, url, opts){
-  show(label + "\nrunning...");
-  var t0 = Date.now(), lines = [label];
+function pw(){ return "definitely-wrong-" + Date.now(); }
+
+// A bounded fetch: it settles (resolved OR errored OR timed out) so a hanging request becomes a result.
+async function probe(label, url, opts){
+  show(label + "\nrunning (bound " + (BOUND_MS/1000) + "s)...");
+  var t0 = Date.now(), lines = [label], verdict;
+  var ac = (typeof AbortController === "function") ? new AbortController() : null;
+  if (ac) opts = Object.assign({}, opts, { signal: ac.signal });
+  var timer = setTimeout(function(){ try{ if (ac) ac.abort(); }catch(e){} }, BOUND_MS);
   try{
     var res = await fetch(url, opts);
-    lines.push("elapsed: " + (Date.now()-t0) + "ms");
+    var ms = Date.now() - t0;
+    var body = ""; try{ body = await res.text(); }catch(e){ body = "<body read failed>"; }
+    lines.push("elapsed: " + ms + "ms");
     lines.push("status: " + res.status + " " + res.statusText);
-    var body = ""; try{ body = await res.text(); }catch(e){ body = "<body read failed: " + e + ">"; }
-    lines.push("body: " + String(body).slice(0, 500));
+    lines.push("body: " + String(body).slice(0, 240));
+    verdict = "COMPLETED " + res.status + " in " + ms + "ms";
   }catch(err){
-    lines.push("elapsed: " + (Date.now()-t0) + "ms");
-    lines.push("ERROR: " + (err && err.name) + ": " + (err && err.message));
+    var ms2 = Date.now() - t0;
+    var timedOut = (err && err.name === "AbortError") || ms2 >= (BOUND_MS - 200);
+    lines.push("elapsed: " + ms2 + "ms");
+    lines.push((timedOut ? "TIMED OUT (no response in bound): " : "ERROR: ") + (err && err.name) + ": " + (err && err.message));
+    verdict = timedOut ? ("TIMED OUT at " + ms2 + "ms (consistent with a hung preflight)") : ("ERROR " + (err && err.name) + " at " + ms2 + "ms");
+  }finally{
+    clearTimeout(timer);
   }
   show(lines.join("\n"));
+  return verdict;
 }
-document.getElementById("bHealth").addEventListener("click", function(){
-  run("health GET", URL_BASE + "/auth/v1/health", { method:"GET", headers:{ "apikey": ANON } });
-});
-document.getElementById("bToken").addEventListener("click", function(){
-  run("token POST (wrong password)", URL_BASE + "/auth/v1/token?grant_type=password", {
-    method:"POST",
-    headers:{ "apikey": ANON, "Authorization": "Bearer " + ANON, "Content-Type": "application/json" },
-    body: JSON.stringify({ email:"authtest@example.com", password:"definitely-wrong-"+Date.now() })
-  });
+
+// The four probes. P3 is the ONLY one that sends no preflight (apikey in the query, text/plain, no header).
+function p1(){ return probe("P1 health GET (simple)", URL_BASE + "/auth/v1/health", { method:"GET", headers:{ "apikey": ANON } }); }
+function p2(){ return probe("P2 token POST, console shape (apikey header + JSON) - PREFLIGHT", TOKEN_URL, {
+    method:"POST", cache:"no-store",
+    headers:{ "apikey": ANON, "Content-Type": "application/json" },
+    body: JSON.stringify({ email:"authprobe@example.com", password: pw() }) }); }
+function p3(){ return probe("P3 token POST, CORS-simple (apikey query + text/plain, no custom header) - NO PREFLIGHT",
+    TOKEN_URL + "&apikey=" + encodeURIComponent(ANON), {
+    method:"POST", cache:"no-store",
+    headers:{ "Content-Type": "text/plain" },
+    body: JSON.stringify({ email:"authprobe@example.com", password: pw() }) }); }
+function p4(){ return probe("P4 token POST, official-client shape (apikey + Authorization + Content-Type + X-Client-Info) - PREFLIGHT", TOKEN_URL, {
+    method:"POST", cache:"no-store",
+    headers:{ "apikey": ANON, "Authorization": "Bearer " + ANON, "Content-Type": "application/json", "X-Client-Info": "supabase-js-web/2.0.0" },
+    body: JSON.stringify({ email:"authprobe@example.com", password: pw() }) }); }
+
+function renderSummary(){
+  var when = new Date().toISOString();
+  sum.textContent = "SUMMARY  (" + when + ")\nhost: " + location.host + "\n" + summary.join("\n") +
+    "\n\nread: P3 fast + P2/P4 timed out => the preflight is the block (and the official client would hang too)." +
+    "\n      P2 also completed => the hang is not the request shape.";
+}
+async function record(name, fn){ var v = await fn(); summary.push(name + ": " + v); renderSummary(); }
+
+document.getElementById("b1").addEventListener("click", function(){ summary=[]; record("P1 health", p1); });
+document.getElementById("b2").addEventListener("click", function(){ summary=[]; record("P2 console-shape", p2); });
+document.getElementById("b3").addEventListener("click", function(){ summary=[]; record("P3 cors-simple", p3); });
+document.getElementById("b4").addEventListener("click", function(){ summary=[]; record("P4 official-shape", p4); });
+document.getElementById("bAll").addEventListener("click", async function(){
+  summary = []; sum.textContent = "running all four probes in sequence...";
+  await record("P1 health", p1);
+  await record("P2 console-shape", p2);
+  await record("P3 cors-simple", p3);
+  await record("P4 official-shape", p4);
+  show(out.textContent + "\n\nAll four done. Photograph the SUMMARY box above.");
 });
 </script>
 </main></body></html>
