@@ -24,12 +24,15 @@ function makeStore(block) {
     setItem: (k, v) => { if (block) throw new Error("storage blocked"); m.set(k, String(v)); },
     removeItem: k => { m.delete(k); } };
 }
-function loadSupa(store) {
+function loadSupa(store, captured) {
   const win = { THRIVE_CONFIG: { supaUrl: "https://x.supabase.co", supaAnon: "anon-k" } };
   global.window = win; global.localStorage = store; global.THRIVE_CONFIG = win.THRIVE_CONFIG;
   global.AbortController = function () { this.signal = {}; this.abort = function () {}; };
-  global.fetch = async () => ({ ok: true, status: 200, statusText: "OK",
-    text: async () => JSON.stringify({ access_token: "tok-1", refresh_token: "r-1", expires_at: 9999999999, user: { id: "u1" } }) });
+  global.fetch = async (url, opts) => {
+    if (captured) captured.push({ url: String(url), headers: (opts && opts.headers) || {} });
+    return { ok: true, status: 200, statusText: "OK",
+      text: async () => JSON.stringify({ access_token: "tok-1", refresh_token: "r-1", expires_at: 9999999999, user: { id: "u1" } }) };
+  };
   delete require.cache[SUPA];
   require(SUPA);
   return win;
@@ -54,6 +57,28 @@ function loadSupa(store) {
     ck("S2 blocked storage: the persist step resolves session:ephemeral, never hangs or throws", () => {
       assert(r.ok === true && r.ephemeral === true, "sign-in should succeed ephemeral");
       assert(seen[seen.length - 1] === "session:ephemeral", "last mark: " + seen[seen.length - 1]);
+    });
+  })();
+
+  // P46 regression guard: against a mocked 200 token response, signIn MUST reach token:ok, and the token
+  // POST must carry the KNOWN-GOOD header set — apikey + Content-Type, and NOT the "Authorization: Bearer
+  // <anon>" header that P34 (a67056a) added and that no version which ever signed in successfully sent.
+  // This exact regression (an extra header on the token call) can never ship silently again.
+  await (async () => {
+    const cap = [];
+    const win = loadSupa(makeStore(false), cap);
+    const seen = [];
+    Object.defineProperty(win, "__signMark", { set: v => seen.push(v), get: () => seen[seen.length - 1] });
+    await win.ThriveSupa.signIn("op@t.test", "pw");
+    const tok = cap.find(r => r.url.indexOf("/auth/v1/token?grant_type=password") >= 0);
+    ck("S5 signIn reaches token:ok on a mocked 200 (the regression could not reach it)", () => {
+      assert(seen.indexOf("token:ok") >= 0, "token:ok never reached; marks: " + JSON.stringify(seen));
+    });
+    ck("S6 the token POST carries the known-good header set (apikey + JSON, NO Authorization)", () => {
+      assert(tok, "no token POST was captured");
+      assert(tok.headers.apikey === "anon-k", "apikey header missing/wrong: " + JSON.stringify(tok.headers));
+      assert(tok.headers["Content-Type"] === "application/json", "Content-Type header missing");
+      assert(!("Authorization" in tok.headers), "the reverted Authorization header is back on the token call");
     });
   })();
 

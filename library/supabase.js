@@ -176,19 +176,23 @@
     finally { clearTimeout(to.timer); if (to.fired) { try { if (ac) ac.abort(); } catch (x) {} } try { run.catch(function () {}); } catch (x) {} }
   }
 
-  /* P36 (bare metal): the auth token call is the STANDARD Supabase request, the same shape every other
-     call in this client uses (rest(), signOut, uploads) and the official supabase-js client sends: the anon
-     key in the "apikey" HEADER, plus "Authorization: Bearer <anon>" and "Content-Type: application/json".
-     A header-less, query-param-only apikey is rejected by GoTrue as "Invalid API key" (P34, proven on
-     device), so the header is required. There is ZERO instrumentation on this path: it is wrapped ONLY by
-     the P31 setTimeout race (inside fetchJSON) and the P29 typed-error surface, both minimal. */
+  /* P46 (regression revert): git forensics named the ONLY substantive change to this token call across the
+     outage window. The last-known-working sign-in (5c9cefe, the anon-door commit, and the pre-P32 P29 build
+     37cd7c3) sent exactly { "apikey": c.anon, "Content-Type": "application/json" }. P34 (a67056a) correctly
+     restored the apikey HEADER after P32 had wrongly moved it to a query param, but it ALSO added
+     "Authorization: Bearer <anon>", a header no version that ever signed in successfully carried. This
+     restores the known-good header set (apikey + JSON content type), the smallest revert of the signIn
+     token path and nothing else. The apikey header is what GoTrue actually requires (P34, proven on
+     device); the Bearer-anon on an unauthenticated password grant is redundant and was the one delta from
+     the working shape. There is ZERO instrumentation on this path: it is wrapped ONLY by the P31 setTimeout
+     race (inside fetchJSON) and the P29 typed-error surface, both minimal. */
   function authTokenUrl(c, grant, fresh) {
     return c.url + "/auth/v1/token?grant_type=" + grant + (fresh ? ("&_ts=" + Date.now()) : "");
   }
   function authTokenPost(c, grant, payload, fresh) {
     return fetchJSON(authTokenUrl(c, grant, fresh), {
       method: "POST",
-      headers: { "apikey": c.anon, "Authorization": "Bearer " + c.anon, "Content-Type": "application/json" },
+      headers: { "apikey": c.anon, "Content-Type": "application/json" },
       body: JSON.stringify(payload), cache: "no-store"
     }, FETCH_TIMEOUT_MS);
   }
