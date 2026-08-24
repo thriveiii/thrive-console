@@ -452,10 +452,17 @@ ${body}
     // A fresh unlock lands on the first view with its data already pulled. Registered like
     // every other listener, so it cannot displace the sync round or a view's own refresh.
     if(typeof onThrive === "function") onThrive("unlock","shell",function(){
-      // Nothing was allowed to read data before the unlock, so everything already started
-      // has to run again against the data it can finally see.
+      // Nothing was allowed to read data before the unlock, so every view that initialized while signed out
+      // must run again against the data it can finally see. Mark them all stale so each re-inits cleanly on
+      // its NEXT navigation. But do NOT re-show the CURRENTLY visible view here: on sign-in the operator lands
+      // on the board, and re-showing a started view resets its DOM to the empty boot snapshot
+      // (innerHTML = snapshot) and races the board's own in-place unlock render (renderBoard), which is what
+      // left the board blank after every read returned 200. The current view is refreshed in place by its own
+      // unlock handler; only a view that never started (a deep link straight into it) is shown now, and that
+      // is a clean first mount with no reset.
+      var cur = current();
       Object.keys(started).forEach(function(k){ stale[k] = 1; });
-      show(current());
+      if(!(cur in started)) show(cur);
     });
   });
 })();
