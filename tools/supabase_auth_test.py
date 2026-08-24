@@ -135,13 +135,15 @@ with sync_playwright() as p:
     ck("the right password signs in", ok["ok"] == True and ok["inn"] == True, ok)
     ck("the signed-in email is remembered", ok["email"] == "op@x.com", ok)
 
-    # 3b. P34 REGRESSION GUARD: the sign-in POST must carry the standard headers. A header-less request that
-    #     puts the apikey only in the query string is what GoTrue rejects as "Invalid API key" (the P32
-    #     regression, proven on device). This proves the apikey HEADER (+ Authorization Bearer anon + JSON
-    #     content type) is sent, exactly as rest() and every other call do.
+    # 3b. P34 apikey-header guard, RECONCILED to the P46 known-good shape. The apikey HEADER is required
+    #     (a header-less, query-param-only apikey is what GoTrue rejected as "Invalid API key", the P32
+    #     regression). P46 reverted the token call to the last-known-working header set: apikey + JSON
+    #     content type, and NO "Authorization: Bearer <anon>" (P34 added that header, and no version that
+    #     ever signed in successfully carried it). So the token POST must send the apikey header and must
+    #     NOT send an Authorization header.
     areq = pg.evaluate("()=>window.__auth.authReq")
     ck("the sign-in POST sends the apikey HEADER (not query-param-only)", bool(areq) and areq["apikey"] == "anon-key", areq)
-    ck("the sign-in POST sends Authorization: Bearer <anon>", bool(areq) and areq["authz"] == "Bearer anon-key", areq)
+    ck("P46: the sign-in POST does NOT send an Authorization header (known-good shape)", bool(areq) and not (areq["authz"] or ""), areq)
     ck("the sign-in POST sends Content-Type application/json", bool(areq) and "application/json" in (areq["ctype"] or ""), areq)
 
     # 4. Signed in, a data call carries the session JWT, NOT the anon key.

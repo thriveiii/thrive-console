@@ -182,8 +182,8 @@ function partC() {
   ck("C13 gate.js has no diagnostic panel or logger (no p35/__DIAG/DIAG)", !/p35|__DIAG|\bDIAG\(/.test(gateSrc), (gateSrc.match(/p35|__DIAG|\bDIAG\(/) || [])[0]);
   ck("C14 supabase.js has no auth instrumentation (no authDiag/__DIAG/diag observer)",
     !/authDiag|__DIAG/.test(supaSrc) && !/fetchJSON\(url, opts, ms, diag\)/.test(supaSrc) && !/\.diag = diag/.test(supaSrc));
-  ck("C15 the auth request is the minimal standard header shape",
-    /"apikey": c\.anon, "Authorization": "Bearer " \+ c\.anon, "Content-Type": "application\/json"/.test(supaSrc));
+  ck("C15 the auth request is the P46 known-good header shape (apikey + JSON, no Authorization)",
+    /"apikey": c\.anon, "Content-Type": "application\/json"/.test(supaSrc) && !/token[\s\S]{0,140}"Authorization": "Bearer " \+ c\.anon/.test(supaSrc));
 }
 
 function partD() {
@@ -249,8 +249,8 @@ async function partF() {
     const call = cf.calls[0] || {};
     const h = (call.opts && call.opts.headers) || {};
     ck("F1 the auth request sends the apikey HEADER (accepted shape, not query-only)", h["apikey"] === "anon-key", h);
-    ck("F2 it also sends Authorization: Bearer <anon> and Content-Type application/json",
-      h["Authorization"] === "Bearer anon-key" && String(h["Content-Type"] || "").indexOf("application/json") >= 0, h);
+    ck("F2 P46: it sends Content-Type application/json and NO Authorization header (known-good shape)",
+      !h["Authorization"] && String(h["Content-Type"] || "").indexOf("application/json") >= 0, h);
     ck("F3 the anon key is NOT in the query string (the header carries it)", !/[?&]apikey=/.test(call.url || ""), call.url);
     ck("F4 the token URL carries grant_type=password", /grant_type=password/.test(call.url || ""));
   }
@@ -265,8 +265,8 @@ async function partF() {
   }
   // F6/F7: source structure. authTokenPost sets the apikey / Authorization / JSON headers, and the token URL
   // builder does NOT append a query-param apikey.
-  ck("F6 the token call sends the apikey + Authorization + JSON headers",
-    /"apikey": c\.anon, "Authorization": "Bearer " \+ c\.anon, "Content-Type": "application\/json"/.test(supaSrc));
+  ck("F6 P46: the token call sends the apikey + JSON headers and NO Authorization header",
+    /headers: \{ "apikey": c\.anon, "Content-Type": "application\/json" \}/.test(supaSrc));
   ck("F7 the token URL builder does NOT append a query-param apikey", !/authTokenUrl[\s\S]{0,160}\?[^\n"]*apikey=/.test(supaSrc) && /function authTokenUrl\(c, grant, fresh\) \{\s*return c\.url \+ "\/auth\/v1\/token\?grant_type="/.test(supaSrc));
   // F8: still a healthy sign-in stores the session (behavior preserved through the shape).
   {
