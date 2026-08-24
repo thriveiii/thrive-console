@@ -42,8 +42,10 @@ ck("the base stage is record-only (a declared terminus, else page/email -> live,
    'return isLive(o) ? "live" : "draft";' in app and "getMailLog" not in app.split("function baseStage(o)")[1].split("}")[0])
 ck("the board build feeds the view's open_count and idle_days (display verbatim, one source with the lane)",
    "opens[o.slug]=boardViewOpens(o.slug)" in app and "boardViewIdle(o.slug)" in app)
-ck("reconcile/read on hydrate and sync (the view refreshes with the board's other reads)",
-   "await readBoardView();" in app)
+ck("the view refreshes on the sync/unlock heartbeat via the board render settle (P52: relocated out of doSyncRound so the read never interleaves with the relay round's Apps Script calls)",
+   'var __reread = (trigger==="sync" || trigger==="unlock" || trigger==="thriveBoardRefresh");' in app
+   and "if(boardViewIsAuthority() && (!__boardViewReady || __reread)){" in app
+   and "await readBoardView()" not in app)
 ck("no em dash / zero-Lotus in the touched sources",
    "—" not in app and "lotus" not in app.lower() and "—" not in sm and "lotus" not in sm.lower())
 

@@ -44,8 +44,9 @@ ck("the board build carries NO client mail ledger and NO client opens (the racin
 ck("opens and idle come from the view, and idle is always supplied (never a client last-touch fallback)",
    "opens[o.slug]=boardViewOpens(o.slug)" in app and "idle[o.slug]=boardViewIdle(o.slug)||0" in app)
 rb = app.split("async function renderBoard(trigger)")[1].split("function render(trigger, source)")[0]
-ck("the settle reads console_board before the first authority paint, generation-guarded, then adopts it",
-   "if(boardViewIsAuthority() && !__boardViewReady){" in rb and "await readBoardViewRows()" in rb
+ck("the settle reads console_board before the first authority paint (generation-guarded, adopts) and re-reads on the sync/unlock/refresh heartbeat (P52: relocated out of doSyncRound)",
+   "if(boardViewIsAuthority() && (!__boardViewReady || __reread)){" in rb and "await readBoardViewRows()" in rb
+   and 'var __reread = (trigger==="sync" || trigger==="unlock" || trigger==="thriveBoardRefresh");' in rb
    and rb.count("if(myGen!==__renderGen || __boardTornDown) return;") >= 2
    and "adoptBoardView(rows);" in rb)
 ck("a transient empty read never blanks a loaded map (adopt empty only before the first read)",
