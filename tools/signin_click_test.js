@@ -33,7 +33,7 @@ function loadSupa(store, captured) {
   global.window = win; global.localStorage = store; global.THRIVE_CONFIG = win.THRIVE_CONFIG;
   global.AbortController = function () { this.signal = {}; this.abort = function () {}; };
   global.fetch = async (url, opts) => {
-    if (captured) captured.push({ url: String(url), headers: (opts && opts.headers) || {} });
+    if (captured) captured.push({ url: String(url), headers: (opts && opts.headers) || {}, hasSignal: !!(opts && opts.signal) });
     return { ok: true, status: 200, statusText: "OK",
       text: async () => JSON.stringify({ access_token: "tok-1", refresh_token: "r-1", expires_at: 9999999999, user: { id: "u1" } }) };
   };
@@ -76,6 +76,16 @@ function loadSupa(store, captured) {
       assert(tok.headers.apikey === "anon-k", "apikey header missing/wrong: " + JSON.stringify(tok.headers));
       assert(tok.headers["Content-Type"] === "application/json", "Content-Type header missing");
       assert(!("Authorization" in tok.headers), "the reverted Authorization header is back on the token call");
+    });
+    // P50: the auth token fetch is BARE (no AbortController signal), matching authtest.html, which returned
+    // fast on the iPad where this wrapped call hung. The signal is the one fetch-touching construct authtest
+    // lacked; WebKit's AbortController+fetch is documented-unreliable. A rest() read still carries a signal,
+    // so the change is scoped to the auth token path only.
+    await win.ThriveSupa.rest("console_board", { query: "select=slug" });
+    const rd = cap.find(r => r.url.indexOf("/rest/v1/") >= 0);
+    ck("S7 the auth token POST is signal-free (P50) while rest() still carries its abort signal", () => {
+      assert(tok && tok.hasSignal === false, "the auth token fetch still attaches an AbortController signal");
+      assert(rd && rd.hasSignal === true, "the rest() read lost its abort signal (change leaked past the auth path)");
     });
   })();
 
