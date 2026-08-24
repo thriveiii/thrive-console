@@ -3071,9 +3071,11 @@ async function doSyncRound(ep, auth){
   // The relay merge just rewrote localStorage; fold the server-authoritative __supa copy back in so the
   // canonical stays the one reconciled truth of both transports (a no-op until __supa is hydrated).
   try{ reconcileCanonical(); }catch(e){}
-  // Re-read the board's server-computed stage on the sync heartbeat, so a card whose signals changed
-  // server-side (an open or a reply landed) moves forward on the next round without a manual refresh.
-  try{ if(supaReadFlagOn() && supaOn()) await readBoardView(); }catch(e){}
+  // P52: the board's server-view re-read used to run HERE, interleaving a cross-host Supabase read between
+  // this round's slow Apps Script relay POSTs and starving the post-auth console_settings/console_board reads
+  // of WebKit connections (the sign-in freeze). It now stands alone in the board render settle instead:
+  // onThriveSync (below) fires the "sync" hook AFTER this round's relay calls complete, and renderBoard("sync")
+  // re-reads the view then, so the same heartbeat freshness is preserved and never competes with the chain.
   const p=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
     body:relayBody({ op:"state_put", auth:auth, data:syncSnapshot() }) });
   const pj=noteRelayVersion(await p.json()); if(!pj.ok) throw new Error(pj.error||"sync put");
@@ -3175,6 +3177,24 @@ function scheduleSyncPush(){
   if(!syncAuth()) return;
   clearTimeout(__syncPushT); __syncPushT=setTimeout(syncNow, 4000);
 }
+/* P52: hold the FIRST automatic relay round until the post-auth Supabase board read has resolved and the
+   board has painted. On a warm session (the passcode sync credential persists) syncNow used to fire at
+   DOMContentLoaded, launching the slow Apps Script relay chain (1-5s per call) that starved the cross-host
+   console_settings/console_board reads of WebKit connections, so the operator's sign-in hung at token:sent.
+   The first round now waits for that read (firstSyncMayRun), then resumes the normal 60s cadence. When no
+   Supabase read competes (the read path is off) it runs at once, and a bounded fallback below guarantees
+   sync is never permanently disabled if the read never lands. Auth semantics, keys and request shapes are
+   untouched: this only reorders WHEN the relay polling starts. */
+var __firstAutoSyncDone=false, __firstSyncFallback=false;
+function firstSyncMayRun(){
+  if(__firstSyncFallback) return true;                                     // bounded safety: never disable sync
+  try{ if(!boardViewIsAuthority()) return true; }catch(_){ return true; }  // no competing cross-host board read
+  return !!__boardViewReady;                                              // the console_board read has resolved
+}
+function autoSyncTick(){
+  if(!__firstAutoSyncDone){ if(!firstSyncMayRun()) return; __firstAutoSyncDone=true; }
+  if(syncAuth()) syncNow();
+}
 function startLiveSync(){
   if(!document.querySelector("header.top")) return;       // console pages only
   /* P48 gate-first boot: gate.js loads BEFORE app.js now, so on a WARM session the gate resolved and left
@@ -3182,9 +3202,13 @@ function startLiveSync(){
      where every top-level onThrive("unlock",...) handler (the P111 board force-hydrate, opnames, opprefs,
      mailreconcile, p27role) is registered and the DOM exists, so the warm-boot unlock fires exactly once. */
   try{ if(window.__gateUnlockedPending){ window.__gateUnlockedPending=false; if(typeof window.onGateUnlocked==="function") window.onGateUnlocked(); } }catch(_){}
-  if(syncAuth()) syncNow();
-  onThrive("unlock","sync",function(){ syncNow(); });
-  setInterval(()=>{ if(!document.hidden && syncAuth()) syncNow(); }, 60000);
+  onThrive("unlock","sync",autoSyncTick);
+  setInterval(function(){ if(!document.hidden) autoSyncTick(); }, 60000);
+  // Bounded safety: if the board read never lands (never signed in, misconfig), release the first round
+  // anyway so background sync is never permanently disabled. In the healthy path the board read resolves in
+  // well under a second (no relay competing) and the board-settle release in renderBoard fires long first.
+  setTimeout(function(){ __firstSyncFallback=true; autoSyncTick(); }, 20000);
+  autoSyncTick();   // attempt now; it holds itself until the board read settles (see firstSyncMayRun)
 }
 document.addEventListener("DOMContentLoaded", startLiveSync);
 
@@ -11124,7 +11148,12 @@ async function initBoard(){
     // 0). When the view is authority (a signed-in operator) but has NOT loaded, this settle reads and adopts
     // it BEFORE painting, generation-guarded so a read resolving after a newer settle is dropped. Once
     // loaded, the sync/hydrate rounds refresh it; renders paint the warm map with no network read.
-    if(boardViewIsAuthority() && !__boardViewReady){
+    // P52: re-read the server view on the sync/unlock heartbeat and on a manual refresh (the freshness the
+    // removed doSyncRound read used to provide), in addition to the unconditional first-ever read. This read
+    // now stands alone in the settle, generation-guarded and adopt-empty-safe, so it never interleaves with
+    // the relay round's slow Apps Script calls.
+    var __reread = (trigger==="sync" || trigger==="unlock" || trigger==="thriveBoardRefresh");
+    if(boardViewIsAuthority() && (!__boardViewReady || __reread)){
       var rows=null; try{ rows=await readBoardViewRows(); }catch(_){ rows=null; }
       if(myGen!==__renderGen || __boardTornDown) return;           // a newer settle started while we read: drop this one
       adoptBoardView(rows);
@@ -11134,6 +11163,10 @@ async function initBoard(){
     try{
       render(trigger, source);
     } finally { __boardPin=null; }
+    // P52: the board read has settled and the board has painted, so the first automatic relay round may now
+    // start without competing with the post-auth Supabase reads for WebKit connections. Idempotent (the tick
+    // no-ops once the first round has fired), so this runs on every paint but releases exactly once.
+    try{ if(!__firstAutoSyncDone) autoSyncTick(); }catch(_){}
   }
 
   function render(trigger, source){
