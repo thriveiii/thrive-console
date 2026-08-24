@@ -31,7 +31,6 @@
           op_err_network: "Could not reach the service. Check your connection and try again.",
           op_err_unavailable: "The sign-in service is unavailable right now. Try again shortly.",
           op_retry: "Retry",
-          op_ephemeral: "Signed in for this tab only. Private mode or blocked storage means the session will not survive a reload.",
           resub: "Welcome back. Sign in again to continue." },
     ar: { title: "كونسول ثرايف", sub: "مساحة خاصة. أدخل رمز الدخول للمتابعة.",
           ph: "رمز الدخول", go: "فتح", err: "رمز غير صحيح. حاول مجددًا.",
@@ -45,7 +44,6 @@
           op_err_network: "تعذّر الوصول إلى الخدمة. تحقّق من اتصالك وحاول مجددًا.",
           op_err_unavailable: "خدمة تسجيل الدخول غير متوفرة الآن. حاول بعد قليل.",
           op_retry: "إعادة المحاولة",
-          op_ephemeral: "تم تسجيل الدخول لهذه النافذة فقط. الوضع الخاص أو تعذّر التخزين يعني أن الجلسة لن تبقى بعد إعادة التحميل.",
           resub: "مرحبًا بعودتك. سجّل الدخول من جديد." }
   };
   /* The build marker (bundle.js stamps meta[name=thrive-build]). Printed on the gate so a deploy
@@ -235,22 +233,6 @@
     reveal();
     if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) {} }
   }
-  /* P39: a persistent, dismissible one-line notice for a session that lives in memory only (storage
-     blocked). It is appended to the body, OUTSIDE #thriveGate, so it survives reveal() and stays until
-     the operator dismisses it or reloads. textContent only, so the message can never inject markup. */
-  function ephemeralNotice(msg) {
-    if (document.getElementById("thriveEphemeral")) return;   // one notice, not one per retry
-    var bar = document.createElement("div");
-    bar.id = "thriveEphemeral"; bar.className = "gate-ephemeral"; bar.setAttribute("role", "status");
-    bar.setAttribute("dir", lang() === "ar" ? "rtl" : "ltr");
-    var span = document.createElement("span"); span.textContent = msg || ""; bar.appendChild(span);
-    var x = document.createElement("button"); x.type = "button"; x.className = "gate-ephemeral-x";
-    x.setAttribute("aria-label", "×"); x.textContent = "×";
-    x.addEventListener("click", function () { try { bar.parentNode.removeChild(bar); } catch (e) {} });
-    bar.appendChild(x);
-    document.body.appendChild(bar);
-  }
-
   function showPasscodeStep(wrap) {
     var s = STR[lang()];
     // A returning operator whose window lapsed gets the calm re-entry copy, not the first-time setup line.
@@ -372,51 +354,31 @@
       busy = true; email.disabled = pass.disabled = true; btn.textContent = s.op_busy;
       err.hidden = true; showDiag(""); showRetry(false);   // clear any prior failure before this attempt
       var ok = false, kind = "", raw = "";
-      // P44: the click path speaks and can never hang silently. Every step sets window.__signMark (the
-      // failsafe strip renders it live on the device), and the WHOLE click path is raced against a hard
-      // 15s timeout INDEPENDENT of any inner bound, so even an await no inner race covers still settles.
-      // signIn itself remains bounded by the P31 race (kind = timeout / network / unavailable / auth).
-      // The button state is ALWAYS released below, so "Signing in" can never be the last word.
+      // P47 restore: the last-good (P31) click path. signIn is bounded by its own setTimeout race: it
+      // resolves on success or REJECTS with a typed error (kind = timeout / network / unavailable / auth)
+      // at the 15s bound even if the browser ignores the AbortController on a wedged socket. The button
+      // state is ALWAYS released below, so "Signing in" can never be the last word; the raw error text is
+      // captured for the visible diagnostic. No hard outer race, no step marks.
       if (m && p) {
-        try { window.__signMark = "click"; } catch (ex) {}
-        var stallTimer = null;
-        var stall = new Promise(function (_, reject) {
-          stallTimer = setTimeout(function () {
-            var e = new Error("sign-in stalled after 15s"); e.kind = "stall"; reject(e);
-          }, 15000);
-        });
-        try { await Promise.race([S.signIn(m, p, { fresh: !!fresh }), stall]); ok = S.signedIn && S.signedIn(); }
+        try { await S.signIn(m, p, { fresh: !!fresh }); ok = S.signedIn && S.signedIn(); }
         catch (ex) {
           ok = false; kind = (ex && ex.kind) || "auth";
-          // The step that was in flight is part of the diagnostic, so a rejection names WHERE, not just what.
-          var step = ""; try { step = String(window.__signMark || ""); } catch (x) {}
-          raw = (step ? ("at " + step + " · ") : "") + (kind || "error") + ": " + ((ex && ex.message) || String(ex));
+          raw = (kind || "error") + ": " + ((ex && ex.message) || String(ex));
           if (ex && ex.status) raw += " (HTTP " + ex.status + ")";
-          // A stall (the hard race fired: some await inside the click path never settled) raises the
-          // failsafe panel naming the last step reached; the gate below re-enables the button and shows
-          // Retry, so the state is named AND recoverable, never a dead button.
-          if (kind === "stall") { try { if (typeof window.__thriveSignStall === "function") window.__thriveSignStall("hard 15s race fired"); } catch (x) {} }
         }
-        finally { try { clearTimeout(stallTimer); } catch (x) {} }
       }
       busy = false; email.disabled = pass.disabled = false; btn.textContent = s.op_go;
       if (ok) {
         showDiag(""); showRetry(false);
         opClearFails();
         if (typeof window.logActivity === "function") { try { window.logActivity("operator_login", "", "signed in"); } catch (ex) {} }
-        // P39: if the session could not be persisted (private mode / blocked storage), the sign-in still
-        // works for this tab (the token is held in memory, so reads carry it and the board populates),
-        // but say so plainly, once, with a persistent notice: it will not survive a reload.
-        try { if (S.sessionEphemeral && S.sessionEphemeral()) ephemeralNotice(s.op_ephemeral); } catch (ex) {}
         // Signing in lands on the board (the working surface), not wherever the hash last pointed (Settings).
-        try { window.__signMark = "navigate"; } catch (ex) {}
         try { location.hash = "board"; } catch (ex) {}
         finish();
-      } else if (kind === "timeout" || kind === "network" || kind === "unavailable" || kind === "stall") {
-        // A transient service condition (or a hard-race stall) is NOT a wrong password: say specifically
-        // what happened, do NOT throttle it as a failed attempt, and offer a one-tap Retry that opens a
-        // fresh connection.
-        err.textContent = kind === "timeout" || kind === "stall" ? s.op_err_timeout : (kind === "unavailable" ? s.op_err_unavailable : s.op_err_network);
+      } else if (kind === "timeout" || kind === "network" || kind === "unavailable") {
+        // A transient service condition is NOT a wrong credential: say specifically what happened, do NOT
+        // throttle it as a failed attempt, and offer a one-tap Retry that opens a fresh connection.
+        err.textContent = kind === "timeout" ? s.op_err_timeout : (kind === "unavailable" ? s.op_err_unavailable : s.op_err_network);
         err.hidden = false;
         showDiag(raw);       // the actual error text, for on-device diagnosis
         showRetry(true);     // one-tap retry with a fresh connection

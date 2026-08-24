@@ -1,8 +1,11 @@
-/* P39 session integrity (Node). Proves the two guards that make a lost session impossible and loud:
-   - setSession no longer swallows a storage failure; it verifies the write and reports ephemeral.
-   - A read after sign-in NEVER carries the anon key (the silent RLS-empty board is impossible).
-   Plus: the in-memory fallback keeps the tab working when storage is blocked, the public path still
-   uses anon before sign-in and after sign-out, and the bearer guard throws kind:"session" (source). */
+/* P47 session contract, RECONCILED from the P39 suite (Node). P47 restored the sign-in path to its
+   last-good (P31, 506334f) shape: setSession swallows a blocked write and returns nothing, signIn returns
+   { ok, email } with no ephemeral field, and bearer() returns the anon key when there is no session and
+   NEVER throws. The P39 guards (in-memory fallback, verify-and-report, the bearer session throw) were
+   dropped on purpose, as the P47 build diff proved the freeze was not on this path. This suite asserts the
+   RESTORED behavior, and is honest about the accepted trade: with storage blocked, a signed-in read falls
+   back to the anon key (the last-good shape did not hold a memory session). The public-path and
+   sign-out-returns-to-anon guarantees are unchanged and still asserted. */
 const fs = require("fs"), path = require("path"), assert = require("assert");
 const SUPA = path.resolve(__dirname, "../library/supabase.js");
 
@@ -53,12 +56,15 @@ function stub(rec) {
 function authOf(req) { return (req.headers.Authorization || req.headers.authorization || ""); }
 
 (async function () {
-  // S1: a normal sign-in persists durably, is not ephemeral, and the first read carries the SESSION token.
+  // S1: a normal sign-in persists durably and the first read carries the SESSION token (unchanged, holds).
   await (async function () {
     const store = makeStore(), rec = [];
     const S = load(store, stub(rec));
     const r = await S.signIn("op@thrive.test", "pw");
-    ck("S1 sign-in ok and not ephemeral", () => { assert(r.ok === true); assert(r.ephemeral === false); assert(S.sessionEphemeral() === false); });
+    ck("S1 sign-in returns ok (no ephemeral field in the last-good shape)", () => {
+      assert(r.ok === true, "sign-in did not return ok");
+      assert(!("ephemeral" in r), "the restored last-good signIn should not carry an ephemeral field");
+    });
     ck("S1 session stored durably in localStorage", () => { assert(store.ls.getItem("console_sb_session") != null); });
     rec.length = 0;
     await S.rest("console_board", { query: "select=slug" });
@@ -69,26 +75,29 @@ function authOf(req) { return (req.headers.Authorization || req.headers.authoriz
     });
   })();
 
-  // S2: storage blocked. Sign-in still works for the tab (in-memory), is ephemeral, and reads carry the token.
+  // S2: storage blocked. The last-good shape still SUCCEEDS the sign-in (it never failed on a storage
+  // block), but it does NOT hold a memory session, so nothing persists and a later read falls back to
+  // anon. This asserts the RESTORED behavior and the accepted P47 trade, not the dropped P39 guard.
   await (async function () {
     const store = makeStore(); store.blockWrites = true; const rec = [];
     const S = load(store, stub(rec));
     const r = await S.signIn("op@thrive.test", "pw");
-    ck("S2 blocked storage: sign-in ok and flagged ephemeral", () => { assert(r.ok === true); assert(r.ephemeral === true); assert(S.sessionEphemeral() === true); });
-    ck("S2 nothing was written to localStorage, yet signedIn() is true (in-memory)", () => {
+    ck("S2 blocked storage: sign-in still returns ok (never fails on a storage block)", () => {
+      assert(r.ok === true, "a storage-blocked sign-in should still resolve ok");
+    });
+    ck("S2 nothing was written to localStorage and no memory session is held (last-good shape)", () => {
       assert(store.ls.getItem("console_sb_session") == null, "a write leaked past the block");
-      assert(S.signedIn() === true, "the in-memory fallback did not hold the session");
+      assert(S.signedIn() === false, "the last-good shape holds no in-memory session when storage is blocked");
     });
     rec.length = 0;
     await S.rest("console_board", { query: "select=slug" });
-    ck("S2 the read STILL carries Bearer <session token>, never anon, with storage blocked", () => {
+    ck("S2 with storage blocked, a read falls back to anon (the accepted P47 trade, honestly asserted)", () => {
       const a = authOf(rec[rec.length - 1]);
-      assert(a === "Bearer " + ACCESS, "Authorization was: " + a);
-      assert(a.indexOf(ANON) < 0, "anon key leaked into a signed-in read");
+      assert(a === "Bearer " + ANON, "expected anon fallback, Authorization was: " + a);
     });
   })();
 
-  // S3: the pre-sign-in PUBLIC path may legitimately use the anon key (RLS scopes it).
+  // S3: the pre-sign-in PUBLIC path may legitimately use the anon key (RLS scopes it). Unchanged.
   await (async function () {
     const store = makeStore(), rec = [];
     const S = load(store, stub(rec));
@@ -112,20 +121,24 @@ function authOf(req) { return (req.headers.Authorization || req.headers.authoriz
     });
   })();
 
-  // S5: the guard exists in source: bearer() throws kind:"session" after sign-in rather than using anon.
-  ck("S5 bearer() refuses to downgrade to anon after sign-in (throws kind:'session')", () => {
+  // S5: the restored bearer() contract: return anon when there is no session, and NEVER throw. The P39
+  // sign-in flag and typed session throw are gone by decision (source guard against their return).
+  ck("S5 bearer() returns anon when signed out and never throws (last-good, no session flag)", () => {
     const src = fs.readFileSync(SUPA, "utf8");
-    const b = src.slice(src.indexOf("function bearer("), src.indexOf("function bearer(") + 400);
-    assert(/__signInSeen/.test(b), "bearer() does not consult the sign-in flag");
-    assert(/kind = "session"|kind: "session"/.test(b) || /e\.kind = "session"/.test(b), "bearer() does not throw a typed session error");
+    const b = src.slice(src.indexOf("function bearer("), src.indexOf("function bearer(") + 300);
+    assert(!/__signInSeen/.test(b), "bearer() still consults a sign-in flag (P39 residue)");
+    assert(!/kind = "session"|e\.kind = "session"/.test(b), "bearer() still throws a typed session error (P39 residue)");
+    assert(/\?\s*s\.access_token\s*:\s*c\.anon|access_token\)\s*\?\s*s\.access_token\s*:\s*c\.anon/.test(b), "bearer() does not fall back to the anon key");
   });
 
-  // S6: setSession does not swallow, verifies the write, and reports failure (source guard).
-  ck("S6 setSession verifies the write and does not swallow a failure", () => {
+  // S6: the restored setSession contract: a blocked write is swallowed (last-good), NOT verified and
+  // reported. The P39 verify-and-ephemeral machinery is gone by decision (source guard against return).
+  ck("S6 setSession is the last-good swallow-on-block form (no verify-readback, no ephemeral)", () => {
     const src = fs.readFileSync(SUPA, "utf8");
-    const f = src.slice(src.indexOf("function setSession("), src.indexOf("function setSession(") + 500);
-    assert(/getItem\(SESSION_KEY\) === json/.test(f), "setSession does not read the write back to verify it");
-    assert(/__sessionEphemeral = true/.test(f), "setSession does not record an ephemeral (in-memory only) session");
+    const f = src.slice(src.indexOf("function setSession("), src.indexOf("function setSession(") + 300);
+    assert(!/getItem\(SESSION_KEY\) === json/.test(f), "setSession still reads the write back to verify it (P39 residue)");
+    assert(!/__sessionEphemeral/.test(f), "setSession still records an ephemeral session (P39 residue)");
+    assert(/try \{ s \? localStorage\.setItem|catch \(e\) \{\}/.test(f), "setSession is not the last-good swallow form");
   });
 
   console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");

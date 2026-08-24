@@ -1,11 +1,14 @@
-/* P44 the sign-in click path speaks (Node). Every prior instrument watched the BOOT; the "Signing in"
-   hang lives in the CLICK path. Proves:
-   - signIn() sets the ordered __signMark steps and reaches session:ok on a healthy run (runtime);
-   - a blocked-storage run reaches session:ephemeral, never hangs on the persist (runtime);
-   - the failsafe strip renders the sign mark live and re-shows after removal (runtime);
-   - __thriveSignStall panels "Sign-in stalled" naming the LAST step reached, keeping the gate (runtime);
-   - the gate's hard 15s race, its typed "stall" kind, its Retry routing, and the step-in-diagnostic are
-     present (source contract: attempt() lives in a DOM closure, so its wiring is asserted at source). */
+/* P47 click-path contract, RECONCILED from the P44 suite (Node). P47 restored the sign-in path to its
+   last-good (P31, 506334f) shape: signIn no longer sets window.__signMark steps, and the gate no longer
+   wraps signIn in a hard 15s Promise.race. The P47 build diff proved the request is byte-identical to the
+   build that signed in, so the instrumentation was dropped and the path returned to that shape. This suite
+   now asserts the RESTORED behavior:
+   - a healthy sign-in resolves ok and signedIn() is true (runtime);
+   - a blocked-storage sign-in still resolves ok, never throws (runtime, last-good shape);
+   - the token POST carries the known-good header set (apikey + JSON, NO Authorization) (runtime);
+   - the failsafe strip machinery (P42/P43, retained) still renders a mark and its stall panel (runtime);
+   - the gate awaits signIn directly (no hard race, no step marks), always releases the button, and routes
+     a transient failure to Retry (source contract: the click handler lives in a DOM closure). */
 const fs = require("fs"), path = require("path"), assert = require("assert");
 const ROOT = path.resolve(__dirname, "..");
 const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -17,7 +20,7 @@ const APP = read("library/app.js");
 let fails = 0;
 function ck(n, fn) { try { fn(); console.log("PASS " + n); } catch (e) { fails++; console.log("FAIL " + n + "\n     " + (e && e.message || e)); } }
 
-// ---- runtime: signIn marks --------------------------------------------------------------------------
+// ---- runtime: signIn resolves cleanly ---------------------------------------------------------------
 function makeStore(block) {
   const m = new Map();
   return { getItem: k => (m.has(k) ? m.get(k) : null),
@@ -41,40 +44,33 @@ function loadSupa(store, captured) {
 (async function () {
   await (async () => {
     const win = loadSupa(makeStore(false));
-    const seen = [];
-    Object.defineProperty(win, "__signMark", { set: v => seen.push(v), get: () => seen[seen.length - 1] });
-    await win.ThriveSupa.signIn("op@t.test", "pw");
-    ck("S1 a healthy sign-in walks token:sent, token:ok, session:persist, session:ok in order", () => {
-      assert.deepStrictEqual(seen, ["token:sent", "token:ok", "session:persist", "session:ok"], JSON.stringify(seen));
+    const r = await win.ThriveSupa.signIn("op@t.test", "pw");
+    ck("S1 a healthy sign-in resolves ok and signedIn() is true", () => {
+      assert(r && r.ok === true, "sign-in did not resolve ok: " + JSON.stringify(r));
+      assert(win.ThriveSupa.signedIn() === true, "signedIn() is not true after a healthy sign-in");
     });
   })();
 
   await (async () => {
     const win = loadSupa(makeStore(true));   // storage throws on every write
-    const seen = [];
-    Object.defineProperty(win, "__signMark", { set: v => seen.push(v), get: () => seen[seen.length - 1] });
-    const r = await win.ThriveSupa.signIn("op@t.test", "pw");
-    ck("S2 blocked storage: the persist step resolves session:ephemeral, never hangs or throws", () => {
-      assert(r.ok === true && r.ephemeral === true, "sign-in should succeed ephemeral");
-      assert(seen[seen.length - 1] === "session:ephemeral", "last mark: " + seen[seen.length - 1]);
+    let threw = false, r = null;
+    try { r = await win.ThriveSupa.signIn("op@t.test", "pw"); } catch (e) { threw = true; }
+    ck("S2 blocked storage: sign-in still resolves ok and never throws (last-good shape)", () => {
+      assert(threw === false, "a storage-blocked sign-in threw");
+      assert(r && r.ok === true, "a storage-blocked sign-in did not resolve ok");
     });
   })();
 
-  // P46 regression guard: against a mocked 200 token response, signIn MUST reach token:ok, and the token
-  // POST must carry the KNOWN-GOOD header set — apikey + Content-Type, and NOT the "Authorization: Bearer
-  // <anon>" header that P34 (a67056a) added and that no version which ever signed in successfully sent.
-  // This exact regression (an extra header on the token call) can never ship silently again.
+  // P46 header guard (retained through the P47 restore): the token POST must carry the KNOWN-GOOD header
+  // set (apikey + Content-Type) and NOT the "Authorization: Bearer <anon>" header that P34 added and that
+  // no version which ever signed in successfully sent. This request shape is what P47's diff proved is
+  // byte-identical to the last-good build, so the guard stays.
   await (async () => {
     const cap = [];
     const win = loadSupa(makeStore(false), cap);
-    const seen = [];
-    Object.defineProperty(win, "__signMark", { set: v => seen.push(v), get: () => seen[seen.length - 1] });
     await win.ThriveSupa.signIn("op@t.test", "pw");
     const tok = cap.find(r => r.url.indexOf("/auth/v1/token?grant_type=password") >= 0);
-    ck("S5 signIn reaches token:ok on a mocked 200 (the regression could not reach it)", () => {
-      assert(seen.indexOf("token:ok") >= 0, "token:ok never reached; marks: " + JSON.stringify(seen));
-    });
-    ck("S6 the token POST carries the known-good header set (apikey + JSON, NO Authorization)", () => {
+    ck("S3 the token POST carries the known-good header set (apikey + JSON, NO Authorization)", () => {
       assert(tok, "no token POST was captured");
       assert(tok.headers.apikey === "anon-k", "apikey header missing/wrong: " + JSON.stringify(tok.headers));
       assert(tok.headers["Content-Type"] === "application/json", "Content-Type header missing");
@@ -82,7 +78,7 @@ function loadSupa(store, captured) {
     });
   })();
 
-  // ---- runtime: failsafe strip + stall panel --------------------------------------------------------
+  // ---- runtime: failsafe strip + stall panel (P42/P43 machinery, retained) --------------------------
   function elem(t){return {children:[],attrs:{},style:{},_text:"",set textContent(v){this._text=String(v)},get textContent(){return this._text+this.children.map(c=>c.textContent).join("\n")},setAttribute(k,v){this.attrs[k]=v},appendChild(c){this.children.push(c);c.parentNode=this;return c},removeChild(c){var i=this.children.indexOf(c);if(i>=0)this.children.splice(i,1);}};}
   function loadFailsafe() {
     const root = elem("html");
@@ -104,39 +100,40 @@ function loadSupa(store, captured) {
 
   (function () {
     const env = loadFailsafe();
-    env.win.__signMark = "token:sent";
-    ck("S3 the strip renders the sign mark live", () => {
+    env.win.__signMark = "read:sent";
+    ck("S4 the failsafe strip renders a live mark", () => {
       const hb = env.find("thriveHeartbeat");
       assert(hb, "no strip");
-      assert(hb.textContent.indexOf("sign token:sent") >= 0, "sign mark missing: " + hb.textContent);
+      assert(hb.textContent.indexOf("read:sent") >= 0, "mark missing: " + hb.textContent);
     });
-    env.win.__signMark = "session:persist";
-    env.win.__thriveSignStall("hard 15s race fired");
-    ck("S4 the stall panel names the LAST step and keeps the gate on screen", () => {
+    env.win.__signMark = "read:sent";
+    env.win.__thriveSignStall("hard stall for the test");
+    ck("S5 the stall panel names the LAST mark and keeps the gate on screen", () => {
       const p = env.find("thriveFailsafe");
       assert(p, "no stall panel");
       assert(p.textContent.indexOf("Sign-in stalled") >= 0, "headline missing");
-      assert(p.textContent.indexOf("last step: session:persist") >= 0, "last step not named: " + p.textContent);
+      assert(p.textContent.indexOf("last step: read:sent") >= 0, "last step not named: " + p.textContent);
       assert(env.body.children.indexOf(env.gateEl) >= 0, "the gate was removed: the operator lost the retry form");
     });
   })();
 
-  // ---- source contracts: the gate wiring (attempt() lives in a DOM closure) -------------------------
-  ck("G1 the gate marks click and navigate, and races the WHOLE click path at a hard 15s", () => {
-    assert(/__signMark = "click"/.test(GATE), "click mark missing");
-    assert(/__signMark = "navigate"/.test(GATE), "navigate mark missing");
-    assert(/Promise\.race\(\[S\.signIn\(/.test(GATE), "the hard race around signIn is missing");
-    assert(/e\.kind = "stall"/.test(GATE) && /15000/.test(GATE), "typed stall at 15s missing");
-    assert(/clearTimeout\(stallTimer\)/.test(GATE), "the stall timer is never cleared");
+  // ---- source contracts: the restored gate wiring (attempt() lives in a DOM closure) ----------------
+  ck("G1 the gate awaits signIn directly, with no hard race and no step marks", () => {
+    assert(/await S\.signIn\(m, p, \{ fresh: !!fresh \}\); ok = S\.signedIn/.test(GATE), "the direct awaited signIn is missing");
+    assert(!/Promise\.race\(\[S\.signIn\(/.test(GATE), "the P44 hard race around signIn is still present");
+    assert(!/__signMark/.test(GATE), "the P44 step marks are still present in the gate");
+    assert(!/kind === "stall"/.test(GATE), "the stall branch is still present in the gate");
   });
-  ck("G2 a stall routes to the failsafe panel and to Retry, never the credential throttle", () => {
-    assert(/kind === "stall"[^]*__thriveSignStall/.test(GATE), "stall does not raise the panel");
-    assert(/kind === "unavailable" \|\| kind === "stall"/.test(GATE), "stall is not in the transient/Retry branch");
+  ck("G2 the button state is always released and a transient failure routes to Retry, not the throttle", () => {
+    assert(/busy = false; email\.disabled = pass\.disabled = false; btn\.textContent = s\.op_go;/.test(GATE), "the button is not unconditionally released");
+    assert(/kind === "timeout" \|\| kind === "network" \|\| kind === "unavailable"/.test(GATE), "the transient/Retry branch is missing");
+    assert(/showRetry\(true\)/.test(GATE), "Retry is not offered on a transient failure");
   });
-  ck("G3 every rejection carries the step in its visible diagnostic", () => {
-    assert(/"at " \+ step \+ " · "/.test(GATE), "the step prefix is missing from the raw diagnostic");
+  ck("G3 a rejection captures the raw error text (kind + message [+ status]), the last-good diagnostic", () => {
+    assert(/raw = \(kind \|\| "error"\) \+ ": " \+ \(\(ex && ex\.message\) \|\| String\(ex\)\)/.test(GATE), "the last-good raw diagnostic is missing");
+    assert(!/"at " \+ step \+ " · "/.test(GATE), "the P44 step prefix is still in the diagnostic");
   });
-  ck("G4 the read marks join the sequence where the board read already happens", () => {
+  ck("G4 the board read still carries its checkpoints where the read happens (failsafe strip input)", () => {
     assert(/__signMark="read:sent"/.test(APP) && /__signMark="read:ok"/.test(APP), "read marks missing in app.js");
   });
 

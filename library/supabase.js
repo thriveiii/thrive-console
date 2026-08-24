@@ -69,50 +69,19 @@
      apikey header stays the anon key always, which Supabase requires even with a JWT. No secret is used
      as an access control; the token is a real session, refreshable and revocable. */
   var SESSION_KEY = "console_sb_session";
-  /* P39 session integrity. The session is the operator's authenticated identity; a read that loses it
-     silently downgrades to the anon key and RLS returns an empty board with no error, which read as a
-     "stuck sign-in" for a full day. Two guards make that impossible:
-     - __memSession: an in-tab copy of the session. When localStorage is blocked (Safari private mode,
-       ITP, storage partitioning, Lockdown), the session lives here for the tab's lifetime, so the
-       operator can still work (reads carry the token), degraded, instead of facing an empty board.
-     - __sessionEphemeral: true when the last persist did NOT reach durable storage, so the gate can say
-       plainly that the session will not survive a reload rather than pretend it is saved.
-     - __signInSeen: true once a sign-in has succeeded in this tab. After that, a read with no session is
-       a defect, not an anon read, so bearer() refuses to substitute the anon key. */
-  var __memSession = null, __sessionEphemeral = false, __signInSeen = false;
-  // Durable store first (survives reload and is the cross-tab source of truth); fall back to the in-tab
-  // copy only when storage is empty or unreadable, so a blocked store never reads as "no session".
-  function session() {
-    try { var raw = localStorage.getItem(SESSION_KEY); if (raw) return JSON.parse(raw); } catch (e) {}
-    return __memSession;
-  }
-  /* Persist the session and VERIFY it landed (P39, no more swallowing). The old form was
-     `try { localStorage.setItem(...) } catch {}`: a blocked write threw, was swallowed, and signIn still
-     resolved ok while every later read went out as anon. Now the write is read back; if it did not stick
-     the session is held in memory for the tab and marked ephemeral, and the caller is told (returns
-     false) so it can surface the reason. Clearing (null) drops both copies and always succeeds.
-     Returns true when durably stored, false when in-memory only. */
-  function setSession(s) {
-    __memSession = s || null;
-    if (!s) { __sessionEphemeral = false; try { localStorage.removeItem(SESSION_KEY); } catch (e) {} return true; }
-    var json = JSON.stringify(s);
-    try { localStorage.setItem(SESSION_KEY, json); if (localStorage.getItem(SESSION_KEY) === json) { __sessionEphemeral = false; return true; } } catch (e) {}
-    __sessionEphemeral = true;   // stored in memory only: usable this tab, will not survive a reload
-    return false;
-  }
-  function sessionEphemeral() { return __sessionEphemeral; }
+  /* P47 nuclear restore. The P47 build-to-build diff (last-good 506334f/P31 against HEAD) proved the
+     sign-in REQUEST is byte-identical to the last build that signed in: same URL, headers, body, timeout,
+     and anon key. Nothing on the path between token:sent and token:ok changed. So the sign-in path is
+     restored here to its last-good shape verbatim, dropping the P39 session-integrity churn (__memSession,
+     __sessionEphemeral, __signInSeen, the bearer() throw) and the P44 instrumentation, keeping only the
+     P43 boot convergence (which is in failsafe.js, untouched). This trades the instruments for the door
+     that provably opened; the device photograph is the only arbiter of whether the fault was ever code. */
+  function session() { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (e) { return null; } }
+  function setSession(s) { try { s ? localStorage.setItem(SESSION_KEY, JSON.stringify(s)) : localStorage.removeItem(SESSION_KEY); } catch (e) {} }
   function signedIn() { var s = session(); return !!(s && s.access_token); }
   function authEmail() { var s = session(); return (s && s.email) || ""; }
   function authUid() { var s = session(); return (s && s.uid) || ""; }   // the operator's Supabase user id, for per-operator prefs
-  /* The bearer for a data call: the session JWT when signed in, the anon key ONLY on the pre-sign-in
-     public path. After a sign-in has occurred in this tab, a missing session is a bug, not an anon read:
-     refuse to downgrade and throw a typed error so the read surfaces it (the board then says "session
-     lost, sign in again") instead of silently fetching an empty, RLS-filtered result. */
-  function bearer() {
-    var s = session(); if (s && s.access_token) return s.access_token;
-    if (__signInSeen) { var e = new Error("session missing after sign-in"); e.kind = "session"; e.sessionLost = true; throw e; }
-    return cfg().anon;
-  }
+  function bearer() { var s = session(); var c = cfg(); return (s && s.access_token) ? s.access_token : c.anon; }
 
   /* ---- P29 sign-in resilience: bounded fetch -----------------------------------------------------
      Every network call the auth and read path makes is BOUNDED by an AbortController. Without this an
@@ -197,49 +166,31 @@
     }, FETCH_TIMEOUT_MS);
   }
 
-  // P44: the click path speaks. Each step of a sign-in sets window.__signMark (assignment only; the
-  // failsafe strip renders it live), so a hang names the exact step that never returned.
-  function signMark(v) { try { window.__signMark = v; } catch (e) {} }
   async function signIn(email, password, opts) {
     opts = opts || {};
     var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
-    // One fetch POST, bounded by the P31 race (a stall rejects at 15s, never hangs). No logging.
-    signMark("token:sent");
+    // P47 restore: the last-good (P31) sign-in body, verbatim. One bounded POST (a timeout or network
+    // failure REJECTS here, typed, at the 15s bound, it never hangs); a typed error on a bad response;
+    // then a SYNCHRONOUS session persist and return. No step marks, no in-memory/ephemeral branch: the
+    // P47 build diff proved this request is byte-identical to the build that signed in, so the path is
+    // restored to that shape and nothing is layered on top of it.
     var r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh);
     var data = r.data;
     if (!r.res.ok || !data || !data.access_token) {
       var err = new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
       err.status = r.res.status;
       // A 5xx (a paused project answers 503) is the service being unavailable, not a wrong password; a
-      // 400/401/422/415 is a credential-or-shape rejection. Typed so the gate says WHICH and never throttles.
+      // 400/401/422 is a credential rejection. Typed so the gate says WHICH and never throttles a blip.
       err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
       throw err;
     }
-    signMark("token:ok");
-    // The token is real; mark the tab so bearer() will never again downgrade a read to the anon key.
-    __signInSeen = true;
-    // Persist and check it landed. If storage is blocked the session is held in memory for the tab
-    // (reads still carry the token, so the board populates), and we report ephemeral so the gate can
-    // say plainly the session will not survive a reload. Working degraded beats an empty board, so this
-    // is NOT a failed sign-in: only a rejected token (above) fails. The apikey/DB path is untouched.
-    // P44 bound note: setSession is SYNCHRONOUS (localStorage set + read-back), so there is no await here
-    // that could hang; the extra try makes even a throwing storage engine resolve as ephemeral rather
-    // than propagate, so the persist step can neither hang nor reject. If an engine ever blocked inside
-    // the synchronous call itself, the strip frozen at "session:persist" names it, which no in-JS
-    // timeout could do better.
-    signMark("session:persist");
-    var durable = false;
-    try { durable = setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" }); }
-    catch (e) { durable = false; __memSession = { access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" }; __sessionEphemeral = true; }
-    signMark(durable ? "session:ok" : "session:ephemeral");
-    return { ok: true, email: email, ephemeral: !durable };
+    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
+    return { ok: true, email: email };
   }
   async function signOut() {
     var c = cfg(), s = session();
     try { if (s && s.access_token) await fetchT(c.url + "/auth/v1/logout", { method: "POST", headers: { "apikey": c.anon, "Authorization": "Bearer " + s.access_token } }, FETCH_TIMEOUT_MS); } catch (e) {}
-    // Sign-out returns the tab to the public path: clear the flag so bearer() may use the anon key
-    // again (a signed-out board read is legitimately anon), and drop the in-memory copy.
-    __signInSeen = false; setSession(null); return true;
+    setSession(null); return true;
   }
   async function refresh() {
     var c = cfg(), s = session(); if (!s || !s.refresh_token) return false;
@@ -405,7 +356,6 @@
     upsert: upsert, del: del, listCol: listCol,
     uploadAttachment: uploadAttachment, attachPublicUrl: attachPublicUrl, ATTACH_BUCKET: ATTACH_BUCKET,
     signIn: signIn, signOut: signOut, session: session, signedIn: signedIn,
-    sessionEphemeral: sessionEphemeral,
     authEmail: authEmail, authUid: authUid, refresh: refresh, getSession: getSession,
     tables: function () { return Object.keys(TABLES); },
     URL_KEY: URL_KEY, ANON_KEY: ANON_KEY, FETCH_TIMEOUT_MS: FETCH_TIMEOUT_MS
