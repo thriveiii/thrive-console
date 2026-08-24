@@ -3177,6 +3177,11 @@ function scheduleSyncPush(){
 }
 function startLiveSync(){
   if(!document.querySelector("header.top")) return;       // console pages only
+  /* P48 gate-first boot: gate.js loads BEFORE app.js now, so on a WARM session the gate resolved and left
+     window.__gateUnlockedPending (finish() found onGateUnlocked undefined). Drain it here, at DOMContentLoaded,
+     where every top-level onThrive("unlock",...) handler (the P111 board force-hydrate, opnames, opprefs,
+     mailreconcile, p27role) is registered and the DOM exists, so the warm-boot unlock fires exactly once. */
+  try{ if(window.__gateUnlockedPending){ window.__gateUnlockedPending=false; if(typeof window.onGateUnlocked==="function") window.onGateUnlocked(); } }catch(_){}
   if(syncAuth()) syncNow();
   onThrive("unlock","sync",function(){ syncNow(); });
   setInterval(()=>{ if(!document.hidden && syncAuth()) syncNow(); }, 60000);

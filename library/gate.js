@@ -231,7 +231,13 @@
     try { window.__bootMark = "gate resolved"; } catch (ex) {}
     try { if (typeof window.__thriveFailsafeArm === "function") window.__thriveFailsafeArm(); } catch (ex) {}
     reveal();
+    // P48 gate-first boot: the gate now resolves BEFORE app.js is parsed (it is loaded first, right after
+    // config + supabase). On a WARM session that means finish() runs while window.onGateUnlocked is still
+    // undefined, so the unlock hydrate (the P111 force board-refresh, the operator chip, the name map)
+    // would be missed. Call it if it exists; otherwise leave a pending flag that app.js drains the moment
+    // it defines the hook, so the unlock fires exactly once on a warm boot too.
     if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) {} }
+    else { try { window.__gateUnlockedPending = true; } catch (ex) {} }
   }
   function showPasscodeStep(wrap) {
     var s = STR[lang()];
@@ -436,9 +442,14 @@
     buildGate(target);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start);
-  } else {
+  // P48 gate-first boot: gate.js is emitted after <body>'s section markup and after config + supabase, so
+  // document.body already exists and gate.js' dependencies (THRIVE_CONFIG, ThriveSupa) are satisfied when
+  // this runs. There is therefore no reason to wait for DOMContentLoaded, which does not fire until app.js
+  // (~874 KB) and every other module finish parsing; waiting is what made the login door boot AFTER the
+  // whole application. Call start() immediately, guarded against a double init. The gate now paints before
+  // app.js, not after it.
+  if (!window.__gateStarted) {
+    window.__gateStarted = true;
     start();
   }
 

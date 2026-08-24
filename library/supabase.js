@@ -169,11 +169,15 @@
   async function signIn(email, password, opts) {
     opts = opts || {};
     var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
-    // P47 restore: the last-good (P31) sign-in body, verbatim. One bounded POST (a timeout or network
-    // failure REJECTS here, typed, at the 15s bound, it never hangs); a typed error on a bad response;
-    // then a SYNCHRONOUS session persist and return. No step marks, no in-memory/ephemeral branch: the
-    // P47 build diff proved this request is byte-identical to the build that signed in, so the path is
-    // restored to that shape and nothing is layered on top of it.
+    // P47 restore: the last-good (P31) sign-in body. One bounded POST (a timeout or network failure REJECTS
+    // here, typed, at the 15s bound, it never hangs); a typed error on a bad response; then a SYNCHRONOUS
+    // session persist and return. The request is byte-identical to the build that signed in and is FROZEN.
+    // P48 re-adds ONLY the two weightless __signMark strip marks around the awaited POST (token:sent before,
+    // token:ok after success): pure window assignments, zero effect on the URL, headers, body, session, or
+    // token. They are the device instrument P48 keeps (the failsafe strip renders them) so the isolation
+    // test can read on the device whether sign-in advances past token:sent to token:ok. Deleted in the
+    // closing commit once a device photo shows token:ok.
+    try { window.__signMark = "token:sent"; } catch (e) {}
     var r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh);
     var data = r.data;
     if (!r.res.ok || !data || !data.access_token) {
@@ -184,6 +188,7 @@
       err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
       throw err;
     }
+    try { window.__signMark = "token:ok"; } catch (e) {}
     setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
     return { ok: true, email: email };
   }

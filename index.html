@@ -4,29 +4,24 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Thrive</title>
-<!-- P43: the meta refresh is the JS-off FALLBACK only, delayed so the convergence script below (which
-     checks version.json for the CURRENT build) wins the race in every normal boot. Previously this fired
-     at 0s with the BAKED build: a stale cached index.html chain-pinned console.html to an old ?v forever,
-     which is exactly how one device stayed a week behind. -->
-<meta http-equiv="refresh" content="6; url=./library/console.html?v=86083c66">
+<!-- P48: the root is now an IMMEDIATE redirect. The meta refresh (JS-off fallback) fires at 0s straight to
+     console.html?v=BUILD, and the inline JS below does location.replace at once with NO version.json probe
+     in the critical path: the front door no longer waits on a fetch. The in-shell P43 convergence
+     (failsafe.js still fetches version.json inside console.html) is the stale-client safety net, so a
+     device that somehow loads an old shell still converges from within it. -->
+<meta http-equiv="refresh" content="0; url=./library/console.html?v=b131c690">
 <link rel="icon" href="./assets/thrive-logo.png">
 <style>html,body{margin:0;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;height:100%}
 .c{height:100%;display:flex;align-items:center;justify-content:center;gap:12px}
 img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 a{color:#71BFCC}</style></head>
-<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=86083c66">Thrive Opportunity Library</a>…</span></div>
-<script>(function(){/* P43 version convergence at the front door. This document's baked build may be STALE
-  (a cached index.html outlives its deploy), so before redirecting it asks the server which build is
-  current: fetch version.json with cache:"no-store" (written by the same bundling step that stamps the
-  build) and use THAT build in the console.html URL, falling back to the baked value only when the fetch
-  fails (offline, first deploy). A stale front door can no longer chain-pin the shell to an old version.
-  Query params (minus any stale v/vr) and the hash still carry across, so ?debug=paint survives. */
-  var baked="86083c66";
+<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=b131c690">Thrive Opportunity Library</a>…</span></div>
+<script>(function(){/* P48 immediate redirect. The root does NOT probe version.json (no fetch, no wait): it
+  replaces the location straight to the current shell. version.json is still written and is the in-shell
+  P43 convergence net (failsafe.js fetches it from inside console.html), so a stale-cached front door can
+  no longer chain-pin the shell AND the shell can still self-correct if it is stale. Query params (minus
+  any stale v/vr) and the hash still carry across, so ?debug=paint survives. */
+  var baked="b131c690";
   var q=(location.search||"").replace(/^\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0;}).join("&");
-  function go(b){ location.replace("./library/console.html?v="+b+(q?("&"+q):"")+(location.hash||"")); }
-  try{
-    fetch("./version.json",{cache:"no-store"})
-      .then(function(r){return r.ok?r.json():null;})
-      .then(function(j){ go((j&&j.build)||baked); })
-      .catch(function(){ go(baked); });
-  }catch(e){ go(baked); }})();</script></body></html>
+  location.replace("./library/console.html?v="+baked+(q?("&"+q):"")+(location.hash||""));
+})();</script></body></html>
