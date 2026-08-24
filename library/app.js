@@ -2402,10 +2402,13 @@ onThrive("unlock","supahydrate", function(){
   try{
     if(supaOn() && supaReadFlagOn() && supaSignedIn()){
       __supa.degraded=false; __supa.authRequired=false; __supa.hydrated=false; __supaHydrating=false;
-      supaEnsureHydrated();   // fires supaHydrate and refreshes the board when it resolves
+      supaEnsureHydrated();   // fires supaHydrate and refreshes the board when it resolves (the deep refresh)
     }
   }catch(e){}
-  try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(e){}   // paint now (local cards), no prompt
+  // P53: the immediate board paint is NOT triggered here. The dedicated board unlock handler
+  // (onThrive("unlock","board", renderBoard)) is the ONE immediate render on unlock; supaEnsureHydrated above
+  // provides the later deep-hydrate refresh. Calling thriveBoardRefresh() here too made a second competing
+  // render in the same unlock tick, part of the fan-out (with the shell re-init) that raced the board blank.
 });
 /* Freeze recovery: once signed in, push the local ledger so the sends the server is missing since Aug 14
    record and the count moves. Deferred so hydrate/flush settle first; idempotent. */
