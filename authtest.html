@@ -16,6 +16,7 @@
 <p>Same origin, same headers as the console. It never touches console JS. If a call here works, the delta is console code; if a call here hangs, the block is domain-level (service worker, CSP, network).</p>
 <button id="bHealth">1. health GET</button>
 <button id="bToken">2. token POST (wrong password on purpose)</button>
+<button id="bTokenConsole">3. token POST, EXACT console options (cache:no-store, no Authorization)</button>
 <pre id="out">ready.</pre>
 <script>
 /* Public by design (RLS + sign-in protect the data, not these values). Kept literal so this page carries
@@ -48,6 +49,46 @@ document.getElementById("bToken").addEventListener("click", function(){
     headers:{ "apikey": ANON, "Authorization": "Bearer " + ANON, "Content-Type": "application/json" },
     body: JSON.stringify({ email:"authtest@example.com", password:"definitely-wrong-"+Date.now() })
   });
+});
+/* Button 3 sends the token POST with the EXACT options the console's authTokenPost uses (post-P50):
+   apikey + Content-Type only (NO Authorization, dropped in P46), and cache:"no-store" (the one
+   source-visible option button 2 omits and the console keeps). The fetch itself stays bare, with no
+   AbortController signal (P50 removed it), so the request is byte-identical to the console's. The 12s
+   bound is a Promise.race against a setTimeout - the same independent-timeout construct the console's
+   fetchJSON uses to guarantee settlement - so a hang PRINTS "TIMEOUT" instead of spinning forever, and
+   the bound adds nothing to the request. If this hangs where button 2 returned fast, cache:"no-store"
+   on a preflighted POST is the trigger on this WebKit build. */
+async function runBounded(label, url, opts, ms){
+  show(label + "\nrunning...");
+  var t0 = Date.now(), lines = [label];
+  var timedOut = false;
+  var timer = new Promise(function(resolve){ setTimeout(function(){ timedOut = true; resolve("__timeout__"); }, ms); });
+  try{
+    var res = await Promise.race([ fetch(url, opts), timer ]);
+    if (timedOut || res === "__timeout__"){
+      lines.push("elapsed: " + (Date.now()-t0) + "ms");
+      lines.push("TIMEOUT after " + ms + "ms: the fetch never settled (this is the hang).");
+      show(lines.join("\n"));
+      return;
+    }
+    lines.push("elapsed: " + (Date.now()-t0) + "ms");
+    lines.push("status: " + res.status + " " + res.statusText);
+    var body = ""; try{ body = await res.text(); }catch(e){ body = "<body read failed: " + e + ">"; }
+    lines.push("body: " + String(body).slice(0, 500));
+  }catch(err){
+    lines.push("elapsed: " + (Date.now()-t0) + "ms");
+    lines.push("ERROR: " + (err && err.name) + ": " + (err && err.message));
+  }
+  show(lines.join("\n"));
+}
+document.getElementById("bTokenConsole").addEventListener("click", function(){
+  runBounded("token POST, EXACT console options (cache:no-store, no Authorization)",
+    URL_BASE + "/auth/v1/token?grant_type=password", {
+      method:"POST",
+      headers:{ "apikey": ANON, "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ email:"authtest@example.com", password:"definitely-wrong-"+Date.now() })
+    }, 12000);
 });
 </script>
 </main></body></html>
