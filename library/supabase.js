@@ -109,9 +109,15 @@
   }
   // fetch + body read under ONE timeout race. Returns { res, data, text }. Rejects with a typed timeout
   // error if the request OR the body read exceeds ms; a real network failure is tagged kind:"network".
-  async function fetchJSON(url, opts, ms) {
+  async function fetchJSON(url, opts, ms, noSignal) {
     ms = ms || FETCH_TIMEOUT_MS;
-    var ac = newAbort(), o = Object.assign({}, opts || {});
+    // P50: `noSignal` builds the fetch WITHOUT an AbortController signal, to exactly match the bare fetch
+    // authtest.html proved works on the failing iPad while the console (this wrapper) hung on the identical
+    // request. The one construct authtest lacks and this wrapper adds to the fetch is `o.signal = ac.signal`;
+    // WebKit's AbortController+fetch is documented-unreliable (see the P31 note above). The setTimeout race
+    // below is the independent bound that actually guarantees the promise settles, so dropping the signal
+    // loses only the best-effort socket-abort, never the timeout guarantee. rest()/fetchT are unaffected.
+    var ac = noSignal ? null : newAbort(), o = Object.assign({}, opts || {});
     if (ac) o.signal = ac.signal;
     var to = raceTimeout(ms);
     var run = (async function () {
@@ -159,11 +165,16 @@
     return c.url + "/auth/v1/token?grant_type=" + grant + (fresh ? ("&_ts=" + Date.now()) : "");
   }
   function authTokenPost(c, grant, payload, fresh) {
+    // P50: the auth token call is issued as a BARE fetch (no AbortController signal), matching authtest.html
+    // exactly, which returned 400 in ~621ms on the same iPad/origin/network where this wrapped call hung at
+    // token:sent. The request (URL, headers, body) is unchanged and frozen; only the signal, the one
+    // fetch-touching construct authtest lacks, is dropped. The 15s setTimeout race inside fetchJSON still
+    // bounds it, so a real stall still fails loud with a working Retry.
     return fetchJSON(authTokenUrl(c, grant, fresh), {
       method: "POST",
       headers: { "apikey": c.anon, "Content-Type": "application/json" },
       body: JSON.stringify(payload), cache: "no-store"
-    }, FETCH_TIMEOUT_MS);
+    }, FETCH_TIMEOUT_MS, true);
   }
 
   async function signIn(email, password, opts) {
