@@ -288,10 +288,35 @@ const head = inline
 // door paints as the first boot boundary rather than after app.js (~874 KB) finishes parsing. gate.js'
 // dependencies (config's THRIVE_CONFIG, supabase's ThriveSupa) are satisfied before gate runs; every
 // module below is still present exactly once, only reordered.
+/* SESSION_HANDOFF_FIX Part 3: adopt a session carried in the URL fragment. Emitted AFTER supabase.js (so
+   setSession exists) and BEFORE gate.js (so it decides with the session already in memory). On a device
+   whose localStorage does not survive a document navigation, this is what makes signedIn() true and lets
+   gateTarget() return the board instead of ejecting. The fragment is same-origin, never sent to the server;
+   it is decoded, adopted into memory (the mirror is best-effort), the presence stamp is seeded for gate.js,
+   and then the token is STRIPPED from the visible URL and history at once. It reads, adopts, and strips: it
+   changes no auth, routing target, or eject-trigger logic. */
+const fragAdopt =
+  '<script>(function(){var had=false;try{' +
+  'var h=location.hash||"";var m=h.match(/[#&]s=([^&]+)/);' +
+  'if(m){had=true;' +
+  'var b=m[1].replace(/-/g,"+").replace(/_/g,"/");while(b.length%4)b+="=";' +
+  'var bin=atob(b),by=new Uint8Array(bin.length),i;for(i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);' +
+  'var obj=JSON.parse(new TextDecoder("utf-8").decode(by));var sess=obj&&obj.s;' +
+  'if(sess&&sess.access_token&&window.ThriveSupa&&window.ThriveSupa.adoptSession){' +
+  'window.ThriveSupa.adoptSession(sess);' +                     // populates __memSession now; the mirror is best-effort inside
+  'if(obj.p){window.__seedPresence=obj.p;try{localStorage.setItem("thrive_presence",String(obj.p));}catch(e){}}' +
+  '}}}catch(e){try{(window.__authNotes=window.__authNotes||[]).push("fragment adopt: "+((e&&e.message)||e));}catch(x){}}' +
+  'finally{if(had){try{' +
+  'var rest=(location.hash||"").replace(/^#/,"").split("&").filter(function(p){return p&&p.indexOf("s=")!==0;}).join("&");' +
+  'history.replaceState(null,"",location.pathname+location.search+(rest?("#"+rest):""));' +
+  '}catch(e){}}}' +
+  '})();</script>';
+
 const body = inline
   ? '<script>window.THRIVE_SYNC_JSON = ' + JSON.stringify(published) + ';</script>' +
     '\n<script>\n' + config + '\n</script>' +
     '\n<script>\n' + supabase + '\n</script>' +
+    '\n' + fragAdopt +
     '\n<script>\n' + gate + '\n</script>' +
     '\n<script>\n' + icons + '\n</script>\n<script>\n' + i18n + '\n</script>' +
     '\n<script>\n' + model + '\n</script>\n<script>\n' + life + '\n</script>'+
@@ -303,7 +328,9 @@ const body = inline
     '\n<script>\n' + drafts + '\n</script>'+
     '\n<script>\n' + flows + '\n</script>'+
     '\n<script>\n' + app + '\n</script>'
-  : '<script src="' + fp("config.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>\n<script src="' + fp("gate.js") + '"></script>' +
+  : '<script src="' + fp("config.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>' +
+    '\n' + fragAdopt +
+    '\n<script src="' + fp("gate.js") + '"></script>' +
     '\n<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>' +
     '\n<script src="' + fp("stage-model.js") + '"></script>\n<script src="' + fp("lifecycle.js") + '"></script>' +
     '\n<script src="' + fp("intake.js") + '"></script>'+

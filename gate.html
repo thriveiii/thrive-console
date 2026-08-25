@@ -127,6 +127,13 @@ function showErr(t){ if(!t){ errEl.hidden = true; errEl.textContent = ""; return
 function showDiag(t){ if(!t){ diagEl.hidden = true; diagEl.textContent = ""; return; } diagEl.textContent = String(t).slice(0,220); diagEl.hidden = false; }
 function showRetry(on){ retryBtn.hidden = !on; }
 function fmtWait(ms){ var n = Math.ceil(ms/1000); return n >= 60 ? Math.ceil(n/60)+"m" : n+"s"; }
+/* SESSION_HANDOFF_FIX Part 1: base64url encoder for the session carried in the URL fragment. UTF-8 safe
+   (the email may be non-ascii), and the fragment is never sent to the server or logged server-side. */
+function b64urlEncode(str){
+  var bytes = new TextEncoder().encode(str), bin = "", i;
+  for(i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
 /* PBKDF2-SHA256, the SAME params the console gate uses. A missing crypto.subtle (a non-secure context) is a
    NAMED failure surfaced as "secure connection required", never as "wrong passcode". */
@@ -269,14 +276,23 @@ function showOperator(){
     busy = false; em.disabled = pw.disabled = false; goBtn.disabled = false; goBtn.textContent = s.op_go;
     if(ok){
       clearFail(OP_FAILS);
-      // The carrier across the gate.html -> index.html navigation: memory (lost on nav) AND the localStorage
-      // mirror (proven writable on this device). A mirror write failure is shown, never swallowed.
+      // SESSION_HANDOFF_FIX Part 1: the carrier across gate.html -> index.html -> console.html is now the URL
+      // FRAGMENT, which survives every same-origin navigation even on a device whose localStorage does not
+      // cross the hop (the confirmed Branch A iPad). The localStorage mirror stays best-effort and NO LONGER
+      // gates the navigation: the old "return on mirror failure" turned a storage-blocked device into a gate
+      // loop. The fragment is same-origin, never sent to the server, and console.html strips it at boot.
       try{ window.__memSession = sess; }catch(ex){ note("mem session", ex); }
-      var mirrored = false;
-      try{ localStorage.setItem(SESSION_KEY, JSON.stringify(sess)); localStorage.setItem(PRESENCE, String(Date.now())); mirrored = true; }
+      try{ localStorage.setItem(SESSION_KEY, JSON.stringify(sess)); localStorage.setItem(PRESENCE, String(Date.now())); }
       catch(ex){ note("session mirror write", ex); }
-      if(!mirrored){ showErr(s.op_err); showDiag("session mirror write failed: storage unavailable"); showRetry(true); return; }
-      try{ location.assign("index.html?warm=1"); }catch(ex){ note("navigate", ex); location.href = "index.html?warm=1"; }
+      var frag = "";
+      try{
+        // A compact session (no bulky user object): exactly what the console needs to be signed in, plus the
+        // presence stamp so the console gate resolves to the board and does not fall back to the passcode.
+        var carry = { access_token:sess.access_token, refresh_token:sess.refresh_token,
+                      expires_at:sess.expires_at, email:sess.email, uid:sess.uid };
+        frag = "#s=" + b64urlEncode(JSON.stringify({ s:carry, p:Date.now() }));
+      }catch(ex){ note("session fragment encode", ex); }
+      try{ location.assign("index.html?warm=1" + frag); }catch(ex){ note("navigate", ex); location.href = "index.html?warm=1" + frag; }
     } else if(kind === "empty" || kind === "parse"){
       showErr(kind === "empty" ? s.op_err_empty : s.op_err_parse); showDiag(raw); showRetry(true); (m ? pw : em).focus();
     } else if(kind === "timeout" || kind === "network" || kind === "unavailable"){
