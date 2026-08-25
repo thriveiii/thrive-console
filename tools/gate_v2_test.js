@@ -164,11 +164,11 @@ const GOOD = JSON.stringify({ access_token: "tok-9", refresh_token: "ref-9", exp
     assert((GATE.match(/err_secure:/g) || []).length === 2, "err_secure not in both locales");
     assert(/kind === "empty" \? s\.op_err_empty : s\.op_err_parse/.test(GATE), "the gate does not surface the distinct strings");
   });
-  ck("C7 Part 5: the gate phase is silent (autoSyncTick + scheduleSyncPush hold on __gateRevealed; reveal sets it)", () => {
-    const tick = APP.slice(APP.indexOf("function autoSyncTick(){"), APP.indexOf("function autoSyncTick(){") + 400);
-    assert(/if\(!window\.__gateRevealed\) return;/.test(tick), "autoSyncTick does not hold on the reveal flag");
-    const push = APP.slice(APP.indexOf("function scheduleSyncPush(){"), APP.indexOf("function scheduleSyncPush(){") + 300);
-    assert(/if\(!window\.__gateRevealed\) return;/.test(push), "scheduleSyncPush does not hold on the reveal flag");
+  ck("C7 Part 5: the gate phase is silent (autoSyncTick + scheduleSyncPush hold on __gateRevealed, and since P55 also on __boardPainted; reveal sets it)", () => {
+    const tick = APP.slice(APP.indexOf("function autoSyncTick(){"), APP.indexOf("function autoSyncTick(){") + 500);
+    assert(/if\(!window\.__gateRevealed( \|\| !window\.__boardPainted)?\) return;/.test(tick), "autoSyncTick does not hold on the reveal flag");
+    const push = APP.slice(APP.indexOf("function scheduleSyncPush(){"), APP.indexOf("function scheduleSyncPush(){") + 400);
+    assert(/if\(!window\.__gateRevealed( \|\| !window\.__boardPainted)?\) return;/.test(push), "scheduleSyncPush does not hold on the reveal flag");
     assert(/window\.__gateRevealed = true;/.test(GATE), "reveal() does not set the flag");
   });
   ck("C8 the frozen request shape is untouched (apikey + JSON, no Authorization, cache no-store, no signal on the token call)", () => {
