@@ -195,6 +195,33 @@ silent once `__boardPainted` is set. `signin_resilience_test` part D reconciled 
 watchdog. (The deeper cause remains the connection: 890 KB cannot arrive on a dead link. The watchdog turns
 a confusing black void into a clear, actionable state, and a retry on a recovered connection gets the board.)
 
+## BOARD_WAIT: the wait is never covered, never interrupted, never auto-reloaded (regression fix)
+
+The BOARD_WATCHDOG above (#225) was itself a regression, and the worst of this sequence. Audit of the
+merges after the last working build (`9c5e952f`, where the operator got in) found exactly two: #224
+(gate.html restyle, cosmetic, cleared) and #225 (the watchdog). #225's mechanics on a slow connection:
+
+- at 5s a FULL-SCREEN overlay (`inset:0`) covered the entire working interface with a "loading" screen
+  (the "fake interface" the operators reported);
+- at 18s a second full-screen Retry panel replaced the screen, and its only exit was `location.reload()`;
+- the reload CANCELED the in-flight ~890 KB app.js download and restarted the whole ~1.7 MB first load
+  from zero.
+
+So any connection needing more than 18 seconds for the first load could NEVER finish: an infinite reload
+loop. That is why entry worked before #225 (the same slow load simply completed after 30 to 60 seconds,
+uninterrupted) and became impossible after it, on WiFi and cellular alike.
+
+The law now baked into the shell: the wait is NEVER covered, NEVER interrupted, and NEVER reloaded by the
+page's own hand. One small non-blocking banner at the bottom edge (`#boardWait`) says the load is slow and
+STILL GOING, offers a Retry the operator may choose, removes nothing, covers nothing, and clears itself the
+instant the board paints. Keyed on `__boardPainted`, silent at the gate, armed at 8s and re-armed at 25s.
+
+Evidence: `tools/board_watchdog_test.py` rewritten to the BOARD_WAIT contract: with app.js aborted, the
+banner appears, the viewport center stays free (`elementFromPoint`), and past the old 18s deadline a window
+marker proves NO self-reload happened and nothing replaced the screen; with `__boardPainted` set the banner
+never appears. `signin_resilience_test` part D reconciled, and D2 goes red if anyone reintroduces a
+full-screen overlay, a gate removal, or a fail deadline into the wait path.
+
 ## Acceptance (device-gated)
 
 0. If still stranded on the splash: open `console.thriveiii.com/?stay=1` (the manual launcher) and tap

@@ -335,50 +335,40 @@ try{var __l=localStorage.getItem('thrive_lang');d.setAttribute('lang',__l==='ar'
 try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){try{r.unregister();}catch(e){}});}).catch(function(){});}}catch(e){}
 function lock(){d.classList.add('gate-locked')}
 try{if(sessionStorage.getItem('thrive_gate_v2')!=='${GATE_HASH}')lock()}catch(e){lock()}
-/* BOARD_WATCHDOG: after the gate resolves, the BOARD is painted by app.js (~890 KB, the last and largest
-   script). On a marginal connection that bundle can arrive slowly or not at all, leaving a BLACK screen
-   below the shell header with no way out. The former watchdog keyed on window.__thriveBooted, which gate.js
-   sets the INSTANT the gate resolves, so once the gate passed it never fired and the black board was silent
-   (the exact post-gate black the operators hit). This keys on window.__boardPainted, set ONLY by the
-   board's first paint (app.js render), and stays silent while a gate sign-in card is on screen (the
-   operator is signing in, not stuck). Two phases so the wait is never a silent void: a gentle "loading the
-   board" indicator, then a Retry panel if the board still has not painted. Self-contained and inline so it
-   works even if styles.css or app.js never loaded. */
+/* BOARD_WAIT: after the gate resolves, the BOARD is painted by app.js (~890 KB, the last and largest
+   script), and the whole first load is ~1.7 MB. On a slow connection that takes well past any fixed
+   deadline, and the load SUCCEEDS if it is simply left alone. The previous watchdog (#225) did not leave
+   it alone: at 5s a full-screen overlay covered the working interface, and at 18s a full-screen Retry
+   panel replaced the screen whose only exit was location.reload(), which CANCELED the in-flight app.js
+   download and restarted from zero. Any connection needing more than 18s could never finish: an infinite
+   reload loop that locked every operator out (the regression the team hit after #225 deployed).
+
+   The law now: the wait is NEVER covered, NEVER interrupted, and NEVER reloaded by the page's own hand.
+   One small, non-blocking banner at the bottom edge tells the truth ("loading the board, the connection
+   is slow") and OFFERS a Retry the operator may choose; it removes nothing, covers nothing, forces
+   nothing, and clears itself the instant the board paints. Keyed on window.__boardPainted (set only by
+   the board's first paint in app.js), silent while a gate sign-in card is on screen. Self-contained and
+   inline so it works even if styles.css or app.js never arrive. */
 function __bwBoardUp(){ try{ return !!window.__boardPainted; }catch(e){ return false; } }
 function __bwAtGate(){ try{ return !!document.getElementById('thriveGate'); }catch(e){ return false; } }
 function __bwAr(){ try{ return localStorage.getItem('thrive_lang')==='ar'; }catch(e){ return false; } }
-function __bwRm(id){ try{ var e=document.getElementById(id); if(e&&e.parentNode) e.parentNode.removeChild(e); }catch(e){} }
 var __bwPoll=null;
-function __bwLoading(){
-  if(__bwBoardUp()||__bwAtGate()||document.getElementById('bootLoading')||document.getElementById('bootWatchdog')) return;
+function __bwShow(){
+  if(__bwBoardUp()||__bwAtGate()||document.getElementById('boardWait')) return;
   var ar=__bwAr();
-  var L=document.createElement('div');L.id='bootLoading';L.setAttribute('dir',ar?'rtl':'ltr');
-  L.setAttribute('style','position:fixed;inset:0;z-index:99998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center');
-  L.innerHTML='<style>@keyframes spin{to{transform:rotate(360deg)}}</style><img src="../assets/thrive-logo.png" alt="" style="width:30px;height:30px;animation:spin 1.4s linear infinite"><p style="margin:0;font-size:.95rem">'+(ar?'جارٍ تحميل اللوحة...':'Loading the board...')+'</p>';
-  (document.body||d).appendChild(L);
-  __bwPoll=setInterval(function(){ if(__bwBoardUp()){ clearInterval(__bwPoll); __bwRm('bootLoading'); } },400);
+  var B=document.createElement('div');B.id='boardWait';B.setAttribute('dir',ar?'rtl':'ltr');
+  B.setAttribute('style','position:fixed;left:12px;right:12px;bottom:14px;z-index:9000;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;background:#111116;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:10px 14px;color:#e5e7eb;font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.5);text-align:center');
+  B.innerHTML='<style>@keyframes bwspin{to{transform:rotate(360deg)}}</style>'+
+    '<img src="../assets/thrive-logo.png" alt="" style="width:16px;height:16px;animation:bwspin 1.4s linear infinite">'+
+    '<span>'+(ar?'جارٍ تحميل اللوحة. الاتصال بطيء، والتحميل مستمر.':'Loading the board. The connection is slow; the load is still going.')+'</span>'+
+    '<button id="bwRetry" type="button" style="padding:6px 12px;border:0;border-radius:8px;background:#71BFCC;color:#04252b;font-weight:700;cursor:pointer;font-family:inherit">'+(ar?'إعادة المحاولة':'Retry')+'</button>';
+  (document.body||d).appendChild(B);
+  try{document.getElementById('bwRetry').addEventListener('click',function(){location.reload();});}catch(e){}
+  __bwPoll=setInterval(function(){ if(__bwBoardUp()){ clearInterval(__bwPoll); try{ var e=document.getElementById('boardWait'); if(e&&e.parentNode) e.parentNode.removeChild(e); }catch(x){} } },400);
 }
-function __bwFail(){
-  if(__bwBoardUp()){ __bwRm('bootLoading'); return; }
-  if(__bwAtGate()) return;                                      // still at the sign-in card: not stuck
-  if(__bwPoll){ clearInterval(__bwPoll); }
-  __bwRm('bootLoading');
-  var ar=__bwAr();
-  try{var wg=document.getElementById('thriveGate');if(wg&&wg.parentNode)wg.parentNode.removeChild(wg);}catch(e){}
-  try{var wb=document.querySelector('.bootfail');if(wb&&wb.parentNode)wb.parentNode.removeChild(wb);}catch(e){}
-  try{d.classList.remove('gate-locked');}catch(e){}
-  var wt=ar?'يستغرق تحميل اللوحة وقتًا أطول من المعتاد.':'The board is taking too long to load.';
-  var ws=ar?'قد يكون الاتصال ضعيفًا. تحقّق منه ثم أعد المحاولة.':'The connection may be weak. Check it, then retry.';
-  var wr=ar?'إعادة المحاولة':'Retry';
-  var W=document.createElement('div');W.id='bootWatchdog';W.setAttribute('dir',ar?'rtl':'ltr');
-  W.setAttribute('style','position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0a0a0c;color:#e5e7eb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center');
-  /* Retry only. The watchdog must never start a second auth/sign-out state machine, so there is no Sign out
-     button or session-clearing handler; Retry simply reloads. */
-  W.innerHTML='<div style="max-width:22rem"><p style="font-size:1.05rem;font-weight:600;margin:0 0 .4rem">'+wt+'</p><p style="opacity:.75;margin:0 0 1.2rem">'+ws+'</p><div style="display:flex;gap:.6rem;justify-content:center"><button id="wdRetry" type="button" style="padding:.6rem 1.1rem;border-radius:.5rem;border:0;background:#71BFCC;color:#04252b;font-weight:600;cursor:pointer">'+wr+'</button></div></div>';
-  (document.body||d).appendChild(W);
-  try{document.getElementById('wdRetry').addEventListener('click',function(){location.reload();});}catch(e){}
-}
-try{ setTimeout(__bwLoading, 5000); setTimeout(__bwFail, 18000); }catch(e){}
+/* Armed twice: at 8s for a warm boot, and again at 25s in case the operator was still at the sign-in card
+   the first time. __bwShow re-checks the board and the gate itself, so a healthy boot never sees it. */
+try{ setTimeout(__bwShow, 8000); setTimeout(__bwShow, 25000); }catch(e){}
 })();</script>
 ${head}
 </head>
