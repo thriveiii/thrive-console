@@ -29,13 +29,34 @@ ck("D5 it reads the paint facts: gate display/element, gate-locked, view-board h
    && /querySelectorAll\("#view-board \.tok"\)\.length/.test(body));
 ck("D6 it refreshes so a photo any time after sign-in is live (setInterval tick)",
    /setInterval\(tick, 1000\)/.test(body));
-ck("D7 no secret is printed into the panel (no email, token, or anon key in the readout)",
-   body.indexOf("authEmail") < 0 && body.indexOf("access_token") < 0 && body.indexOf("c.anon") < 0
-   && body.indexOf("supaAnon") < 0 && body.indexOf(".token") < 0);
+ck("D7 no secret is printed into the panel: no email, no session/token VALUE read (only the boolean flag + redacted shape)",
+   body.indexOf("authEmail") < 0 && body.indexOf(".access_token") < 0 && body.indexOf("c.anon") < 0
+   && body.indexOf("supaAnon") < 0 && body.indexOf("bearer(") < 0 && body.indexOf("session().") < 0);
 ck("D8 it lives in app.js (a BUILD-hashed source) so shipping it changes the build stamp / busts the cache",
    /function initStateDiag\(\)/.test(APP));
 ck("D9 no em dash in the diagnostic",
    body.indexOf("—") < 0);
+
+// P55: the panel prints the last token-POST shape (from window.__lastTokenDiag) and the gate error state.
+ck("D10 the panel prints the gate error state (op_err/timeout visibility)",
+   /getElementById\("gateErr"\)/.test(body) && /gate error: /.test(body));
+ck("D11 the panel prints the last token-POST shape fields (status, res.ok, typeof data, has_access_token, text_length, body_shape) and the throw branch",
+   /__lastTokenDiag/.test(body) && /res\.ok=/.test(body) && /typeof data=/.test(body)
+   && /has_access_token=/.test(body) && /text_length=/.test(body) && /body_shape: /.test(body)
+   && /THREW/.test(body));
+
+// P55: the capture lives in supabase.js authTokenPost, records shape only (no token value, no logging).
+const SUPA = fs.readFileSync(path.join(ROOT, "library/supabase.js"), "utf8");
+const rec = (function () { const i = SUPA.indexOf("function recordTokenDiag"); return i < 0 ? "" : SUPA.slice(i, i + 1200); })();
+ck("D12 authTokenPost records the response shape to window.__lastTokenDiag and hands back the SAME result/rejection",
+   /window\.__lastTokenDiag = d;/.test(SUPA)
+   && /return p\.then\(function \(r\) \{ recordTokenDiag\(grant, r, null\); return r; \},\s*function \(e\) \{ recordTokenDiag\(grant, null, e\); throw e; \}\);/.test(SUPA));
+ck("D13 the capture stores NO token value (only a boolean has_access_token) and redacts the body preview",
+   rec.length > 0 && /has_access_token: !!\(r && r\.data && typeof r\.data === "object" && r\.data\.access_token\)/.test(rec)
+   && /function redactBody/.test(SUPA) && /\[REDACTED\]/.test(SUPA)
+   && rec.indexOf("d.access_token =") < 0 && rec.indexOf("token: r.data") < 0);
+ck("D14 the capture does no logging (no console.* in the recorder)",
+   rec.length > 0 && rec.indexOf("console.") < 0);
 
 console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");
 process.exit(fails === 0 ? 0 : 1);

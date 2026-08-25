@@ -3231,11 +3231,25 @@ function initStateDiag(){
         var signedIn="?"; try{ signedIn=!!(window.ThriveSupa&&window.ThriveSupa.signedIn&&window.ThriveSupa.signedIn()); }catch(e){}
         var bvCount=(typeof __boardView==="object"&&__boardView)?Object.keys(__boardView).length:"n/a";
         var m=document.querySelector("meta[name=thrive-build]");
+        // P55: the gate's visible error (op_err / timeout / unavailable), if any, and the SHAPE of the last
+        // token response the wrapper got (window.__lastTokenDiag, no token value).
+        var ge=document.getElementById("gateErr");
+        var gateErr=(ge&&ge.hidden!==true&&(ge.textContent||"").trim())?("shown: "+(ge.textContent||"").trim()):"none";
+        var td=window.__lastTokenDiag; var tdLines;
+        if(!td){ tdLines=["last token POST: (none captured yet)"]; }
+        else if(td.threw){ tdLines=[
+          "last token POST: THREW  kind="+td.kind+"  status="+td.status,
+          "  message: "+String(td.message||"").slice(0,80) ]; }
+        else { tdLines=[
+          "last token POST: status="+td.status+"  res.ok="+td.res_ok+"  typeof data="+td.typeof_data,
+          "  has_access_token="+td.has_access_token+"  text_length="+td.text_length,
+          "  body_shape: "+String(td.body_shape||"") ]; }
         dp.textContent=[
           "THRIVE STATE DIAGNOSTIC (diag=1)   build "+(m?m.getAttribute("content"):"?"),
           "time "+new Date().toISOString(),
           "signedIn: "+signedIn,
           "gate element: "+(g?"present":"removed")+"   gate display: "+gateDisp+"   html.gate-locked: "+locked,
+          "gate error: "+gateErr,
           "view-board hidden: "+boardHidden,
           "boardLanes innerHTML length: "+innerLen,
           "rendered .tok cards: "+toks,
@@ -3245,7 +3259,7 @@ function initStateDiag(){
           "__boardView rows: "+bvCount,
           "__boardRows (last server read): "+(typeof window.__boardRows!=="undefined"?window.__boardRows:"n/a"),
           "__bootMark: "+(window.__bootMark||"?")+"   __signMark: "+(window.__signMark||"?")
-        ].join("\n");
+        ].concat(tdLines).join("\n");
       }catch(e){ try{ dp.textContent="diag error: "+((e&&e.message)||e); }catch(_){} }
     }
     tick(); setInterval(tick, 1000);
