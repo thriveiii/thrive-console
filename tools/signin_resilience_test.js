@@ -189,14 +189,25 @@ function partC() {
 }
 
 function partD() {
-  // P48: the shipped bundle carries the 20s boot watchdog as the SINGLE, Retry-ONLY exit. The former
-  // "Sign out" button is removed so the watchdog never starts a second auth/sign-out state machine.
-  ck("D1 the bundle has a boot watchdog gated on __thriveBooted", /if\(window\.__thriveBooted\)return;/.test(bundleSrc));
-  ck("D2 it fires at a 20s bound", /\},20000\);/.test(bundleSrc));
+  // BOARD_WATCHDOG: the shipped bundle carries a two-phase boot watchdog keyed on __boardPainted (the
+  // board's first paint), NOT __thriveBooted (which gate.js sets on resolve and so let a post-gate black
+  // board stay silent). It stays silent while a gate card is on screen, and is Retry-only.
+  ck("D1 the boot watchdog keys on __boardPainted (not __thriveBooted), so a resolved gate with an unpainted board still fires",
+     /function __bwBoardUp\(\)\{ try\{ return !!window\.__boardPainted;/.test(bundleSrc)
+     && /if\(__bwBoardUp\(\)\)\{ __bwRm\('bootLoading'\); return; \}/.test(bundleSrc)
+     && !/if\(window\.__thriveBooted\)return;/.test(bundleSrc));
+  ck("D1b it stays silent while a gate sign-in card is on screen (not stuck)",
+     /function __bwAtGate\(\)\{ try\{ return !!document\.getElementById\('thriveGate'\);/.test(bundleSrc)
+     && /if\(__bwAtGate\(\)\) return;/.test(bundleSrc));
+  ck("D2 it is two-phase: a loading indicator then a Retry panel (5s / 18s)",
+     /setTimeout\(__bwLoading, 5000\); setTimeout\(__bwFail, 18000\)/.test(bundleSrc)
+     && /id='bootLoading'/.test(bundleSrc) && /id='bootWatchdog'/.test(bundleSrc));
   ck("D3 the watchdog offers Retry (reload)", /wdRetry[\s\S]*?location\.reload\(\)/.test(bundleSrc));
-  ck("D4 P48: the watchdog is Retry-only, with NO Sign out button or session-clearing handler", !/wdOut/.test(bundleSrc) && !/removeItem\('console_sb_session'\)/.test(bundleSrc));
-  ck("D5 the watchdog panel is bilingual (EN + AR)", /The console is taking too long\./.test(bundleSrc) && /يستغرق الكونسول/.test(bundleSrc));
-  ck("D6 the board's first paint clears the watchdog (app.js render sets __thriveBooted)", /window\.__thriveBooted = true/.test(appSrc));
+  ck("D4 the watchdog is Retry-only, with NO Sign out button or session-clearing handler", !/wdOut/.test(bundleSrc) && !/removeItem\('console_sb_session'\)/.test(bundleSrc));
+  ck("D5 the watchdog and loading panels are bilingual (EN + AR)",
+     /The board is taking too long to load\./.test(bundleSrc) && /يستغرق تحميل اللوحة/.test(bundleSrc)
+     && /Loading the board\.\.\./.test(bundleSrc) && /جارٍ تحميل اللوحة/.test(bundleSrc));
+  ck("D6 the board's first paint sets __boardPainted, which clears the watchdog (app.js render)", /__boardPainted=true/.test(appSrc));
 }
 
 /* ============ Part E: P31 setTimeout race + fresh-connection retry ============ */
