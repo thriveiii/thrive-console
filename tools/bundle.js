@@ -256,7 +256,15 @@ const criticalGateCss =
   '.gate-build{color:#6b7280;font-size:11px;margin:12px 0 0;opacity:.75;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
   '.gate-build bdi{unicode-bidi:isolate}' +
   '.build-stamp{position:fixed;inset-block-end:6px;inset-inline-end:8px;z-index:5;pointer-events:none;font:10px/1.3 ui-monospace,Menlo,Consolas,monospace;color:#6b7280;opacity:.42;letter-spacing:.02em;white-space:nowrap;max-inline-size:96vw;overflow:hidden;text-overflow:ellipsis}' +
-  '.build-stamp bdi{unicode-bidi:isolate}';
+  '.build-stamp bdi{unicode-bidi:isolate}' +
+  /* CONSOLE_ENTRY_DIAG Part 3: the paint-safe rules live HERE, in the critical inline block, so they are in
+     force on the FIRST frame rather than after the application stylesheet resolves. Inert unless the class
+     is present, so the default console is byte-for-byte unaffected in behavior. */
+  'html.paint-safe *,html.paint-safe *::before,html.paint-safe *::after{filter:none!important;' +
+  '-webkit-backdrop-filter:none!important;backdrop-filter:none!important;' +
+  'animation:none!important;transition:none!important}' +
+  /* Held in reserve, applied only with the explicit svg=off companion; never on by default. */
+  'html.paint-safe.no-svg svg{display:none!important}';
 
 function build(inline){
 const head = inline
@@ -322,6 +330,17 @@ const out = `<!DOCTYPE html>
 <meta name="robots" content="noindex, nofollow">
 <meta name="thrive-build" content="${BUILD}">
 <meta name="thrive-built-at" content="${BUILT_AT}">
+<!-- CONSOLE_ENTRY_DIAG Part 3: paint-safe mode. FIRST script in the head, before any styling, so the class
+     is on documentElement before the first frame is composed. Opening the console with ?paint=safe disables
+     every filter, backdrop-filter, animation and transition. This is an INSTRUMENT, not a fix: it exists so
+     one device session can answer whether first-frame compositing is what makes the console unusable.
+     The pre-step census found exactly two paint-heavy constructs in the first viewport: .top (the sticky
+     brand header, backdrop-filter blur 8px over a translucent background) and .board.board-settle (a blur
+     7px to 0 filter animation over the whole board container, with will-change). Default behavior is
+     untouched: without the parameter nothing changes. The .no-svg companion is defined but NOT applied by
+     default; the census found zero svg in the shipped shell markup (icons are injected later by script), so
+     it is held in reserve only. -->
+<script>(function(){try{var q=new URLSearchParams(location.search);if(q.get("paint")==="safe"){document.documentElement.classList.add("paint-safe");if(q.get("svg")==="off")document.documentElement.classList.add("no-svg");}}catch(e){}})();</script>
 <!-- P40/P42/P48: the failsafe reveal surface, FIRST script, before any module. Registers global error and
      unhandledrejection listeners (bubble AND capture, so a 404ing resource speaks too) and the P41
      heartbeat/sign-step strip; a healthy boot ships no lingering pixel from it. P48: this is now the ONE
@@ -572,13 +591,181 @@ img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{trans
 a{color:#71BFCC}
 .esc{position:fixed;left:0;right:0;bottom:22px;display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:center;padding:0 16px}
 .esc a{color:#cbd5e1;font-size:13.5px;text-decoration:none;border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:9px 14px;background:#14141a}
-.esc a.primary{color:#04252b;background:#71BFCC;border-color:transparent;font-weight:700}</style></head>
+.esc a.primary{color:#04252b;background:#71BFCC;border-color:transparent;font-weight:700}
+.diag{position:fixed;left:0;right:0;bottom:72px;display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:center;padding:0 16px}
+.diag a,.diag button{color:#cbd5e1;font:13.5px/1 -apple-system,Segoe UI,Roboto,sans-serif;text-decoration:none;border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:9px 14px;background:#14141a;cursor:pointer}
+#idxProbeOut{position:fixed;left:12px;right:12px;top:12px;bottom:130px;z-index:12;margin:0;padding:12px 14px;background:#0a0b0f;border:1px solid rgba(255,255,255,.18);border-radius:12px;color:#cbd5e1;font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;direction:ltr;text-align:start;overflow:auto}</style></head>
 <body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span id="idxMsg">Opening the <a href="./library/console.html?v=${BUILD}">Thrive Opportunity Library</a>…</span></div>
 <div class="esc" id="idxEsc" role="group" aria-label="Enter">
 <a id="idxGate" class="primary" href="gate.html">Sign-in page</a>
 <a id="idxCon" href="./library/console.html?v=${BUILD}">Open the console</a>
 <a id="idxMenu" href="./?stay=1">Menu</a>
 </div>
+<!-- CONSOLE_ENTRY_DIAG Part 4: two static, clearly labelled links. No JS, no redirect: a plain tap, so a
+     hung router or a suspended document cannot take them away. -->
+<div class="diag" id="idxDiag">
+<a id="idxNormal" href="./library/console.html?v=${BUILD}">Normal console</a>
+<a id="idxSafe" href="./library/console.html?v=${BUILD}&amp;paint=safe">Paint-Safe console</a>
+<button id="idxProbe" type="button">Test console file</button>
+</div>
+<pre id="idxProbeOut" hidden></pre>
+<script>(function(){/* CONSOLE_ENTRY_DIAG Part 1: the byte-and-hash probe. The question this answers is the one a
+  black screen cannot: does library/console.html actually ARRIVE on this device, whole and unaltered? It
+  streams the response so it can separate three distinct failures that all look identical from the outside:
+  headers never arrive (the request is stalled), headers arrive but no body byte follows (the connection is
+  open and mute), and body bytes arrive but the stream never terminates (a truncated transfer). It then
+  weighs the received length and SHA-256 against the published values in version.json (Part 2), so "the file
+  is fine" stops being an assumption. It READS ONLY: no reload, no navigation, no AbortController, and the
+  30s mark prints a line rather than acting. */
+  var BUILD="${BUILD}";
+  var btn=document.getElementById("idxProbe"), out=document.getElementById("idxProbeOut");
+  if(!btn||!out) return;
+  var ar=false; try{ ar=localStorage.getItem("thrive_lang")==="ar"; }catch(e){}
+  var T=ar?{
+    title:"فحص ملف الكونسول", run:"جارٍ الفحص…", again:"إعادة فحص ملف الكونسول",
+    sent:"أُرسل الطلب", hdr:"وصلت الترويسات", first:"أول بايت من الجسم", term:"اكتمل الجسم",
+    yes:"نعم", no:"لا", bytes:"البايتات المستلمة", sha:"البصمة SHA-256",
+    expBytes:"البايتات المتوقعة", expSha:"البصمة المتوقعة", ctype:"نوع المحتوى", clen:"الطول المعلن",
+    none:"غير معلن", nostream:"غير قابل للقياس (لا تدفق)", timeout:"لا استجابة بعد 30 ثانية",
+    err:"خطأ في الشبكة", close:"المس هذه اللوحة لإغلاقها", verdict:"الحكم",
+    vIntact:"وصل ملف الكونسول كاملاً ومطابقاً للنسخة المنشورة.",
+    vCut:"انقطع الجسم قبل نهايته.",
+    vSize:"حجم الجسم يخالف النسخة المنشورة: نسخة قديمة مخزنة أو جسم مُحوَّل.",
+    vHash:"الحجم مطابق لكن المحتوى مختلف: جرى تحويل الجسم أثناء النقل.",
+    vNoSha:"وصل الملف كاملاً والحجم مطابق، لكن SHA-256 غير متاحة في هذا المتصفح.",
+    vNoVer:"وصل الملف، لكن تعذّرت قراءة version.json فلا يمكن المقارنة.",
+    vFail:"فشل الطلب قبل وصول الجسم.",
+    vStall:"لم تصل أي ترويسة خلال 30 ثانية: الطلب معلَّق."
+  }:{
+    title:"console file probe", run:"Testing…", again:"Test console file again",
+    sent:"request sent", hdr:"headers arrived", first:"first body byte", term:"full body terminated",
+    yes:"yes", no:"no", bytes:"bytes received", sha:"sha-256",
+    expBytes:"expected bytes", expSha:"expected sha-256", ctype:"content-type", clen:"content-length",
+    none:"not sent", nostream:"not measurable (no stream)", timeout:"no response after 30s",
+    err:"network error", close:"tap this panel to close it", verdict:"VERDICT",
+    vIntact:"the console file arrived INTACT and matches the published build.",
+    vCut:"the body was CUT SHORT before it terminated.",
+    vSize:"the body is a DIFFERENT SIZE than the published build: a stale cached copy or a transformed body.",
+    vHash:"the size matches but the CONTENT DIFFERS: the body was transformed in transit.",
+    vNoSha:"the file arrived whole and the size matches, but SHA-256 is unavailable in this browser.",
+    vNoVer:"the file arrived, but version.json could not be read, so it cannot be compared.",
+    vFail:"the request FAILED before the body arrived.",
+    vStall:"NO headers arrived within 30s: the request is stalled."
+  };
+  var rid=0, t0=0, lines=[];
+  function pad(s){ s=String(s); while(s.length<24) s+=" "; return s; }
+  function paint(){ out.textContent=lines.join("\\n"); }
+  function put(k,v){ lines.push(pad(k)+String(v)); paint(); }
+  function note(s){ lines.push(String(s)); paint(); }
+  function at(){ return " (+"+((Date.now()-t0)/1000).toFixed(2)+"s)"; }
+  function hex(buf){ var b=new Uint8Array(buf), s="", i, h; for(i=0;i<b.length;i++){ h=b[i].toString(16); s+=(h.length<2?"0":"")+h; } return s; }
+  function sha256(bytes){
+    try{
+      if(!(window.crypto&&window.crypto.subtle&&window.crypto.subtle.digest)) return Promise.resolve(null);
+      return window.crypto.subtle.digest("SHA-256", bytes).then(hex, function(){ return null; });
+    }catch(e){ return Promise.resolve(null); }
+  }
+  function readVersion(stamp){
+    try{
+      return fetch("./version.json?probe="+stamp, {cache:"no-store"}).then(function(r){
+        return r.text().then(function(t){ try{ return JSON.parse(t); }catch(e){ return null; } });
+      }, function(){ return null; });
+    }catch(e){ return Promise.resolve(null); }
+  }
+  function finish(){ btn.disabled=false; btn.textContent=T.again; }
+  function judge(stamp, got, digest, terminated){
+    return readVersion(stamp).then(function(v){
+      var vb=(v&&typeof v.consoleBytes==="number")?v.consoleBytes:null;
+      var vh=(v&&v.consoleSha256)?String(v.consoleSha256):null;
+      put(T.expBytes, vb===null?T.none:vb);
+      put(T.expSha, vh||T.none);
+      note("");
+      if(vb===null&&vh===null){ note(T.verdict+"  "+T.vNoVer); return; }
+      if(!terminated){ note(T.verdict+"  "+T.vCut+" "+got+" / "+(vb===null?"?":vb)); return; }
+      if(vb!==null&&got!==vb){ note(T.verdict+"  "+T.vSize+" "+got+" / "+vb); return; }
+      if(!digest){ note(T.verdict+"  "+T.vNoSha); return; }
+      if(vh&&digest!==vh){ note(T.verdict+"  "+T.vHash); return; }
+      note(T.verdict+"  "+T.vIntact);
+    });
+  }
+  function run(){
+    var me=++rid, stamp=String(Date.now());
+    t0=Date.now(); lines=[]; out.hidden=false; btn.disabled=true; btn.textContent=T.run;
+    var hdr=false, first=false, term=false;
+    var url="./library/console.html?v="+BUILD+"&probe="+stamp;
+    put(T.title, "build "+BUILD);
+    put("url", url);
+    note(T.close);
+    note("");
+    put(T.sent, new Date(t0).toISOString());
+    try{
+      setTimeout(function(){ if(me!==rid||hdr) return; note(""); note(T.timeout); note(T.verdict+"  "+T.vStall); finish(); }, 30000);
+    }catch(e){}
+    var opts={cache:"no-store"};
+    var req; try{ req=fetch(url, opts); }catch(e){ req=Promise.reject(e); }
+    req.then(function(res){
+      if(me!==rid) return null;
+      hdr=true;
+      put(T.hdr, T.yes+at()+"  status "+res.status);
+      var ct="", cl="";
+      try{ ct=res.headers.get("content-type")||""; cl=res.headers.get("content-length")||""; }catch(e){}
+      put(T.ctype, ct||T.none);
+      put(T.clen, cl||T.none);
+      var chunks=[], got=0;
+      var reader=null; try{ reader=(res.body&&typeof res.body.getReader==="function")?res.body.getReader():null; }catch(e){ reader=null; }
+      if(!reader){
+        put(T.first, T.nostream);
+        return res.arrayBuffer().then(function(buf){
+          if(me!==rid) return null;
+          var bytes=new Uint8Array(buf); term=true;
+          put(T.term, T.yes+at());
+          put(T.bytes, bytes.length);
+          return sha256(bytes).then(function(d){
+            if(me!==rid) return null;
+            put(T.sha, d||T.none);
+            return judge(stamp, bytes.length, d, true);
+          });
+        });
+      }
+      function pump(){
+        return reader.read().then(function(step){
+          if(me!==rid) return null;
+          if(step.done){
+            term=true;
+            if(!first) put(T.first, T.no+at());
+            put(T.term, T.yes+at());
+            var all=new Uint8Array(got), off=0, i;
+            for(i=0;i<chunks.length;i++){ all.set(chunks[i], off); off+=chunks[i].length; }
+            put(T.bytes, got);
+            return sha256(all).then(function(d){
+              if(me!==rid) return null;
+              put(T.sha, d||T.none);
+              return judge(stamp, got, d, true);
+            });
+          }
+          var c=step.value?new Uint8Array(step.value):new Uint8Array(0);
+          if(!first&&c.length){ first=true; put(T.first, T.yes+at()); }
+          chunks.push(c); got+=c.length;
+          return pump();
+        });
+      }
+      return pump();
+    }).then(function(){ if(me===rid) finish(); }, function(e){
+      if(me!==rid) return;
+      note("");
+      put(T.err, (e&&e.message)?String(e.message):String(e));
+      put(T.hdr, hdr?T.yes:T.no);
+      put(T.first, first?T.yes:T.no);
+      put(T.term, term?T.yes:T.no);
+      note(T.verdict+"  "+T.vFail);
+      finish();
+    });
+  }
+  try{
+    btn.addEventListener("click", run);
+    out.addEventListener("click", function(){ out.hidden=true; });
+  }catch(e){}
+})();</script>
 <script>(function(){/* Localize the static escapes at once (never deferred), so even a suspended document
   keeps the painted Arabic labels. */
   try{ if(localStorage.getItem('thrive_lang')==='ar'){
@@ -587,6 +774,9 @@ a{color:#71BFCC}
     var g=document.getElementById('idxGate'); if(g) g.textContent='صفحة تسجيل الدخول';
     var c=document.getElementById('idxCon'); if(c) c.textContent='فتح الكونسول';
     var u=document.getElementById('idxMenu'); if(u) u.textContent='القائمة';
+    var n=document.getElementById('idxNormal'); if(n) n.textContent='الكونسول المعتاد';
+    var s=document.getElementById('idxSafe'); if(s) s.textContent='الكونسول بالرسم الآمن';
+    var p=document.getElementById('idxProbe'); if(p) p.textContent='فحص ملف الكونسول';
   } }catch(e){}
 })();</script>
 <script>(function(){/* BARE_GATE router, a SINGLE deferred navigation (no meta+JS race). Query params (minus
@@ -633,5 +823,14 @@ console.log("wrote index.html  (redirect -> console.html?v=" + BUILD + ")");
    with cache:"no-store" by every entry document at boot. It is how a document discovers it is stale:
    the served build is the truth, the baked stamp is the claim, and a mismatch forces one revalidating
    reload. Kept beside index.html at the site root so both entry documents reach it relatively. */
-fs.writeFileSync(path.join(ROOT, "version.json"), JSON.stringify({ build: BUILD, builtAt: BUILT_AT }) + "\n");
-console.log("wrote version.json  ({build: " + BUILD + "})");
+/* CONSOLE_ENTRY_DIAG Part 2: version.json also carries the EXACT byte count and SHA-256 of the shipped
+   shell. A 200 response alone proves nothing: a truncated body, a transformed body, or a stale cached copy
+   all return 200. Publishing the expected size and digest lets the device probe (Part 1) compare what it
+   actually received against what was actually built, so "the file arrived intact" becomes provable rather
+   than assumed. Read from disk AFTER console.html is written, so it is the real shipped bytes. */
+const consoleBuf = fs.readFileSync(path.join(ROOT, "library/console.html"));
+const consoleSha = crypto.createHash("sha256").update(consoleBuf).digest("hex");
+fs.writeFileSync(path.join(ROOT, "version.json"), JSON.stringify({
+  build: BUILD, builtAt: BUILT_AT, consoleBytes: consoleBuf.length, consoleSha256: consoleSha
+}) + "\n");
+console.log("wrote version.json  ({build: " + BUILD + ", consoleBytes: " + consoleBuf.length + "})");

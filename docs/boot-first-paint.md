@@ -272,3 +272,121 @@ load the webfont sheet is attached only after load.
 4. `?debug=paint` and the build stamp still work (the shell is otherwise unchanged).
 5. A device that was stranded reaches the console after the new `BUILD` deploys, without needing to clear
    its cache (the changed versioned URL forces the fresh shell).
+
+---
+
+# CONSOLE_ENTRY_DIAG (BRIEF 0) - instrument the entry, change nothing else
+
+This section fixes nothing. It exists because a week of fixes has been aimed at a symptom that carries no
+information: on the operators' iPad and iPhone, `library/console.html` does not become usable, and the
+screen is black. A black screen is produced identically by at least five different failures:
+
+| what actually happened | what the operator sees |
+|---|---|
+| the request never returns (stalled) | black |
+| headers return, no body byte follows | black |
+| the body starts and is cut short | black |
+| a stale or transformed copy arrives with status 200 | black |
+| the document arrives whole and the device cannot paint it | black |
+
+Every previous brief had to GUESS which of these it was, and a guess that is wrong ships a fix for a
+failure that is not happening. That is the actual root of the week: not a missing fix, but a missing
+measurement. This brief adds the measurement.
+
+## Part 1 - the byte-and-hash probe
+
+A control on the front door (`Test console file`) fetches `library/console.html` and prints, in order:
+
+- `headers arrived` yes/no, with elapsed time and the HTTP status
+- `content-type` and `content-length` (or `not sent`)
+- `first body byte` yes/no, with elapsed time
+- `full body terminated` yes/no, with elapsed time
+- `bytes received` (exact count) and `sha-256` of exactly those bytes
+- `expected bytes` / `expected sha-256`, read from `version.json`
+- one `VERDICT` line
+
+It streams the response through `body.getReader()` precisely so that the three transfer stages can be told
+apart; a plain `arrayBuffer()` collapses all of them into one boolean. Where `body` is not a stream, it
+falls back to `arrayBuffer()` and says so (`not measurable (no stream)`) rather than inventing a value.
+
+Three hard constraints, all of them consequences of the Stage 6/7 law:
+
+- **no reload, no navigation, no AbortController.** The reload lockout of PR #225 was caused by a timer
+  that acted. This one only prints: at 30s, if no header has arrived, it writes `no response after 30s`
+  and stops. The in-flight request is left alone; if it completes at 40s, the probe reports that too.
+- **it is armed by a click and by nothing else.** Nothing in the boot path touches it. `tools/version_integrity_test.js`
+  V2 enforces this: the router block may not read `version.json`, and the only other reader in the front
+  door must be this probe, wired to a click, never to a timer.
+- **it reads only.** It never redirects, so a failed probe cannot itself become a way to get stuck.
+
+## Part 2 - version.json publishes what was built
+
+`version.json` now carries `consoleBytes` and `consoleSha256`, read from `library/console.html` on disk
+AFTER the bundle writes it. A 200 response proves nothing on its own. The published size and digest are
+what turn "the file arrived" from an assumption into a comparison.
+
+## Part 3 - paint-safe mode
+
+`?paint=safe` sets `html.paint-safe` from the FIRST script in the head, before any stylesheet has decided
+anything, and the critical inline block neutralizes `filter`, `backdrop-filter`, `animation` and
+`transition` everywhere. `&svg=off` additionally hides `svg`, and is a separate, inactive-by-default rule.
+
+The census that motivated it found exactly two paint-heavy constructs in the FIRST VIEWPORT:
+
+| location | construct | why it matters |
+|---|---|---|
+| `styles.css:85` `.top` | `backdrop-filter: blur(8px)` over `rgba(10,10,12,.85)`, sticky | a live blur of everything scrolling under the header |
+| `styles.css:910-911` `.board.board-settle` | `filter: blur(7px)` to `blur(0)` animation over the whole board, `will-change: opacity, filter` | a full-container filter animation on the largest element on screen |
+
+The three scrim blurs (`:429`, `:2178`, `:2854`) are modal-only and never in the first viewport. The shipped
+shell contains zero `<svg>` and zero `<use>` (icons are injected by JS after app.js), which is exactly why
+`svg=off` is a separate toggle rather than part of paint-safe.
+
+Paint-safe is a DIAGNOSTIC, not a fix. If the console opens under `?paint=safe` and not without it, that is
+the first hard evidence that the failure is compositing, not delivery, and a proper fix gets its own brief.
+
+## Part 4 - two static entry links
+
+`Normal console` and `Paint-Safe console` are plain anchors painted in the markup. Tapping a link is a
+browser action, not a page-script action, so they remain usable even if a hung hand-off suspends the front
+door's JavaScript. They label themselves, so the device session needs no instructions.
+
+## Part 5 - the shell is inside the build signature
+
+`BUILD` hashes `GENERATOR_SRC` (the bundler's own source) alongside the assets, so a shell-only edit like
+this one moves the build id. Without that, a shell change would ship under an unchanged id and every
+cached document would keep serving the old shell: the exact reason the fixes of P55 and P56 never reached
+a device before #222.
+
+## Evidence
+
+`tools/console_entry_diag_test.py` refuses to accept the probe on its word. Every claim is tested twice,
+once against a healthy file and once against a damaged one, because an instrument that reports "intact"
+unconditionally is worse than no instrument:
+
+| check | healthy | damaged |
+|---|---|---|
+| transfer stages | all three yes | (n/a) |
+| byte count | equals `version.json` | equals the truncated length |
+| sha-256 | equals `version.json` | (n/a) |
+| verdict | `INTACT` | must NOT say intact; must name both numbers |
+| paint-safe | blur present without the flag | `none` with the flag |
+
+Fails-when-broken proof: shifting `consoleBytes` by 7 and disabling the paint-safe selector turned five
+checks red across both halves of the suite.
+
+## The device session (2 taps)
+
+1. Open `console.thriveiii.com/?stay=1`, tap `Test console file`, read the VERDICT.
+2. Tap `Paint-Safe console`.
+
+That yields the three answers a week of guessing could not: does the file arrive, does it arrive intact,
+and can the device paint it.
+
+## Acceptance (device-gated)
+
+1. The probe prints a complete report on the failing device, including a VERDICT line.
+2. The report distinguishes delivery failure from paint failure without ambiguity.
+3. `Paint-Safe console` either opens the console or does not, and either outcome is decisive.
+4. Nothing in the boot path changed: no reload, no overlay, no watchdog deadline, no auth, routing,
+   data, or relay change.

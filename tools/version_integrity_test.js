@@ -35,7 +35,22 @@ ck("V1 version.json exists and matches the shell meta and the index redirect", (
 // one silent AUTH refresh. The in-shell P43 convergence (V3, failsafe.js) is still the stale-client net.
 ck("V2 index.html is a session-aware, single-navigation router (no meta race, no version.json probe): warm/live -> shell, none -> gate.html, expired -> one refresh, with static escapes", () => {
   const idx = read("index.html");
-  assert(!/fetch\([^)]*version/.test(idx), "the front door must not fetch version.json in the critical path (a comment may name it; nothing probes it)");
+  // The critical path is the ROUTER block. It must reach no version authority before it decides: a probe in
+  // front of the hand-off is the P43 mistake (an extra round trip standing between the operator and the
+  // shell). CONSOLE_ENTRY_DIAG adds a version.json read for its byte/hash comparison, so the guard is now
+  // scoped instead of blanket: the router stays clean, and the only other reader must be the operator-driven
+  // probe, armed by a click and by nothing else.
+  const blocks = idx.match(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/g) || [];
+  const router = blocks.filter(b => /function decide\(\)/.test(b));
+  assert(router.length === 1, "there must be exactly one router block in the front door");
+  assert(!/fetch\([^)]*version/.test(router[0]), "the front door router must not fetch version.json in the critical path (a comment may name it; nothing probes it)");
+  const versionReaders = blocks.filter(b => /version\.json/.test(b));
+  assert(versionReaders.every(b => /getElementById\("idxProbe"\)/.test(b)),
+    "the only version.json reader in the front door may be the operator-driven diagnostic probe");
+  versionReaders.forEach(b => {
+    assert(/addEventListener\("click", run\)/.test(b), "the probe must be armed by a click");
+    assert(!/setTimeout\(\s*run\b/.test(b) && !/\brun\(\);/.test(b), "the probe must never arm itself on a timer or at load");
+  });
   assert(/if\(warm\)\{ toConsole\(\); return; \}/.test(idx), "the warm-arrival forward is missing");
   assert(/if\(!sess\|\|!sess\.access_token\)\{ toGate\(\); return; \}/.test(idx), "the no-session bounce to the gate is missing");
   assert(/if\(!expired\(sess\)\)\{ toConsole\(\); return; \}/.test(idx), "the live-session forward is missing");
