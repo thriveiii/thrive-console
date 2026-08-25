@@ -33,7 +33,7 @@
           op_err_empty: "The service returned an empty response. Tap Retry.",
           op_err_parse: "The service response could not be read. Tap Retry.",
           err_secure: "A secure connection is required to unlock. Open the console over HTTPS and try again.",
-          op_retry: "Retry",
+          op_retry: "Retry", op_clean_page: "Trouble signing in? Open the clean sign-in page",
           resub: "Welcome back. Sign in again to continue." },
     ar: { title: "كونسول ثرايف", sub: "مساحة خاصة. أدخل رمز الدخول للمتابعة.",
           ph: "رمز الدخول", go: "فتح", err: "رمز غير صحيح. حاول مجددًا.",
@@ -49,7 +49,7 @@
           op_err_empty: "أعادت الخدمة استجابة فارغة. اضغط إعادة المحاولة.",
           op_err_parse: "تعذّرت قراءة استجابة الخدمة. اضغط إعادة المحاولة.",
           err_secure: "يلزم اتصال آمن لفتح القفل. افتح الكونسول عبر HTTPS وحاول مجددًا.",
-          op_retry: "إعادة المحاولة",
+          op_retry: "إعادة المحاولة", op_clean_page: "تواجه مشكلة في تسجيل الدخول؟ افتح صفحة الدخول النظيفة",
           resub: "مرحبًا بعودتك. سجّل الدخول من جديد." }
   };
   /* The build marker (bundle.js stamps meta[name=thrive-build]). Printed on the gate so a deploy
@@ -271,6 +271,7 @@
   // and no-Supabase callers pass nothing; their session, if any, is already held by the auth module). The
   // teardown itself performs no storage read-back: reaching finish() IS the success decision.
   function finish(sess) {
+    try { clearOpBounce(); } catch (ex) { gnote("op bounce clear", ex); }   // P56: a resolved gate resets the redirect guard
     // P40 checkpoint + watchdog arm (string assignment + one call, no behavior change): the boot proper
     // begins now that the gate has resolved. Arming here means a signed-out gate never trips the stall
     // watchdog (a legitimate non-painted state); only a passed gate whose board never paints does.
@@ -365,9 +366,31 @@
     });
   }
 
+  /* P56 GATE_BREACH: the operator sign-in (the network token POST) is the step that HANGS in the loaded
+     console on this WebKit build, while the SAME request completes in ~250ms on the standalone gate.html
+     (the authtest-proven path), where no other console code is running to starve the connection. So the
+     operator sign-in is routed to gate.html: the passcode stays in-console (local crypto, no network), and
+     only the network sign-in runs on the clean page, which writes the session mirror and returns to the
+     console. A one-shot bounce guard (20s) means a mirror that fails to carry falls back to the in-console
+     card rather than looping, and a test can force the in-console path with window.__gateNoRedirect. */
+  var OP_BOUNCE = "thrive_op_bounce";
+  function opBouncedRecently() { try { var t = parseInt(localStorage.getItem(OP_BOUNCE) || "0", 10); return !!(t && (Date.now() - t) < 20000); } catch (e) { return false; } }
+  function markOpBounce() { try { localStorage.setItem(OP_BOUNCE, String(Date.now())); } catch (e) { gnote("op bounce write", e); } }
+  function clearOpBounce() { try { localStorage.removeItem(OP_BOUNCE); } catch (e) { gnote("op bounce clear", e); } }
+  function gateHref() { return "../gate.html"; }          // the standalone gate, relative to library/console.html
+  function redirectToGate() {
+    if (window.__gateNoRedirect) return false;             // a test (or a deliberate override) keeps sign-in in-console
+    if (opBouncedRecently()) return false;                 // just returned from gate.html without a session: fall back
+    markOpBounce();
+    try { location.assign(gateHref()); return true; } catch (e) { gnote("gate redirect", e); return false; }
+  }
+
   function showOperatorStep(wrap) {
     var S = supa();
     if (!S) { finish(); return; }                       // no Supabase on this page, nothing to sign in to
+    // P56: route the network sign-in to the standalone gate.html (proven to complete where the in-console
+    // token POST hangs). Only skipped by a test override or the one-shot bounce fallback below.
+    if (redirectToGate()) return;
     var s = STR[lang()];
     // A returning operator dropped to the lobby by idle (or by sign-out) reads a calm return, not a
     // first-time "signed device" setup line.
@@ -386,6 +409,9 @@
       '  <p class="gate-err" id="gateErr" hidden>' + s.op_err + "</p>" +
       '  <p class="gate-diag mono-iso" id="gateDiag" dir="ltr" hidden></p>' +
       '  <p class="gate-note">' + s.note + "</p>" +
+      // P56 fallback: this in-console card is only shown when the gate.html redirect was suppressed or bounced;
+      // the operator can still reach the proven clean page from here.
+      '  <a class="gate-alt" href="' + gateHref() + '">' + s.op_clean_page + "</a>" +
       buildMark(s) +
       "</form>";
     var form = wrap.querySelector("form");

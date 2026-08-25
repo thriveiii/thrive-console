@@ -42,6 +42,10 @@ from playwright.sync_api import sync_playwright
 # accepted pair; everything else is a neutral failure.
 INIT = r"""
 (() => {
+  // P56 GATE_BREACH: the live operator sign-in now redirects to the standalone gate.html. This test
+  // exercises the in-console fallback card (the path shown when the redirect is suppressed or bounces), so
+  // it disables the redirect and drives the in-console token POST directly, as before.
+  try { window.__gateNoRedirect = true; } catch(e){}
   try { localStorage.setItem('console_sb_url','https://fake.supabase.co'); localStorage.setItem('console_sb_anon','anon-key'); } catch(e){}
   const real = window.fetch ? window.fetch.bind(window) : null;
   window.fetch = async (url, opts) => {
