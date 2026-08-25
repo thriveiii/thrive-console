@@ -3171,8 +3171,63 @@ async function syncPush(){
     __syncErr=""; return true;
   }catch(e){ __syncErr=classifySyncError(e.message); return false; }
 }
+/* P55 BOOT_PAINT_FIRST: no network call may hold the first board paint. Every boot-path fetch is wrapped by
+   bootNet() with ONE hard timeout (BOOT_NET_TIMEOUT, one place). On timeout the call rejects typed
+   "boot-net-timeout", the boot CONTINUES on the already-painted board, and the call is retried by the sync
+   round. window.__bootNet records each boot call's outcome (ok / timeout / error / pending) and elapsed ms so
+   the ?diag=1 boot block can name any residual stall in one photo. */
+var BOOT_NET_TIMEOUT=6000;
+try{ window.__bootNet=window.__bootNet||{}; }catch(_){}
+function bootNet(name, promise){
+  var t0=Date.now();
+  try{ window.__bootNet[name]={ outcome:"pending", ms:0 }; }catch(_){}
+  var to=new Promise(function(_,reject){ setTimeout(function(){ var e=new Error("boot-net-timeout: "+name); e.kind="boot-net-timeout"; reject(e); }, BOOT_NET_TIMEOUT); });
+  return Promise.race([promise, to]).then(
+    function(v){ try{ window.__bootNet[name]={ outcome:"ok", ms:Date.now()-t0 }; }catch(_){} return v; },
+    function(e){ try{ window.__bootNet[name]={ outcome:(e&&e.kind==="boot-net-timeout")?"timeout":"error", ms:Date.now()-t0 }; }catch(_){} throw e; }
+  );
+}
+function bootHydratePending(){
+  try{ var b=window.__bootNet||{}; return Object.keys(b).some(function(k){ return b[k] && b[k].outcome==="pending"; }); }catch(_){ return false; }
+}
+/* A small, visible "reconnecting" note beside the sync pill, shown when a boot read timed out and the board
+   is standing on local/stale data; cleared when a fresh read adopts. Never a modal, never a block. */
+function bootReconnecting(on){
+  try{
+    var anchor=document.getElementById("boardSync"); if(!anchor || !anchor.parentNode) return;
+    var n=document.getElementById("boardRecon");
+    if(!on){ if(n) n.hidden=true; return; }
+    if(!n){ n=document.createElement("span"); n.id="boardRecon"; n.className="pill warn"; n.setAttribute("role","status"); anchor.parentNode.insertBefore(n, anchor.nextSibling); }
+    n.hidden=false; n.textContent=t("board_recon");
+  }catch(_){}
+}
+/* The cold-start loading state: when there is genuinely no local snapshot to paint yet, the board header
+   reads "loading" (and the bare empty panel is held back) rather than a black screen. Cleared by the next
+   real render() once any data paints. */
+function bootLoadingNote(on){
+  try{
+    if(!on) return;
+    var v=document.getElementById("boardVerdict"); if(v) v.innerHTML='<span class="vtext">'+esc(t("board_loading"))+'</span>';
+    var sub=document.getElementById("boardVerdictSub"); if(sub) sub.innerHTML='';
+    var em=document.getElementById("boardEmpty"); if(em) em.hidden=true;   // hold the 'no opportunities' panel while loading
+    var lanes=document.getElementById("boardLanes"); if(lanes) lanes.hidden=true;
+  }catch(_){}
+}
+/* P55 Part 4: the boot watchdog. If the board has not PAINTED within 8s of the gate handoff, force the
+   paint-from-local path and show a "reconnecting" note, so the operator NEVER sees an unresolved black
+   screen. One watchdog on this path (it supersedes ad hoc heartbeats here); it fires at most once. */
+var __bootWatchdogArmed=false;
+function armBootWatchdog(){
+  if(__bootWatchdogArmed) return; __bootWatchdogArmed=true;
+  setTimeout(function(){
+    if(window.__boardPainted) return;                                        // healthy: paint-first already ran
+    try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){}
+    try{ bootReconnecting(true); }catch(_){}
+  }, 8000);
+}
+onThrive("unlock","bootwatchdog", armBootWatchdog);
 function scheduleSyncPush(){
-  if(!window.__gateRevealed) return;                      // GATE_V2 Part 5: no relay call during the gate phase
+  if(!window.__gateRevealed || !window.__boardPainted) return;   // GATE_V2 Part 5 + P55 Part 3: no relay call before the gate reveals AND the board paints
   if(__syncApplying) return;                              // merges must not re-trigger themselves
   // INVARIANT I3, atomic batch: while an import/activate batch is staging its writes, no sync round is
   // scheduled, so syncNow cannot fire mid-batch, remerge remote state over a half-written batch, and
@@ -3196,10 +3251,14 @@ function firstSyncMayRun(){
   return !!__boardViewReady;                                              // the console_board read has resolved
 }
 function autoSyncTick(){
-  // GATE_V2 Part 5: the gate phase is SILENT. No relay/echo call starts until the gate has revealed
-  // (gate.js reveal() sets __gateRevealed), so nothing competes with the passcode or the sign-in.
-  if(!window.__gateRevealed) return;
+  // GATE_V2 Part 5 + P55 Part 3: the gate AND the pre-paint boot phase are SILENT. No relay/echo call starts
+  // until the gate has revealed (gate.js reveal() sets __gateRevealed) AND the board has painted (render()
+  // sets __boardPainted), so the relay is a post-paint background concern only and never competes with the
+  // sign-in or holds the first paint.
+  if(!window.__gateRevealed || !window.__boardPainted) return;
   if(!__firstAutoSyncDone){ if(!firstSyncMayRun()) return; __firstAutoSyncDone=true; }
+  // P55 instrument: record that a relay round fired, and (should never happen) whether it fired before paint.
+  try{ window.__relayFired=true; if(!window.__boardPainted) window.__relayBeforePaint=true; }catch(_){}
   if(syncAuth()) syncNow();
 }
 /* P54 on-screen state diagnostic, gated behind ?diag=1 (or #...&diag=1) so it NEVER shows in normal use. It
@@ -3273,7 +3332,13 @@ function initStateDiag(){
           "__boardViewReady: "+(typeof __boardViewReady!=="undefined"?__boardViewReady:"n/a"),
           "__boardView rows: "+bvCount,
           "__boardRows (last server read): "+(typeof window.__boardRows!=="undefined"?window.__boardRows:"n/a"),
-          "__bootMark: "+(window.__bootMark||"?")+"   __signMark: "+(window.__signMark||"?")
+          "__bootMark: "+(window.__bootMark||"?")+"   __signMark: "+(window.__signMark||"?"),
+          // P55 boot block: paint-first proof. __boardPainted true means the operator has a screen; relay
+          // before paint must be no; each boot-path net call names its outcome (ok / timeout / error /
+          // pending) and elapsed ms, so any residual boot stall is self-naming in one photo.
+          "__boardPainted: "+(typeof window.__boardPainted!=="undefined"?window.__boardPainted:"n/a")
+            +"   relay before paint: "+(window.__relayBeforePaint?"YES (defect)":"no"),
+          "boot net calls: "+((function(){ try{ var bn=window.__bootNet||{}; var ks=Object.keys(bn); return ks.length? ks.map(function(k){ return k+"="+bn[k].outcome+"("+bn[k].ms+"ms)"; }).join("   ") : "(none)"; }catch(e){ return "n/a"; } })())
         ].concat(tdLines).join("\n");
       }catch(e){ try{ dp.textContent="diag error: "+((e&&e.message)||e); }catch(_){} }
     }
@@ -11224,35 +11289,57 @@ async function initBoard(){
      global (F3) or a stale TTL cache (F4), then unpins. If the board is not mounted (a heartbeat firing on
      another screen) it does nothing (F16). */
   var __boardTornDown=false;
+  // P55 BOOT_PAINT_FIRST. The governing rule: no network call holds the first board paint. renderBoard now
+  // paints SYNCHRONOUSLY from the last-known local snapshot (the cached manifest, local drafts, and the last
+  // adopted console_board map) BEFORE any network read, then hydrates in the background, time-boxed. A hung
+  // manifest.json or console_board read can no longer hold a black screen: render() below always shows one of
+  // the three board states, and a true cold start with nothing to show paints a visible "loading" shell.
   async function renderBoard(trigger){
     const myGen=++__renderGen;
-    try{ await ensureManifest(); }catch(_){}
-    try{ reconcileStuckSending(undefined, true); }catch(_){}          // enforce the sending timeout before painting (silent: this paint reads the fresh state)
     if(myGen!==__renderGen || __boardTornDown) return;              // superseded by a newer paint, or the board left
     if(!document.getElementById("boardLanes")) return;              // not mounted: a sync heartbeat on another screen
-    // Never paint the empty base wholesale while the view is still loading (the racing loser that read Sent
-    // 0). When the view is authority (a signed-in operator) but has NOT loaded, this settle reads and adopts
-    // it BEFORE painting, generation-guarded so a read resolving after a newer settle is dropped. Once
-    // loaded, the sync/hydrate rounds refresh it; renders paint the warm map with no network read.
-    // P52: re-read the server view on the sync/unlock heartbeat and on a manual refresh (the freshness the
-    // removed doSyncRound read used to provide), in addition to the unconditional first-ever read. This read
-    // now stands alone in the settle, generation-guarded and adopt-empty-safe, so it never interleaves with
-    // the relay round's slow Apps Script calls.
+    try{ reconcileStuckSending(undefined, true); }catch(_){}          // enforce the sending timeout before painting (local, synchronous)
+
+    // Step 1 (paint-first): the immediate SYNCHRONOUS paint from local data, BEFORE any network await. build()
+    // reads manifestNow() (the cached manifest) + local drafts + the last-adopted view, all synchronous, so a
+    // starved WebKit that stalls a boot fetch can never hold this paint. render() sets window.__boardPainted.
+    var haveLocal=false;
+    try{ haveLocal=!!((manifestNow().list && manifestNow().list.length) || __boardViewReady || (getDrafts() && getDrafts().length)); }catch(_){}
+    boardRepaint(myGen, trigger);
+    if(!haveLocal){ try{ bootLoadingNote(true); }catch(_){} }         // cold start: a visible loading shell, never a bare black screen
+
+    // Step 2 (hydrate, time-boxed BOOT_NET_TIMEOUT). The paint above ALREADY happened; these awaits only swap
+    // in fresh data and resolve the settle. Each is bounded, so on a hang the settle resolves in <=6s with the
+    // board still painted plus a small "reconnecting" note, never a black screen and never an unbounded await.
     var __reread = (trigger==="sync" || trigger==="unlock" || trigger==="thriveBoardRefresh");
-    if(boardViewIsAuthority() && (!__boardViewReady || __reread)){
-      var rows=null; try{ rows=await readBoardViewRows(); }catch(_){ rows=null; }
-      if(myGen!==__renderGen || __boardTornDown) return;           // a newer settle started while we read: drop this one
-      adoptBoardView(rows);
+    // The static manifest (the opp list): only when not cached yet, so a stalled manifest.json cannot hold the paint.
+    if(!__manifestCache){
+      try{ await bootNet("manifest", ensureManifest()); if(__boardTornDown) return; boardRepaint(__renderGen, trigger); }
+      catch(_){ try{ bootReconnecting(true); }catch(__){} }           // stale/local stands; the sync round retries
     }
+    // The console_board view (the authoritative stages): ONE read per settle, adopt-empty-safe. Time-boxed; on
+    // a successful read we ADOPT and repaint even if a concurrent sync settle bumped the generation while we
+    // read (the rows are the same server view, so the adopt is generation-independent and the repaint paints
+    // the newest data, never stale). Only a teardown drops it. This keeps `await thriveBoardRefresh()`
+    // deterministic (it ends on the adopted view) now that the paint no longer precedes the read.
+    if(boardViewIsAuthority() && (!__boardViewReady || __reread)){
+      var rows=null, __ok=true;
+      try{ rows=await bootNet("board", readBoardViewRows()); }catch(_){ __ok=false; try{ bootReconnecting(true); }catch(__){} }   // timeout/error: keep the painted board; the sync round retries
+      if(__boardTornDown) return;
+      if(__ok){ adoptBoardView(rows); try{ bootReconnecting(false); }catch(_){} boardRepaint(__renderGen, trigger); }
+    }
+    // Step 3 (Part 3): relay/echo stays FULLY deferred until after paint. autoSyncTick/scheduleSyncPush hold
+    // on __boardPainted (set by render() in Step 1), so the first relay round can never precede the first paint.
+    try{ if(!__firstAutoSyncDone) autoSyncTick(); }catch(_){}
+  }
+  // The synchronous paint, reused by the immediate boot paint and by each background boot read that resolves.
+  // Generation- and mount-guarded; never starts a network call.
+  function boardRepaint(gen, trigger){
+    if(gen!==__renderGen || __boardTornDown) return;
+    if(!document.getElementById("boardLanes")) return;
     const source=resolveAuthority();
     __boardPin=source;
-    try{
-      render(trigger, source);
-    } finally { __boardPin=null; }
-    // P52: the board read has settled and the board has painted, so the first automatic relay round may now
-    // start without competing with the post-auth Supabase reads for WebKit connections. Idempotent (the tick
-    // no-ops once the first round has fired), so this runs on every paint but releases exactly once.
-    try{ if(!__firstAutoSyncDone) autoSyncTick(); }catch(_){}
+    try{ render(trigger, source); } finally { __boardPin=null; }
   }
 
   function render(trigger, source){
@@ -11431,7 +11518,7 @@ async function initBoard(){
     // P40: one of the three board states (auth prompt / empty / lanes) has now been decided and shown, so
     // the boot has PAINTED. The failsafe watchdog reads this flag; set it here means a healthy boot never
     // trips the stall panel. Assignment only, no behavior change.
-    try{ window.__bootPainted=true; window.__bootMark="board painted"; }catch(_){}
+    try{ window.__bootPainted=true; window.__boardPainted=true; window.__bootMark="board painted"; }catch(_){}
     if(el("boardTabs")) el("boardTabs").hidden=empty||authReq;
     if(el("boardPipeline")) el("boardPipeline").hidden=empty||authReq;   // all zeros is noise on an empty board
     el("boardChips").hidden=empty||authReq;
