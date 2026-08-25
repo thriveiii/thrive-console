@@ -3172,6 +3172,7 @@ async function syncPush(){
   }catch(e){ __syncErr=classifySyncError(e.message); return false; }
 }
 function scheduleSyncPush(){
+  if(!window.__gateRevealed) return;                      // GATE_V2 Part 5: no relay call during the gate phase
   if(__syncApplying) return;                              // merges must not re-trigger themselves
   // INVARIANT I3, atomic batch: while an import/activate batch is staging its writes, no sync round is
   // scheduled, so syncNow cannot fire mid-batch, remerge remote state over a half-written batch, and
@@ -3195,6 +3196,9 @@ function firstSyncMayRun(){
   return !!__boardViewReady;                                              // the console_board read has resolved
 }
 function autoSyncTick(){
+  // GATE_V2 Part 5: the gate phase is SILENT. No relay/echo call starts until the gate has revealed
+  // (gate.js reveal() sets __gateRevealed), so nothing competes with the passcode or the sign-in.
+  if(!window.__gateRevealed) return;
   if(!__firstAutoSyncDone){ if(!firstSyncMayRun()) return; __firstAutoSyncDone=true; }
   if(syncAuth()) syncNow();
 }
@@ -3235,6 +3239,14 @@ function initStateDiag(){
         // token response the wrapper got (window.__lastTokenDiag, no token value).
         var ge=document.getElementById("gateErr");
         var gateErr=(ge&&ge.hidden!==true&&(ge.textContent||"").trim())?("shown: "+(ge.textContent||"").trim()):"none";
+        // GATE_V2 Part 6: the gate-state block. Which step is showing, the memory session and the mirror
+        // health (booleans only, never a value), and the last entries of the two note rings.
+        var gateStep=!g?"none (revealed)":(document.getElementById("gateInput")?"passcode":(document.getElementById("gateEmail")?"operator":"unknown"));
+        var sd=null; try{ if(window.ThriveSupa&&window.ThriveSupa.sessionDiag) sd=window.ThriveSupa.sessionDiag(); }catch(e){ sd=null; }
+        var mirrorLine="memSession: "+(sd?String(sd.mem):"n/a")
+          +"   session mirror ok: "+(sd?String(sd.mirrorOk):"n/a")
+          +"   presence mirror ok: "+(typeof window.__presenceMirrorOk!=="undefined"?String(window.__presenceMirrorOk):"n/a");
+        var notes=[]; try{ notes=(window.__gateNotes||[]).slice(-2).concat((window.__authNotes||[]).slice(-2)); }catch(e){}
         var td=window.__lastTokenDiag; var tdLines;
         if(!td){ tdLines=["last token POST: (none captured yet)"]; }
         else if(td.threw){ tdLines=[
@@ -3243,7 +3255,10 @@ function initStateDiag(){
         else { tdLines=[
           "last token POST: status="+td.status+"  res.ok="+td.res_ok+"  typeof data="+td.typeof_data,
           "  has_access_token="+td.has_access_token+"  text_length="+td.text_length,
-          "  body_shape: "+String(td.body_shape||"") ]; }
+          "  body_head: "+String(td.body_head||"") ]; }
+        tdLines.push("gate step: "+gateStep);
+        tdLines.push(mirrorLine);
+        if(notes.length) tdLines.push("notes: "+notes.join(" | ").slice(0,160));
         dp.textContent=[
           "THRIVE STATE DIAGNOSTIC (diag=1)   build "+(m?m.getAttribute("content"):"?"),
           "time "+new Date().toISOString(),

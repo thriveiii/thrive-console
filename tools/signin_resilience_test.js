@@ -33,7 +33,7 @@ function makeEnv(fetchImpl, seed) {
   const win = {};
   const sandbox = {
     window: win, fetch: fetchImpl, AbortController: AbortController, localStorage: localStorage,
-    console: console, JSON: JSON, encodeURIComponent: encodeURIComponent, TextEncoder: TextEncoder,
+    console: console, JSON: JSON, encodeURIComponent: encodeURIComponent, TextEncoder: TextEncoder, TextDecoder: TextDecoder,
     // Shrink the 15s bound so a timeout test resolves in milliseconds, not seconds. A real request
     // (Promise.resolve) still wins the race; only a hung request reaches the (shrunk) abort.
     setTimeout: (fn, ms) => setTimeout(fn, ms > 50 ? 5 : ms), clearTimeout: clearTimeout,
@@ -53,7 +53,9 @@ function hangingFetch() {
 }
 function makeRes(status, body) {
   const text = (typeof body === "string") ? body : JSON.stringify(body);
-  return { ok: status >= 200 && status < 300, status: status, text: () => Promise.resolve(text) };
+  const buf = new TextEncoder().encode(text).buffer;   // GATE_V2: the token path reads via arrayBuffer
+  return { ok: status >= 200 && status < 300, status: status,
+    text: () => Promise.resolve(text), arrayBuffer: () => Promise.resolve(buf) };
 }
 function replyFetch(status, body) { return function () { return Promise.resolve(makeRes(status, body)); }; }
 // A fetch that NEVER settles and IGNORES the abort signal entirely: the Safari signature the device saw,
@@ -94,7 +96,7 @@ async function partA() {
   {
     const { S, store } = makeEnv(replyFetch(200, { access_token: "tok", refresh_token: "ref", expires_at: 9999999999, user: { id: "u1" } }));
     let ok = false, threw = false;
-    try { const r = await S.signIn("a@b.com", "pw"); ok = !!(r && r.ok); } catch (e) { threw = true; }
+    try { const r = await S.signIn("a@b.com", "pw"); ok = !!(r && r.access_token); } catch (e) { threw = true; }
     ck("A5 a healthy service signs in normally (no timeout, no throw)", ok && !threw);
     ck("A5b the session is stored on success", !!store["console_sb_session"] && S.signedIn() === true);
   }
@@ -137,9 +139,9 @@ function partB() {
   // Every network call in supabase.js goes through the bounded wrapper: the ONLY bare fetch( calls are the
   // two inside the fetchJSON / fetchT helpers themselves.
   const bare = (supaSrc.match(/\bfetch\(/g) || []).length;
-  ck("B1 the only bare fetch() calls are the 2 timeout wrappers (all else is bounded)", bare === 2, { bare: bare });
-  ck("B2 signIn uses the bounded fetchJSON", /async function signIn[\s\S]*?fetchJSON\(/.test(supaSrc));
-  ck("B3 refresh uses the bounded fetchJSON", /async function refresh[\s\S]*?fetchJSON\(/.test(supaSrc));
+  ck("B1 the only bare fetch() calls are the 3 bounded wrappers (fetchJSON, fetchT, authFetchOnce)", bare === 3, { bare: bare });
+  ck("B2 signIn uses the bounded GATE_V2 token reader (authTokenPost -> authFetchOnce, raced)", /async function signIn[\s\S]*?authTokenPost\(/.test(supaSrc) && /async function authFetchOnce[\s\S]*?Promise\.race\(/.test(supaSrc));
+  ck("B3 refresh uses the bounded token reader too (authTokenPost)", /async function refresh[\s\S]*?authTokenPost\(/.test(supaSrc));
   ck("B4 rest uses the bounded fetchJSON", /async function rest[\s\S]*?fetchJSON\(/.test(supaSrc));
   ck("B5 signOut uses the bounded fetchT", /async function signOut[\s\S]*?fetchT\(/.test(supaSrc));
   ck("B6 uploadAttachment uses the bounded fetchT", /async function uploadAttachment[\s\S]*?fetchT\(/.test(supaSrc));
@@ -272,7 +274,7 @@ async function partF() {
   // F8: still a healthy sign-in stores the session (behavior preserved through the shape).
   {
     const { S, store } = makeEnv(replyFetch(200, { access_token: "t", refresh_token: "r", expires_at: 9999999999, user: { id: "u1" } }));
-    let ok = false; try { const r = await S.signIn("a@b.com", "pw"); ok = !!(r && r.ok); } catch (e) {}
+    let ok = false; try { const r = await S.signIn("a@b.com", "pw"); ok = !!(r && r.access_token); } catch (e) {}
     ck("F8 a healthy sign-in still stores the session with the header shape", ok && S.signedIn() === true && !!store["console_sb_session"]);
   }
 }

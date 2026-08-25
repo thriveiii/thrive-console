@@ -42,15 +42,16 @@ ck("D10 the panel prints the gate error state (op_err/timeout visibility)",
    /getElementById\("gateErr"\)/.test(body) && /gate error: /.test(body));
 ck("D11 the panel prints the last token-POST shape fields (status, res.ok, typeof data, has_access_token, text_length, body_shape) and the throw branch",
    /__lastTokenDiag/.test(body) && /res\.ok=/.test(body) && /typeof data=/.test(body)
-   && /has_access_token=/.test(body) && /text_length=/.test(body) && /body_shape: /.test(body)
+   && /has_access_token=/.test(body) && /text_length=/.test(body) && /body_head: /.test(body)
    && /THREW/.test(body));
 
 // P55: the capture lives in supabase.js authTokenPost, records shape only (no token value, no logging).
 const SUPA = fs.readFileSync(path.join(ROOT, "library/supabase.js"), "utf8");
 const rec = (function () { const i = SUPA.indexOf("function recordTokenDiag"); return i < 0 ? "" : SUPA.slice(i, i + 1200); })();
-ck("D12 authTokenPost records the response shape to window.__lastTokenDiag and hands back the SAME result/rejection",
+ck("D12 authTokenPost records the response shape to window.__lastTokenDiag on both settle paths (GATE_V2 permanent organ)",
    /window\.__lastTokenDiag = d;/.test(SUPA)
-   && /return p\.then\(function \(r\) \{ recordTokenDiag\(grant, r, null\); return r; \},\s*function \(e\) \{ recordTokenDiag\(grant, null, e\); throw e; \}\);/.test(SUPA));
+   && /recordTokenDiag\(grant, r, null\);\s*\n\s*return r;/.test(SUPA)
+   && /recordTokenDiag\(grant, null, e\); throw e; \}/.test(SUPA));
 ck("D13 the capture stores NO token value (only a boolean has_access_token) and redacts the body preview",
    rec.length > 0 && /has_access_token: !!\(r && r\.data && typeof r\.data === "object" && r\.data\.access_token\)/.test(rec)
    && /function redactBody/.test(SUPA) && /\[REDACTED\]/.test(SUPA)

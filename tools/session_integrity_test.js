@@ -1,11 +1,11 @@
-/* P47 session contract, RECONCILED from the P39 suite (Node). P47 restored the sign-in path to its
-   last-good (P31, 506334f) shape: setSession swallows a blocked write and returns nothing, signIn returns
-   { ok, email } with no ephemeral field, and bearer() returns the anon key when there is no session and
-   NEVER throws. The P39 guards (in-memory fallback, verify-and-report, the bearer session throw) were
-   dropped on purpose, as the P47 build diff proved the freeze was not on this path. This suite asserts the
-   RESTORED behavior, and is honest about the accepted trade: with storage blocked, a signed-in read falls
-   back to the anon key (the last-good shape did not hold a memory session). The public-path and
-   sign-out-returns-to-anon guarantees are unchanged and still asserted. */
+/* GATE_V2 session contract (Node), reconciled from the P47 suite. The device diag proved P47's trade was
+   the live failure: on storage-blocked WebKit a swallowed localStorage write left signedIn() false after a
+   successful token grant. GATE_V2 reverses it: the session is MEMORY-PRIMARY (module-scoped), localStorage
+   is a best-effort mirror only, signIn RETURNS the parsed session, and a mirror failure is recorded to the
+   diag note ring, never thrown and never silent. This suite asserts the NEW contract: a storage-blocked
+   sign-in holds the memory session, signedIn() is true, and a signed-in read carries the SESSION bearer
+   even with storage blocked. The public-path and sign-out-returns-to-anon guarantees are unchanged. The S6
+   guard against the P39 verify-readback machinery stays (memory-primary needs no readback). */
 const fs = require("fs"), path = require("path"), assert = require("assert");
 const SUPA = path.resolve(__dirname, "../library/supabase.js");
 
@@ -61,11 +61,10 @@ function authOf(req) { return (req.headers.Authorization || req.headers.authoriz
     const store = makeStore(), rec = [];
     const S = load(store, stub(rec));
     const r = await S.signIn("op@thrive.test", "pw");
-    ck("S1 sign-in returns ok (no ephemeral field in the last-good shape)", () => {
-      assert(r.ok === true, "sign-in did not return ok");
-      assert(!("ephemeral" in r), "the restored last-good signIn should not carry an ephemeral field");
+    ck("S1 sign-in RETURNS the parsed session (GATE_V2 contract)", () => {
+      assert(r && r.access_token === ACCESS, "sign-in did not return the session: " + JSON.stringify(r));
     });
-    ck("S1 session stored durably in localStorage", () => { assert(store.ls.getItem("console_sb_session") != null); });
+    ck("S1 the session is mirrored durably to localStorage when storage works", () => { assert(store.ls.getItem("console_sb_session") != null); });
     rec.length = 0;
     await S.rest("console_board", { query: "select=slug" });
     ck("S1 the post-sign-in read carries Bearer <session token>, never the anon key", () => {
@@ -75,25 +74,28 @@ function authOf(req) { return (req.headers.Authorization || req.headers.authoriz
     });
   })();
 
-  // S2: storage blocked. The last-good shape still SUCCEEDS the sign-in (it never failed on a storage
-  // block), but it does NOT hold a memory session, so nothing persists and a later read falls back to
-  // anon. This asserts the RESTORED behavior and the accepted P47 trade, not the dropped P39 guard.
+  // S2: storage blocked. GATE_V2 holds the session in MEMORY: sign-in returns the session, signedIn() is
+  // true, a later read carries the SESSION bearer, and the mirror failure is a recorded fact (sessionDiag
+  // reports mirrorOk false), never a silent downgrade to anon. This is the exact device failure cured.
   await (async function () {
     const store = makeStore(); store.blockWrites = true; const rec = [];
     const S = load(store, stub(rec));
     const r = await S.signIn("op@thrive.test", "pw");
-    ck("S2 blocked storage: sign-in still returns ok (never fails on a storage block)", () => {
-      assert(r.ok === true, "a storage-blocked sign-in should still resolve ok");
+    ck("S2 blocked storage: sign-in still RETURNS the session (never fails on a storage block)", () => {
+      assert(r && r.access_token === ACCESS, "a storage-blocked sign-in should still return the session");
     });
-    ck("S2 nothing was written to localStorage and no memory session is held (last-good shape)", () => {
+    ck("S2 the MEMORY session holds (signedIn true) and the mirror failure is recorded, not silent", () => {
       assert(store.ls.getItem("console_sb_session") == null, "a write leaked past the block");
-      assert(S.signedIn() === false, "the last-good shape holds no in-memory session when storage is blocked");
+      assert(S.signedIn() === true, "the memory-primary session is not held when storage is blocked");
+      const d = S.sessionDiag();
+      assert(d.mem === true, "sessionDiag does not report the memory session");
+      assert(d.mirrorOk === false, "the mirror write failure was not recorded");
     });
     rec.length = 0;
     await S.rest("console_board", { query: "select=slug" });
-    ck("S2 with storage blocked, a read falls back to anon (the accepted P47 trade, honestly asserted)", () => {
+    ck("S2 with storage blocked, a signed-in read carries the SESSION bearer (the GATE_V2 cure)", () => {
       const a = authOf(rec[rec.length - 1]);
-      assert(a === "Bearer " + ANON, "expected anon fallback, Authorization was: " + a);
+      assert(a === "Bearer " + ACCESS, "expected the session bearer, Authorization was: " + a);
     });
   })();
 
@@ -133,12 +135,13 @@ function authOf(req) { return (req.headers.Authorization || req.headers.authoriz
 
   // S6: the restored setSession contract: a blocked write is swallowed (last-good), NOT verified and
   // reported. The P39 verify-and-ephemeral machinery is gone by decision (source guard against return).
-  ck("S6 setSession is the last-good swallow-on-block form (no verify-readback, no ephemeral)", () => {
+  ck("S6 setSession is memory-primary with a best-effort RECORDED mirror (no verify-readback, no ephemeral)", () => {
     const src = fs.readFileSync(SUPA, "utf8");
-    const f = src.slice(src.indexOf("function setSession("), src.indexOf("function setSession(") + 300);
+    const f = src.slice(src.indexOf("function setSession("), src.indexOf("function setSession(") + 400);
     assert(!/getItem\(SESSION_KEY\) === json/.test(f), "setSession still reads the write back to verify it (P39 residue)");
     assert(!/__sessionEphemeral/.test(f), "setSession still records an ephemeral session (P39 residue)");
-    assert(/try \{ s \? localStorage\.setItem|catch \(e\) \{\}/.test(f), "setSession is not the last-good swallow form");
+    assert(/__memSession = s \|\| null;/.test(f), "setSession does not set the memory session first");
+    assert(/__mirrorOk = false; sbNote\("session mirror write", e\);/.test(f), "a mirror write failure is not recorded");
   });
 
   console.log(fails === 0 ? "\n0 failed" : "\n" + fails + " failed");

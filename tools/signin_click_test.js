@@ -46,8 +46,8 @@ function loadSupa(store, captured) {
   await (async () => {
     const win = loadSupa(makeStore(false));
     const r = await win.ThriveSupa.signIn("op@t.test", "pw");
-    ck("S1 a healthy sign-in resolves ok and signedIn() is true", () => {
-      assert(r && r.ok === true, "sign-in did not resolve ok: " + JSON.stringify(r));
+    ck("S1 a healthy sign-in RETURNS the parsed session (GATE_V2) and signedIn() is true", () => {
+      assert(r && r.access_token === "tok-1", "sign-in did not return the session: " + JSON.stringify(r));
       assert(win.ThriveSupa.signedIn() === true, "signedIn() is not true after a healthy sign-in");
     });
   })();
@@ -56,9 +56,10 @@ function loadSupa(store, captured) {
     const win = loadSupa(makeStore(true));   // storage throws on every write
     let threw = false, r = null;
     try { r = await win.ThriveSupa.signIn("op@t.test", "pw"); } catch (e) { threw = true; }
-    ck("S2 blocked storage: sign-in still resolves ok and never throws (last-good shape)", () => {
+    ck("S2 blocked storage: sign-in still returns the session AND the memory session holds (GATE_V2)", () => {
       assert(threw === false, "a storage-blocked sign-in threw");
-      assert(r && r.ok === true, "a storage-blocked sign-in did not resolve ok");
+      assert(r && r.access_token === "tok-1", "a storage-blocked sign-in did not return the session");
+      assert(win.ThriveSupa.signedIn() === true, "the memory-primary session is not held with storage blocked");
     });
   })();
 
@@ -129,8 +130,10 @@ function loadSupa(store, captured) {
   })();
 
   // ---- source contracts: the restored gate wiring (attempt() lives in a DOM closure) ----------------
-  ck("G1 the gate awaits signIn directly, with no hard race and no step marks", () => {
-    assert(/await S\.signIn\(m, p, \{ fresh: !!fresh \}\); ok = S\.signedIn/.test(GATE), "the direct awaited signIn is missing");
+  ck("G1 the gate binds success to signIn's RETURN VALUE (GATE_V2), no hard race, no step marks", () => {
+    assert(/sess = await S\.signIn\(m, p, \{ fresh: !!fresh \}\);/.test(GATE), "the direct awaited signIn is missing");
+    assert(/ok = !!\(sess && sess\.access_token\)/.test(GATE), "success is not bound to the returned session");
+    assert(!/ok = S\.signedIn/.test(GATE), "success is still bound to a storage read-back (signedIn())");
     assert(!/Promise\.race\(\[S\.signIn\(/.test(GATE), "the P44 hard race around signIn is still present");
     assert(!/__signMark/.test(GATE), "the P44 step marks are still present in the gate");
     assert(!/kind === "stall"/.test(GATE), "the stall branch is still present in the gate");
