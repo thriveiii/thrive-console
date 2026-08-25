@@ -26,12 +26,14 @@ ck("V1 version.json exists and matches the shell meta and the index redirect", (
   assert(idx.indexOf('?v=' + v.build) >= 0, "index redirect does not carry the current build");
 });
 
-// V2 (BARE_GATE, brief P54): the front door is a SESSION-AWARE router, still with NO version.json probe in
-// the critical path. The meta refresh fires at 0s (JS-off fallback) to the current shell; the inline JS
-// decides at once: a live/warm session forwards to the baked shell (location.replace, no wait), no session
-// bounces to gate.html, and an expired token gets ONE silent AUTH refresh (not a version.json probe) before
-// forwarding or bouncing. The in-shell P43 convergence (V3, failsafe.js) is still the stale-client net.
-ck("V2 index.html is a session-aware router (no version.json probe): warm/live -> shell, none -> gate.html, expired -> one refresh", () => {
+// V2 (BARE_GATE P54 + INDEX_RESILIENCE): the front door is a SESSION-AWARE router with NO version.json probe
+// in the critical path, and now a SINGLE deferred navigation, not a meta+JS race. The former 0s meta refresh
+// is gone (two racing top-level navigations are a WebKit hang the operators hit); the inline JS is the one
+// hand-off, deferred a beat so first paint lands first. STATIC escape links are painted in the markup so a
+// hung hand-off can never strand the operator, and ?stay=1 suppresses the auto hand-off (manual launcher).
+// The decision is unchanged: warm/live forward to the baked shell, no session to gate.html, expired token
+// one silent AUTH refresh. The in-shell P43 convergence (V3, failsafe.js) is still the stale-client net.
+ck("V2 index.html is a session-aware, single-navigation router (no meta race, no version.json probe): warm/live -> shell, none -> gate.html, expired -> one refresh, with static escapes", () => {
   const idx = read("index.html");
   assert(!/fetch\([^)]*version/.test(idx), "the front door must not fetch version.json in the critical path (a comment may name it; nothing probes it)");
   assert(/if\(warm\)\{ toConsole\(\); return; \}/.test(idx), "the warm-arrival forward is missing");
@@ -40,9 +42,14 @@ ck("V2 index.html is a session-aware router (no version.json probe): warm/live -
   assert(/function toConsole\(\)\{ location\.replace\("\.\/library\/console\.html\?v="\+BUILD/.test(idx), "the forward to the baked shell is missing");
   assert(/function toGate\(\)\{ location\.replace\("gate\.html"\); \}/.test(idx), "the bounce target must be gate.html");
   assert(/grant_type=refresh_token/.test(idx), "the expired-token silent refresh is missing");
-  const mr = /<meta http-equiv="refresh" content="(\d+);/.exec(idx);
-  assert(mr && Number(mr[1]) === 0, "meta refresh must be immediate (content=\"0; ...\") for the JS-off fallback");
-  // query-param carry-over (stale v/vr/warm dropped) and hash carry-over must still be present
+  // The meta refresh is GONE: exactly one top-level navigation (the JS router), never a meta+JS race.
+  assert(!/http-equiv="refresh"/.test(idx), "the 0s meta refresh must be removed (it raced the JS router and could hang WebKit)");
+  // The single hand-off is deferred so first paint lands first, and ?stay=1 is the manual launcher.
+  assert(/setTimeout\(decide, \d+\)/.test(idx), "the single deferred hand-off (setTimeout(decide, ...)) is missing");
+  assert(/\[\?&\]stay=1\(&\|\$\)/.test(idx), "the ?stay=1 manual-launcher guard is missing");
+  // Static escapes painted in the markup (tappable even if a hung hand-off suspends JS).
+  assert(/class="esc"/.test(idx) && /href="gate\.html"/.test(idx) && /id="idxCon"/.test(idx), "the static escape links (sign-in / console) are missing");
+  // query-param carry-over (stale v/vr/warm/stay dropped) and hash carry-over must still be present
   assert(/indexOf\("v="\)!==0&&p\.indexOf\("vr="\)!==0/.test(idx), "stale v/vr param stripping missing");
   assert(/\(location\.hash\|\|""\)/.test(idx), "hash carry-over missing");
 });

@@ -4,51 +4,74 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Thrive</title>
-<!-- BARE_GATE (brief P54): the root is a session-aware router. The meta refresh (JS-off fallback) still
-     fires at 0s straight to console.html?v=BUILD (a JS-off device that is already signed in reveals from
-     the mirror; a fresh one meets the in-console gate), and the inline JS below decides at once, with NO
-     version.json probe in the critical path:
-       - just returned from a successful bare-gate sign-in (?warm=1): forward to the console;
-       - a live operator session in the mirror: forward to the console (no network on the warm path);
-       - an expired session: ONE silent bounded token refresh with the frozen request shape, then forward
-         on success, else bounce to gate.html;
-       - no session at all: bounce to gate.html (the proven auth path), never a black screen.
-     The in-shell P43 convergence (failsafe.js fetches version.json inside console.html) stays the stale
-     shell safety net; the console's own boot still reads the mirror and heals its session too. -->
-<meta http-equiv="refresh" content="0; url=./library/console.html?v=bdc00185">
+<!-- BARE_GATE (P54) + INDEX_RESILIENCE: the root is a session-aware router with ONE top-level navigation.
+     The former 0s meta refresh is gone: it fired a SECOND navigation to console.html at the same moment the
+     JS router fired its own, and two racing top-level navigations are a state WebKit can hang on (the exact
+     "Loading" freeze the operators hit, where index paints but the hand-off never commits). Now the JS
+     router is the single hand-off, deferred a beat so first paint lands first, and the escapes below are
+     STATIC HTML: painted at first paint and tappable even if a hung hand-off suspends this document's JS
+     (tapping a link is a browser action, not a page-script action), so the root can never strand the
+     operator on a silent splash. ?stay=1 suppresses the auto hand-off and leaves this as a manual launcher.
+     The router still decides with NO version.json probe: ?warm=1 forward; live session forward; expired
+     session one bounded refresh then forward or gate; no session to gate.html. The in-shell P43 convergence
+     (failsafe.js fetches version.json inside console.html) stays the stale-shell safety net. -->
 <link rel="icon" href="./assets/thrive-logo.png">
 <style>html,body{margin:0;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;height:100%}
-.c{height:100%;display:flex;align-items:center;justify-content:center;gap:12px}
+.c{height:100%;display:flex;align-items:center;justify-content:center;gap:12px;padding:0 16px 90px;text-align:center}
 img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
-a{color:#71BFCC}</style></head>
-<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=bdc00185">Thrive Opportunity Library</a>…</span></div>
-<script>(function(){/* BARE_GATE router. Session-aware, no version.json probe in the critical path. Query
-  params (minus any stale v/vr/warm) and the hash carry across to the console, so ?debug=paint survives. */
-  var BUILD="bdc00185", URL_BASE="https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
+a{color:#71BFCC}
+.esc{position:fixed;left:0;right:0;bottom:22px;display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:center;padding:0 16px}
+.esc a{color:#cbd5e1;font-size:13.5px;text-decoration:none;border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:9px 14px;background:#14141a}
+.esc a.primary{color:#04252b;background:#71BFCC;border-color:transparent;font-weight:700}</style></head>
+<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span id="idxMsg">Opening the <a href="./library/console.html?v=9c5e952f">Thrive Opportunity Library</a>…</span></div>
+<div class="esc" id="idxEsc" role="group" aria-label="Enter">
+<a id="idxGate" class="primary" href="gate.html">Sign-in page</a>
+<a id="idxCon" href="./library/console.html?v=9c5e952f">Open the console</a>
+<a id="idxMenu" href="./?stay=1">Menu</a>
+</div>
+<script>(function(){/* Localize the static escapes at once (never deferred), so even a suspended document
+  keeps the painted Arabic labels. */
+  try{ if(localStorage.getItem('thrive_lang')==='ar'){
+    var d=document.documentElement; d.setAttribute('lang','ar'); d.setAttribute('dir','rtl');
+    var m=document.getElementById('idxMsg'); if(m) m.innerHTML='جارٍ فتح <a href="./library/console.html?v=9c5e952f">مكتبة فرص ثرايف</a>…';
+    var g=document.getElementById('idxGate'); if(g) g.textContent='صفحة تسجيل الدخول';
+    var c=document.getElementById('idxCon'); if(c) c.textContent='فتح الكونسول';
+    var u=document.getElementById('idxMenu'); if(u) u.textContent='القائمة';
+  } }catch(e){}
+})();</script>
+<script>(function(){/* BARE_GATE router, a SINGLE deferred navigation (no meta+JS race). Query params (minus
+  stale v/vr/warm/stay) and the hash carry across, so ?debug=paint survives. ?stay=1 is the manual launcher:
+  no auto hand-off, the static escapes above are the way in. */
+  var BUILD="9c5e952f", URL_BASE="https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
   var SESSION_KEY="console_sb_session", PRESENCE="thrive_presence";
-  var q=(location.search||"").replace(/^\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0&&p.indexOf("warm=")!==0;}).join("&");
+  if(/[?&]stay=1(&|$)/.test(location.search||"")) return;           // manual launcher: no auto hand-off
+  var q=(location.search||"").replace(/^\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0&&p.indexOf("warm=")!==0&&p.indexOf("stay=")!==0;}).join("&");
   var warm=/[?&]warm=1(&|$)/.test(location.search||"");
   function toConsole(){ location.replace("./library/console.html?v="+BUILD+(q?("&"+q):"")+(location.hash||"")); }
   function toGate(){ location.replace("gate.html"); }
   function readSess(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||"null"); }catch(e){ return null; } }
   function expired(s){ try{ if(!s||!s.expires_at) return false; return (Number(s.expires_at)*1000) < (Date.now()-5000); }catch(e){ return false; } }
-  var sess=readSess();
-  if(warm){ toConsole(); return; }                                  // just signed in through the bare gate
-  if(!sess||!sess.access_token){ toGate(); return; }                // no session: the bare gate owns sign-in
-  if(!expired(sess)){ toConsole(); return; }                        // live session: forward, no network
-  // Expired token: ONE silent bounded refresh (frozen shape, arrayBuffer + TextDecoder read). Success
-  // re-mirrors and forwards; a failure or timeout bounces to the bare gate, never the console operator card.
-  var done=false, timer=setTimeout(function(){ if(done) return; done=true; toGate(); }, 12000);
-  var opts={method:"POST",headers:{"apikey":ANON,"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({refresh_token:sess.refresh_token})};
-  fetch(URL_BASE+"/auth/v1/token?grant_type=refresh_token",opts).then(function(res){
-    var read=(typeof res.arrayBuffer==="function")?res.arrayBuffer().then(function(b){return new TextDecoder("utf-8").decode(b);}):res.text();
-    return read.then(function(t){ return {ok:res.ok,text:t}; });
-  }).then(function(r){
-    if(done) return; done=true; clearTimeout(timer);
-    var t=String(r.text||"").replace(/^\uFEFF/,"").trim(), d=null; try{ d=t?JSON.parse(t):null; }catch(e){}
-    if(r.ok && d && d.access_token){
-      try{ localStorage.setItem(SESSION_KEY, JSON.stringify({access_token:d.access_token,refresh_token:d.refresh_token,expires_at:d.expires_at,email:sess.email,uid:sess.uid||((d.user&&d.user.id)||"")})); localStorage.setItem(PRESENCE,String(Date.now())); }catch(e){}
-      toConsole();
-    } else { toGate(); }
-  }).catch(function(){ if(done) return; done=true; clearTimeout(timer); toGate(); });
+  function decide(){
+    var sess=readSess();
+    if(warm){ toConsole(); return; }                                // just signed in through the bare gate
+    if(!sess||!sess.access_token){ toGate(); return; }              // no session: the bare gate owns sign-in
+    if(!expired(sess)){ toConsole(); return; }                      // live session: forward, no network
+    // Expired token: ONE silent bounded refresh (frozen shape, arrayBuffer + TextDecoder read).
+    var done=false, timer=setTimeout(function(){ if(done) return; done=true; toGate(); }, 12000);
+    var opts={method:"POST",headers:{"apikey":ANON,"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({refresh_token:sess.refresh_token})};
+    fetch(URL_BASE+"/auth/v1/token?grant_type=refresh_token",opts).then(function(res){
+      var read=(typeof res.arrayBuffer==="function")?res.arrayBuffer().then(function(b){return new TextDecoder("utf-8").decode(b);}):res.text();
+      return read.then(function(t){ return {ok:res.ok,text:t}; });
+    }).then(function(r){
+      if(done) return; done=true; clearTimeout(timer);
+      var t=String(r.text||"").replace(/^\uFEFF/,"").trim(), d=null; try{ d=t?JSON.parse(t):null; }catch(e){}
+      if(r.ok && d && d.access_token){
+        try{ localStorage.setItem(SESSION_KEY, JSON.stringify({access_token:d.access_token,refresh_token:d.refresh_token,expires_at:d.expires_at,email:sess.email,uid:sess.uid||((d.user&&d.user.id)||"")})); localStorage.setItem(PRESENCE,String(Date.now())); }catch(e){}
+        toConsole();
+      } else { toGate(); }
+    }).catch(function(){ if(done) return; done=true; clearTimeout(timer); toGate(); });
+  }
+  // Defer the single hand-off a beat so first paint (with the static escapes) always lands before any
+  // navigation. If the hand-off then hangs, the escapes are already on screen and tappable.
+  try{ setTimeout(decide, 250); }catch(e){ decide(); }
 })();</script></body></html>

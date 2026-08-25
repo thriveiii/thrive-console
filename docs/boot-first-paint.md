@@ -137,8 +137,47 @@ it right now by discarding the stale cached copy: open the site in a Private/Inc
 site's website data (Settings, Safari, Advanced, Website Data, remove console.thriveiii.com), then reload.
 Once the new `BUILD` deploys, this is unnecessary; the new versioned URL fetches the fresh shell on its own.
 
+## INDEX_RESILIENCE: the root can never strand the operator (follow-up)
+
+Even after the fingerprint fix force-delivered the new shell, operators stayed on the root index splash
+("Opening the Thrive Opportunity Library...", tab stuck at "Loading") in a private tab with cleared cache.
+The index fetched fine (its splash rendered), but the hand-off to the next document never committed. Two
+defects, both in `index.html`:
+
+1. **A racing double navigation.** The index fired a `0s` meta refresh to `console.html` AND the JS router's
+   `location.replace` at the same moment: two top-level navigations at once, a state WebKit can hang on. That
+   matches the evidence exactly (index paints every time, the hand-off hangs every time).
+2. **No way out.** While a hand-off hangs the browser keeps the index visible but suspends its JS, so any
+   timer-based escape never fires. There was nothing tappable to retry with.
+
+### The fix
+
+- The `0s` meta refresh is removed. The JS router is now the SINGLE hand-off, deferred a beat so first paint
+  lands first. One top-level navigation, never a meta+JS race.
+- The escapes are STATIC HTML painted at first paint: a sign-in-page link (`gate.html`), a direct console
+  link, and a menu link. Tapping an `<a>` is a browser action, not a page-script action, so these work even
+  while a hung hand-off has suspended the document's JS. A fresh navigation or retry often clears an
+  intermittent WebKit hang the first attempt stalled on.
+- `?stay=1` suppresses the auto hand-off, turning the root into a reliable manual launcher
+  (`console.thriveiii.com/?stay=1`): the 5 KB index always loads, and the operator taps their way in.
+
+The router decision is unchanged (warm/live forward to the shell, no session to `gate.html`, expired token
+one bounded refresh), and the happy path still auto-navigates (session to console, no session to gate),
+proven in a browser.
+
+### Evidence (index resilience)
+
+`tools/index_watchdog_test.py` (source + browser, fails-when-broken): the meta refresh is gone; the static
+escapes are in the markup and reach `gate.html` and the console; the router is a single deferred navigation
+honoring `?stay=1`; under `?stay=1` the index does not auto-navigate and the escape row is visible; tapping
+the sign-in escape reaches `gate.html`. `version_integrity_test` V2 reconciled to the single-navigation
+router (asserts the meta refresh is absent, the deferred hand-off and `?stay=1` guard are present, and the
+static escapes exist).
+
 ## Acceptance (device-gated)
 
+0. If still stranded on the splash: open `console.thriveiii.com/?stay=1` (the manual launcher) and tap
+   "Sign-in page". The root itself always loads; this is the guaranteed way in while a hang is intermittent.
 1. Fresh build stamp on the failing iPad (the new `BUILD`, not `a1c92c04`).
 2. Sign in and pass both gates on a marginal connection: the console paints its gate/boot frame promptly
    instead of holding the index splash. No permanent "Opening the Thrive Opportunity Library..." freeze.
