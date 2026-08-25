@@ -1,21 +1,19 @@
-"""BOOT_FIRST_PAINT contract (browser, fails-when-broken).
+"""STYLES_ALWAYS_APPLY contract (browser, fails-when-broken).
 
-Device evidence: after passing both gates the operator was stranded FOREVER on the root index splash. The
-root index router does location.replace("./library/console.html") at once on the warm/live path, so the
-browser is navigating INTO console.html, but a navigation does not repaint until the new document reaches
-its first paint. console.html's head carried two RENDER-BLOCKING <link rel="stylesheet"> (fonts.css ~327 KB
-+ styles.css ~201 KB); a render-blocking sheet withholds the document's first paint until it fully loads, so
-on a marginal connection console.html never painted and the browser kept showing the previous document (the
-index splash) with no way forward.
+Device evidence (build 7e0ade8d): the console rendered as RAW UNSTYLED HTML on the operator's phone: the
+brand showed as a purple underlined link and the language control as a bare pill. Cause: P54 loaded
+styles.css with the async swap `media="print" onload="this.media='all'"`. When that onload does not fire on
+WebKit the sheet never becomes a screen stylesheet, so the interface is never styled, permanently.
 
-The fix loads both sheets NON-render-blocking (media="print", flipped to all on load) with a <noscript>
-fallback, leaving the inline gate-critical block to paint the gate/boot frame the moment the HTML arrives.
+Measured, the swap was a false economy: styles.css is only ~52 KB gzipped, while fonts.css is ~248 KB
+gzipped (base64 font faces that barely compress) and is purely decorative. So the law is now:
 
-This test proves it at the engine level:
-  A. With BOTH stylesheets hung (never responding), console.html still reaches first-contentful-paint within
-     a short bound. Reverting to render-blocking <link> makes FCP wait on the hung sheets and this fails.
-  B. On a normal load both links end at media="all" (their onload fired and swapped them in), so the full
-     styles are actually applied, not merely requested.
+  styles.css is a NORMAL blocking stylesheet  -> the interface is ALWAYS styled, no swap to fail;
+  fonts.css is fetched AFTER the window load  -> the heavy sheet is off the critical path entirely.
+
+This proves it at the engine level: with app.js AND fonts.css both blocked (the worst realistic case), the
+page is still fully styled from styles.css; no media="print" swap exists anywhere; and on a healthy load the
+webfont sheet is added only after load.
 """
 import threading, http.server, socketserver, functools, os
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
@@ -29,18 +27,17 @@ def ck(n, c, d=None):
         fails.append(n)
         if d is not None: print("      " + str(d)[:300])
 
-# Source guard: the served console.html carries the async pattern, and the offline dist inlines all CSS
-# (no external stylesheet link at all).
 console = open(os.path.join(ROOT, "library/console.html")).read()
 dist = open(os.path.join(ROOT, "dist/thrive-console.html")).read()
-ck("served console.html loads fonts.css + styles.css non-render-blocking (media=print, onload swap)",
-   console.count('media="print" onload="this.media=\'all\'"') == 2
-   and 'href="./fonts.css' in console and 'href="./styles.css' in console)
-ck("served console.html keeps a <noscript> render-blocking fallback for both sheets",
-   '<noscript><link rel="stylesheet" href="./fonts.css' in console and 'href="./styles.css' in console.split('<noscript>')[1])
-ck("the inline gate-critical block is present and precedes the sheet links (it rules the pre-stylesheet frame)",
-   'id="gate-critical"' in console and 'media="print"' in console
-   and console.find('id="gate-critical"') < console.find('media="print"'))
+
+ck("styles.css is a NORMAL blocking stylesheet (no media=print swap that can fail to apply)",
+   '<link rel="stylesheet" href="./styles.css' in console and 'media="print"' not in console)
+ck("fonts.css is NOT a stylesheet link in the document (it is off the critical path)",
+   '<link rel="stylesheet" href="./fonts.css' not in console)
+ck("fonts.css is fetched by script only AFTER the window load event",
+   'l.href="./fonts.css' in console and 'addEventListener("load"' in console)
+ck("the inline gate-critical block still precedes the stylesheet (it rules the pre-stylesheet frame)",
+   'id="gate-critical"' in console and console.find('id="gate-critical"') < console.find('href="./styles.css'))
 ck("the offline dist build still inlines all CSS (zero external stylesheet links)",
    'rel="stylesheet"' not in dist)
 
@@ -55,52 +52,48 @@ from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
 
-    # ---- Scenario A: both stylesheets hung; first paint must still fire ----
-    pg = b.new_page()
-    # Hang the two heavy sheets: never fulfil, so the request stays pending (a marginal connection). Everything
-    # else (the HTML, the inline scripts, the app modules) is allowed. app.js is large and irrelevant to the
-    # first paint of the gate frame; we do not wait on it.
-    def hang_css(route):
-        # leave the request pending forever (do not fulfil, do not abort)
-        pass
-    pg.route("**/fonts.css*", hang_css)
-    pg.route("**/styles.css*", hang_css)
-    pg.goto(f"{base}/library/console.html", wait_until="commit")
-    # Poll for first-contentful-paint. With the async fix it fires from the inline critical CSS within a few
-    # hundred ms; with render-blocking links it would never fire while the sheets hang.
-    fcp = 0.0
-    for _ in range(40):  # up to ~4s
-        fcp = pg.evaluate("""()=>{ const e=performance.getEntriesByName('first-contentful-paint'); return e.length? e[0].startTime : 0; }""")
-        if fcp and fcp > 0:
-            break
-        pg.wait_for_timeout(100)
-    ck("first-contentful-paint fires while BOTH stylesheets are hung (paint is no longer blocked on the sheets)",
-       fcp and fcp > 0, {"fcp_ms": fcp})
-    # And the sheets are genuinely still pending (media stayed 'print', onload never ran), proving the paint
-    # happened WITHOUT them, not because they slipped in.
-    media_state = pg.evaluate("""()=>Array.from(document.querySelectorAll('link[rel=stylesheet]')).map(l=>l.media)""")
-    ck("with the sheets hung, their links are still media=print (unswapped), so first paint used the inline frame",
-       media_state and all(m == "print" for m in media_state), media_state)
-    try: pg.unroute_all(behavior="ignoreErrors")
-    except Exception: pass
-    pg.close()
+    # The device's worst case: the heavy app never arrives and the webfonts never arrive.
+    ctx = b.new_context()
+    ctx.route("**/app.js*", lambda r: r.abort())
+    ctx.route("**/fonts.css*", lambda r: r.abort())
+    pg = ctx.new_page()
+    pg.goto(f"{base}/library/console.html", wait_until="domcontentloaded")
+    pg.wait_for_timeout(1200)
+    st = pg.evaluate("""()=>{
+      var cs = getComputedStyle(document.documentElement);
+      var brand = document.querySelector('.brand');
+      var bs = brand ? getComputedStyle(brand) : null;
+      return {
+        bg: (cs.getPropertyValue('--bg')||'').trim(),
+        ink: (cs.getPropertyValue('--ink')||'').trim(),
+        bodyBg: getComputedStyle(document.body).backgroundColor,
+        brandDecoration: bs ? bs.textDecorationLine : null,
+        sheets: document.styleSheets.length
+      };
+    }""")
+    # The decisive assertion: styles.css tokens are LIVE even though app.js and fonts.css never came.
+    ck("with app.js AND fonts.css both blocked, styles.css is still applied (the unstyled-forever bug is gone)",
+       bool(st.get("bg")) and bool(st.get("ink")), st)
+    ck("the brand is styled, not a default underlined link (the exact device symptom)",
+       st.get("brandDecoration") in (None, "none"), st)
+    ctx.close()
 
-    # ---- Scenario B: normal load; onload swaps the sheets to media=all so the full styles apply ----
-    pg2 = b.new_page()
+    # Healthy load: the webfont sheet is attached only after load, and styles still hold.
+    ctx2 = b.new_context()
+    ctx2.route("**/app.js*", lambda r: r.abort())   # keep the harness light; fonts allowed
+    pg2 = ctx2.new_page()
     pg2.goto(f"{base}/library/console.html", wait_until="load")
-    pg2.wait_for_timeout(600)
-    media_after = pg2.evaluate("""()=>Array.from(document.querySelectorAll('link[rel=stylesheet]')).filter(l=>/fonts\\.css|styles\\.css/.test(l.href)).map(l=>l.media)""")
-    ck("on a normal load both heavy sheets end at media=all (their onload swap fired, so styles are applied)",
-       media_after and len(media_after) == 2 and all(m == "all" for m in media_after), media_after)
-    # A rule that lives ONLY in styles.css (not in the inline critical block) is in effect, proving the full
-    # sheet actually governs the page after the swap. --bg is a styles.css custom property on :root.
-    has_full = pg2.evaluate("""()=>{ const v=getComputedStyle(document.documentElement).getPropertyValue('--bg'); return !!(v && v.trim()); }""")
-    ck("a styles.css-only token (:root --bg) is in effect after the swap (full stylesheet applied)",
-       has_full)
-    pg2.close()
+    pg2.wait_for_timeout(1500)
+    st2 = pg2.evaluate("""()=>({
+      fontsAttached: !!document.querySelector('link[href*="fonts.css"]'),
+      bg: (getComputedStyle(document.documentElement).getPropertyValue('--bg')||'').trim()
+    })""")
+    ck("on a healthy load the webfont sheet is attached after load, and the interface stays styled",
+       st2.get("fontsAttached") and bool(st2.get("bg")), st2)
+    ctx2.close()
 
     b.close()
 
 httpd.shutdown()
-print("\n" + ("FAILED: " + ", ".join(fails) if fails else "ALL FIRST-PAINT CHECKS PASS"))
+print("\n" + ("FAILED: " + ", ".join(fails) if fails else "ALL STYLES-ALWAYS-APPLY CHECKS PASS"))
 raise SystemExit(1 if fails else 0)

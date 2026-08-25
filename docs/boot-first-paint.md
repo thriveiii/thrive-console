@@ -222,6 +222,45 @@ marker proves NO self-reload happened and nothing replaced the screen; with `__b
 never appears. `signin_resilience_test` part D reconciled, and D2 goes red if anyone reintroduces a
 full-screen overlay, a gate removal, or a fail deadline into the wait path.
 
+## STYLES_ALWAYS_APPLY: measured weights, and the async swap that rendered the console unstyled
+
+A device capture on build `7e0ade8d` showed the console as RAW UNSTYLED HTML: the brand as a purple
+underlined link, the language control as a bare pill, black below. That is styles.css never being applied.
+
+Cause: the P54 first-paint change loaded BOTH sheets with `media="print" onload="this.media='all'"`. That
+swap only becomes a screen stylesheet if the `onload` fires. When it does not fire on WebKit, the sheet
+stays a print stylesheet forever and the interface is never styled. There is no timeout and no recovery.
+
+The measurement that settles the trade (gzip, what the device actually downloads):
+
+| asset | raw | gzip | in critical path? |
+|---|---|---|---|
+| app.js | 890,601 | 286,038 | yes (paints the board) |
+| fonts.css | 327,517 | **247,678** | was yes; now NO |
+| i18n.js | 216,497 | 63,186 | yes |
+| styles.css | 201,415 | **51,698** | yes (blocking again) |
+| console.html | 94,733 | 27,290 | yes |
+
+styles.css is only ~52 KB gzipped, so making it async bought almost nothing and risked everything.
+fonts.css is ~248 KB gzipped (base64 font faces barely compress), is the single heaviest item after app.js,
+and is purely decorative. The weights invert the original decision.
+
+The law now:
+
+- **styles.css is a NORMAL blocking stylesheet.** The interface is ALWAYS styled. There is no swap to fail,
+  so the unstyled-forever mode is gone by construction, not by timing.
+- **fonts.css leaves the boot entirely.** It is appended by script AFTER the window load event, when the
+  board already has what it needs. Until it lands the console renders in the system stack declared by
+  styles.css, which is a complete, correct interface.
+
+Net: the critical CSS path drops from ~300 KB to ~52 KB gzipped, an 83% cut, AND the failure mode is
+eliminated. The gate-critical inline block still paints the gate before styles.css lands.
+
+Evidence: `tools/first_paint_test.py` rewritten to this contract. With app.js AND fonts.css both blocked
+(the worst realistic case) the page is still fully styled (`--bg`/`--ink` live) and the brand carries no
+default underline, which is the exact device symptom; no `media="print"` exists anywhere; and on a healthy
+load the webfont sheet is attached only after load.
+
 ## Acceptance (device-gated)
 
 0. If still stranded on the splash: open `console.thriveiii.com/?stay=1` (the manual launcher) and tap
