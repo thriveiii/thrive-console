@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="robots" content="noindex, nofollow">
+<title>Thrive Console</title>
+<link rel="icon" href="./assets/thrive-logo.png">
+<!-- BARE_GATE (brief P54). This is a STANDALONE same-origin page that owns the entire auth path with
+     NOTHING from the console bundle loaded during it (no app.js, model, views, relay, or supabase.js).
+     It performs passcode + operator sign-in with the PRISTINE native fetch and the FROZEN request shape
+     proven to complete on the failing iPad by authtest.html (apikey header + JSON POST, no Authorization,
+     cache no-store, no AbortController signal), reads the token body via arrayBuffer + TextDecoder, and on
+     success writes the session to memory AND a best-effort localStorage mirror, then navigates to
+     index.html which boots the console and reads the session from the mirror. The values below are public
+     by design (RLS + the operator sign-in protect the data, not their secrecy); they are the same values
+     library/config.js bakes and authtest.html carries, kept literal so this page shares ZERO console code. -->
+<style>
+  :root{ --bg:#07070b; --ink:#e8eaed; --muted:#9aa0aa; --line:#23262e; --card:#0e0f14;
+         --accent:#71BFCC; --accent-ink:#04252b; --err:#f0a4a4; --diag:#7f8794; }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--ink);
+             font-family:"Lato",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap{ min-height:100%; display:flex; align-items:center; justify-content:center; padding:24px; box-sizing:border-box; }
+  form{ width:100%; max-width:22rem; background:var(--card); border:1px solid var(--line);
+        border-radius:16px; padding:28px 24px 22px; text-align:center; }
+  .mark{ color:var(--accent); width:64px; height:64px; margin:0 auto 8px; display:block; }
+  h1{ font-size:1.15rem; font-weight:700; margin:6px 0 4px; letter-spacing:.2px; }
+  .sub{ color:var(--muted); font-size:.9rem; margin:0 0 18px; line-height:1.5; }
+  input{ width:100%; box-sizing:border-box; margin:0 0 12px; padding:14px 14px; border:1px solid var(--line);
+         border-radius:10px; background:#111318; color:var(--ink); font-size:1rem; }
+  input:focus{ outline:none; border-color:var(--accent); }
+  button{ width:100%; box-sizing:border-box; padding:14px; border:0; border-radius:10px; background:var(--accent);
+          color:var(--accent-ink); font-weight:700; font-size:1rem; cursor:pointer; margin:2px 0 0; }
+  button.ghost{ background:transparent; color:var(--accent); border:1px solid var(--line); margin-top:10px; }
+  button[disabled]{ opacity:.6; cursor:default; }
+  .err{ color:var(--err); font-size:.86rem; margin:12px 0 0; min-height:1.1em; }
+  .note{ color:var(--muted); font-size:.76rem; margin:16px 0 0; line-height:1.5; }
+  .diag{ color:var(--diag); font:11px/1.45 ui-monospace,Menlo,Consolas,monospace; direction:ltr;
+         text-align:left; white-space:pre-wrap; word-break:break-word; margin:10px 0 0;
+         background:#0a0b0f; border:1px solid var(--line); border-radius:8px; padding:8px; }
+  [hidden]{ display:none !important; }
+  @keyframes shake{ 10%,90%{transform:translateX(-1px)} 30%,70%{transform:translateX(3px)} 50%{transform:translateX(-4px)} }
+  form.shake{ animation:shake .4s; }
+  @media (prefers-reduced-motion:reduce){ form.shake{ animation:none; } }
+</style></head>
+<body>
+<div class="wrap">
+  <form id="gate" autocomplete="off" dir="ltr">
+    <svg class="mark" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
+      <circle cx="32" cy="32" r="13" stroke="currentColor" stroke-width="1.4"/>
+      <g stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <line x1="32" y1="17" x2="32" y2="47"/><line x1="19" y1="24.5" x2="45" y2="39.5"/>
+        <line x1="19" y1="39.5" x2="45" y2="24.5"/>
+      </g>
+      <circle cx="32" cy="32" r="3.1" fill="currentColor"/>
+    </svg>
+    <h1 id="title">Thrive Console</h1>
+    <p class="sub" id="sub"></p>
+    <div id="fields"></div>
+    <button id="go" type="submit"></button>
+    <button id="retry" class="ghost" type="button" hidden></button>
+    <p class="err" id="err" hidden></p>
+    <p class="diag" id="diag" dir="ltr" hidden></p>
+    <p class="note" id="note"></p>
+  </form>
+</div>
+<script>
+"use strict";
+/* Public-by-design connection + gate verifier (see the head comment). Literal, so this page carries no
+   shared module. Exactly the URL, key, and request shape the console sign-in uses. */
+var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co";
+var ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
+var ITER = 120000;
+var GATE_SALT = "thrive-gate-v2", SYNC_SALT = "thrive-sync-v2", VAULT_SALT = "thrive-vault-v1";
+var HASH = "0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8";
+var SESSION_KEY = "console_sb_session", SYNC_KEY = "thrive_sync_auth", VAULT_KEY = "thrive_vault_key";
+var GATE_KEY = "thrive_gate_v2", PRESENCE = "thrive_presence";
+var FAILS = "thrive_gate_fails", OP_FAILS = "thrive_op_fails";
+var TIMEOUT_MS = 15000;
+
+/* Existing i18n strings (copied verbatim from the console gate STR, EN + AR). */
+var STR = {
+  en: { title:"Thrive Console", sub:"Private workspace. Enter the passcode to continue.",
+        ph:"Passcode", go:"Unlock", err:"Incorrect passcode. Try again.",
+        wait:"Too many attempts. Try again in ",
+        note:"Prospect result pages stay public. Only the console is protected.",
+        op_sub:"Signed device. Sign in as an operator to continue.",
+        op_email:"Operator email", op_pass:"Password", op_go:"Sign in",
+        op_err:"Could not sign in.", op_busy:"Signing in", op_retry:"Retry",
+        op_err_timeout:"Sign-in timed out. Check your connection and try again.",
+        op_err_network:"Could not reach the service. Check your connection and try again.",
+        op_err_unavailable:"The sign-in service is unavailable right now. Try again shortly.",
+        op_err_empty:"The service returned an empty response. Tap Retry.",
+        op_err_parse:"The service response could not be read. Tap Retry.",
+        err_secure:"A secure connection is required to unlock. Open the console over HTTPS and try again." },
+  ar: { title:"كونسول ثرايف", sub:"مساحة خاصة. أدخل رمز الدخول للمتابعة.",
+        ph:"رمز الدخول", go:"فتح", err:"رمز غير صحيح. حاول مجددًا.",
+        wait:"محاولات كثيرة. حاول مجددًا بعد ",
+        note:"صفحات نتائج العملاء تبقى عامة. الكونسول وحده محميّ.",
+        op_sub:"الجهاز موثوق. سجّل الدخول كمشغّل للمتابعة.",
+        op_email:"بريد المشغّل", op_pass:"كلمة المرور", op_go:"تسجيل الدخول",
+        op_err:"تعذّر تسجيل الدخول.", op_busy:"جارٍ تسجيل الدخول", op_retry:"إعادة المحاولة",
+        op_err_timeout:"انتهت مهلة تسجيل الدخول. تحقّق من اتصالك وحاول مجددًا.",
+        op_err_network:"تعذّر الوصول إلى الخدمة. تحقّق من اتصالك وحاول مجددًا.",
+        op_err_unavailable:"خدمة تسجيل الدخول غير متوفرة الآن. حاول بعد قليل.",
+        op_err_empty:"أعادت الخدمة استجابة فارغة. اضغط إعادة المحاولة.",
+        op_err_parse:"تعذّرت قراءة استجابة الخدمة. اضغط إعادة المحاولة.",
+        err_secure:"يلزم اتصال آمن لفتح القفل. افتح الكونسول عبر HTTPS وحاول مجددًا." }
+};
+function lang(){ try{ return localStorage.getItem("thrive_lang") === "ar" ? "ar" : "en"; }catch(e){ return "en"; } }
+var s = STR[lang()];
+
+var form = document.getElementById("gate"), fields = document.getElementById("fields");
+var goBtn = document.getElementById("go"), retryBtn = document.getElementById("retry");
+var errEl = document.getElementById("err"), diagEl = document.getElementById("diag");
+document.getElementById("title").textContent = s.title;
+document.getElementById("note").textContent = s.note;
+form.setAttribute("dir", lang() === "ar" ? "rtl" : "ltr");
+function showErr(t){ if(!t){ errEl.hidden = true; errEl.textContent = ""; return; } errEl.textContent = t; errEl.hidden = false; }
+function showDiag(t){ if(!t){ diagEl.hidden = true; diagEl.textContent = ""; return; } diagEl.textContent = String(t).slice(0,220); diagEl.hidden = false; }
+function showRetry(on){ retryBtn.hidden = !on; }
+function fmtWait(ms){ var n = Math.ceil(ms/1000); return n >= 60 ? Math.ceil(n/60)+"m" : n+"s"; }
+
+/* PBKDF2-SHA256, the SAME params the console gate uses. A missing crypto.subtle (a non-secure context) is a
+   NAMED failure surfaced as "secure connection required", never as "wrong passcode". */
+async function pbkdf2Hex(pass, salt){
+  if(!(window.crypto && window.crypto.subtle)){ var se = new Error("secure context required"); se.kind = "secure"; throw se; }
+  var enc = new TextEncoder();
+  var keyMat = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveBits"]);
+  var bits = await crypto.subtle.deriveBits({ name:"PBKDF2", hash:"SHA-256", salt:enc.encode(salt), iterations:ITER }, keyMat, 256);
+  return Array.prototype.map.call(new Uint8Array(bits), function(b){ return b.toString(16).padStart(2,"0"); }).join("");
+}
+
+/* Escalating throttle, mirroring the console gate: passcode locks after 5 tries, operator after 3. Best
+   effort; a storage failure is recorded, never swallowed silently and never a lockout by itself. */
+function readJSON(k){ try{ return JSON.parse(localStorage.getItem(k) || "{}") || {}; }catch(e){ note("throttle read", e); return {}; } }
+function lockedMs(k){ var f = readJSON(k); return (f.until && f.until > Date.now()) ? (f.until - Date.now()) : 0; }
+function recordFail(k, floor, base){ var f = readJSON(k); f.n = (f.n||0)+1; if(f.n >= floor) f.until = Date.now() + Math.min(base*Math.pow(2, f.n-floor), 900000);
+  try{ localStorage.setItem(k, JSON.stringify(f)); }catch(e){ note("throttle write", e); } }
+function clearFail(k){ try{ localStorage.removeItem(k); }catch(e){ note("throttle clear", e); } }
+
+/* No silent failure: every caught error lands here (the index diag can read it). */
+function note(tag, e){ try{ var a = window.__gateNotes = window.__gateNotes || []; a.push(tag + ": " + ((e && e.message) || String(e))); if(a.length > 20) a.shift(); }catch(x){ /* the note ring is the last resort; there is nowhere further to record */ } }
+
+/* ---- The proven auth body (authtest.html, 400 in 253ms on the failing iPad) ------------------------
+   Pristine native fetch, frozen request shape, bounded by an INDEPENDENT setTimeout race (WebKit's
+   AbortController+fetch is documented-unreliable, so there is no abort signal). The body is read via
+   arrayBuffer + TextDecoder, a BOM is stripped, trimmed, then JSON.parse inside try/catch with the raw
+   text kept. A 200 with an empty body gets ONE automatic identical retry after 400ms. */
+function sleepMs(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+function redactBody(t){ return String(t == null ? "" : t)
+  .replace(/("?(?:access_token|refresh_token|token|id_token|provider_token)"?\s*:\s*)"[^"]*"/gi, '$1"[REDACTED]"')
+  .replace(/eyJ[A-Za-z0-9._-]{6,}/g, "[REDACTED]"); }
+function recordTokenDiag(r, e){
+  try{
+    var d;
+    if(e){ d = { ok:false, threw:true, kind:(e && e.kind) || "error", message:(e && e.message) || String(e), status:(e && e.status) || null }; }
+    else { var text = (r && typeof r.text === "string") ? r.text : "";
+      d = { ok:true, threw:false, status:(r && r.res && r.res.status) != null ? r.res.status : null, res_ok:!!(r && r.res && r.res.ok),
+            typeof_data:typeof (r && r.data), has_access_token:!!(r && r.data && typeof r.data === "object" && r.data.access_token),
+            text_length:text.length, body_head:redactBody(text).slice(0,40) }; }
+    d.at = new Date().toISOString(); window.__lastTokenDiag = d;
+  }catch(x){ /* the recorder is the last resort; there is nowhere further to record */ }
+}
+async function fetchOnce(url, opts, ms){
+  var timedOut = false;
+  var timer = new Promise(function(_, reject){ setTimeout(function(){ timedOut = true; var te = new Error("request timed out after "+ms+"ms"); te.kind = "timeout"; reject(te); }, ms); });
+  var run = (async function(){
+    var res = await fetch(url, opts);
+    var text = "";
+    if(typeof res.arrayBuffer === "function"){ var buf = await res.arrayBuffer(); text = new TextDecoder("utf-8").decode(buf); }
+    else { text = await res.text(); }
+    if(text && text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    text = String(text || "").trim();
+    var data = null, parseFailed = false;
+    if(text){ try{ data = JSON.parse(text); }catch(e){ parseFailed = true; } }
+    return { res:res, text:text, data:data, parseFailed:parseFailed };
+  })();
+  try{ return await Promise.race([run, timer]); }
+  catch(e){ if(timedOut || (e && e.kind === "timeout")){ var te = new Error("request timed out after "+ms+"ms"); te.kind = "timeout"; throw te; } if(e && !e.kind) e.kind = "network"; throw e; }
+  finally{ try{ run.catch(function(e2){ if(timedOut) note("late token settle", e2); }); }catch(x){ note("token settle attach", x); } }
+}
+/* Returns the parsed session on success; throws a TYPED error otherwise (empty / parse / auth /
+   unavailable / timeout / network). Success is bound to the return value, never a storage read-back. */
+async function signIn(email, password){
+  var url = URL_BASE + "/auth/v1/token?grant_type=password";
+  var opts = { method:"POST", headers:{ "apikey":ANON, "Content-Type":"application/json" }, cache:"no-store",
+               body: JSON.stringify({ email:email, password:password }) };
+  var r;
+  try{ r = await fetchOnce(url, opts, TIMEOUT_MS); }
+  catch(e){ recordTokenDiag(null, e); throw e; }
+  if(r.res.ok && r.text.length === 0){ await sleepMs(400); try{ r = await fetchOnce(url, opts, TIMEOUT_MS); }catch(e2){ recordTokenDiag(null, e2); throw e2; } }
+  recordTokenDiag(r, null);
+  if(r.res.ok && r.text.length === 0){ var ee = new Error("empty response body"); ee.kind = "empty"; ee.status = r.res.status; throw ee; }
+  if(r.res.ok && r.parseFailed){ var pe = new Error("response body could not be parsed"); pe.kind = "parse"; pe.status = r.res.status; throw pe; }
+  var data = r.data;
+  if(!r.res.ok || !data || typeof data !== "object" || !data.access_token){
+    var err = new Error((data && typeof data === "object" && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
+    err.status = r.res.status; err.kind = (r.res.status >= 500) ? "unavailable" : "auth"; throw err;
+  }
+  return { access_token:data.access_token, refresh_token:data.refresh_token, expires_at:data.expires_at,
+           email:email, uid:(data.user && data.user.id) || "", user:data.user || null };
+}
+
+/* ---- Steps ---------------------------------------------------------------------------------------- */
+var busy = false;
+function showPasscode(){
+  document.getElementById("sub").textContent = s.sub;
+  fields.innerHTML = '<input id="pc" type="password" inputmode="text" autocomplete="current-password" placeholder="'+s.ph+'" aria-label="'+s.ph+'">';
+  goBtn.textContent = s.go; showRetry(false); showErr(""); showDiag("");
+  var pc = document.getElementById("pc");
+  setTimeout(function(){ pc.focus(); }, 50);
+  form.onsubmit = async function(e){
+    e.preventDefault();
+    if(busy) return;
+    var lock = lockedMs(FAILS);
+    if(lock > 0){ showErr(s.wait + fmtWait(lock)); return; }
+    var val = pc.value || ""; if(!val) return;
+    busy = true; pc.disabled = true;
+    var h = null, sync = null, vault = null, cryptoErr = null;
+    try{ h = await pbkdf2Hex(val, GATE_SALT); if(h === HASH){ sync = await pbkdf2Hex(val, SYNC_SALT); vault = await pbkdf2Hex(val, VAULT_SALT); } }
+    catch(ex){ cryptoErr = ex; note("pbkdf2", ex); }
+    busy = false; pc.disabled = false;
+    if(cryptoErr){ showErr(s.err_secure); pc.focus(); return; }
+    if(h === HASH){
+      clearFail(FAILS);
+      try{
+        sessionStorage.setItem(GATE_KEY, HASH);
+        if(sync){ sessionStorage.setItem(SYNC_KEY, sync); localStorage.setItem(SYNC_KEY, sync); }
+        if(vault){ sessionStorage.setItem(VAULT_KEY, vault); localStorage.setItem(VAULT_KEY, vault); }
+        localStorage.setItem(PRESENCE, String(Date.now()));
+      }catch(ex){ note("credential mirror write", ex); }
+      showOperator();
+    } else {
+      recordFail(FAILS, 5, 30000);
+      var again = lockedMs(FAILS);
+      showErr(again > 0 ? (s.wait + fmtWait(again)) : s.err);
+      pc.value = ""; form.classList.add("shake"); setTimeout(function(){ form.classList.remove("shake"); }, 400); pc.focus();
+    }
+  };
+}
+function showOperator(){
+  document.getElementById("sub").textContent = s.op_sub;
+  fields.innerHTML =
+    '<input id="em" type="email" autocomplete="username" spellcheck="false" placeholder="'+s.op_email+'" aria-label="'+s.op_email+'">' +
+    '<input id="pw" type="password" autocomplete="current-password" placeholder="'+s.op_pass+'" aria-label="'+s.op_pass+'">';
+  goBtn.textContent = s.op_go; retryBtn.textContent = s.op_retry; showRetry(false); showErr(""); showDiag("");
+  var em = document.getElementById("em"), pw = document.getElementById("pw");
+  setTimeout(function(){ em.focus(); }, 50);
+  async function attempt(){
+    if(busy) return;
+    var lock = lockedMs(OP_FAILS);
+    if(lock > 0){ showErr(s.wait + fmtWait(lock)); return; }
+    var m = (em.value || "").trim(), p = pw.value || "";
+    busy = true; em.disabled = pw.disabled = true; goBtn.disabled = true; goBtn.textContent = s.op_busy;
+    showErr(""); showDiag(""); showRetry(false);
+    var ok = false, kind = "", raw = "", sess = null;
+    if(m && p){
+      try{ sess = await signIn(m, p); ok = !!(sess && sess.access_token); if(!ok){ kind = "auth"; raw = "auth: sign-in returned no session"; } }
+      catch(ex){ ok = false; kind = (ex && ex.kind) || "auth"; raw = (kind || "error") + ": " + ((ex && ex.message) || String(ex)); if(ex && ex.status) raw += " (HTTP " + ex.status + ")"; }
+    } else { kind = "auth"; }
+    busy = false; em.disabled = pw.disabled = false; goBtn.disabled = false; goBtn.textContent = s.op_go;
+    if(ok){
+      clearFail(OP_FAILS);
+      // The carrier across the gate.html -> index.html navigation: memory (lost on nav) AND the localStorage
+      // mirror (proven writable on this device). A mirror write failure is shown, never swallowed.
+      try{ window.__memSession = sess; }catch(ex){ note("mem session", ex); }
+      var mirrored = false;
+      try{ localStorage.setItem(SESSION_KEY, JSON.stringify(sess)); localStorage.setItem(PRESENCE, String(Date.now())); mirrored = true; }
+      catch(ex){ note("session mirror write", ex); }
+      if(!mirrored){ showErr(s.op_err); showDiag("session mirror write failed: storage unavailable"); showRetry(true); return; }
+      try{ location.assign("index.html?warm=1"); }catch(ex){ note("navigate", ex); location.href = "index.html?warm=1"; }
+    } else if(kind === "empty" || kind === "parse"){
+      showErr(kind === "empty" ? s.op_err_empty : s.op_err_parse); showDiag(raw); showRetry(true); (m ? pw : em).focus();
+    } else if(kind === "timeout" || kind === "network" || kind === "unavailable"){
+      showErr(kind === "timeout" ? s.op_err_timeout : (kind === "unavailable" ? s.op_err_unavailable : s.op_err_network)); showDiag(raw); showRetry(true); (m ? pw : em).focus();
+    } else {
+      recordFail(OP_FAILS, 3, 5000);
+      var again = lockedMs(OP_FAILS);
+      showErr(again > 0 ? (s.wait + fmtWait(again)) : s.op_err);
+      if(raw) showDiag(raw);
+      pw.value = ""; form.classList.add("shake"); setTimeout(function(){ form.classList.remove("shake"); }, 400); (m ? pw : em).focus();
+    }
+  }
+  form.onsubmit = function(e){ e.preventDefault(); attempt(); };
+  retryBtn.onclick = function(){ attempt(); };
+}
+
+/* Start on the operator step if the passcode presence is still fresh (within 45 minutes) and the derived
+   sync credential exists; otherwise start at the passcode. This mirrors the console gate's graduated
+   presence so a returning operator is not asked for the passcode again inside the window. */
+function passcodeFresh(){
+  try{
+    var st = parseInt(localStorage.getItem(PRESENCE) || "0", 10);
+    var has = !!localStorage.getItem(SYNC_KEY);
+    return has && st && (Date.now() - st) < (45 * 60 * 1000);
+  }catch(e){ return false; }
+}
+if(passcodeFresh()) showOperator(); else showPasscode();
+</script>
+</body></html>

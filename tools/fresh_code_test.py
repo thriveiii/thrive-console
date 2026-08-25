@@ -73,10 +73,17 @@ with sync_playwright() as p:
     ctx.route("https://api.github.com/**", lambda r:r.abort())
     ctx.route(f"{base}/library/manifest.json", lambda r:r.fulfill(status=200, body='{"opportunities":[]}'))
 
-    # ---- the root index redirects to the versioned shell ----
+    # ---- the root index is the BARE_GATE router (brief P54) ----
+    # A fresh visit with NO operator session bounces to the bare gate (never a black screen).
     pg=ctx.new_page()
     pg.goto(f"{base}/index.html"); pg.wait_for_timeout(600)
-    ck("live: opening the site lands on the versioned shell (console.html?v=BUILD)",
+    ck("live: a fresh visit with no session lands on the bare gate (gate.html)",
+       pg.url.endswith("/gate.html"), pg.url)
+    # With a live operator session mirrored (the carrier across the gate.html -> index.html navigation),
+    # the router forwards to the versioned shell, no network on the warm path.
+    pg.evaluate("()=>localStorage.setItem('console_sb_session', JSON.stringify({access_token:'t',refresh_token:'r',expires_at:9999999999,email:'op@t.test'}))")
+    pg.goto(f"{base}/index.html"); pg.wait_for_timeout(600)
+    ck("live: with a live session the site forwards to the versioned shell (console.html?v=BUILD)",
        ("console.html?v="+BUILD) in pg.url, pg.url)
 
     # ---- the build stamp renders, visible, with the served build id and deploy time ----

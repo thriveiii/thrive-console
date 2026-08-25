@@ -26,16 +26,23 @@ ck("V1 version.json exists and matches the shell meta and the index redirect", (
   assert(idx.indexOf('?v=' + v.build) >= 0, "index redirect does not carry the current build");
 });
 
-// V2 (P48): the front door is now an IMMEDIATE redirect with NO version.json probe in the critical path.
-// The meta refresh fires at 0s (JS-off fallback), the inline JS does location.replace at once to the
-// current shell (baked build), and the in-shell P43 convergence (V3, failsafe.js) is the stale-client net.
-ck("V2 index.html redirects immediately to the current shell with no version.json probe", () => {
+// V2 (BARE_GATE, brief P54): the front door is a SESSION-AWARE router, still with NO version.json probe in
+// the critical path. The meta refresh fires at 0s (JS-off fallback) to the current shell; the inline JS
+// decides at once: a live/warm session forwards to the baked shell (location.replace, no wait), no session
+// bounces to gate.html, and an expired token gets ONE silent AUTH refresh (not a version.json probe) before
+// forwarding or bouncing. The in-shell P43 convergence (V3, failsafe.js) is still the stale-client net.
+ck("V2 index.html is a session-aware router (no version.json probe): warm/live -> shell, none -> gate.html, expired -> one refresh", () => {
   const idx = read("index.html");
-  assert(!/fetch\s*\(/.test(idx), "P48: the front door must not fetch (no version.json probe) in the critical path");
-  assert(/location\.replace\("\.\/library\/console\.html\?v="\+baked/.test(idx), "immediate location.replace to the baked shell missing");
+  assert(!/fetch\([^)]*version/.test(idx), "the front door must not fetch version.json in the critical path (a comment may name it; nothing probes it)");
+  assert(/if\(warm\)\{ toConsole\(\); return; \}/.test(idx), "the warm-arrival forward is missing");
+  assert(/if\(!sess\|\|!sess\.access_token\)\{ toGate\(\); return; \}/.test(idx), "the no-session bounce to the gate is missing");
+  assert(/if\(!expired\(sess\)\)\{ toConsole\(\); return; \}/.test(idx), "the live-session forward is missing");
+  assert(/function toConsole\(\)\{ location\.replace\("\.\/library\/console\.html\?v="\+BUILD/.test(idx), "the forward to the baked shell is missing");
+  assert(/function toGate\(\)\{ location\.replace\("gate\.html"\); \}/.test(idx), "the bounce target must be gate.html");
+  assert(/grant_type=refresh_token/.test(idx), "the expired-token silent refresh is missing");
   const mr = /<meta http-equiv="refresh" content="(\d+);/.exec(idx);
-  assert(mr && Number(mr[1]) === 0, "P48: meta refresh must be immediate (content=\"0; ...\")");
-  // query-param carry-over (stale v/vr dropped) and hash carry-over must still be present
+  assert(mr && Number(mr[1]) === 0, "meta refresh must be immediate (content=\"0; ...\") for the JS-off fallback");
+  // query-param carry-over (stale v/vr/warm dropped) and hash carry-over must still be present
   assert(/indexOf\("v="\)!==0&&p\.indexOf\("vr="\)!==0/.test(idx), "stale v/vr param stripping missing");
   assert(/\(location\.hash\|\|""\)/.test(idx), "hash carry-over missing");
 });
