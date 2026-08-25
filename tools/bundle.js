@@ -273,8 +273,15 @@ const head = inline
      gzipped and the unstyled-forever failure mode is gone by construction. The gate-critical block still
      paints the gate before styles.css lands, and the system font stack covers the window before the
      webfonts arrive. */
+  /* CSS_INLINE: styles.css is INLINED, not linked. Linked it was one more thing that had to arrive from the
+     network before the console could paint: async it could fail to apply at all (the unstyled capture), and
+     blocking it held first paint on a second round trip. Inlined, the cost is identical (the shell goes from
+     ~27 KB to ~79 KB gzipped, exactly the bytes the separate sheet cost) but it is ONE request instead of
+     two, and there is NO render-blocking CSS fetch left: the moment console.html arrives, the console is
+     both painted and fully styled. Nothing about the CSS can hang, fail to swap, or arrive late any more.
+     fonts.css stays out of the boot entirely (loaded after window load, decorative). */
   : '<style id="gate-critical">' + criticalGateCss + '</style>' +
-    '\n<link rel="stylesheet" href="' + fp("styles.css") + '">' +
+    '\n<style id="app-styles">\n' + stylesCss + '\n</style>' +
     '\n<style>.view[hidden]{display:none!important}</style>';
 // P48 boot order: config -> supabase -> gate load and run BEFORE the heavy app modules, so the login
 // door paints as the first boot boundary rather than after app.js (~874 KB) finishes parsing. gate.js'
@@ -571,14 +578,17 @@ const rootIndex = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 a{color:#71BFCC}
 .esc{position:fixed;left:0;right:0;bottom:22px;display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:center;padding:0 16px}
-.esc a{color:#cbd5e1;font-size:13.5px;text-decoration:none;border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:9px 14px;background:#14141a}
-.esc a.primary{color:#04252b;background:#71BFCC;border-color:transparent;font-weight:700}</style></head>
+.esc a,.esc button{color:#cbd5e1;font:13.5px/1 -apple-system,Segoe UI,Roboto,sans-serif;text-decoration:none;border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:9px 14px;background:#14141a;cursor:pointer}
+.esc a.primary{color:#04252b;background:#71BFCC;border-color:transparent;font-weight:700}
+#idxProbeOut{position:fixed;left:12px;right:12px;bottom:74px;z-index:11;margin:0;padding:10px 12px;background:#0a0b0f;border:1px solid rgba(255,255,255,.16);border-radius:10px;color:#9ca3af;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;direction:ltr;text-align:start;max-height:38vh;overflow:auto}</style></head>
 <body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span id="idxMsg">Opening the <a href="./library/console.html?v=${BUILD}">Thrive Opportunity Library</a>…</span></div>
 <div class="esc" id="idxEsc" role="group" aria-label="Enter">
 <a id="idxGate" class="primary" href="gate.html">Sign-in page</a>
 <a id="idxCon" href="./library/console.html?v=${BUILD}">Open the console</a>
 <a id="idxMenu" href="./?stay=1">Menu</a>
+<button id="idxProbe" type="button">Test console file</button>
 </div>
+<pre id="idxProbeOut" hidden></pre>
 <script>(function(){/* Localize the static escapes at once (never deferred), so even a suspended document
   keeps the painted Arabic labels. */
   try{ if(localStorage.getItem('thrive_lang')==='ar'){
@@ -587,7 +597,51 @@ a{color:#71BFCC}
     var g=document.getElementById('idxGate'); if(g) g.textContent='صفحة تسجيل الدخول';
     var c=document.getElementById('idxCon'); if(c) c.textContent='فتح الكونسول';
     var u=document.getElementById('idxMenu'); if(u) u.textContent='القائمة';
+    var pb=document.getElementById('idxProbe'); if(pb) pb.textContent='اختبار ملف الكونسول';
   } }catch(e){}
+})();</script>
+<script>(function(){/* CONSOLE_PROBE: when the console will not open, this says WHY, on the device, with no
+  inspector. It fetches the exact console.html URL the router uses and reports the outcome: HTTP status,
+  bytes received, elapsed time, or the thrown error. "Nothing happens" becomes a fact that can be read out
+  and acted on. Read-only: it fetches and reports, it never navigates or writes. */
+  var B="${BUILD}";
+  function run(){
+    var out=document.getElementById('idxProbeOut'); if(!out) return;
+    var ar=false; try{ ar=localStorage.getItem('thrive_lang')==='ar'; }catch(e){}
+    out.hidden=false; out.textContent=(ar?'جارٍ الاختبار...':'testing...');
+    var url="./library/console.html?v="+B+"&probe="+Date.now();
+    var t0=Date.now(), done=false;
+    var lines=[];
+    function say(){ out.textContent=lines.join("\\n"); }
+    setTimeout(function(){ if(done) return; done=true;
+      lines.push("RESULT: no response after 30s (the request never completed)");
+      lines.push("meaning: the console file is not reaching this device");
+      say(); }, 30000);
+    try{
+      fetch(url,{cache:"no-store"}).then(function(res){
+        lines.push("status: "+res.status+" "+(res.statusText||""));
+        lines.push("type: "+res.type+"   redirected: "+res.redirected);
+        return res.text();
+      }).then(function(txt){
+        if(done) return; done=true;
+        lines.push("bytes: "+txt.length);
+        lines.push("elapsed: "+(Date.now()-t0)+"ms");
+        lines.push("has boardLanes: "+(txt.indexOf('id="boardLanes"')>=0));
+        lines.push("has app.js tag: "+(txt.indexOf('app.js?v=')>=0));
+        lines.push("build in file: "+((txt.match(/thrive-build" content="([a-f0-9]+)"/)||[])[1]||"(none)"));
+        lines.push(txt.length>50000?"VERDICT: the console file DOES download here.":"VERDICT: the file came back TRUNCATED or wrong.");
+        say();
+      }).catch(function(e){
+        if(done) return; done=true;
+        lines.push("FAILED: "+((e&&e.message)||e));
+        lines.push("elapsed: "+(Date.now()-t0)+"ms");
+        lines.push("meaning: the network refused or dropped this request");
+        say();
+      });
+    }catch(e){ done=true; lines.push("threw: "+((e&&e.message)||e)); say(); }
+    say();
+  }
+  try{ document.getElementById('idxProbe').addEventListener('click', run); }catch(e){}
 })();</script>
 <script>(function(){/* BARE_GATE router, a SINGLE deferred navigation (no meta+JS race). Query params (minus
   stale v/vr/warm/stay) and the hash carry across, so ?debug=paint survives. ?stay=1 is the manual launcher:
