@@ -3317,6 +3317,14 @@ function initStateDiag(){
           "  body_head: "+String(td.body_head||"") ]; }
         tdLines.push("gate step: "+gateStep);
         tdLines.push(mirrorLine);
+        // CONSOLE_ENTRY_DIAG (read-only): the six session-handoff facts captured by gate.js at boot, before
+        // any eject. On a boot that ejects, app.js never reaches DOMContentLoaded, so this line shows only
+        // when the console did NOT eject; the eject case is photographed on gate.html / the front door from
+        // the localStorage mirror. window.__entryDiag is the same-document copy.
+        var ed=window.__entryDiag;
+        tdLines.push(ed
+          ? ("ENTRY DIAG: present="+ed.present+" hasToken="+ed.hasToken+" expired="+ed.expired+" getSession="+ed.getSession+" gateTarget="+ed.gateTarget+" redirect="+ed.redirect)
+          : "ENTRY DIAG: (not captured in this document)");
         if(notes.length) tdLines.push("notes: "+notes.join(" | ").slice(0,160));
         dp.textContent=[
           "THRIVE STATE DIAGNOSTIC (diag=1)   build "+(m?m.getAttribute("content"):"?"),
