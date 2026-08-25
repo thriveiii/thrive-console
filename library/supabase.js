@@ -164,17 +164,51 @@
   function authTokenUrl(c, grant, fresh) {
     return c.url + "/auth/v1/token?grant_type=" + grant + (fresh ? ("&_ts=" + Date.now()) : "");
   }
+  /* P55 read-only instrument (no fix, no behavior change): the diag page needs to see the SHAPE of the token
+     response the wrapper actually got, to tell a parse failure from an empty body from a tokenless 200. This
+     records that shape to window.__lastTokenDiag, in memory only, with NO token value and NO logging: the body
+     preview redacts any access_token/refresh_token value and any JWT before slicing 40 chars. It never stores
+     or prints the token. It does not touch the request, the fetch, the timeout race, or the error surface;
+     authTokenPost still returns the same result and re-throws the same error. */
+  function redactBody(t) {
+    return String(t == null ? "" : t)
+      .replace(/("?(?:access_token|refresh_token|token|id_token|provider_token)"?\s*:\s*)"[^"]*"/gi, '$1"[REDACTED]"')
+      .replace(/eyJ[A-Za-z0-9._-]{6,}/g, "[REDACTED]");
+  }
+  function recordTokenDiag(grant, r, e) {
+    try {
+      var d;
+      if (e) {
+        d = { ok: false, threw: true, kind: (e && e.kind) || "error", message: (e && e.message) || String(e),
+              status: (e && e.status) || null, grant: grant };
+      } else {
+        var text = (r && typeof r.text === "string") ? r.text : "";
+        d = { ok: true, threw: false, grant: grant,
+              status: (r && r.res && r.res.status) != null ? r.res.status : null,
+              res_ok: !!(r && r.res && r.res.ok),
+              typeof_data: typeof (r && r.data),
+              has_access_token: !!(r && r.data && typeof r.data === "object" && r.data.access_token),
+              text_length: text.length,
+              body_shape: redactBody(text).slice(0, 40) };
+      }
+      d.at = new Date().toISOString();
+      window.__lastTokenDiag = d;
+    } catch (x) {}
+  }
   function authTokenPost(c, grant, payload, fresh) {
     // P50: the auth token call is issued as a BARE fetch (no AbortController signal), matching authtest.html
     // exactly, which returned 400 in ~621ms on the same iPad/origin/network where this wrapped call hung at
     // token:sent. The request (URL, headers, body) is unchanged and frozen; only the signal, the one
     // fetch-touching construct authtest lacks, is dropped. The 15s setTimeout race inside fetchJSON still
     // bounds it, so a real stall still fails loud with a working Retry.
-    return fetchJSON(authTokenUrl(c, grant, fresh), {
+    var p = fetchJSON(authTokenUrl(c, grant, fresh), {
       method: "POST",
       headers: { "apikey": c.anon, "Content-Type": "application/json" },
       body: JSON.stringify(payload), cache: "no-store"
     }, FETCH_TIMEOUT_MS, true);
+    // P55: record the response shape (no token) for the diag page, then hand back the SAME result/rejection.
+    return p.then(function (r) { recordTokenDiag(grant, r, null); return r; },
+                  function (e) { recordTokenDiag(grant, null, e); throw e; });
   }
 
   async function signIn(email, password, opts) {
