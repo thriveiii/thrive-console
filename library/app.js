@@ -3198,6 +3198,60 @@ function autoSyncTick(){
   if(!__firstAutoSyncDone){ if(!firstSyncMayRun()) return; __firstAutoSyncDone=true; }
   if(syncAuth()) syncNow();
 }
+/* P54 on-screen state diagnostic, gated behind ?diag=1 (or #...&diag=1) so it NEVER shows in normal use. It
+   prints the TRUE post-sign-in board state that the sign-step strip cannot show (reveal() covers the strip at
+   unlock), so the failing device can be read from a photo with no DevTools. textContent only: counts, flags
+   and marks, never an email or a token. Refreshes every second so a photo taken any time after sign-in
+   captures the live state. Pure read: it starts no request and never touches auth, the reads, or the render
+   path. It lives in app.js (not the shell) so the build stamp changes and the device fetches a fresh page. */
+function initStateDiag(){
+  try{
+    if(((location.search||"") + (location.hash||"")).indexOf("diag=1") < 0) return;
+    if(document.getElementById("thriveDiag")) return;
+    var dp=document.createElement("pre");
+    dp.id="thriveDiag"; dp.setAttribute("dir","ltr");
+    dp.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:2147483647;margin:0;padding:8px 10px;"
+      +"max-height:45vh;overflow:auto;background:#04252b;color:#a7f3d0;border-top:2px solid #71BFCC;"
+      +"font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;-webkit-overflow-scrolling:touch";
+    (document.body||document.documentElement).appendChild(dp);
+    function tick(){
+      try{
+        var g=document.getElementById("thriveGate");
+        var gateDisp=g?(window.getComputedStyle?getComputedStyle(g).display:"?"):"removed";
+        var locked=document.documentElement.classList.contains("gate-locked");
+        var lanes=document.getElementById("boardLanes");
+        var vb=document.getElementById("view-board");
+        var innerLen=lanes?lanes.innerHTML.length:(vb?vb.innerHTML.length:-1);
+        var toks=document.querySelectorAll("#view-board .tok").length;
+        var laneCounts=[];
+        document.querySelectorAll("#view-board [data-body]").forEach(function(b){
+          laneCounts.push(b.getAttribute("data-body")+":"+b.querySelectorAll(".tok").length);
+        });
+        var boardHidden=vb?(vb.hidden===true||(window.getComputedStyle&&getComputedStyle(vb).display==="none")):"n/a";
+        var signedIn="?"; try{ signedIn=!!(window.ThriveSupa&&window.ThriveSupa.signedIn&&window.ThriveSupa.signedIn()); }catch(e){}
+        var bvCount=(typeof __boardView==="object"&&__boardView)?Object.keys(__boardView).length:"n/a";
+        var m=document.querySelector("meta[name=thrive-build]");
+        dp.textContent=[
+          "THRIVE STATE DIAGNOSTIC (diag=1)   build "+(m?m.getAttribute("content"):"?"),
+          "time "+new Date().toISOString(),
+          "signedIn: "+signedIn,
+          "gate element: "+(g?"present":"removed")+"   gate display: "+gateDisp+"   html.gate-locked: "+locked,
+          "view-board hidden: "+boardHidden,
+          "boardLanes innerHTML length: "+innerLen,
+          "rendered .tok cards: "+toks,
+          "lane card counts: "+(laneCounts.join("   ")||"(none)"),
+          "__renderGen: "+(typeof __renderGen!=="undefined"?__renderGen:"n/a"),
+          "__boardViewReady: "+(typeof __boardViewReady!=="undefined"?__boardViewReady:"n/a"),
+          "__boardView rows: "+bvCount,
+          "__boardRows (last server read): "+(typeof window.__boardRows!=="undefined"?window.__boardRows:"n/a"),
+          "__bootMark: "+(window.__bootMark||"?")+"   __signMark: "+(window.__signMark||"?")
+        ].join("\n");
+      }catch(e){ try{ dp.textContent="diag error: "+((e&&e.message)||e); }catch(_){} }
+    }
+    tick(); setInterval(tick, 1000);
+  }catch(e){}
+}
+document.addEventListener("DOMContentLoaded", initStateDiag);
 function startLiveSync(){
   if(!document.querySelector("header.top")) return;       // console pages only
   /* P48 gate-first boot: gate.js loads BEFORE app.js now, so on a WARM session the gate resolved and left
