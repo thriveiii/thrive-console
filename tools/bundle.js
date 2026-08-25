@@ -47,6 +47,12 @@ const fontsCss = read(path.join(LIB, "fonts.css"));
 const stylesCss = read(path.join(LIB, "styles.css"));
 const css = fontsCss + "\n" + stylesCss;
 const config = read(path.join(LIB, "config.js"));
+/* BARE_GATE (brief P54): the root index becomes a session-aware router that can perform ONE silent token
+   refresh with the frozen request shape before it ever loads the console bundle. It needs the connection
+   values, sourced HERE from config.js so they never drift from the baked default the console itself uses. */
+const SUPA_URL = (config.match(/supaUrl\s*=\s*"([^"]+)"/) || [])[1] || "";
+const SUPA_ANON = (config.match(/supaAnon\s*=\s*"([^"]+)"/) || [])[1] || "";
+if (!SUPA_URL || !SUPA_ANON) throw new Error("bundle: could not read supaUrl/supaAnon from config.js for the index router");
 const icons = read(path.join(LIB, "icons.js"));
 const i18n = read(path.join(LIB, "i18n.js"));
 const gate = read(path.join(LIB, "gate.js"));
@@ -495,11 +501,17 @@ const rootIndex = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Thrive</title>
-<!-- P48: the root is now an IMMEDIATE redirect. The meta refresh (JS-off fallback) fires at 0s straight to
-     console.html?v=BUILD, and the inline JS below does location.replace at once with NO version.json probe
-     in the critical path: the front door no longer waits on a fetch. The in-shell P43 convergence
-     (failsafe.js still fetches version.json inside console.html) is the stale-client safety net, so a
-     device that somehow loads an old shell still converges from within it. -->
+<!-- BARE_GATE (brief P54): the root is a session-aware router. The meta refresh (JS-off fallback) still
+     fires at 0s straight to console.html?v=BUILD (a JS-off device that is already signed in reveals from
+     the mirror; a fresh one meets the in-console gate), and the inline JS below decides at once, with NO
+     version.json probe in the critical path:
+       - just returned from a successful bare-gate sign-in (?warm=1): forward to the console;
+       - a live operator session in the mirror: forward to the console (no network on the warm path);
+       - an expired session: ONE silent bounded token refresh with the frozen request shape, then forward
+         on success, else bounce to gate.html;
+       - no session at all: bounce to gate.html (the proven auth path), never a black screen.
+     The in-shell P43 convergence (failsafe.js fetches version.json inside console.html) stays the stale
+     shell safety net; the console's own boot still reads the mirror and heals its session too. -->
 <meta http-equiv="refresh" content="0; url=./library/console.html?v=${BUILD}">
 <link rel="icon" href="./assets/thrive-logo.png">
 <style>html,body{margin:0;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;height:100%}
@@ -507,14 +519,35 @@ const rootIndex = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 a{color:#71BFCC}</style></head>
 <body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=${BUILD}">Thrive Opportunity Library</a>…</span></div>
-<script>(function(){/* P48 immediate redirect. The root does NOT probe version.json (no fetch, no wait): it
-  replaces the location straight to the current shell. version.json is still written and is the in-shell
-  P43 convergence net (failsafe.js fetches it from inside console.html), so a stale-cached front door can
-  no longer chain-pin the shell AND the shell can still self-correct if it is stale. Query params (minus
-  any stale v/vr) and the hash still carry across, so ?debug=paint survives. */
-  var baked="${BUILD}";
-  var q=(location.search||"").replace(/^\\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0;}).join("&");
-  location.replace("./library/console.html?v="+baked+(q?("&"+q):"")+(location.hash||""));
+<script>(function(){/* BARE_GATE router. Session-aware, no version.json probe in the critical path. Query
+  params (minus any stale v/vr/warm) and the hash carry across to the console, so ?debug=paint survives. */
+  var BUILD="${BUILD}", URL_BASE="${SUPA_URL}", ANON="${SUPA_ANON}";
+  var SESSION_KEY="console_sb_session", PRESENCE="thrive_presence";
+  var q=(location.search||"").replace(/^\\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0&&p.indexOf("warm=")!==0;}).join("&");
+  var warm=/[?&]warm=1(&|$)/.test(location.search||"");
+  function toConsole(){ location.replace("./library/console.html?v="+BUILD+(q?("&"+q):"")+(location.hash||"")); }
+  function toGate(){ location.replace("gate.html"); }
+  function readSess(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||"null"); }catch(e){ return null; } }
+  function expired(s){ try{ if(!s||!s.expires_at) return false; return (Number(s.expires_at)*1000) < (Date.now()-5000); }catch(e){ return false; } }
+  var sess=readSess();
+  if(warm){ toConsole(); return; }                                  // just signed in through the bare gate
+  if(!sess||!sess.access_token){ toGate(); return; }                // no session: the bare gate owns sign-in
+  if(!expired(sess)){ toConsole(); return; }                        // live session: forward, no network
+  // Expired token: ONE silent bounded refresh (frozen shape, arrayBuffer + TextDecoder read). Success
+  // re-mirrors and forwards; a failure or timeout bounces to the bare gate, never the console operator card.
+  var done=false, timer=setTimeout(function(){ if(done) return; done=true; toGate(); }, 12000);
+  var opts={method:"POST",headers:{"apikey":ANON,"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({refresh_token:sess.refresh_token})};
+  fetch(URL_BASE+"/auth/v1/token?grant_type=refresh_token",opts).then(function(res){
+    var read=(typeof res.arrayBuffer==="function")?res.arrayBuffer().then(function(b){return new TextDecoder("utf-8").decode(b);}):res.text();
+    return read.then(function(t){ return {ok:res.ok,text:t}; });
+  }).then(function(r){
+    if(done) return; done=true; clearTimeout(timer);
+    var t=String(r.text||"").replace(/^\\uFEFF/,"").trim(), d=null; try{ d=t?JSON.parse(t):null; }catch(e){}
+    if(r.ok && d && d.access_token){
+      try{ localStorage.setItem(SESSION_KEY, JSON.stringify({access_token:d.access_token,refresh_token:d.refresh_token,expires_at:d.expires_at,email:sess.email,uid:sess.uid||((d.user&&d.user.id)||"")})); localStorage.setItem(PRESENCE,String(Date.now())); }catch(e){}
+      toConsole();
+    } else { toGate(); }
+  }).catch(function(){ if(done) return; done=true; clearTimeout(timer); toGate(); });
 })();</script></body></html>
 `;
 fs.writeFileSync(path.join(ROOT, "index.html"), rootIndex);
