@@ -17,53 +17,58 @@
      index.html which boots the console and reads the session from the mirror. The values below are public
      by design (RLS + the operator sign-in protect the data, not their secrecy); they are the same values
      library/config.js bakes and authtest.html carries, kept literal so this page shares ZERO console code. -->
+<!-- APPROVED GATE DESIGN: this standalone page renders the SAME gate card as the in-console gate (the
+     approved interface): the radial-gradient ground over #0a0a0c, the #111116 card with the soft shadow,
+     the spinning Thrive logo, the 800-weight title, and the multi-colour gradient button. The values are
+     literal (this page shares zero console code by design), copied faithfully from the console gate CSS
+     (styles.css .gate-* and #thriveGate). Only the look is aligned here; the proven auth logic below is
+     unchanged. -->
 <style>
-  :root{ --bg:#07070b; --ink:#e8eaed; --muted:#9aa0aa; --line:#23262e; --card:#0e0f14;
-         --accent:#71BFCC; --accent-ink:#04252b; --err:#f0a4a4; --diag:#7f8794; }
-  html,body{ margin:0; height:100%; background:var(--bg); color:var(--ink);
-             font-family:"Lato",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
-  .wrap{ min-height:100%; display:flex; align-items:center; justify-content:center; padding:24px; box-sizing:border-box; }
-  form{ width:100%; max-width:22rem; background:var(--card); border:1px solid var(--line);
-        border-radius:16px; padding:28px 24px 22px; text-align:center; }
-  .mark{ color:var(--accent); width:64px; height:64px; margin:0 auto 8px; display:block; }
-  h1{ font-size:1.15rem; font-weight:700; margin:6px 0 4px; letter-spacing:.2px; }
-  .sub{ color:var(--muted); font-size:.9rem; margin:0 0 18px; line-height:1.5; }
-  input{ width:100%; box-sizing:border-box; margin:0 0 12px; padding:14px 14px; border:1px solid var(--line);
-         border-radius:10px; background:#111318; color:var(--ink); font-size:1rem; }
-  input:focus{ outline:none; border-color:var(--accent); }
-  button{ width:100%; box-sizing:border-box; padding:14px; border:0; border-radius:10px; background:var(--accent);
-          color:var(--accent-ink); font-weight:700; font-size:1rem; cursor:pointer; margin:2px 0 0; }
-  button.ghost{ background:transparent; color:var(--accent); border:1px solid var(--line); margin-top:10px; }
-  button[disabled]{ opacity:.6; cursor:default; }
-  .err{ color:var(--err); font-size:.86rem; margin:12px 0 0; min-height:1.1em; }
-  .note{ color:var(--muted); font-size:.76rem; margin:16px 0 0; line-height:1.5; }
-  .diag{ color:var(--diag); font:11px/1.45 ui-monospace,Menlo,Consolas,monospace; direction:ltr;
-         text-align:left; white-space:pre-wrap; word-break:break-word; margin:10px 0 0;
-         background:#0a0b0f; border:1px solid var(--line); border-radius:8px; padding:8px; }
+  html,body{ margin:0; height:100%;
+    background:radial-gradient(1200px 600px at 50% -10%,rgba(150,133,202,.18),transparent 60%),#0a0a0c;
+    color:#fff; font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap{ min-height:100%; display:flex; align-items:center; justify-content:center; padding:22px; box-sizing:border-box; }
+  .gate-card{ width:100%; max-width:360px; box-sizing:border-box; background:#111116; border:1px solid rgba(255,255,255,.10);
+    border-radius:18px; padding:30px 26px; text-align:center; box-shadow:0 30px 80px rgba(0,0,0,.55); }
+  .gate-logo{ width:40px; height:40px; display:block; margin:0 auto 14px; animation:spin 22s linear infinite; }
+  .gate-title{ font-size:20px; font-weight:800; color:#fff; margin:0 0 6px; }
+  .gate-sub{ font-size:13px; color:#9ca3af; margin:0 0 18px; line-height:1.5; }
+  .gate-input{ width:100%; box-sizing:border-box; margin:0 0 12px; background:#16161d; border:1px solid rgba(255,255,255,.10);
+    border-radius:10px; color:#fff; padding:12px 14px; font-size:15px; font-family:inherit; outline:none;
+    text-align:center; letter-spacing:.02em; transition:border-color .2s; }
+  .gate-input:focus{ border-color:#9685CA; }
+  .gate-btn{ width:100%; box-sizing:border-box; margin-top:12px; padding:12px 18px; border:0; border-radius:10px;
+    font-weight:800; font-size:14px; cursor:pointer; color:#15121b;
+    background:linear-gradient(120deg,#72BECE,#5D7FB7,#9685CA,#EE8C9D,#A78CA7,#71BFCC);
+    box-shadow:0 8px 24px rgba(150,133,202,.28); font-family:inherit; }
+  .gate-btn:active{ transform:scale(.99); }
+  .gate-btn.ghost{ color:#d1d5db; background:transparent; box-shadow:none; border:1px solid rgba(255,255,255,.10); margin-top:8px; }
+  .gate-btn[disabled]{ opacity:.6; cursor:default; }
+  .gate-err{ color:#EE8C9D; font-size:12.5px; font-weight:700; margin:12px 0 0; min-height:1.1em; }
+  .gate-diag{ color:#9ca3af; font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; direction:ltr;
+    text-align:start; white-space:pre-wrap; word-break:break-word; margin:8px 0 0;
+    background:#0a0b0f; border:1px solid rgba(255,255,255,.10); border-radius:8px; padding:8px; }
+  .gate-note{ color:#9ca3af; font-size:11.5px; margin:16px 0 0; line-height:1.5; }
   [hidden]{ display:none !important; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
   @keyframes shake{ 10%,90%{transform:translateX(-1px)} 30%,70%{transform:translateX(3px)} 50%{transform:translateX(-4px)} }
-  form.shake{ animation:shake .4s; }
-  @media (prefers-reduced-motion:reduce){ form.shake{ animation:none; } }
+  .gate-card.shake{ animation:shake .4s; }
+  [dir="rtl"] .gate-title{ font-weight:600; }
+  [dir="rtl"] .gate-input{ text-align:center; letter-spacing:normal; }
+  @media (prefers-reduced-motion:reduce){ .gate-card.shake,.gate-logo{ animation:none; } }
 </style></head>
 <body>
 <div class="wrap">
-  <form id="gate" autocomplete="off" dir="ltr">
-    <svg class="mark" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
-      <circle cx="32" cy="32" r="13" stroke="currentColor" stroke-width="1.4"/>
-      <g stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-        <line x1="32" y1="17" x2="32" y2="47"/><line x1="19" y1="24.5" x2="45" y2="39.5"/>
-        <line x1="19" y1="39.5" x2="45" y2="24.5"/>
-      </g>
-      <circle cx="32" cy="32" r="3.1" fill="currentColor"/>
-    </svg>
-    <h1 id="title">Thrive Console</h1>
-    <p class="sub" id="sub"></p>
+  <form id="gate" class="gate-card" autocomplete="off" dir="ltr">
+    <img class="gate-logo" src="./assets/thrive-logo.png" alt="Thrive">
+    <h1 id="title" class="gate-title">Thrive Console</h1>
+    <p class="gate-sub" id="sub"></p>
     <div id="fields"></div>
-    <button id="go" type="submit"></button>
-    <button id="retry" class="ghost" type="button" hidden></button>
-    <p class="err" id="err" hidden></p>
-    <p class="diag" id="diag" dir="ltr" hidden></p>
-    <p class="note" id="note"></p>
+    <button id="go" class="gate-btn" type="submit"></button>
+    <button id="retry" class="gate-btn ghost" type="button" hidden></button>
+    <p class="gate-err" id="err" hidden></p>
+    <p class="gate-diag" id="diag" dir="ltr" hidden></p>
+    <p class="gate-note" id="note"></p>
   </form>
 </div>
 <script>
@@ -208,7 +213,7 @@ async function signIn(email, password){
 var busy = false;
 function showPasscode(){
   document.getElementById("sub").textContent = s.sub;
-  fields.innerHTML = '<input id="pc" type="password" inputmode="text" autocomplete="current-password" placeholder="'+s.ph+'" aria-label="'+s.ph+'">';
+  fields.innerHTML = '<input id="pc" class="gate-input" type="password" inputmode="text" autocomplete="current-password" placeholder="'+s.ph+'" aria-label="'+s.ph+'">';
   goBtn.textContent = s.go; showRetry(false); showErr(""); showDiag("");
   var pc = document.getElementById("pc");
   setTimeout(function(){ pc.focus(); }, 50);
@@ -244,8 +249,8 @@ function showPasscode(){
 function showOperator(){
   document.getElementById("sub").textContent = s.op_sub;
   fields.innerHTML =
-    '<input id="em" type="email" autocomplete="username" spellcheck="false" placeholder="'+s.op_email+'" aria-label="'+s.op_email+'">' +
-    '<input id="pw" type="password" autocomplete="current-password" placeholder="'+s.op_pass+'" aria-label="'+s.op_pass+'">';
+    '<input id="em" class="gate-input" type="email" autocomplete="username" spellcheck="false" placeholder="'+s.op_email+'" aria-label="'+s.op_email+'">' +
+    '<input id="pw" class="gate-input" type="password" autocomplete="current-password" placeholder="'+s.op_pass+'" aria-label="'+s.op_pass+'">';
   goBtn.textContent = s.op_go; retryBtn.textContent = s.op_retry; showRetry(false); showErr(""); showDiag("");
   var em = document.getElementById("em"), pw = document.getElementById("pw");
   setTimeout(function(){ em.focus(); }, 50);
