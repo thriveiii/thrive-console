@@ -44,11 +44,19 @@ ck("the board build carries NO client mail ledger and NO client opens (the racin
 ck("opens and idle come from the view, and idle is always supplied (never a client last-touch fallback)",
    "opens[o.slug]=boardViewOpens(o.slug)" in app and "idle[o.slug]=boardViewIdle(o.slug)||0" in app)
 rb = app.split("async function renderBoard(trigger)")[1].split("function render(trigger, source)")[0]
-ck("the settle reads console_board before the first authority paint (generation-guarded, adopts) and re-reads on the sync/unlock/refresh heartbeat (P52: relocated out of doSyncRound)",
-   "if(boardViewIsAuthority() && (!__boardViewReady || __reread)){" in rb and "await readBoardViewRows()" in rb
+# P55 BOOT_PAINT_FIRST: the settle now PAINTS from local first (boardRepaint, synchronous, before any await),
+# then reads console_board TIME-BOXED (bootNet) and adopts + repaints. The awaited settle still ends on the
+# view's counts (the runtime scenarios below), but no read holds the first paint. One read per settle,
+# generation-guarded, re-read on the sync/unlock/refresh heartbeat, still the only server read on this path.
+ck("the settle paints from local first, then reads console_board time-boxed (bootNet), adopts + repaints on the live generation",
+   "boardRepaint(myGen, trigger);" in rb                                        # the immediate synchronous local paint
+   and "if(boardViewIsAuthority() && (!__boardViewReady || __reread)){" in rb
+   and 'bootNet("board", readBoardViewRows())' in rb                            # the read is time-boxed
    and 'var __reread = (trigger==="sync" || trigger==="unlock" || trigger==="thriveBoardRefresh");' in rb
-   and rb.count("if(myGen!==__renderGen || __boardTornDown) return;") >= 2
-   and "adoptBoardView(rows);" in rb)
+   and "if(myGen!==__renderGen || __boardTornDown) return;" in rb              # entry generation guard
+   and "if(__boardTornDown) return;" in rb                                     # after the awaits, only a teardown drops the settle
+   and "adoptBoardView(rows);" in rb
+   and "boardRepaint(__renderGen, trigger)" in rb)                             # repaint the adopted view on the live generation
 ck("a transient empty read never blanks a loaded map (adopt empty only before the first read)",
    "if(Object.keys(by).length || !__boardViewReady) __boardView=by;" in app)
 ck("no em dash / zero-Lotus in the touched sources",

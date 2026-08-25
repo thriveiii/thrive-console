@@ -3139,7 +3139,9 @@ var I18N_BOARD = {
     board_empty_p:  "Build the first page, and it will appear in Draft.",
     board_auth_h:   "Sign in to see your board.",
     board_auth_p:   "Your board reads from Supabase, which needs a sign-in. This is not an empty board; your work is safe. Sign in to load it.",
-    board_auth_cta: "Go to sign-in"
+    board_auth_cta: "Go to sign-in",
+    board_loading:  "Loading your board…",
+    board_recon:    "Loaded from cache. Reconnecting…"
   },
 
   ar: {
@@ -3536,7 +3538,9 @@ var I18N_BOARD = {
     board_empty_p: "ابنِ الصفحة الأولى، وستظهر في «مسودة».",
     board_auth_h: "سجّل الدخول لعرض لوحتك.",
     board_auth_p: "تقرأ لوحتك من Supabase، وهو يحتاج تسجيل الدخول. هذه ليست لوحة فارغة، وعملك محفوظ. سجّل الدخول لتحميله.",
-    board_auth_cta: "إلى تسجيل الدخول"
+    board_auth_cta: "إلى تسجيل الدخول",
+    board_loading:  "جارٍ تحميل لوحتك…",
+    board_recon:    "حُمِّلت من الذاكرة المؤقتة. جارٍ إعادة الاتصال…"
   }
 };
 
