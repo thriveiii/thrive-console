@@ -481,6 +481,11 @@
     uploadAttachment: uploadAttachment, attachPublicUrl: attachPublicUrl, ATTACH_BUCKET: ATTACH_BUCKET,
     signIn: signIn, signOut: signOut, session: session, signedIn: signedIn,
     clearSession: function () { setSession(null); },
+    // SESSION_HANDOFF_FIX: adopt a session carried across the navigation (the URL fragment) into memory
+    // before the gate decides. Additive accessor over the existing private setSession, symmetric to the
+    // public clearSession above: it makes NO auth request, changes no request/body/header/grant/RLS, and
+    // the token is a real session already minted by sign-in. It refuses anything without an access_token.
+    adoptSession: function (s) { if (s && s.access_token) { setSession(s); return true; } return false; },
     sessionDiag: function () { return { mem: !!__memSession, mirrorOk: __mirrorOk }; },
     authEmail: authEmail, authUid: authUid, refresh: refresh, getSession: getSession,
     tables: function () { return Object.keys(TABLES); },

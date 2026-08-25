@@ -133,7 +133,11 @@
      silently failed, passcodePresent() read back false, and every re-gate returned to the passcode step in
      the SAME session. With the in-memory stamp consulted first, the worst case on a storage-blocked device
      is re-entering the passcode after a full reload, never a same-session loop and never a lockout. */
-  var __memPresence = 0;   // the PRIMARY presence stamp (page-lifetime)
+  // SESSION_HANDOFF_FIX: the presence stamp is part of what the sign-in hand-off carries across the
+  // navigation. On a device whose localStorage does not survive the hop, the console fragment-adoption
+  // seeds window.__seedPresence from the carried session; adopting it here (memory-first, exactly like the
+  // session store) is what lets gateTarget resolve to the board instead of falling back to the passcode.
+  var __memPresence = (function () { try { var s = Number(window.__seedPresence); return (s > 0) ? s : 0; } catch (e) { return 0; } })();   // the PRIMARY presence stamp (page-lifetime)
   function markPresent() {
     __memPresence = Date.now();
     try { localStorage.setItem(PRESENCE, String(__memPresence)); window.__presenceMirrorOk = true; }
@@ -541,9 +545,15 @@
       return "failed(" + (st || "?") + ")";
     })() });
     if (good) { finish(); return; }
-    // Not usable now (timed out, errored, or the refresh token was rejected): clear ONCE and drop to the
-    // operator sign-in card. A corrupt or expired token never locks the app on a blank screen.
-    clearOperatorSession();
+    // SESSION_HANDOFF_FIX Part 4 (defense in depth): a transient refresh failure (timeout, network, or a
+    // 5xx) must NEVER erase the session; only a definitive 400/401 rejection may. Without this, one blip
+    // cleared the session and turned a single eject into a loop. refresh() already keeps the session on a
+    // transient, so here the boot self-heal agrees: on a transient the session is kept and the operator
+    // drops to the lobby, where a later attempt (or a working refresh) recovers, never a wipe-and-loop.
+    var __td = window.__lastTokenDiag;
+    if (__td && __td.grant === "refresh_token" && !__td.threw && (__td.status === 400 || __td.status === 401)) {
+      clearOperatorSession();
+    }
     buildGate("lobby");
   }
 
