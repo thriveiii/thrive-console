@@ -69,15 +69,36 @@
      apikey header stays the anon key always, which Supabase requires even with a JWT. No secret is used
      as an access control; the token is a real session, refreshable and revocable. */
   var SESSION_KEY = "console_sb_session";
-  /* P47 nuclear restore. The P47 build-to-build diff (last-good 506334f/P31 against HEAD) proved the
-     sign-in REQUEST is byte-identical to the last build that signed in: same URL, headers, body, timeout,
-     and anon key. Nothing on the path between token:sent and token:ok changed. So the sign-in path is
-     restored here to its last-good shape verbatim, dropping the P39 session-integrity churn (__memSession,
-     __sessionEphemeral, __signInSeen, the bearer() throw) and the P44 instrumentation, keeping only the
-     P43 boot convergence (which is in failsafe.js, untouched). This trades the instruments for the door
-     that provably opened; the device photograph is the only arbiter of whether the fault was ever code. */
-  function session() { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (e) { return null; } }
-  function setSession(s) { try { s ? localStorage.setItem(SESSION_KEY, JSON.stringify(s)) : localStorage.removeItem(SESSION_KEY); } catch (e) {} }
+  /* GATE_V2 Part 3: the session lives in MEMORY first; localStorage is a best-effort mirror, never a
+     decision input on the success path. The device diag proved this exact failure class: on storage-blocked
+     WebKit a swallowed localStorage write left signedIn() false after a successful token grant, and every
+     consumer that bound success to a storage read-back (the gate, bearer()) silently failed. P47 had removed
+     the in-memory session; that removal is reversed here by decision. A mirror failure is never thrown and
+     never silent: it is recorded to the bounded note ring below, which the ?diag=1 readout prints. */
+  var __memSession = null;      // the PRIMARY session store (page-lifetime)
+  var __mirrorOk = null;        // last mirror write: true / false / null (never attempted)
+  function sbNote(tag, e) {
+    try {
+      var a = window.__authNotes = window.__authNotes || [];
+      a.push(tag + ": " + ((e && e.message) || String(e)));
+      if (a.length > 20) a.shift();
+    } catch (x) { /* the note ring is the last resort; there is nowhere further to record */ }
+  }
+  function session() {
+    if (__memSession) return __memSession;
+    // Warm boot only: no memory session yet (fresh page load), so adopt the mirror if one survives.
+    try { var s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); if (s) __memSession = s; return s; }
+    catch (e) { sbNote("session mirror read", e); return null; }
+  }
+  function setSession(s) {
+    __memSession = s || null;
+    try {
+      if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s)); else localStorage.removeItem(SESSION_KEY);
+      __mirrorOk = true;
+    } catch (e) { __mirrorOk = false; sbNote("session mirror write", e); }
+  }
+  // Warm-boot routing only (which gate step to show). The LIVE sign-in success decision reads signIn's
+  // return value, never this (GATE_V2 Part 2).
   function signedIn() { var s = session(); return !!(s && s.access_token); }
   function authEmail() { var s = session(); return (s && s.email) || ""; }
   function authUid() { var s = session(); return (s && s.uid) || ""; }   // the operator's Supabase user id, for per-operator prefs
@@ -151,6 +172,45 @@
     finally { clearTimeout(to.timer); if (to.fired) { try { if (ac) ac.abort(); } catch (x) {} } try { run.catch(function () {}); } catch (x) {} }
   }
 
+  /* GATE_V2 Part 1: the token-call body reader. The device diag proved a 200 token response that never
+     became a session, so the token path stops trusting res.text()+blind JSON.parse and reads the body the
+     explicit way: arrayBuffer -> TextDecoder, BOM stripped, trimmed, parsed inside try/catch with the raw
+     text kept for the diag. Bare fetch (no AbortController signal, P50) under the P31 setTimeout race.
+     Returns { res, text, data, parseFailed }; a parse failure or empty body is a FACT for the caller to
+     branch on, never a silent null. Scoped to the auth token path; rest()/fetchT are untouched. */
+  function sleepMs(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+  async function authFetchOnce(url, opts, ms) {
+    ms = ms || FETCH_TIMEOUT_MS;
+    var o = Object.assign({}, opts || {});   // bare: the token fetch carries NO abort signal (P50)
+    var to = raceTimeout(ms);
+    var run = (async function () {
+      var res = await fetch(url, o);
+      var text = "";
+      if (typeof res.arrayBuffer === "function") {
+        var buf = await res.arrayBuffer();
+        text = new TextDecoder("utf-8").decode(buf);
+      } else {
+        text = await res.text();   // non-browser test environments without arrayBuffer
+      }
+      if (text && text.charCodeAt(0) === 0xFEFF) text = text.slice(1);   // strip a leading BOM
+      text = String(text || "").trim();
+      var data = null, parseFailed = false;
+      if (text) { try { data = JSON.parse(text); } catch (e) { parseFailed = true; } }
+      return { res: res, text: text, data: data, parseFailed: parseFailed };
+    })();
+    try {
+      return await Promise.race([run, to.promise]);
+    } catch (e) {
+      if (to.fired) throw timeoutError(ms);
+      throw taggedNetworkError(e);
+    } finally {
+      clearTimeout(to.timer);
+      // If the timeout won, the fetch may still settle later; note a late rejection, never surface it.
+      try { run.catch(function (e2) { if (to.fired) sbNote("late token settle", e2); }); }
+      catch (x) { sbNote("token settle attach", x); }
+    }
+  }
+
   /* P46 (regression revert): git forensics named the ONLY substantive change to this token call across the
      outage window. The last-known-working sign-in (5c9cefe, the anon-door commit, and the pre-P32 P29 build
      37cd7c3) sent exactly { "apikey": c.anon, "Content-Type": "application/json" }. P34 (a67056a) correctly
@@ -164,12 +224,10 @@
   function authTokenUrl(c, grant, fresh) {
     return c.url + "/auth/v1/token?grant_type=" + grant + (fresh ? ("&_ts=" + Date.now()) : "");
   }
-  /* P55 read-only instrument (no fix, no behavior change): the diag page needs to see the SHAPE of the token
-     response the wrapper actually got, to tell a parse failure from an empty body from a tokenless 200. This
-     records that shape to window.__lastTokenDiag, in memory only, with NO token value and NO logging: the body
-     preview redacts any access_token/refresh_token value and any JWT before slicing 40 chars. It never stores
-     or prints the token. It does not touch the request, the fetch, the timeout race, or the error surface;
-     authTokenPost still returns the same result and re-throws the same error. */
+  /* GATE_V2: the token-shape instrument is a PERMANENT organ (promoted from the P55 scaffolding). It
+     records the SHAPE of the last token response to window.__lastTokenDiag, in memory only, with NO token
+     value and NO logging: the body head redacts any access_token/refresh_token value and any JWT before
+     slicing 40 chars. The ?diag=1 readout prints it. */
   function redactBody(t) {
     return String(t == null ? "" : t)
       .replace(/("?(?:access_token|refresh_token|token|id_token|provider_token)"?\s*:\s*)"[^"]*"/gi, '$1"[REDACTED]"')
@@ -189,57 +247,72 @@
               typeof_data: typeof (r && r.data),
               has_access_token: !!(r && r.data && typeof r.data === "object" && r.data.access_token),
               text_length: text.length,
-              body_shape: redactBody(text).slice(0, 40) };
+              body_head: redactBody(text).slice(0, 40) };
       }
       d.at = new Date().toISOString();
       window.__lastTokenDiag = d;
-    } catch (x) {}
+    } catch (x) { /* the recorder is the last resort; there is nowhere further to record */ }
   }
-  function authTokenPost(c, grant, payload, fresh) {
-    // P50: the auth token call is issued as a BARE fetch (no AbortController signal), matching authtest.html
-    // exactly, which returned 400 in ~621ms on the same iPad/origin/network where this wrapped call hung at
-    // token:sent. The request (URL, headers, body) is unchanged and frozen; only the signal, the one
-    // fetch-touching construct authtest lacks, is dropped. The 15s setTimeout race inside fetchJSON still
-    // bounds it, so a real stall still fails loud with a working Retry.
-    var p = fetchJSON(authTokenUrl(c, grant, fresh), {
+  async function authTokenPost(c, grant, payload, fresh) {
+    // The request shape is FROZEN, proven by authtest.html on the failing device: apikey header + JSON POST,
+    // no Authorization, cache no-store (P46), and a BARE fetch with no AbortController signal (P50). Only
+    // the RESPONSE handling is GATE_V2: the explicit body read (authFetchOnce), and ONE automatic identical
+    // retry after 400ms when a 200 arrives with an empty body. A still-empty retry is handed to signIn as a
+    // fact (text_length 0), which fails VISIBLY as "empty response body", never as a generic auth error.
+    var url = authTokenUrl(c, grant, fresh);
+    var opts = {
       method: "POST",
       headers: { "apikey": c.anon, "Content-Type": "application/json" },
       body: JSON.stringify(payload), cache: "no-store"
-    }, FETCH_TIMEOUT_MS, true);
-    // P55: record the response shape (no token) for the diag page, then hand back the SAME result/rejection.
-    return p.then(function (r) { recordTokenDiag(grant, r, null); return r; },
-                  function (e) { recordTokenDiag(grant, null, e); throw e; });
+    };
+    var r;
+    try { r = await authFetchOnce(url, opts, FETCH_TIMEOUT_MS); }
+    catch (e) { recordTokenDiag(grant, null, e); throw e; }
+    if (r.res.ok && r.text.length === 0) {
+      await sleepMs(400);
+      try { r = await authFetchOnce(url, opts, FETCH_TIMEOUT_MS); }
+      catch (e2) { recordTokenDiag(grant, null, e2); throw e2; }
+    }
+    recordTokenDiag(grant, r, null);
+    return r;
   }
 
+  /* GATE_V2 Part 2: signIn returns the PARSED SESSION on success; the caller (the gate) binds success to
+     this return value, never to a storage read-back. Storing the session (setSession, memory-primary with a
+     best-effort mirror) is NOT a precondition of returning. Every failure is a typed, distinct throw the
+     gate surfaces visibly: empty (a 200 with no body, after the automatic retry), parse (a 200 body that is
+     not JSON), auth (a credential rejection, or a 200 object without a token), unavailable (5xx), and the
+     transport's timeout/network. The strip marks stay until the closing commit (device photo shows token:ok). */
   async function signIn(email, password, opts) {
     opts = opts || {};
     var c = cfg(); if (!c.url || !c.anon) { var ce = new Error("supabase not configured"); ce.kind = "config"; throw ce; }
-    // P47 restore: the last-good (P31) sign-in body. One bounded POST (a timeout or network failure REJECTS
-    // here, typed, at the 15s bound, it never hangs); a typed error on a bad response; then a SYNCHRONOUS
-    // session persist and return. The request is byte-identical to the build that signed in and is FROZEN.
-    // P48 re-adds ONLY the two weightless __signMark strip marks around the awaited POST (token:sent before,
-    // token:ok after success): pure window assignments, zero effect on the URL, headers, body, session, or
-    // token. They are the device instrument P48 keeps (the failsafe strip renders them) so the isolation
-    // test can read on the device whether sign-in advances past token:sent to token:ok. Deleted in the
-    // closing commit once a device photo shows token:ok.
-    try { window.__signMark = "token:sent"; } catch (e) {}
+    try { window.__signMark = "token:sent"; } catch (e) { sbNote("strip mark", e); }
     var r = await authTokenPost(c, "password", { email: email, password: password }, opts.fresh);
+    if (r.res.ok && r.text.length === 0) {
+      // authTokenPost already retried once after 400ms; a still-empty 200 fails by its real name.
+      var ee = new Error("empty response body"); ee.kind = "empty"; ee.status = r.res.status; throw ee;
+    }
+    if (r.res.ok && r.parseFailed) {
+      var pe = new Error("response body could not be parsed"); pe.kind = "parse"; pe.status = r.res.status; throw pe;
+    }
     var data = r.data;
-    if (!r.res.ok || !data || !data.access_token) {
-      var err = new Error((data && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
+    if (!r.res.ok || !data || typeof data !== "object" || !data.access_token) {
+      var err = new Error((data && typeof data === "object" && (data.error_description || data.msg || data.message)) || ("HTTP " + r.res.status));
       err.status = r.res.status;
       // A 5xx (a paused project answers 503) is the service being unavailable, not a wrong password; a
       // 400/401/422 is a credential rejection. Typed so the gate says WHICH and never throttles a blip.
       err.kind = (r.res.status >= 500) ? "unavailable" : "auth";
       throw err;
     }
-    try { window.__signMark = "token:ok"; } catch (e) {}
-    setSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at, email: email, uid: (data.user && data.user.id) || "" });
-    return { ok: true, email: email };
+    try { window.__signMark = "token:ok"; } catch (e) { sbNote("strip mark", e); }
+    var sess = { access_token: data.access_token, refresh_token: data.refresh_token, expires_at: data.expires_at,
+                 email: email, uid: (data.user && data.user.id) || "", user: data.user || null };
+    setSession(sess);   // memory-primary; the mirror is best-effort and never gates the return
+    return sess;
   }
   async function signOut() {
     var c = cfg(), s = session();
-    try { if (s && s.access_token) await fetchT(c.url + "/auth/v1/logout", { method: "POST", headers: { "apikey": c.anon, "Authorization": "Bearer " + s.access_token } }, FETCH_TIMEOUT_MS); } catch (e) {}
+    try { if (s && s.access_token) await fetchT(c.url + "/auth/v1/logout", { method: "POST", headers: { "apikey": c.anon, "Authorization": "Bearer " + s.access_token } }, FETCH_TIMEOUT_MS); } catch (e) { sbNote("logout", e); }
     setSession(null); return true;
   }
   async function refresh() {
@@ -258,6 +331,7 @@
     } catch (e) {
       // A timeout or network error is not a definitive rejection. Keep the session and let the next call
       // retry; the boot self-heal (getSession) decides whether an unusable-now session drops to sign-in.
+      sbNote("refresh", e);
       return false;
     }
   }
@@ -267,7 +341,7 @@
      a clear is a transient failure the boot self-heal still treats as "not usable now, drop to sign-in". */
   async function getSession() {
     var s = session(); if (!s || !s.access_token || !s.refresh_token) return false;
-    try { return await refresh(); } catch (e) { return false; }
+    try { return await refresh(); } catch (e) { sbNote("getSession", e); return false; }
   }
 
   /* One REST call to the operator's own PostgREST endpoint. It carries the session JWT when signed in,
@@ -406,6 +480,8 @@
     upsert: upsert, del: del, listCol: listCol,
     uploadAttachment: uploadAttachment, attachPublicUrl: attachPublicUrl, ATTACH_BUCKET: ATTACH_BUCKET,
     signIn: signIn, signOut: signOut, session: session, signedIn: signedIn,
+    clearSession: function () { setSession(null); },
+    sessionDiag: function () { return { mem: !!__memSession, mirrorOk: __mirrorOk }; },
     authEmail: authEmail, authUid: authUid, refresh: refresh, getSession: getSession,
     tables: function () { return Object.keys(TABLES); },
     URL_KEY: URL_KEY, ANON_KEY: ANON_KEY, FETCH_TIMEOUT_MS: FETCH_TIMEOUT_MS

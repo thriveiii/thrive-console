@@ -30,6 +30,9 @@
           op_err_timeout: "Sign-in timed out. Check your connection and try again.",
           op_err_network: "Could not reach the service. Check your connection and try again.",
           op_err_unavailable: "The sign-in service is unavailable right now. Try again shortly.",
+          op_err_empty: "The service returned an empty response. Tap Retry.",
+          op_err_parse: "The service response could not be read. Tap Retry.",
+          err_secure: "A secure connection is required to unlock. Open the console over HTTPS and try again.",
           op_retry: "Retry",
           resub: "Welcome back. Sign in again to continue." },
     ar: { title: "كونسول ثرايف", sub: "مساحة خاصة. أدخل رمز الدخول للمتابعة.",
@@ -43,6 +46,9 @@
           op_err_timeout: "انتهت مهلة تسجيل الدخول. تحقّق من اتصالك وحاول مجددًا.",
           op_err_network: "تعذّر الوصول إلى الخدمة. تحقّق من اتصالك وحاول مجددًا.",
           op_err_unavailable: "خدمة تسجيل الدخول غير متوفرة الآن. حاول بعد قليل.",
+          op_err_empty: "أعادت الخدمة استجابة فارغة. اضغط إعادة المحاولة.",
+          op_err_parse: "تعذّرت قراءة استجابة الخدمة. اضغط إعادة المحاولة.",
+          err_secure: "يلزم اتصال آمن لفتح القفل. افتح الكونسول عبر HTTPS وحاول مجددًا.",
           op_retry: "إعادة المحاولة",
           resub: "مرحبًا بعودتك. سجّل الدخول من جديد." }
   };
@@ -62,9 +68,24 @@
     var bid = buildId();
     return bid ? '<p class="gate-build">' + s.build + ' <bdi>' + bid + "</bdi></p>" : "";
   }
-  function lang() { try { return localStorage.getItem("thrive_lang") === "ar" ? "ar" : "en"; } catch (e) { return "en"; } }
+  function lang() { try { return localStorage.getItem("thrive_lang") === "ar" ? "ar" : "en"; } catch (e) { gnote("lang read", e); return "en"; } }
+
+  /* GATE_V2: no silent failure anywhere in the gate. Every caught error lands in this bounded note ring,
+     which the ?diag=1 readout prints; a storage or crypto failure is a recorded fact, never a swallowed one. */
+  function gnote(tag, e) {
+    try {
+      var a = window.__gateNotes = window.__gateNotes || [];
+      a.push(tag + ": " + ((e && e.message) || String(e)));
+      if (a.length > 20) a.shift();
+    } catch (x) { /* the note ring is the last resort; there is nowhere further to record */ }
+  }
 
   async function pbkdf2Hex(pass, salt) {
+    // GATE_V2: a missing crypto.subtle (a non-secure context) is a NAMED failure the passcode step surfaces
+    // as "secure connection required", never as "wrong passcode".
+    if (!(window.crypto && window.crypto.subtle)) {
+      var se = new Error("crypto.subtle unavailable (secure context required)"); se.kind = "secure"; throw se;
+    }
     var enc = new TextEncoder();
     var keyMat = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveBits"]);
     var bits = await crypto.subtle.deriveBits(
@@ -86,17 +107,36 @@
   var PASSCODE_IDLE_MIN = 45;                        // idle minutes before the passcode presence drops too (full exit)
   var OPERATOR_IDLE_MS = OPERATOR_IDLE_MIN * 60 * 1000;
   var PASSCODE_IDLE_MS = PASSCODE_IDLE_MIN * 60 * 1000;
-  function markPresent() { try { localStorage.setItem(PRESENCE, String(Date.now())); } catch (e) {} }
+  /* GATE_V2 Part 4: presence is MEMORY-FIRST, mirrors second, exactly like the session store. On a
+     storage-blocked device the old localStorage-only stamp made the passcode a loop: markPresent's write
+     silently failed, passcodePresent() read back false, and every re-gate returned to the passcode step in
+     the SAME session. With the in-memory stamp consulted first, the worst case on a storage-blocked device
+     is re-entering the passcode after a full reload, never a same-session loop and never a lockout. */
+  var __memPresence = 0;   // the PRIMARY presence stamp (page-lifetime)
+  function markPresent() {
+    __memPresence = Date.now();
+    try { localStorage.setItem(PRESENCE, String(__memPresence)); window.__presenceMirrorOk = true; }
+    catch (e) { window.__presenceMirrorOk = false; gnote("presence mirror write", e); }
+  }
   function idleMs() {
-    try { var at = parseInt(localStorage.getItem(PRESENCE) || "0", 10); return at ? (Date.now() - at) : Infinity; }
-    catch (e) { return Infinity; }
+    var at = __memPresence || 0;
+    try { var st = parseInt(localStorage.getItem(PRESENCE) || "0", 10); if (st > at) at = st; }
+    catch (e) { gnote("presence mirror read", e); }
+    return at ? (Date.now() - at) : Infinity;
   }
   function passcodePresent() { return idleMs() < PASSCODE_IDLE_MS; }   // within 45 minutes: the passcode holds
   function operatorPresent() { return idleMs() < OPERATOR_IDLE_MS; }   // within 30 minutes: the operator holds
-  function clearPresence() { try { localStorage.removeItem(PRESENCE); } catch (e) {} }
-  // Drop the operator session locally (session() reads localStorage fresh, so this is enough for the gate
-  // to ask for the operator again). The passcode presence is untouched.
-  function clearOperatorSession() { try { localStorage.removeItem("console_sb_session"); } catch (e) {} }
+  function clearPresence() {
+    __memPresence = 0;
+    try { localStorage.removeItem(PRESENCE); } catch (e) { gnote("presence clear", e); }
+  }
+  // Drop the operator session: the MEMORY session first (the primary store since GATE_V2), then the mirror.
+  // Without the memory clear, a lobby drop or sign-out would leave signedIn() true off the in-memory copy.
+  function clearOperatorSession() {
+    var S = supa();
+    try { if (S && S.clearSession) S.clearSession(); } catch (e) { gnote("session clear", e); }
+    try { localStorage.removeItem("console_sb_session"); } catch (e) { gnote("session mirror clear", e); }
+  }
   // P29 self-heal: is the stored session's access token already past its expiry? A fresh token returns
   // false (the common warm-boot case), so the board is revealed at once with no network round trip and no
   // timing regression. Only an EXPIRED token pays the bounded validation below.
@@ -132,14 +172,14 @@
   function recordFail() {
     var f = failState(); f.n = (f.n || 0) + 1;
     if (f.n >= 5) f.until = Date.now() + Math.min(30000 * Math.pow(2, f.n - 5), 900000);
-    try { localStorage.setItem(FAILS, JSON.stringify(f)); } catch (e) {}
+    try { localStorage.setItem(FAILS, JSON.stringify(f)); } catch (e) { gnote("fail throttle write", e); }
     try { // failed attempts belong in the operations ledger
       var a = JSON.parse(localStorage.getItem("thrive_activity_v1") || "[]");
       a.push({ ts: new Date().toISOString(), action: "login_fail", slug: "", detail: "attempt " + f.n });
       localStorage.setItem("thrive_activity_v1", JSON.stringify(a.slice(-500)));
-    } catch (e) {}
+    } catch (e) { gnote("fail ledger write", e); }
   }
-  function clearFails() { try { localStorage.removeItem(FAILS); } catch (e) {} }
+  function clearFails() { try { localStorage.removeItem(FAILS); } catch (e) { gnote("fail throttle clear", e); } }
   function fmtWait(ms) { var s = Math.ceil(ms / 1000); return s >= 60 ? Math.ceil(s / 60) + "m" : s + "s"; }
 
   /* Gate two: the operator sign-in. The passcode is a device gate; the Supabase session is what actually
@@ -155,14 +195,14 @@
   function opRecordFail() {
     var f = opFailState(); f.n = (f.n || 0) + 1;
     if (f.n >= 3) f.until = Date.now() + Math.min(5000 * Math.pow(2, f.n - 3), 900000);
-    try { localStorage.setItem(OP_FAILS, JSON.stringify(f)); } catch (e) {}
+    try { localStorage.setItem(OP_FAILS, JSON.stringify(f)); } catch (e) { gnote("op throttle write", e); }
     try {
       var a = JSON.parse(localStorage.getItem("thrive_activity_v1") || "[]");
       a.push({ ts: new Date().toISOString(), action: "operator_login_fail", slug: "", detail: "attempt " + f.n });
       localStorage.setItem("thrive_activity_v1", JSON.stringify(a.slice(-500)));
-    } catch (e) {}
+    } catch (e) { gnote("op fail ledger write", e); }
   }
-  function opClearFails() { try { localStorage.removeItem(OP_FAILS); } catch (e) {} }
+  function opClearFails() { try { localStorage.removeItem(OP_FAILS); } catch (e) { gnote("op throttle clear", e); } }
 
   var __presenceWired = false;
   function reveal() {
@@ -170,6 +210,9 @@
     var g = document.getElementById("thriveGate");
     if (g) g.parentNode.removeChild(g);
     document.body.style.overflow = "";
+    // GATE_V2 Part 5: the gate phase is silent. Background relay work (app.js autoSyncTick /
+    // scheduleSyncPush) holds until this flag is set, so nothing competes with the sign-in.
+    try { window.__gateRevealed = true; } catch (e) { gnote("reveal flag", e); }
     markPresent();
     wirePresence();
   }
@@ -180,7 +223,7 @@
     var target = gateTarget();
     if (target === "board") { markPresent(); return; }   // still fresh: nothing to re-gate
     if (target === "passcode") {                          // full exit: clear both layers
-      try { sessionStorage.removeItem(KEY); } catch (e) {}
+      try { sessionStorage.removeItem(KEY); } catch (e) { gnote("gate token clear", e); }
       clearPresence(); clearOperatorSession();
     } else {                                              // lobby: drop the operator session, keep the passcode
       clearOperatorSession();
@@ -195,7 +238,7 @@
     var last = 0;
     function bump() { var n = Date.now(); if (n - last > 20000) { last = n; markPresent(); } }
     ["pointerdown", "keydown"].forEach(function (ev) {
-      try { document.addEventListener(ev, bump, { passive: true }); } catch (e) {}
+      try { document.addEventListener(ev, bump, { passive: true }); } catch (e) { gnote("presence listener", e); }
     });
     document.addEventListener("visibilitychange", function () {
       if (document.visibilityState !== "visible") return;
@@ -217,27 +260,30 @@
     if (target === "passcode") showPasscodeStep(wrap); else showOperatorStep(wrap);
     // P29 watchdog signal: an interactive gate card is on screen, so the boot is NOT stuck. The board's
     // first paint sets this too (app.js); the 20s watchdog only fires when neither has happened.
-    try { window.__thriveBooted = true; } catch (e) {}
+    try { window.__thriveBooted = true; } catch (e) { gnote("boot flag", e); }
   }
 
   // After the passcode, hand off: sign in as an operator where the data is scoped, else reveal at once.
   function afterPasscode(wrap) {
     if (needsOperator()) showOperatorStep(wrap); else finish();
   }
-  function finish() {
+  // GATE_V2 Part 2: finish() receives the session object straight from signIn's RETURN VALUE (the warm-boot
+  // and no-Supabase callers pass nothing; their session, if any, is already held by the auth module). The
+  // teardown itself performs no storage read-back: reaching finish() IS the success decision.
+  function finish(sess) {
     // P40 checkpoint + watchdog arm (string assignment + one call, no behavior change): the boot proper
     // begins now that the gate has resolved. Arming here means a signed-out gate never trips the stall
     // watchdog (a legitimate non-painted state); only a passed gate whose board never paints does.
-    try { window.__bootMark = "gate resolved"; } catch (ex) {}
-    try { if (typeof window.__thriveFailsafeArm === "function") window.__thriveFailsafeArm(); } catch (ex) {}
+    try { window.__bootMark = "gate resolved"; } catch (ex) { gnote("boot mark", ex); }
+    try { if (typeof window.__thriveFailsafeArm === "function") window.__thriveFailsafeArm(); } catch (ex) { gnote("failsafe arm", ex); }
     reveal();
     // P48 gate-first boot: the gate now resolves BEFORE app.js is parsed (it is loaded first, right after
     // config + supabase). On a WARM session that means finish() runs while window.onGateUnlocked is still
     // undefined, so the unlock hydrate (the P111 force board-refresh, the operator chip, the name map)
     // would be missed. Call it if it exists; otherwise leave a pending flag that app.js drains the moment
     // it defines the hook, so the unlock fires exactly once on a warm boot too.
-    if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) {} }
-    else { try { window.__gateUnlockedPending = true; } catch (ex) {} }
+    if (typeof window.onGateUnlocked === "function") { try { window.onGateUnlocked(); } catch (ex) { gnote("unlock hook", ex); } }
+    else { try { window.__gateUnlockedPending = true; } catch (ex) { gnote("unlock pending flag", ex); } }
   }
   function showPasscodeStep(wrap) {
     var s = STR[lang()];
@@ -269,7 +315,7 @@
       var val = input.value || "";
       if (!val) { return; }
       busy = true; input.disabled = true;
-      var h = null, sync = null, vault = null;
+      var h = null, sync = null, vault = null, cryptoErr = null;
       try {
         h = await pbkdf2Hex(val, GATE_SALT);
         if (h === HASH) {
@@ -279,8 +325,16 @@
           // capability on any device, and the store itself holds only ciphertext.
           vault = await pbkdf2Hex(val, VAULT_SALT);
         }
-      } catch (ex) {}
+      } catch (ex) { cryptoErr = ex; gnote("pbkdf2", ex); }
       busy = false; input.disabled = false;
+      if (cryptoErr) {
+        // GATE_V2: a crypto failure is NOT a wrong passcode. It surfaces by its real name (secure context
+        // required), is never throttled as a failed attempt, and the entered value is kept for a retry.
+        err.textContent = s.err_secure;
+        err.hidden = false;
+        input.focus();
+        return;
+      }
       if (h === HASH) {
         clearFails();
         // The gate token is per-session (locking must really lock). The SYNC credential is a
@@ -291,11 +345,11 @@
           sessionStorage.setItem(KEY, HASH);
           if (sync) { sessionStorage.setItem(SYNC_KEY, sync); localStorage.setItem(SYNC_KEY, sync); }
           if (vault) { sessionStorage.setItem(VAULT_KEY, vault); localStorage.setItem(VAULT_KEY, vault); }
-        } catch (ex) {}
-        markPresent();   // open the 30-minute presence window
+        } catch (ex) { gnote("credential mirror write", ex); }
+        markPresent();   // open the 30-minute presence window (memory-first, mirror best-effort)
 
         if (typeof window.logActivity === "function") {
-          try { window.logActivity("login", "", "console unlocked"); } catch (ex) {}
+          try { window.logActivity("login", "", "console unlocked"); } catch (ex) { gnote("login activity", ex); }
         }
         afterPasscode(wrap);
       } else {
@@ -359,14 +413,19 @@
       // A missing field is the same neutral failure as a wrong one: the gate reveals nothing about why.
       busy = true; email.disabled = pass.disabled = true; btn.textContent = s.op_busy;
       err.hidden = true; showDiag(""); showRetry(false);   // clear any prior failure before this attempt
-      var ok = false, kind = "", raw = "";
-      // P47 restore: the last-good (P31) click path. signIn is bounded by its own setTimeout race: it
-      // resolves on success or REJECTS with a typed error (kind = timeout / network / unavailable / auth)
-      // at the 15s bound even if the browser ignores the AbortController on a wedged socket. The button
-      // state is ALWAYS released below, so "Signing in" can never be the last word; the raw error text is
-      // captured for the visible diagnostic. No hard outer race, no step marks.
+      var ok = false, kind = "", raw = "", sess = null;
+      // GATE_V2 Part 2: success is bound to signIn's RETURN VALUE (the parsed session), never to a storage
+      // read-back. signIn is bounded by its own setTimeout race: it resolves with the session or REJECTS
+      // with a typed error (kind = timeout / network / unavailable / auth / empty / parse) at the 15s bound
+      // even if the browser ignores the AbortController on a wedged socket. The button state is ALWAYS
+      // released below, so "Signing in" can never be the last word; the raw error text is captured for the
+      // visible diagnostic. No hard outer race, no step marks.
       if (m && p) {
-        try { await S.signIn(m, p, { fresh: !!fresh }); ok = S.signedIn && S.signedIn(); }
+        try {
+          sess = await S.signIn(m, p, { fresh: !!fresh });
+          ok = !!(sess && sess.access_token);
+          if (!ok) { kind = "auth"; raw = "auth: sign-in returned no session"; }
+        }
         catch (ex) {
           ok = false; kind = (ex && ex.kind) || "auth";
           raw = (kind || "error") + ": " + ((ex && ex.message) || String(ex));
@@ -377,10 +436,18 @@
       if (ok) {
         showDiag(""); showRetry(false);
         opClearFails();
-        if (typeof window.logActivity === "function") { try { window.logActivity("operator_login", "", "signed in"); } catch (ex) {} }
+        if (typeof window.logActivity === "function") { try { window.logActivity("operator_login", "", "signed in"); } catch (ex) { gnote("login activity", ex); } }
         // Signing in lands on the board (the working surface), not wherever the hash last pointed (Settings).
-        try { location.hash = "board"; } catch (ex) {}
-        finish();
+        try { location.hash = "board"; } catch (ex) { gnote("hash route", ex); }
+        finish(sess);
+      } else if (kind === "empty" || kind === "parse") {
+        // GATE_V2 Part 1: a 200 whose body was empty (after the automatic retry) or unreadable is a SERVICE
+        // response fault, named as such: never throttled as a wrong credential, always offered a Retry.
+        err.textContent = kind === "empty" ? s.op_err_empty : s.op_err_parse;
+        err.hidden = false;
+        showDiag(raw);
+        showRetry(true);
+        (m ? pass : email).focus();
       } else if (kind === "timeout" || kind === "network" || kind === "unavailable") {
         // A transient service condition is NOT a wrong credential: say specifically what happened, do NOT
         // throttle it as a failed attempt, and offer a one-tap Retry that opens a fresh connection.
@@ -436,7 +503,7 @@
       if (sessionExpired()) { healExpiredThenStart(); return; }
       finish(); return;
     }
-    if (target === "passcode") { try { sessionStorage.removeItem(KEY); } catch (e) {} clearOperatorSession(); }
+    if (target === "passcode") { try { sessionStorage.removeItem(KEY); } catch (e) { gnote("gate token clear", e); } clearOperatorSession(); }
     else if (!operatorPresent()) { clearOperatorSession(); }   // lobby via a 30 to 45 minute idle drop
     document.documentElement.classList.add("gate-locked");
     buildGate(target);
@@ -458,7 +525,7 @@
   // email step), never the passcode and never a blank board.
   window.thriveSignOut = async function () {
     var S = supa();
-    try { if (S && S.signOut) await S.signOut(); } catch (e) {}
+    try { if (S && S.signOut) await S.signOut(); } catch (e) { gnote("sign-out", e); }
     location.reload();
   };
 })();

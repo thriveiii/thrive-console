@@ -29,7 +29,7 @@ ck("G2c bundle.js no longer emits the preflight panel", !/PREFLIGHT|__preflightD
 ck("G3 exactly one authTokenPost definition", (supa.match(/function authTokenPost\(/g) || []).length === 1);
 ck("G3b signIn calls authTokenPost exactly once", (supa.match(/authTokenPost\(c, "password"/g) || []).length === 1);
 ck("G3c the token URL is built in one place (authTokenUrl)", (supa.match(/function authTokenUrl\(/g) || []).length === 1 && (supa.match(/"\/auth\/v1\/token\?grant_type="/g) || []).length === 1);
-ck("G3d the only bare fetch() calls are the 2 timeout wrappers", (supa.match(/\bfetch\(/g) || []).length === 2, (supa.match(/\bfetch\(/g) || []).length);
+ck("G3d the only bare fetch() calls are the 3 bounded wrappers (fetchJSON, fetchT, authFetchOnce)", (supa.match(/\bfetch\(/g) || []).length === 3, (supa.match(/\bfetch\(/g) || []).length);
 
 // G4: signIn is minimal, wrapped only by the P31 race (fetchJSON) and P29 typed errors; no logging.
 ck("G4 signIn has no logging/diag on the auth path", !/authDiag|__DIAG|\.diag =|diag\./.test(supa.slice(supa.indexOf("async function signIn"), supa.indexOf("async function signOut"))));

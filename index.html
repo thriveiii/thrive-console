@@ -9,19 +9,19 @@
      in the critical path: the front door no longer waits on a fetch. The in-shell P43 convergence
      (failsafe.js still fetches version.json inside console.html) is the stale-client safety net, so a
      device that somehow loads an old shell still converges from within it. -->
-<meta http-equiv="refresh" content="0; url=./library/console.html?v=0cc66731">
+<meta http-equiv="refresh" content="0; url=./library/console.html?v=ad5169da">
 <link rel="icon" href="./assets/thrive-logo.png">
 <style>html,body{margin:0;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;height:100%}
 .c{height:100%;display:flex;align-items:center;justify-content:center;gap:12px}
 img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 a{color:#71BFCC}</style></head>
-<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=0cc66731">Thrive Opportunity Library</a>…</span></div>
+<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=ad5169da">Thrive Opportunity Library</a>…</span></div>
 <script>(function(){/* P48 immediate redirect. The root does NOT probe version.json (no fetch, no wait): it
   replaces the location straight to the current shell. version.json is still written and is the in-shell
   P43 convergence net (failsafe.js fetches it from inside console.html), so a stale-cached front door can
   no longer chain-pin the shell AND the shell can still self-correct if it is stale. Query params (minus
   any stale v/vr) and the hash still carry across, so ?debug=paint survives. */
-  var baked="0cc66731";
+  var baked="ad5169da";
   var q=(location.search||"").replace(/^\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0;}).join("&");
   location.replace("./library/console.html?v="+baked+(q?("&"+q):"")+(location.hash||""));
 })();</script></body></html>
