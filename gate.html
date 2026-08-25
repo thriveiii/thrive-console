@@ -305,4 +305,34 @@ function passcodeFresh(){
 }
 if(passcodeFresh()) showOperator(); else showPasscode();
 </script>
+<script>(function(){
+  /* CONSOLE_ENTRY_DIAG (read-only). The console ejects here by a param-less navigation, so ?diag=1 is lost;
+     the six session-handoff facts travel in the localStorage mirror gate.js wrote at console boot. If that
+     row is FRESH (written within 60s, i.e. an eject just happened), print it over the gate so the eject is
+     photographable at the moment it occurs. This reads only: it touches no auth, no session, no store, and
+     starts no request. It shows nothing in ordinary standalone gate use, where no fresh row exists. */
+  try{
+    var raw = localStorage.getItem("thrive_entry_diag"); if(!raw) return;
+    var o = JSON.parse(raw); if(!o || !o.at) return;
+    if(Date.now() - Date.parse(o.at) > 60000) return;
+    var pre = document.createElement("pre");
+    pre.id = "entryDiag"; pre.setAttribute("dir","ltr");
+    pre.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:2147483647;margin:0;padding:8px 10px;"
+      + "background:#04252b;color:#a7f3d0;border:1px solid #71BFCC;border-radius:8px;"
+      + "font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;-webkit-overflow-scrolling:touch";
+    pre.textContent = [
+      "CONSOLE ENTRY DIAG (build " + (o.build || "?") + ")",
+      "captured " + o.at,
+      "console_sb_session present: " + o.present,
+      "has access_token: " + o.hasToken,
+      "session expired: " + o.expired,
+      "last getSession outcome: " + o.getSession,
+      "gateTarget result: " + o.gateTarget,
+      "redirect fired: " + o.redirect,
+      "(tap to dismiss)"
+    ].join("\n");
+    pre.addEventListener("click", function(){ try{ pre.parentNode.removeChild(pre); }catch(e){} });
+    (document.body || document.documentElement).appendChild(pre);
+  }catch(e){}
+})();</script>
 </body></html>

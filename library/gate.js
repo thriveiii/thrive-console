@@ -18,6 +18,27 @@
   var HASH = "0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8"; // PBKDF2(passcode, thrive-gate-v2, 120k)
 
   var OP_FAILS = "thrive_op_fails";        // operator sign-in throttle (gate two), separate from the passcode
+
+  /* CONSOLE_ENTRY_DIAG (read-only instrumentation). A boot-time mirror of the six session-handoff facts, so
+     the console eject can be read from ONE device photo. It writes a window global AND a localStorage row; it
+     is NEVER read back as a decision input, changes no gate/eject/auth/store behavior, and starts no request.
+     The eject navigates param-lessly to ../gate.html, so ?diag=1 is lost; localStorage is the carrier that
+     survives the navigation, and gate.html / the front door print the fresh row at the moment of eject. */
+  var ENTRY_DIAG_KEY = "thrive_entry_diag";
+  function ediag(patch) {
+    try {
+      var o = window.__entryDiag;
+      if (!o || typeof o !== "object") {
+        o = { present: "?", hasToken: "?", expired: "?", getSession: "none", gateTarget: "?", redirect: "no", build: "" };
+        try { var mm = document.querySelector('meta[name="thrive-build"]'); if (mm) o.build = mm.getAttribute("content") || ""; } catch (e) {}
+      }
+      if (patch) { for (var k in patch) { if (Object.prototype.hasOwnProperty.call(patch, k)) o[k] = patch[k]; } }
+      o.at = new Date().toISOString();
+      window.__entryDiag = o;
+      try { localStorage.setItem(ENTRY_DIAG_KEY, JSON.stringify(o)); } catch (e) { /* mirror only; never a decision input */ }
+    } catch (e) { /* the recorder is the last resort; it must never affect the boot */ }
+  }
+
   var STR = {
     en: { title: "Thrive Console", sub: "Private workspace. Enter the passcode to continue.",
           ph: "Passcode", go: "Unlock", err: "Incorrect passcode. Try again.",
@@ -381,6 +402,7 @@
   function redirectToGate() {
     if (window.__gateNoRedirect) return false;             // a test (or a deliberate override) keeps sign-in in-console
     if (opBouncedRecently()) return false;                 // just returned from gate.html without a session: fall back
+    ediag({ redirect: "yes" });                            // CONSOLE_ENTRY_DIAG (read-only): the console is about to eject to ../gate.html
     markOpBounce();
     try { location.assign(gateHref()); return true; } catch (e) { gnote("gate redirect", e); return false; }
   }
@@ -506,6 +528,18 @@
     document.documentElement.classList.add("gate-locked");
     var S = supa(), good = false;
     try { if (S && S.getSession) good = await S.getSession(); } catch (e) { good = false; }
+    // CONSOLE_ENTRY_DIAG (read-only): name the boot getSession outcome, distinguishing a definitive 400/401
+    // rejection from a transient timeout/network failure, derived from the existing token-shape organ
+    // (window.__lastTokenDiag) without changing refresh() or getSession().
+    ediag({ getSession: good ? "ok" : (function () {
+      var td = window.__lastTokenDiag;
+      if (!td || td.grant !== "refresh_token") return "none";
+      if (td.threw) return String(td.kind || "network");     // a THROWN failure: timeout / network / unavailable
+      var st = td.status || 0;
+      if (st === 400 || st === 401) return "rejected(" + st + ")";   // the ONLY definitive credential rejection
+      if (st >= 500) return "unavailable(" + st + ")";       // a transient service failure, not a rejection
+      return "failed(" + (st || "?") + ")";
+    })() });
     if (good) { finish(); return; }
     // Not usable now (timed out, errored, or the refresh token was rejected): clear ONCE and drop to the
     // operator sign-in card. A corrupt or expired token never locks the app on a blank screen.
@@ -518,6 +552,16 @@
     // graduated drops are enforced here so the session state always matches the step that is shown, and
     // the two gates can never disagree. Never a blank board (#84): a target is always chosen.
     var target = gateTarget();
+    // CONSOLE_ENTRY_DIAG (read-only): record the boot facts as they are decided, BEFORE any redirect. The
+    // "present" read is the raw localStorage key exactly as the user's question framed it, not the memory
+    // copy. Nothing here changes the decision below; it only writes the diagnostic mirror.
+    var __edRaw = null; try { __edRaw = JSON.parse(localStorage.getItem("console_sb_session") || "null"); } catch (e) { __edRaw = null; }
+    ediag({
+      present: (function () { try { return localStorage.getItem("console_sb_session") != null ? "yes" : "no"; } catch (e) { return "?"; } })(),
+      hasToken: (__edRaw && __edRaw.access_token) ? "yes" : "no",
+      expired: sessionExpired() ? "yes" : "no",
+      gateTarget: target
+    });
     // A returning operator (session still live) skips both steps. Reveal AND signal the unlock, the same
     // as a fresh sign-in: without the signal the board renders from the local store and the live Supabase
     // hydrate never fires on a presence return, so the operator lands on stale cards until a manual refresh.

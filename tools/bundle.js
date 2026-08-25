@@ -779,6 +779,34 @@ a{color:#71BFCC}
     var p=document.getElementById('idxProbe'); if(p) p.textContent='فحص ملف الكونسول';
   } }catch(e){}
 })();</script>
+<script>(function(){/* CONSOLE_ENTRY_DIAG (read-only). If the console just ejected (it wrote a fresh
+  thrive_entry_diag row within 60s), print the six session-handoff facts over the front door so the eject is
+  photographable when the operator lands here via the Menu (?stay=1). Reads only: no auth, no session, no
+  store write, no request; shows nothing when no fresh row exists. */
+  try{
+    var raw=localStorage.getItem("thrive_entry_diag"); if(!raw) return;
+    var o=JSON.parse(raw); if(!o||!o.at) return;
+    if(Date.now()-Date.parse(o.at)>60000) return;
+    var pre=document.createElement("pre");
+    pre.id="entryDiag"; pre.setAttribute("dir","ltr");
+    pre.style.cssText="position:fixed;left:8px;right:8px;top:8px;z-index:2147483647;margin:0;padding:8px 10px;"
+      +"background:#04252b;color:#a7f3d0;border:1px solid #71BFCC;border-radius:8px;"
+      +"font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;-webkit-overflow-scrolling:touch";
+    pre.textContent=[
+      "CONSOLE ENTRY DIAG (build "+(o.build||"?")+")",
+      "captured "+o.at,
+      "console_sb_session present: "+o.present,
+      "has access_token: "+o.hasToken,
+      "session expired: "+o.expired,
+      "last getSession outcome: "+o.getSession,
+      "gateTarget result: "+o.gateTarget,
+      "redirect fired: "+o.redirect,
+      "(tap to dismiss)"
+    ].join("\\n");
+    pre.addEventListener("click",function(){ try{ pre.parentNode.removeChild(pre); }catch(e){} });
+    (document.body||document.documentElement).appendChild(pre);
+  }catch(e){}
+})();</script>
 <script>(function(){/* BARE_GATE router, a SINGLE deferred navigation (no meta+JS race). Query params (minus
   stale v/vr/warm/stay) and the hash carry across, so ?debug=paint survives. ?stay=1 is the manual launcher:
   no auto hand-off, the static escapes above are the way in. */
