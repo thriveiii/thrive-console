@@ -15,16 +15,16 @@
        - no session at all: bounce to gate.html (the proven auth path), never a black screen.
      The in-shell P43 convergence (failsafe.js fetches version.json inside console.html) stays the stale
      shell safety net; the console's own boot still reads the mirror and heals its session too. -->
-<meta http-equiv="refresh" content="0; url=./library/console.html?v=0990dea0">
+<meta http-equiv="refresh" content="0; url=./library/console.html?v=ad5169da">
 <link rel="icon" href="./assets/thrive-logo.png">
 <style>html,body{margin:0;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;height:100%}
 .c{height:100%;display:flex;align-items:center;justify-content:center;gap:12px}
 img{width:26px;height:26px;animation:s 22s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 a{color:#71BFCC}</style></head>
-<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=0990dea0">Thrive Opportunity Library</a>…</span></div>
+<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span>Opening the <a href="./library/console.html?v=ad5169da">Thrive Opportunity Library</a>…</span></div>
 <script>(function(){/* BARE_GATE router. Session-aware, no version.json probe in the critical path. Query
   params (minus any stale v/vr/warm) and the hash carry across to the console, so ?debug=paint survives. */
-  var BUILD="0990dea0", URL_BASE="https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
+  var BUILD="ad5169da", URL_BASE="https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
   var SESSION_KEY="console_sb_session", PRESENCE="thrive_presence";
   var q=(location.search||"").replace(/^\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0&&p.indexOf("warm=")!==0;}).join("&");
   var warm=/[?&]warm=1(&|$)/.test(location.search||"");
