@@ -97,10 +97,52 @@ Lotus, the newsroom, keys, RLS, or the DB. No new dependencies. No em dash. Gene
 (`library/console.html`, `dist/thrive-console.html`, `index.html`, `version.json`) regenerated only via
 `node tools/bundle.js`. Western numerals throughout.
 
+## The delivery gap: why the correct fix did not reach the device (follow-up)
+
+After the first-paint fix merged and Pages deployed it, the operator (and the whole team) were STILL stranded
+on the index splash. The fix was correct but was not being delivered, for a deployment-integrity reason:
+
+`BUILD` (the content signature the whole cache-busting system depends on) was computed over the module
+sources plus css ONLY, not over the shell template that `tools/bundle.js` assembles. The first-paint fix
+changed how the shell is built (the stylesheet link tags), but touched no module, so `BUILD` stayed
+identical (`a1c92c04`, the same as the previous deploy). The root `index.html` router therefore kept
+pointing at `console.html?v=a1c92c04`, the exact URL under which every device had already cached the OLD
+render-blocking shell. GitHub Pages serves `console.html` with a short max-age and an ETag, so a device that
+held the old shell (especially on a marginal or airplane-adjacent connection that serves from cache without
+revalidating) kept running it. The versioned-URL cache-bust, the load-bearing guarantee that a deploy
+reaches the device, never fired for a shell-only change.
+
+### The fix
+
+`BUILD` now folds the generator's own source (`tools/bundle.js`) into the hash, so any change to how the
+shell is assembled bumps `BUILD`, changes every versioned URL, and forces a fresh fetch of the shell. The
+recipe is part of the product's identity. Re-bundling stays deterministic (the generator source is stable
+across runs), so the determinism guard (`deploy_marker_test`) still holds. This deploy's `BUILD` changed to
+a fresh value, so the async-CSS shell is force-delivered to every device on next load.
+
+### Evidence (delivery)
+
+`tools/shell_fingerprint_test.js` (Node, fails-when-broken) recomputes `BUILD` the way the generator does and
+proves: the generator reads its own source into the hash input; the recomputation equals the shipped
+`version.json` build; a shell-only change to the generator produces a DIFFERENT build (the cache-bust fires);
+omitting the generator yields a different value than shipped (it is genuinely included); a runtime-module
+change still changes `BUILD` (module coverage preserved); and the index router and shell both stamp the
+shipped build so the versioned URL tracks the fingerprint. If someone drops the generator from the hash,
+the shell-only-change check goes red.
+
+### Immediate operator workaround (no deploy wait)
+
+Because the already-deployed `console.html` at the OLD version URL is the async-CSS shell, a device can reach
+it right now by discarding the stale cached copy: open the site in a Private/Incognito tab, or clear the
+site's website data (Settings, Safari, Advanced, Website Data, remove console.thriveiii.com), then reload.
+Once the new `BUILD` deploys, this is unnecessary; the new versioned URL fetches the fresh shell on its own.
+
 ## Acceptance (device-gated)
 
-1. Fresh build stamp on the failing iPad.
+1. Fresh build stamp on the failing iPad (the new `BUILD`, not `a1c92c04`).
 2. Sign in and pass both gates on a marginal connection: the console paints its gate/boot frame promptly
    instead of holding the index splash. No permanent "Opening the Thrive Opportunity Library..." freeze.
 3. The board arrives fully styled (no flash of unstyled content).
 4. `?debug=paint` and the build stamp still work (the shell is otherwise unchanged).
+5. A device that was stranded reaches the console after the new `BUILD` deploys, without needing to clear
+   its cache (the changed versioned URL forces the fresh shell).

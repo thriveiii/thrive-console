@@ -102,9 +102,20 @@ const fp = f => "./" + f + "?v=" + FP[f];
    shipped bundle, so it changes when any shipped source changes and is byte-identical when nothing
    did. That keeps re-bundling deterministic (no wall-clock stamp to make console.html churn) while
    giving the gate a value to print. Read it off the device gate footer and compare: same mark as
-   the latest build means the device is current; an older mark means it is serving old bytes. */
+   the latest build means the device is current; an older mark means it is serving old bytes.
+
+   SHELL_IN_THE_HASH: the fingerprint MUST include the shell TEMPLATE, not only the module sources.
+   The served console.html is assembled by THIS generator (the head with its stylesheet links, the
+   inline critical CSS, the boot order, the index router). A change to that assembly changes the bytes
+   the device runs but touches no module, so a module-only hash leaves BUILD unchanged. The index router
+   then points at console.html?v=<same BUILD>, and every device that cached the previous shell keeps
+   serving it: a correct shell fix that never reaches the device. That is exactly what stranded the
+   operators on the index splash after a shell-only first-paint fix. Folding this file's own source into
+   the hash makes any change to how the shell is built bump BUILD, so the versioned URL changes and the
+   new shell is fetched. The recipe is part of the product's identity. */
+const GENERATOR_SRC = fs.readFileSync(__filename, "utf8");
 const BUILD = crypto.createHash("sha256")
-  .update([css, icons, i18n, gate, model, life, intake, supabase, numbers, inbound, kinds, drafts, flows, store, app, failsafe].join("\x00"), "utf8")
+  .update([css, icons, i18n, gate, model, life, intake, supabase, numbers, inbound, kinds, drafts, flows, store, app, failsafe, GENERATOR_SRC].join("\x00"), "utf8")
   .digest("hex").slice(0, 8);
 /* The deploy time, baked here at build time (never read at runtime). BUILD says WHICH code is live;
    BUILT_AT says WHEN it was built, so a capture from the device is labeled with both. This is the one
