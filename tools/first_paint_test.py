@@ -30,14 +30,14 @@ def ck(n, c, d=None):
 console = open(os.path.join(ROOT, "library/console.html")).read()
 dist = open(os.path.join(ROOT, "dist/thrive-console.html")).read()
 
-ck("styles.css is a NORMAL blocking stylesheet (no media=print swap that can fail to apply)",
-   '<link rel="stylesheet" href="./styles.css' in console and 'media="print"' not in console)
+ck("the app CSS is INLINED, not linked: zero stylesheet links, so no CSS fetch can block or fail to apply",
+   '<style id="app-styles">' in console and '<link rel="stylesheet"' not in console and 'media="print"' not in console)
 ck("fonts.css is NOT a stylesheet link in the document (it is off the critical path)",
    '<link rel="stylesheet" href="./fonts.css' not in console)
 ck("fonts.css is fetched by script only AFTER the window load event",
    'l.href="./fonts.css' in console and 'addEventListener("load"' in console)
-ck("the inline gate-critical block still precedes the stylesheet (it rules the pre-stylesheet frame)",
-   'id="gate-critical"' in console and console.find('id="gate-critical"') < console.find('href="./styles.css'))
+ck("the inline gate-critical block still precedes the app CSS",
+   'id="gate-critical"' in console and console.find('id="gate-critical"') < console.find('id="app-styles"'))
 ck("the offline dist build still inlines all CSS (zero external stylesheet links)",
    'rel="stylesheet"' not in dist)
 

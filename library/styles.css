@@ -1015,7 +1015,8 @@ html[dir="rtl"] .eopp-thumb{transform-origin:top right}
 /* ---------- live merge fields (compose) ---------- */
 .month-input{max-width:240px}
 .ebody [data-m]{border-bottom:1px dashed rgba(150,133,202,.55)}  /* editor-only cue; sent HTML has no spans */
-/* P6/D4: the {{NAME}} merge token as a soft pill (never raw braces). contenteditable=false on the
+/* P6/D4: the NAME merge token as a soft pill (never raw braces; the token is not spelled here because
+   styles.css is inlined into the shell and the merge-slot gate scans the rendered page). contenteditable=false on the
    span makes it delete whole. Editor-only: htmlOut strips it before send. */
 .ebody [data-m="name"]{border-bottom:0;background:rgba(150,133,202,.16);border:1px solid rgba(150,133,202,.42);border-radius:6px;padding:0 5px;white-space:nowrap}
 [dir="rtl"] .ebody [data-m="name"]{letter-spacing:normal}
