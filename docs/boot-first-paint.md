@@ -174,6 +174,27 @@ the sign-in escape reaches `gate.html`. `version_integrity_test` V2 reconciled t
 router (asserts the meta refresh is absent, the deferred hand-off and `?stay=1` guard are present, and the
 static escapes exist).
 
+## BOARD_WATCHDOG: the post-gate black board must speak (follow-up)
+
+Once the operators could pass the gate (the strip read "boot gate resolved · build 9c5e952f"), a NEW failure
+appeared: the shell header painted but the board area stayed BLACK, with no way out. The board is painted by
+app.js (~890 KB, the last and largest script); on a marginal connection it arrives slowly or not at all. The
+head watchdog was supposed to catch this, but it keyed on `window.__thriveBooted`, which `gate.js` sets the
+instant the gate resolves. So once the gate passed, the watchdog thought the boot had succeeded and never
+fired, and the black board was silent.
+
+The fix re-keys the watchdog on `window.__boardPainted` (set ONLY by the board's first paint, app.js render),
+and keeps it silent while a gate sign-in card is on screen (the operator is signing in, not stuck). It is now
+two-phase so the wait is never a silent void: a gentle "loading the board" indicator (with the spinning
+logo) at 5s, then a Retry panel at 18s naming the connection. Self-contained and inline, so it works even if
+styles.css or app.js never loaded.
+
+Evidence: `tools/board_watchdog_test.py` (browser, fails-when-broken) aborts app.js so the board never paints
+and proves the loading indicator then the Retry panel appear after the gate resolves, and that both stay
+silent once `__boardPainted` is set. `signin_resilience_test` part D reconciled to the board-keyed two-phase
+watchdog. (The deeper cause remains the connection: 890 KB cannot arrive on a dead link. The watchdog turns
+a confusing black void into a clear, actionable state, and a retry on a recovered connection gets the board.)
+
 ## Acceptance (device-gated)
 
 0. If still stranded on the splash: open `console.thriveiii.com/?stay=1` (the manual launcher) and tap

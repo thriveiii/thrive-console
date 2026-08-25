@@ -335,29 +335,51 @@ try{var __l=localStorage.getItem('thrive_lang');d.setAttribute('lang',__l==='ar'
 try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){try{r.unregister();}catch(e){}});}).catch(function(){});}}catch(e){}
 function lock(){d.classList.add('gate-locked')}
 try{if(sessionStorage.getItem('thrive_gate_v2')!=='${GATE_HASH}')lock()}catch(e){lock()}
-/* P48 single watchdog: the redundant 6s bootfail timeout was removed (it competed with the one watchdog
-   below). This 20s bootWatchdog is now the ONLY head watchdog. If nothing interactive has painted within
-   the bound, it replaces the screen with a plain panel that offers a way out, so a degraded service (a
-   paused project, a stalled read) is never an infinite spinner. window.__thriveBooted is set by the gate
-   the moment a sign-in card shows, and by the board's first paint (app.js render); the watchdog fires only
-   when neither has happened. P48: Retry-only, so it never starts a second auth/sign-out state machine.
-   Self-contained and inline-styled so it works even if styles.css or app.js failed to load. */
-setTimeout(function(){if(window.__thriveBooted)return;
-var war=false;try{war=localStorage.getItem('thrive_lang')==='ar'}catch(e){}
-try{var wg=document.getElementById('thriveGate');if(wg&&wg.parentNode)wg.parentNode.removeChild(wg);}catch(e){}
-try{var wb=document.querySelector('.bootfail');if(wb&&wb.parentNode)wb.parentNode.removeChild(wb);}catch(e){}
-try{d.classList.remove('gate-locked');}catch(e){}
-var wt=war?'يستغرق الكونسول وقتًا أطول من المعتاد.':'The console is taking too long.';
-var ws=war?'تحقّق من اتصالك، ثم أعد المحاولة.':'Check your connection, then retry.';
-var wr=war?'إعادة المحاولة':'Retry';
-var W=document.createElement('div');W.id='bootWatchdog';W.setAttribute('dir',war?'rtl':'ltr');
-W.setAttribute('style','position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0a0a0c;color:#e5e7eb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center');
-/* P48: Retry only. The watchdog must never start a second auth/sign-out state machine, so the former
-   "Sign out" button and its handler are gone; Retry simply reloads. */
-W.innerHTML='<div style="max-width:22rem"><p style="font-size:1.05rem;font-weight:600;margin:0 0 .4rem">'+wt+'</p><p style="opacity:.75;margin:0 0 1.2rem">'+ws+'</p><div style="display:flex;gap:.6rem;justify-content:center"><button id="wdRetry" type="button" style="padding:.6rem 1.1rem;border-radius:.5rem;border:0;background:#71BFCC;color:#04252b;font-weight:600;cursor:pointer">'+wr+'</button></div></div>';
-(document.body||d).appendChild(W);
-try{document.getElementById('wdRetry').addEventListener('click',function(){location.reload();});}catch(e){}
-},20000);})();</script>
+/* BOARD_WATCHDOG: after the gate resolves, the BOARD is painted by app.js (~890 KB, the last and largest
+   script). On a marginal connection that bundle can arrive slowly or not at all, leaving a BLACK screen
+   below the shell header with no way out. The former watchdog keyed on window.__thriveBooted, which gate.js
+   sets the INSTANT the gate resolves, so once the gate passed it never fired and the black board was silent
+   (the exact post-gate black the operators hit). This keys on window.__boardPainted, set ONLY by the
+   board's first paint (app.js render), and stays silent while a gate sign-in card is on screen (the
+   operator is signing in, not stuck). Two phases so the wait is never a silent void: a gentle "loading the
+   board" indicator, then a Retry panel if the board still has not painted. Self-contained and inline so it
+   works even if styles.css or app.js never loaded. */
+function __bwBoardUp(){ try{ return !!window.__boardPainted; }catch(e){ return false; } }
+function __bwAtGate(){ try{ return !!document.getElementById('thriveGate'); }catch(e){ return false; } }
+function __bwAr(){ try{ return localStorage.getItem('thrive_lang')==='ar'; }catch(e){ return false; } }
+function __bwRm(id){ try{ var e=document.getElementById(id); if(e&&e.parentNode) e.parentNode.removeChild(e); }catch(e){} }
+var __bwPoll=null;
+function __bwLoading(){
+  if(__bwBoardUp()||__bwAtGate()||document.getElementById('bootLoading')||document.getElementById('bootWatchdog')) return;
+  var ar=__bwAr();
+  var L=document.createElement('div');L.id='bootLoading';L.setAttribute('dir',ar?'rtl':'ltr');
+  L.setAttribute('style','position:fixed;inset:0;z-index:99998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0a0a0c;color:#9ca3af;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center');
+  L.innerHTML='<style>@keyframes spin{to{transform:rotate(360deg)}}</style><img src="../assets/thrive-logo.png" alt="" style="width:30px;height:30px;animation:spin 1.4s linear infinite"><p style="margin:0;font-size:.95rem">'+(ar?'جارٍ تحميل اللوحة...':'Loading the board...')+'</p>';
+  (document.body||d).appendChild(L);
+  __bwPoll=setInterval(function(){ if(__bwBoardUp()){ clearInterval(__bwPoll); __bwRm('bootLoading'); } },400);
+}
+function __bwFail(){
+  if(__bwBoardUp()){ __bwRm('bootLoading'); return; }
+  if(__bwAtGate()) return;                                      // still at the sign-in card: not stuck
+  if(__bwPoll){ clearInterval(__bwPoll); }
+  __bwRm('bootLoading');
+  var ar=__bwAr();
+  try{var wg=document.getElementById('thriveGate');if(wg&&wg.parentNode)wg.parentNode.removeChild(wg);}catch(e){}
+  try{var wb=document.querySelector('.bootfail');if(wb&&wb.parentNode)wb.parentNode.removeChild(wb);}catch(e){}
+  try{d.classList.remove('gate-locked');}catch(e){}
+  var wt=ar?'يستغرق تحميل اللوحة وقتًا أطول من المعتاد.':'The board is taking too long to load.';
+  var ws=ar?'قد يكون الاتصال ضعيفًا. تحقّق منه ثم أعد المحاولة.':'The connection may be weak. Check it, then retry.';
+  var wr=ar?'إعادة المحاولة':'Retry';
+  var W=document.createElement('div');W.id='bootWatchdog';W.setAttribute('dir',ar?'rtl':'ltr');
+  W.setAttribute('style','position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0a0a0c;color:#e5e7eb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center');
+  /* Retry only. The watchdog must never start a second auth/sign-out state machine, so there is no Sign out
+     button or session-clearing handler; Retry simply reloads. */
+  W.innerHTML='<div style="max-width:22rem"><p style="font-size:1.05rem;font-weight:600;margin:0 0 .4rem">'+wt+'</p><p style="opacity:.75;margin:0 0 1.2rem">'+ws+'</p><div style="display:flex;gap:.6rem;justify-content:center"><button id="wdRetry" type="button" style="padding:.6rem 1.1rem;border-radius:.5rem;border:0;background:#71BFCC;color:#04252b;font-weight:600;cursor:pointer">'+wr+'</button></div></div>';
+  (document.body||d).appendChild(W);
+  try{document.getElementById('wdRetry').addEventListener('click',function(){location.reload();});}catch(e){}
+}
+try{ setTimeout(__bwLoading, 5000); setTimeout(__bwFail, 18000); }catch(e){}
+})();</script>
 ${head}
 </head>
 <body>
