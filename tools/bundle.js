@@ -261,10 +261,20 @@ const criticalGateCss =
 function build(inline){
 const head = inline
   ? '<style>\n' + css + '\n.view[hidden]{display:none!important}\n</style>'
+  /* STYLES_ALWAYS_APPLY: styles.css is a NORMAL stylesheet again, and fonts.css leaves the boot entirely.
+     The async `media="print" onload="this.media='all'"` swap (P54 first-paint) was a false economy and a
+     real defect: when that onload does not fire on WebKit the sheet NEVER becomes a screen stylesheet, so
+     the console renders as raw unstyled HTML forever (the device capture showed the brand as a purple
+     underlined link and a bare language pill). Measured, the trade was never worth it: styles.css is only
+     ~52 KB gzipped, so blocking on it costs a moment; fonts.css is ~248 KB gzipped (base64 font faces that
+     barely compress) and is the ONLY heavy sheet, and it is purely decorative.
+     So: styles.css blocks (the interface is ALWAYS styled, no swap to fail), and fonts.css is loaded by
+     loadfonts.js AFTER load, off the critical path. The critical CSS path drops from ~300 KB to ~52 KB
+     gzipped and the unstyled-forever failure mode is gone by construction. The gate-critical block still
+     paints the gate before styles.css lands, and the system font stack covers the window before the
+     webfonts arrive. */
   : '<style id="gate-critical">' + criticalGateCss + '</style>' +
-    '\n<link rel="stylesheet" href="' + fp("fonts.css") + '" media="print" onload="this.media=\'all\'">' +
-    '\n<link rel="stylesheet" href="' + fp("styles.css") + '" media="print" onload="this.media=\'all\'">' +
-    '\n<noscript><link rel="stylesheet" href="' + fp("fonts.css") + '"><link rel="stylesheet" href="' + fp("styles.css") + '"></noscript>' +
+    '\n<link rel="stylesheet" href="' + fp("styles.css") + '">' +
     '\n<style>.view[hidden]{display:none!important}</style>';
 // P48 boot order: config -> supabase -> gate load and run BEFORE the heavy app modules, so the login
 // door paints as the first boot boundary rather than after app.js (~874 KB) finishes parsing. gate.js'
@@ -292,7 +302,15 @@ const body = inline
     '\n<script src="' + fp("numbers.js") + '"></script>'+
     '\n<script src="' + fp("inbound.js") + '"></script>\n<script src="' + fp("kinds.js") + '"></script>'+
     '\n<script src="' + fp("store.js") + '"></script>\n<script src="' + fp("drafts.js") + '"></script>'+
-    '\n<script src="' + fp("flows.js") + '"></script>\n<script src="' + fp("app.js") + '"></script>';
+    '\n<script src="' + fp("flows.js") + '"></script>\n<script src="' + fp("app.js") + '"></script>' +
+    /* STYLES_ALWAYS_APPLY: the webfonts, off the critical path. fonts.css is ~248 KB gzipped (base64 font
+       faces that barely compress) and is purely decorative, so it is fetched only AFTER the window load
+       event, when the board already has everything it needs. Until it lands the console renders in the
+       system stack declared by styles.css, which is a complete, correct interface. This costs the boot
+       nothing and can never leave the console unstyled: styles.css is a normal blocking stylesheet above,
+       and this link is added with no swap to fail. */
+    '\n<script>(function(){function f(){try{var l=document.createElement("link");l.rel="stylesheet";l.href="' + fp("fonts.css") + '";(document.head||document.documentElement).appendChild(l);}catch(e){}}' +
+    'if(document.readyState==="complete")setTimeout(f,0);else addEventListener("load",function(){setTimeout(f,0);});})();</script>';
 const icon = inline ? logo : "../assets/thrive-logo.png";
 const mark = inline ? logo : "../assets/thrive-logo.png";
 const sections2 = inline ? sections : sectionsLinked;

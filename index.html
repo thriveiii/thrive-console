@@ -23,17 +23,17 @@ a{color:#71BFCC}
 .esc{position:fixed;left:0;right:0;bottom:22px;display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:center;padding:0 16px}
 .esc a{color:#cbd5e1;font-size:13.5px;text-decoration:none;border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:9px 14px;background:#14141a}
 .esc a.primary{color:#04252b;background:#71BFCC;border-color:transparent;font-weight:700}</style></head>
-<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span id="idxMsg">Opening the <a href="./library/console.html?v=7e0ade8d">Thrive Opportunity Library</a>…</span></div>
+<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span id="idxMsg">Opening the <a href="./library/console.html?v=bb8ea46d">Thrive Opportunity Library</a>…</span></div>
 <div class="esc" id="idxEsc" role="group" aria-label="Enter">
 <a id="idxGate" class="primary" href="gate.html">Sign-in page</a>
-<a id="idxCon" href="./library/console.html?v=7e0ade8d">Open the console</a>
+<a id="idxCon" href="./library/console.html?v=bb8ea46d">Open the console</a>
 <a id="idxMenu" href="./?stay=1">Menu</a>
 </div>
 <script>(function(){/* Localize the static escapes at once (never deferred), so even a suspended document
   keeps the painted Arabic labels. */
   try{ if(localStorage.getItem('thrive_lang')==='ar'){
     var d=document.documentElement; d.setAttribute('lang','ar'); d.setAttribute('dir','rtl');
-    var m=document.getElementById('idxMsg'); if(m) m.innerHTML='جارٍ فتح <a href="./library/console.html?v=7e0ade8d">مكتبة فرص ثرايف</a>…';
+    var m=document.getElementById('idxMsg'); if(m) m.innerHTML='جارٍ فتح <a href="./library/console.html?v=bb8ea46d">مكتبة فرص ثرايف</a>…';
     var g=document.getElementById('idxGate'); if(g) g.textContent='صفحة تسجيل الدخول';
     var c=document.getElementById('idxCon'); if(c) c.textContent='فتح الكونسول';
     var u=document.getElementById('idxMenu'); if(u) u.textContent='القائمة';
@@ -42,7 +42,7 @@ a{color:#71BFCC}
 <script>(function(){/* BARE_GATE router, a SINGLE deferred navigation (no meta+JS race). Query params (minus
   stale v/vr/warm/stay) and the hash carry across, so ?debug=paint survives. ?stay=1 is the manual launcher:
   no auto hand-off, the static escapes above are the way in. */
-  var BUILD="7e0ade8d", URL_BASE="https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
+  var BUILD="bb8ea46d", URL_BASE="https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
   var SESSION_KEY="console_sb_session", PRESENCE="thrive_presence";
   if(/[?&]stay=1(&|$)/.test(location.search||"")) return;           // manual launcher: no auto hand-off
   var q=(location.search||"").replace(/^\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0&&p.indexOf("warm=")!==0&&p.indexOf("stay=")!==0;}).join("&");
