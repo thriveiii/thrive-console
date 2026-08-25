@@ -213,7 +213,17 @@ const GATE_HASH = "0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395
    values (the CSS custom properties live in styles.css, not yet loaded at this moment) and a SYSTEM font
    stack so first paint never blocks on a webfont. It is placed BEFORE the fonts/styles links, so once the
    full stylesheet loads its equal-specificity rules (later in document order) win and govern the final
-   look; this block only rules the pre-stylesheet frame. This is a boot correction, not a redesign. */
+   look; this block only rules the pre-stylesheet frame. This is a boot correction, not a redesign.
+
+   BOOT_FIRST_PAINT: the two heavy stylesheets below are loaded NON-render-blocking (media="print", flipped
+   to media="all" on load), with a <noscript> render-blocking fallback for JS-off. A render-blocking
+   <link rel="stylesheet"> withholds the document's FIRST paint until the sheet has fully downloaded and
+   parsed; fonts.css + styles.css together are ~528 KB, so on a marginal connection the console never
+   reaches first paint, and the browser keeps showing the PREVIOUS document (the root index splash) with no
+   way forward. Detaching them from the paint path lets this inline critical block paint the gate/boot frame
+   the moment the HTML arrives; the full sheets swap in when they can. The board reveal is gated on app.js
+   (~890 KB, requested from the end of body in parallel), which is far larger than styles.css, so the styles
+   are in force well before any board is shown: no flash of unstyled content in practice. */
 const criticalGateCss =
   'html,body{background:#0a0a0c}' +
   'body{margin:0;color:#fff;font-family:-apple-system,Segoe UI,Roboto,sans-serif}' +
@@ -241,7 +251,9 @@ function build(inline){
 const head = inline
   ? '<style>\n' + css + '\n.view[hidden]{display:none!important}\n</style>'
   : '<style id="gate-critical">' + criticalGateCss + '</style>' +
-    '\n<link rel="stylesheet" href="' + fp("fonts.css") + '">\n<link rel="stylesheet" href="' + fp("styles.css") + '">' +
+    '\n<link rel="stylesheet" href="' + fp("fonts.css") + '" media="print" onload="this.media=\'all\'">' +
+    '\n<link rel="stylesheet" href="' + fp("styles.css") + '" media="print" onload="this.media=\'all\'">' +
+    '\n<noscript><link rel="stylesheet" href="' + fp("fonts.css") + '"><link rel="stylesheet" href="' + fp("styles.css") + '"></noscript>' +
     '\n<style>.view[hidden]{display:none!important}</style>';
 // P48 boot order: config -> supabase -> gate load and run BEFORE the heavy app modules, so the login
 // door paints as the first boot boundary rather than after app.js (~874 KB) finishes parsing. gate.js'
