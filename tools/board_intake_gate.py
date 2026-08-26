@@ -1,6 +1,6 @@
 """The board intake lands what it says it imported, in the real board, through the ONE resolver.
 
-Drives library/board.html in Chromium: the "Today's batch" drop now reads through ThriveIntake.readBatch
+Drives library/board.view.html in Chromium: the "Today's batch" drop now reads through ThriveIntake.readBatch
 (resolveBatch) and renders the shared report (mountIngestReport), the same path the editor upload uses. It
 drops a three-item package (two new, one already in the library, archived) and reads localStorage to see
 exactly what landed. The unified surface has no per-item Skip/Replace; the resolver is idempotent by slug, so
@@ -33,7 +33,7 @@ def ck(n, c, d=None):
             print("      " + str(d)[:300])
 
 def open_board(pg, seed):
-    pg.goto(f"{base}/library/board.html"); pg.wait_for_timeout(400)
+    pg.goto(f"{base}/library/board.view.html"); pg.wait_for_timeout(400)
     if pg.query_selector("#gateInput"):
         pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(600)
     pg.evaluate("(s)=>localStorage.setItem('thrive_opps_v1', s)", seed)

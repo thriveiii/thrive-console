@@ -53,7 +53,7 @@ with sync_playwright() as p:
     pg = ctx.new_page(); errs = []
     pg.on("pageerror", lambda e: errs.append(str(e)))
     # The standalone board page is the "Today's batch" surface Thyab uses; no view-routing wrapper to hide it.
-    pg.goto(f"{base}/library/board.html"); pg.wait_for_timeout(400)
+    pg.goto(f"{base}/library/board.view.html"); pg.wait_for_timeout(400)
     if pg.query_selector("#thriveGate"):
         pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(1500)
     pg.wait_for_selector("#intakeFile", state="attached", timeout=15000)

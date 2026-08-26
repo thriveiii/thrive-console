@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Thrive · Operations</title>
+<link rel="icon" href="../assets/thrive-logo.png">
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<link rel="preconnect" href="https://api.github.com" crossorigin>
+<link rel="dns-prefetch" href="https://api.github.com">
+<script>(function(){var d=document.documentElement;function lock(){d.classList.add('gate-locked')}try{if(sessionStorage.getItem('thrive_gate_v2')!=='0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8')lock()}catch(e){lock()}/* boot failsafe: a script that never runs must not leave a blank locked page */setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;var ar=false;try{ar=localStorage.getItem('thrive_lang')==='ar'}catch(e){}var p=document.createElement('p');p.className='bootfail';p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل الصفحة، وتحقق من الاتصال إن تكرر الأمر.':'The console could not start. Reload the page, and check your connection if it happens again.';(document.body||d).appendChild(p)},6000)})();</script>
+<script src="gate.js" defer></script>
+</head>
+<body>
+<noscript><p class="bootfail">This console needs JavaScript to run. <span dir="rtl">يحتاج هذا الكونسول إلى تفعيل JavaScript.</span></p></noscript>
+<header class="top">
+  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <nav class="nav">
+    <a href="console.html#board" class="active" data-i18n="nav_board">Thrive Operations</a>
+    <a href="console.html#home" data-i18n="nav_insights">Insights</a>
+    <a href="console.html#library" data-i18n="nav_library">Library</a>
+    <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
+    <button id="langbtn" class="langbtn">العربية</button>
+  </nav>
+</header>
+
+<main class="wrap">
+
+  <div class="page-h">
+    <h1 class="title" data-i18n="board_title">Thrive Operations</h1>
+    <span class="pill" id="boardSync"></span>
+  </div>
+  <p class="sub" data-i18n="board_sub"></p>
+
+  <!-- The one Syne moment on this screen. Filled by initBoard from
+       ThriveBoard.verdict(). IDENTITY §6.2 -->
+  <div class="board-head">
+    <div class="ops-status">
+      <span class="ops-badge" id="boardBadge" data-icon="eye" aria-hidden="true"></span>
+      <div class="ops-lines">
+        <div class="verdict" id="boardVerdict"></div>
+        <div class="verdict-sub" id="boardVerdictSub"></div>
+      </div>
+    </div>
+    <div class="toolbar" style="margin:0">
+      <a class="btn" href="editor.html" data-icon="page" data-i18n="new_opp">New opportunity</a>
+      <button class="btn ghost js-send-open" id="boardSendBtn" type="button" data-icon="send" data-i18n="home_send">Send an email</button>
+      <a class="btn ghost" href="library.html" data-icon="archive" data-i18n="home_open_lib">Open library</a>
+      <a class="btn ghost" href="index.html" data-icon="spark" data-i18n="board_numbers">See the numbers</a>
+      <!-- The reply attribution surface, opened from here. A quiet badge carries the unmatched-human count. -->
+      <button class="btn ghost" id="boardInboxBtn" type="button" data-icon="mail" aria-expanded="false" aria-controls="boardInbox">
+        <span data-i18n="rp_inbox">Replies</span><span class="inbox-badge" id="boardInboxBadge" hidden>0</span>
+      </button>
+      <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
+    </div>
+  </div>
+
+  <!-- The replies inbox: held human replies, the attach picker, and the collapsed noise. One surface,
+       here on the board, never a second copy in Settings. -->
+  <section class="board-inbox" id="boardInbox" hidden aria-label="Replies inbox">
+    <div class="board-inbox-body" id="boardInboxBody"></div>
+  </section>
+
+  <!-- Direction A pipeline strip: the five stage counts from board state, the stage the headline
+       speaks to lit in the rose accent. A quiet visual summary, so it is hidden from the reader
+       that the interactive tab bar already announces. -->
+  <div class="ops-pipeline" id="boardPipeline" aria-hidden="true"></div>
+
+  <!-- Not synced. Not dismissable: a warning you can dismiss is one you dismiss on the day
+       you are busiest, which is the day it matters. -->
+  <div id="boardBand" hidden></div>
+
+  <!-- The day's batch. Nothing is written until the report has been read. -->
+  <section class="intake" id="intakeZone">
+    <div class="intake-head">
+      <h3 class="block-h" data-icon="import" data-i18n="in_h">Today's batch</h3>
+      <label class="btn ghost sm" for="intakeFile" data-i18n="in_pick">Choose files</label>
+      <input id="intakeFile" type="file" multiple accept=".html,.htm,.md,.txt,.json,.zip" hidden>
+    </div>
+    <p class="sub" data-i18n="in_p"></p>
+    <div class="intake-out" id="intakeOut"></div>
+  </section>
+
+  <!-- Status tab bar. Shown only below the breakpoint, where the five columns cannot sit side by
+       side; it switches which lane is visible. Same icons and counts as the lanes, filled by initBoard. -->
+  <div class="board-tabs" id="boardTabs" role="tablist">
+    <button class="btab" data-tab="draft" role="tab" aria-selected="false"><span class="btab-ic" data-icon="edit" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_draft">Draft</span><span class="btab-n" data-count-tab="draft">0</span></button>
+    <button class="btab" data-tab="live" role="tab" aria-selected="false"><span class="btab-ic" data-icon="check" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_live">Live</span><span class="btab-n" data-count-tab="live">0</span></button>
+    <button class="btab" data-tab="sent" role="tab" aria-selected="false"><span class="btab-ic" data-icon="send" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_sent">Sent</span><span class="btab-n" data-count-tab="sent">0</span></button>
+    <button class="btab" data-tab="opened" role="tab" aria-selected="false"><span class="btab-ic" data-icon="spark" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_opened">Opened</span><span class="btab-n" data-count-tab="opened">0</span></button>
+    <button class="btab" data-tab="replied" role="tab" aria-selected="false"><span class="btab-ic" data-icon="mail" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_replied">Replied</span><span class="btab-n" data-count-tab="replied">0</span></button>
+  </div>
+
+  <!-- Lanes. Order is the order of the gradient, and the order is the journey. -->
+  <div class="board" id="boardLanes">
+    <section class="lane" data-lane="draft">
+      <header class="lane-head">
+        <span class="lane-ic" data-icon="edit" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_draft">Draft</span>
+        <span class="lane-count" data-count="draft">0</span>
+      </header>
+      <div class="lane-body" data-body="draft"></div>
+    </section>
+
+    <section class="lane" data-lane="live">
+      <header class="lane-head">
+        <span class="lane-ic" data-icon="check" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_live">Live</span>
+        <span class="lane-count" data-count="live">0</span>
+      </header>
+      <div class="lane-body" data-body="live"></div>
+    </section>
+
+    <section class="lane" data-lane="sent">
+      <header class="lane-head">
+        <span class="lane-ic" data-icon="send" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_sent">Sent</span>
+        <span class="lane-count" data-count="sent">0</span>
+      </header>
+      <div class="lane-body" data-body="sent"></div>
+    </section>
+
+    <section class="lane" data-lane="opened">
+      <header class="lane-head">
+        <span class="lane-ic" data-icon="spark" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_opened">Opened</span>
+        <span class="lane-count" data-count="opened">0</span>
+      </header>
+      <div class="lane-body" data-body="opened"></div>
+    </section>
+
+    <section class="lane" data-lane="replied">
+      <header class="lane-head">
+        <span class="lane-ic" data-icon="mail" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_replied">Replied</span>
+        <span class="lane-count" data-count="replied">0</span>
+      </header>
+      <div class="lane-body" data-body="replied"></div>
+    </section>
+  </div>
+
+  <!-- Summary chips. Each one is a filter, so every number on this screen is
+       also an action. IDENTITY §9.2 -->
+  <div class="board-note" id="boardChips"></div>
+
+  <!-- Finished work. Counted, not competing for width. IDENTITY §3.3 -->
+  <section class="tray" id="boardTray">
+    <button class="tray-toggle" id="trayToggle" aria-expanded="false" aria-controls="trayBody">
+      <span class="tray-chev" data-icon="chevron" data-icon-size="12" aria-hidden="true"></span>
+      <span data-i18n="tray_closed">Closed</span>
+      <span class="lane-count" id="trayCount">0</span>
+    </button>
+    <div class="tray-body" id="trayBody">
+      <div class="tray-list" id="trayList"></div>
+    </div>
+  </section>
+
+  <!-- Signed-out read state. The Supabase store is the source of truth and it is scoped to a session,
+       so a signed-out read is asked to sign in, never shown as an empty board. This is not the empty
+       state and not the degrade banner: it appears only when reads come from Supabase with no session. -->
+  <div class="empty" id="boardAuth" hidden>
+    <span class="empty-ic" data-icon="lock" data-icon-size="32" aria-hidden="true"></span>
+    <h3 class="block-h" data-i18n="board_auth_h">Sign in to see your board.</h3>
+    <p class="sub" data-i18n="board_auth_p"></p>
+    <a class="btn" href="console.html#settings" data-icon="check" data-i18n="board_auth_cta">Go to sign-in</a>
+  </div>
+
+  <!-- Empty state. A designed state, not a missing one. IDENTITY §9.3 -->
+  <div class="empty" id="boardEmpty" hidden>
+    <span class="empty-ic" data-icon="spark" data-icon-size="32" aria-hidden="true"></span>
+    <h3 class="block-h" data-i18n="board_empty_h">No opportunities yet.</h3>
+    <p class="sub" data-i18n="board_empty_p"></p>
+    <a class="btn" href="editor.html" data-icon="page" data-i18n="new_opp">New opportunity</a>
+  </div>
+</main>
+
+<script src="icons.js" defer></script>
+<script src="i18n.js" defer></script>
+<script src="stage-model.js" defer></script>
+<script src="lifecycle.js" defer></script>
+<script src="intake.js" defer></script>
+<script src="numbers.js" defer></script>
+<script src="inbound.js" defer></script>
+<script src="kinds.js" defer></script>
+<script src="store.js" defer></script>
+<script src="drafts.js" defer></script>
+<script src="flows.js" defer></script>
+<script src="app.js" defer></script>
+<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initBoard(); });</script>
+</body>
+</html>

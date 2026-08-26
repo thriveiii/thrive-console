@@ -24,7 +24,10 @@ const read = p => fs.readFileSync(p, "utf8");
 
 /* order matters: it is the reading order of the console itself */
 const VIEWS = [
-  { id: "board",     file: "board.html",     init: "initBoard",     key: "nav_board" },
+  // board.view.html is the hand-maintained board VIEW source (its <main> is spliced into console.html/app.html
+  // and the legacy per-view tests drive it). It was renamed from board.html so the served /library/board.html
+  // can be the tiny STANDALONE reader (buildBoard) that loads no app.js; the two must not share one filename.
+  { id: "board",     file: "board.view.html", init: "initBoard",    key: "nav_board" },
   /* Labelled Insights, not Overview: it is the only screen that answers which message is
      working, which campaign moved, and who is paying attention, and a name that does not say
      so is a name nobody taps. */

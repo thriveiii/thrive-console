@@ -60,7 +60,7 @@ def draft(slug):
 DRAFTS = [draft(s) for s in SLUGS]
 
 def board(pg):
-    pg.goto(f"{base}/library/board.html")
+    pg.goto(f"{base}/library/board.view.html")
     if pg.query_selector("#gateInput"):
         pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(300)
     pg.wait_for_function("()=>window.ThriveIntake && ThriveIntake.readBatch && document.getElementById('intakeFile')", timeout=15000)
