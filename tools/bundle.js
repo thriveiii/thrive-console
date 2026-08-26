@@ -896,3 +896,28 @@ fs.writeFileSync(path.join(ROOT, "version.json"), JSON.stringify({
   build: BUILD, builtAt: BUILT_AT, consoleBytes: consoleBuf.length, consoleSha256: consoleSha
 }) + "\n");
 console.log("wrote version.json  ({build: " + BUILD + ", consoleBytes: " + consoleBuf.length + "})");
+
+/* NETLIFY_DEPLOY: assemble a CLEAN publish/ directory (gitignored, like dist/) holding ONLY the deployable
+   site, so Netlify publishes a tidy tree rather than the whole repo (tools, docs, relay source, shots). It
+   is a byte COPY of the files this build already wrote in place plus the static site content; nothing here
+   changes what any file contains, only where the deployable copy lands. It also emits a _headers file that
+   forces revalidation on every file, HTML included (Cache-Control: public, max-age=0, must-revalidate),
+   which kills the stale-HTML class GitHub Pages could not control. Assets keep their ?v=BUILD pins, so
+   revalidation is cheap (304s); HTML is never marked immutable. The BUILD/version mechanism is untouched. */
+const PUB = path.join(ROOT, "publish");
+fs.rmSync(PUB, { recursive: true, force: true });
+fs.mkdirSync(PUB, { recursive: true });
+function copyToPublish(rel) {
+  const src = path.join(ROOT, rel);
+  if (!fs.existsSync(src)) { console.log("  (skip, absent) " + rel); return; }
+  fs.cpSync(src, path.join(PUB, rel), { recursive: true });
+}
+// Entry documents and root files served today (every internal reference is relative, so they resolve the
+// same from a Netlify origin as from console.thriveiii.com).
+["index.html", "gate.html", "404.html", "authtest.html", "beacon.js", "version.json", "CNAME"].forEach(copyToPublish);
+// The console app, its assets, the public prospect result pages, and the batch templates.
+["library", "assets", "opp", "templates"].forEach(copyToPublish);
+// The no-stale-HTML header. HTML is served with max-age=0 + must-revalidate (never immutable); the ?v=BUILD
+// pins keep the revalidation cheap. This lives at the publish root, where Netlify reads it.
+fs.writeFileSync(path.join(PUB, "_headers"), "/*\n  Cache-Control: public, max-age=0, must-revalidate\n");
+console.log("wrote publish/  (Netlify tree; HTML revalidates via _headers, assets keep ?v=BUILD)");

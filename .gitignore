@@ -3,3 +3,4 @@ scratchpad_shots/
 __pycache__/
 shots/send-moment/_mock-*.html
 shots/*/_mock-*.html
+publish/

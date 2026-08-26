@@ -1,0 +1,8 @@
+# NETLIFY_DEPLOY: build the same site the GitHub Pages flow builds, and serve HTML that can never be stale.
+# `node tools/bundle.js` regenerates the console (library/console.html, index.html, version.json, dist) and
+# then assembles a clean publish/ tree with a _headers file that forces revalidation on every file. The
+# ?v=BUILD asset pins remain, so revalidation is cheap (304s); they now coexist with the no-store HTML header
+# as belt and suspenders.
+[build]
+  command = "node tools/bundle.js"
+  publish = "publish"
