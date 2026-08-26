@@ -1,28 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="en" dir="ltr" class="gate-locked">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="thrive-build" content="33f81c61">
 <meta name="thrive-built-at" content="2026-08-26T06:43:36Z">
-<!-- CONSOLE_ENTRY_DIAG Part 3: paint-safe mode. FIRST script in the head, before any styling, so the class
-     is on documentElement before the first frame is composed. Opening the console with ?paint=safe disables
-     every filter, backdrop-filter, animation and transition. This is an INSTRUMENT, not a fix: it exists so
-     one device session can answer whether first-frame compositing is what makes the console unusable.
-     The pre-step census found exactly two paint-heavy constructs in the first viewport: .top (the sticky
-     brand header, backdrop-filter blur 8px over a translucent background) and .board.board-settle (a blur
-     7px to 0 filter animation over the whole board container, with will-change). Default behavior is
-     untouched: without the parameter nothing changes. The .no-svg companion is defined but NOT applied by
-     default; the census found zero svg in the shipped shell markup (icons are injected later by script), so
-     it is held in reserve only. -->
-<script>(function(){try{var q=new URLSearchParams(location.search);if(q.get("paint")==="safe"){document.documentElement.classList.add("paint-safe");if(q.get("svg")==="off")document.documentElement.classList.add("no-svg");}}catch(e){}})();</script>
-<!-- P40/P42/P48: the failsafe reveal surface, FIRST script, before any module. Registers global error and
-     unhandledrejection listeners (bubble AND capture, so a 404ing resource speaks too) and the P41
-     heartbeat/sign-step strip; a healthy boot ships no lingering pixel from it. P48: this is now the ONE
-     failsafe copy. The inline block runs at parse time and cannot 404, so the duplicate external
-     <script src="failsafe.js"> is gone; failsafe.js keeps its window.__thriveFailsafeLoaded idempotence
-     guard regardless, so nothing can double-register or double-paint. -->
 <script>
 /* P40 failsafe: a first-script, zero-dependency reveal surface. It exists to make a silent client death
    SPEAK. It NEVER paints a pixel in a healthy boot; it appears only on (a) an uncaught error, (b) an
@@ -254,62 +237,16 @@
 })();
 
 </script>
-<!-- The shell must always re-fetch the current asset references so a new deploy is never served as old
-     bytes. GitHub Pages sets its own short HTML cache we cannot override with a header, so these are the
-     in-our-control best effort; the load-bearing guarantee is the versioned redirect in the root index.html
-     (console.html?v=BUILD) plus every asset carrying ?v=<content hash>. -->
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Thrive Console</title>
 <link rel="icon" href="../assets/thrive-logo.png">
 <script>(function(){var d=document.documentElement;
-/* ROOT B, first paint: set the reading direction at the app root from the stored language before any
-   other script runs, so Arabic is right-to-left from the first frame and never depends on a later
-   init succeeding. applyLang() stays the ongoing authority; this only removes the boot-order and
-   deployed-build fragility that left the root LTR. Engine-independent (plain DOM), so it holds on
-   WebKit as on Chromium. */
+/* Reading direction at the app root from the stored language, before any other script runs. */
 try{var __l=localStorage.getItem('thrive_lang');d.setAttribute('lang',__l==='ar'?'ar':'en');d.setAttribute('dir',__l==='ar'?'rtl':'ltr');}catch(e){}
-/* Cause 1 insurance: no service worker is registered by this console, but if a stale one was ever
-   installed (a past experiment, another app on the same origin) it could pin old bytes forever. Unregister
-   any that exist, so old code can never be served from a worker cache. */
+/* No service worker is registered by this console; unregister any stale one so old bytes can never be served. */
 try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){try{r.unregister();}catch(e){}});}).catch(function(){});}}catch(e){}
-function lock(){d.classList.add('gate-locked')}
-try{if(sessionStorage.getItem('thrive_gate_v2')!=='0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8')lock()}catch(e){lock()}
-/* BOARD_WAIT: after the gate resolves, the BOARD is painted by app.js (~890 KB, the last and largest
-   script), and the whole first load is ~1.7 MB. On a slow connection that takes well past any fixed
-   deadline, and the load SUCCEEDS if it is simply left alone. The previous watchdog (#225) did not leave
-   it alone: at 5s a full-screen overlay covered the working interface, and at 18s a full-screen Retry
-   panel replaced the screen whose only exit was location.reload(), which CANCELED the in-flight app.js
-   download and restarted from zero. Any connection needing more than 18s could never finish: an infinite
-   reload loop that locked every operator out (the regression the team hit after #225 deployed).
-
-   The law now: the wait is NEVER covered, NEVER interrupted, and NEVER reloaded by the page's own hand.
-   One small, non-blocking banner at the bottom edge tells the truth ("loading the board, the connection
-   is slow") and OFFERS a Retry the operator may choose; it removes nothing, covers nothing, forces
-   nothing, and clears itself the instant the board paints. Keyed on window.__boardPainted (set only by
-   the board's first paint in app.js), silent while a gate sign-in card is on screen. Self-contained and
-   inline so it works even if styles.css or app.js never arrive. */
-function __bwBoardUp(){ try{ return !!window.__boardPainted; }catch(e){ return false; } }
-function __bwAtGate(){ try{ return !!document.getElementById('thriveGate'); }catch(e){ return false; } }
-function __bwAr(){ try{ return localStorage.getItem('thrive_lang')==='ar'; }catch(e){ return false; } }
-var __bwPoll=null;
-function __bwShow(){
-  if(__bwBoardUp()||__bwAtGate()||document.getElementById('boardWait')) return;
-  var ar=__bwAr();
-  var B=document.createElement('div');B.id='boardWait';B.setAttribute('dir',ar?'rtl':'ltr');
-  B.setAttribute('style','position:fixed;left:12px;right:12px;bottom:14px;z-index:9000;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;background:#111116;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:10px 14px;color:#e5e7eb;font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.5);text-align:center');
-  B.innerHTML='<style>@keyframes bwspin{to{transform:rotate(360deg)}}</style>'+
-    '<img src="../assets/thrive-logo.png" alt="" style="width:16px;height:16px;animation:bwspin 1.4s linear infinite">'+
-    '<span>'+(ar?'جارٍ تحميل اللوحة. الاتصال بطيء، والتحميل مستمر.':'Loading the board. The connection is slow; the load is still going.')+'</span>'+
-    '<button id="bwRetry" type="button" style="padding:6px 12px;border:0;border-radius:8px;background:#71BFCC;color:#04252b;font-weight:700;cursor:pointer;font-family:inherit">'+(ar?'إعادة المحاولة':'Retry')+'</button>';
-  (document.body||d).appendChild(B);
-  try{document.getElementById('bwRetry').addEventListener('click',function(){location.reload();});}catch(e){}
-  __bwPoll=setInterval(function(){ if(__bwBoardUp()){ clearInterval(__bwPoll); try{ var e=document.getElementById('boardWait'); if(e&&e.parentNode) e.parentNode.removeChild(e); }catch(x){} } },400);
-}
-/* Armed twice: at 8s for a warm boot, and again at 25s in case the operator was still at the sign-in card
-   the first time. __bwShow re-checks the board and the gate itself, so a healthy boot never sees it. */
-try{ setTimeout(__bwShow, 8000); setTimeout(__bwShow, 25000); }catch(e){}
 })();</script>
 <style id="gate-critical">html,body{background:#0a0a0c}body{margin:0;color:#fff;font-family:-apple-system,Segoe UI,Roboto,sans-serif}html.gate-locked .top,html.gate-locked .wrap{display:none!important}#thriveGate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:22px;background:radial-gradient(1200px 600px at 50% -10%,rgba(150,133,202,.18),transparent 60%),#0a0a0c}.gate-card{width:100%;max-width:360px;background:#111116;border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:30px 26px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.55)}.gate-logo{width:40px;height:40px;display:block;margin:0 auto 14px}.gate-title{font-size:20px;font-weight:800;color:#fff;margin:0 0 6px}.gate-sub{font-size:13px;color:#9ca3af;margin:0 0 18px}.gate-input{width:100%;background:#16161d;border:1px solid rgba(255,255,255,.10);border-radius:10px;color:#fff;padding:12px 14px;font-size:15px;font-family:inherit;outline:none;text-align:center;letter-spacing:.02em}.gate-input:focus{border-color:#9685CA}.gate-btn{width:100%;margin-top:12px;padding:12px 18px;border:0;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;color:#15121b;background:linear-gradient(120deg,#72BECE,#5D7FB7,#9685CA,#EE8C9D,#A78CA7,#71BFCC);box-shadow:0 8px 24px rgba(150,133,202,.28);font-family:inherit}.gate-btn.ghost{color:#d1d5db;background:transparent;box-shadow:none;border:1px solid rgba(255,255,255,.10);margin-top:8px}.gate-err{color:#EE8C9D;font-size:12.5px;font-weight:700;margin:12px 0 0}.gate-diag{color:#9ca3af;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin:6px 0 0;line-height:1.4;word-break:break-word;direction:ltr;text-align:start}.gate-note{color:#9ca3af;font-size:11.5px;margin:16px 0 0;line-height:1.5}.gate-build{color:#6b7280;font-size:11px;margin:12px 0 0;opacity:.75;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.gate-build bdi{unicode-bidi:isolate}.build-stamp{position:fixed;inset-block-end:6px;inset-inline-end:8px;z-index:5;pointer-events:none;font:10px/1.3 ui-monospace,Menlo,Consolas,monospace;color:#6b7280;opacity:.42;letter-spacing:.02em;white-space:nowrap;max-inline-size:96vw;overflow:hidden;text-overflow:ellipsis}.build-stamp bdi{unicode-bidi:isolate}html.paint-safe *,html.paint-safe *::before,html.paint-safe *::after{filter:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;animation:none!important;transition:none!important}html.paint-safe.no-svg svg{display:none!important}</style>
 <link rel="stylesheet" href="./styles.css?v=0eea6a0fcd">
@@ -330,11 +267,6 @@ try{ setTimeout(__bwShow, 8000); setTimeout(__bwShow, 25000); }catch(e){}
     <button id="langbtn" class="langbtn">العربية</button>
   </nav>
 </header>
-<!-- Part 2: the always-visible build stamp. Baked here at build time (BUILD is the content signature,
-     BUILT_AT the deploy time), never read at runtime. Thyab glances at the bottom corner and knows in one
-     second which code is live and when it was built; every device capture is now labeled. Low contrast and
-     pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
-     the Arabic layout cannot reorder them. -->
 <div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">33f81c61</bdi> · <bdi class="mono-iso">2026-08-26T06:43:36Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
@@ -1295,8 +1227,80 @@ try{ setTimeout(__bwShow, 8000); setTimeout(__bwShow, 25000); }catch(e){}
 
 <script src="./config.js?v=806f4221bf"></script>
 <script src="./supabase.js?v=7d782b6f4f"></script>
-<script>(function(){var had=false;try{var h=location.hash||"";var m=h.match(/[#&]s=([^&]+)/);if(m){had=true;var b=m[1].replace(/-/g,"+").replace(/_/g,"/");while(b.length%4)b+="=";var bin=atob(b),by=new Uint8Array(bin.length),i;for(i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);var obj=JSON.parse(new TextDecoder("utf-8").decode(by));var sess=obj&&obj.s;if(sess&&sess.access_token&&window.ThriveSupa&&window.ThriveSupa.adoptSession){window.ThriveSupa.adoptSession(sess);if(obj.p){window.__seedPresence=obj.p;try{localStorage.setItem("thrive_presence",String(obj.p));}catch(e){}}}}}catch(e){try{(window.__authNotes=window.__authNotes||[]).push("fragment adopt: "+((e&&e.message)||e));}catch(x){}}finally{if(had){try{var rest=(location.hash||"").replace(/^#/,"").split("&").filter(function(p){return p&&p.indexOf("s=")!==0;}).join("&");history.replaceState(null,"",location.pathname+location.search+(rest?("#"+rest):""));}catch(e){}}}})();</script>
-<script src="./gate.js?v=7703fe2e29"></script>
+<script>
+(function(){
+  "use strict";
+  var S = window.ThriveSupa;
+  var AR = (function(){ try{ return localStorage.getItem("thrive_lang")==="ar"; }catch(e){ return false; } })();
+  var T = AR
+    ? { title:"\u0643\u0648\u0646\u0633\u0648\u0644 \u062b\u0631\u0627\u064a\u0641", sub:"\u0633\u062c\u0651\u0644 \u0627\u0644\u062f\u062e\u0648\u0644 \u0643\u0645\u0634\u063a\u0651\u0644 \u0644\u0644\u0645\u062a\u0627\u0628\u0639\u0629.",
+        email:"\u0628\u0631\u064a\u062f \u0627\u0644\u0645\u0634\u063a\u0651\u0644", pass:"\u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631", go:"\u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644",
+        busy:"\u062c\u0627\u0631\u064d \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644", err:"\u062a\u0639\u0630\u0651\u0631 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644.",
+        net:"\u062a\u0639\u0630\u0651\u0631 \u0627\u0644\u0648\u0635\u0648\u0644 \u0625\u0644\u0649 \u0627\u0644\u062e\u062f\u0645\u0629. \u062d\u0627\u0648\u0644 \u0645\u062c\u062f\u062f\u064b\u0627." }
+    : { title:"Thrive Console", sub:"Sign in as an operator to continue.",
+        email:"Operator email", pass:"Password", go:"Sign in", busy:"Signing in",
+        err:"Could not sign in.", net:"Could not reach the service. Try again." };
+  function reveal(){
+    try{ document.documentElement.classList.remove("gate-locked"); }catch(e){}
+    try{ window.__gateRevealed = true; }catch(e){}
+  }
+  function fireUnlock(){
+    try{ if(typeof window.onGateUnlocked === "function") window.onGateUnlocked(); else window.__gateUnlockedPending = true; }
+    catch(e){ try{ window.__gateUnlockedPending = true; }catch(x){} }
+  }
+  function done(){
+    try{ var o=document.getElementById("thriveGate"); if(o&&o.parentNode) o.parentNode.removeChild(o); }catch(e){}
+    reveal();
+    try{ if((location.hash||"").replace(/^#/,"").split("?")[0] !== "board") location.hash="board"; }catch(e){}
+    fireUnlock();
+  }
+  // Sign-out is a real operator command (app.js wires the button to window.thriveSignOut). gate.js used to
+  // define it; here it ends the in-memory session and reloads, which brings the sign-in card straight back.
+  window.thriveSignOut = async function(){
+    try{ if(S && S.signOut) await S.signOut(); }catch(e){}
+    try{ location.reload(); }catch(e){}
+  };
+  // Already signed in in THIS one document (an in-memory session): no second sign-in. A false or a throw
+  // simply shows the form, so this convenience can never lock the operator out.
+  try{ if(S && S.signedIn && S.signedIn()){ done(); return; } }catch(e){}
+  var wrap=document.createElement("div");
+  wrap.id="thriveGate";
+  wrap.setAttribute("dir", AR?"rtl":"ltr");
+  wrap.innerHTML =
+    '<form class="gate-card" autocomplete="off">' +
+    '<img class="gate-logo" src="../assets/thrive-logo.png" alt="Thrive">' +
+    '<h1 class="gate-title">'+T.title+'</h1>' +
+    '<p class="gate-sub">'+T.sub+'</p>' +
+    '<input class="gate-input" id="siEmail" type="email" autocomplete="username" spellcheck="false" placeholder="'+T.email+'" aria-label="'+T.email+'">' +
+    '<input class="gate-input" id="siPass" type="password" autocomplete="current-password" placeholder="'+T.pass+'" aria-label="'+T.pass+'">' +
+    '<button class="gate-btn" type="submit">'+T.go+'</button>' +
+    '<p class="gate-err" id="siErr" hidden>'+T.err+'</p>' +
+    '</form>';
+  (document.body||document.documentElement).appendChild(wrap);
+  var form=wrap.querySelector("form"), email=wrap.querySelector("#siEmail"), pass=wrap.querySelector("#siPass"),
+      err=wrap.querySelector("#siErr"), btn=wrap.querySelector(".gate-btn");
+  setTimeout(function(){ try{ email.focus(); }catch(e){} }, 50);
+  var busy=false;
+  form.addEventListener("submit", async function(e){
+    e.preventDefault();
+    if(busy) return;
+    var m=(email.value||"").trim(), p=pass.value||"";
+    if(!m || !p || !S || !S.signIn){ err.textContent=T.err; err.hidden=false; return; }
+    busy=true; email.disabled=pass.disabled=true; btn.textContent=T.busy; err.hidden=true;
+    try{
+      var sess = await S.signIn(m, p, { fresh:true });
+      if(sess && sess.access_token){ done(); return; }
+      throw new Error("no session");
+    }catch(ex){
+      busy=false; email.disabled=pass.disabled=false; btn.textContent=T.go;
+      var kind=(ex&&ex.kind)||"auth";
+      err.textContent=(kind==="timeout"||kind==="network"||kind==="unavailable") ? T.net : T.err;
+      err.hidden=false;
+      try{ (m?pass:email).focus(); }catch(e2){}
+    }
+  });
+})();
+</script>
 <script src="./icons.js?v=f4b0d9edc8"></script>
 <script src="./i18n.js?v=dd824e08d4"></script>
 <script src="./stage-model.js?v=1f1786d20e"></script>
