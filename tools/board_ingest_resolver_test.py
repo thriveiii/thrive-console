@@ -2,7 +2,7 @@
 
 The defect the audit found was structural: the board's drop surface (initIntake / #intakeZone) ran the old
 readDrop path, never resolveBatch, so every fix to the resolver left it unchanged. This proves, on the REAL
-board surface (library/board.html, the surface Thyab uses), driven through the real #intakeFile picker:
+board surface (library/board.view.html, the surface Thyab uses), driven through the real #intakeFile picker:
 
   1. the batch-13 shape (six opp/<slug>/index.html folders + one aggregated research md) resolves all six via
      the research-md rung with provenance shown, and the count is 6, not 0;
@@ -66,7 +66,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
     pg = b.new_page(viewport={"width": 1280, "height": 1000})
     errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
-    pg.goto(f"{base}/library/board.html")
+    pg.goto(f"{base}/library/board.view.html")
     if pg.query_selector("#gateInput"):
         pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(400)
     pg.wait_for_function("()=>window.ThriveIntake && ThriveIntake.readBatch && document.getElementById('intakeFile')", timeout=15000)

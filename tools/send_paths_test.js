@@ -107,7 +107,7 @@ function grabConst(re) { const m = app.match(re); if (!m) throw new Error("const
   ck("the campaign-plan host exists on the campaign screen in both mount contexts",
      /id="cmpPlan"/.test(consoleHtml) && /id="cmpPlan"/.test(composeHtml), "");
   // The top-bar Send (board + Insights toolbars) opens the chooser, not a slug-less compose link any more.
-  const boardHtml = fs.readFileSync(path.join(ROOT, "library", "board.html"), "utf8");
+  const boardHtml = fs.readFileSync(path.join(ROOT, "library", "board.view.html"), "utf8");
   const indexHtml = fs.readFileSync(path.join(ROOT, "library", "index.html"), "utf8");
   ck("the top-bar Send buttons are class js-send-open (board + Insights), not compose.html links",
      /js-send-open/.test(boardHtml) && /js-send-open/.test(indexHtml)

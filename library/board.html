@@ -1,188 +1,187 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" dir="ltr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<title>Thrive · Operations</title>
-<link rel="icon" href="../assets/thrive-logo.png">
-<link rel="stylesheet" href="fonts.css">
-<link rel="stylesheet" href="styles.css">
-<link rel="preconnect" href="https://api.github.com" crossorigin>
-<link rel="dns-prefetch" href="https://api.github.com">
-<script>(function(){var d=document.documentElement;function lock(){d.classList.add('gate-locked')}try{if(sessionStorage.getItem('thrive_gate_v2')!=='0983eea9ab7aa4a1dea8d6015db3b63a66e67144947a7705cbab6ce91b395dc8')lock()}catch(e){lock()}/* boot failsafe: a script that never runs must not leave a blank locked page */setTimeout(function(){if(!d.classList.contains('gate-locked')||document.getElementById('thriveGate'))return;var ar=false;try{ar=localStorage.getItem('thrive_lang')==='ar'}catch(e){}var p=document.createElement('p');p.className='bootfail';p.textContent=ar?'تعذّر تشغيل الكونسول. أعد تحميل الصفحة، وتحقق من الاتصال إن تكرر الأمر.':'The console could not start. Reload the page, and check your connection if it happens again.';(document.body||d).appendChild(p)},6000)})();</script>
-<script src="gate.js" defer></script>
+<meta name="thrive-build" content="5c1eaa5f">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Thrive Board</title>
+<style>
+  html,body{margin:0;background:#07070b;color:#e7e7ea;font-family:Lato,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
+  *{box-sizing:border-box}
+  a{color:#71BFCC}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 14px;border-bottom:1px solid #17171f}
+  .brand{font-weight:800;letter-spacing:.02em;font-size:16px}
+  .muted{color:#8a8a93;font-size:12px}
+  .row-actions{display:flex;gap:10px;align-items:center}
+  .link{background:none;border:0;color:#71BFCC;font:inherit;cursor:pointer;padding:0}
+  .err{margin:10px 0;padding:10px 12px;border:1px solid #4a1d24;background:#1a0e11;color:#ff8a8a;border-radius:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .signin{max-width:340px;margin:8vh auto 0;background:#0e0e14;border:1px solid #1e1e28;border-radius:14px;padding:26px 22px;text-align:center}
+  .signin h1{font-size:18px;margin:0 0 6px}
+  .signin p{color:#8a8a93;font-size:13px;margin:0 0 16px}
+  input{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:11px 12px;font-size:15px;margin:6px 0;font-family:inherit;outline:none}
+  input:focus{border-color:#5D7FB7}
+  button.primary{width:100%;margin-top:10px;padding:11px 16px;border:0;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;color:#04252b;background:#71BFCC;font-family:inherit}
+  button.primary:disabled{opacity:.6;cursor:default}
+  .lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:start;margin-top:12px}
+  .lane{background:#0c0c12;border:1px solid #191921;border-radius:12px;padding:10px}
+  .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#9a9aa6;margin:2px 4px 10px;display:flex;justify-content:space-between;align-items:center}
+  .lane h2 .n{color:#6a6a74;font-weight:700}
+  .card{background:#111119;border:1px solid #20202a;border-radius:10px;padding:10px 11px;margin:0 0 8px}
+  .card .b{font-weight:700;font-size:14px;word-break:break-word}
+  .card .s{color:#8a8a93;font-size:12px;margin-top:4px;word-break:break-word}
+  .badge{display:inline-block;font-size:11px;color:#8a8a93;border:1px solid #26262f;border-radius:999px;padding:1px 7px;margin:6px 6px 0 0}
+  .empty{color:#5a5a64;font-size:12px;padding:8px 4px}
+</style>
 </head>
 <body>
-<noscript><p class="bootfail">This console needs JavaScript to run. <span dir="rtl">يحتاج هذا الكونسول إلى تفعيل JavaScript.</span></p></noscript>
-<header class="top">
-  <a class="brand" href="index.html"><img src="../assets/thrive-logo.png" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
-  <nav class="nav">
-    <a href="console.html#board" class="active" data-i18n="nav_board">Thrive Operations</a>
-    <a href="console.html#home" data-i18n="nav_insights">Insights</a>
-    <a href="console.html#library" data-i18n="nav_library">Library</a>
-    <a href="console.html#settings" data-i18n="nav_settings">Settings</a>
-    <button id="langbtn" class="langbtn">العربية</button>
-  </nav>
-</header>
-
-<main class="wrap">
-
-  <div class="page-h">
-    <h1 class="title" data-i18n="board_title">Thrive Operations</h1>
-    <span class="pill" id="boardSync"></span>
+<div class="wrap">
+  <div class="top">
+    <span class="brand">Thrive Board</span>
+    <span class="muted">build 5c1eaa5f</span>
   </div>
-  <p class="sub" data-i18n="board_sub"></p>
+  <div id="root"></div>
+</div>
+<script>
+(function(){
+  "use strict";
+  // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "5c1eaa5f";
+  var QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived&order=last_activity_ts.desc.nullslast";
+  var LANES = ["draft","live","sent","opened","replied"];
+  var LABEL = { draft:"Draft", live:"Live", sent:"Sent", opened:"Opened", replied:"Replied", other:"Other" };
+  var root = document.getElementById("root");
 
-  <!-- The one Syne moment on this screen. Filled by initBoard from
-       ThriveBoard.verdict(). IDENTITY §6.2 -->
-  <div class="board-head">
-    <div class="ops-status">
-      <span class="ops-badge" id="boardBadge" data-icon="eye" aria-hidden="true"></span>
-      <div class="ops-lines">
-        <div class="verdict" id="boardVerdict"></div>
-        <div class="verdict-sub" id="boardVerdictSub"></div>
-      </div>
-    </div>
-    <div class="toolbar" style="margin:0">
-      <a class="btn" href="editor.html" data-icon="page" data-i18n="new_opp">New opportunity</a>
-      <button class="btn ghost js-send-open" id="boardSendBtn" type="button" data-icon="send" data-i18n="home_send">Send an email</button>
-      <a class="btn ghost" href="library.html" data-icon="archive" data-i18n="home_open_lib">Open library</a>
-      <a class="btn ghost" href="index.html" data-icon="spark" data-i18n="board_numbers">See the numbers</a>
-      <!-- The reply attribution surface, opened from here. A quiet badge carries the unmatched-human count. -->
-      <button class="btn ghost" id="boardInboxBtn" type="button" data-icon="mail" aria-expanded="false" aria-controls="boardInbox">
-        <span data-i18n="rp_inbox">Replies</span><span class="inbox-badge" id="boardInboxBadge" hidden>0</span>
-      </button>
-      <button class="btn ghost" id="boardRefresh" data-icon="undo" data-i18n="ins_refresh">Refresh</button>
-    </div>
-  </div>
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+  function redInto(node, where, e){
+    try{ var d=document.createElement("div"); d.className="err"; d.textContent="ERROR ("+where+"): "+((e&&e.message)||e); node.appendChild(d); }catch(x){}
+  }
+  function redFull(where, e){ try{ root.innerHTML=""; redInto(root, where, e); }catch(x){} }
+  // Any uncaught error becomes visible red text too, never a black screen.
+  window.addEventListener("error", function(ev){ try{ redInto(root, "uncaught", (ev&&ev.error)||(ev&&ev.message)||"error"); }catch(x){} });
+  window.addEventListener("unhandledrejection", function(ev){ try{ redInto(root, "promise", (ev&&ev.reason)||"promise rejected"); }catch(x){} });
 
-  <!-- The replies inbox: held human replies, the attach picker, and the collapsed noise. One surface,
-       here on the board, never a second copy in Settings. -->
-  <section class="board-inbox" id="boardInbox" hidden aria-label="Replies inbox">
-    <div class="board-inbox-body" id="boardInboxBody"></div>
-  </section>
+  // 1. The one sign-in surface. On submit, the bare GoTrue grant; the token is held in a local variable and
+  //    handed to loadBoard. No storage, no refresh, no redirect (READ-ONLY reader).
+  function signinView(){
+    root.innerHTML =
+      '<div class="signin">' +
+      '<h1>Thrive Board</h1>' +
+      '<p>Sign in to view the board.</p>' +
+      '<input id="em" type="email" autocomplete="username" spellcheck="false" placeholder="Operator email">' +
+      '<input id="pw" type="password" autocomplete="current-password" placeholder="Password">' +
+      '<button id="go" class="primary" type="button">Sign in</button>' +
+      '<div id="siErr"></div>' +
+      '</div>';
+    var em=document.getElementById("em"), pw=document.getElementById("pw"), go=document.getElementById("go"), er=document.getElementById("siErr");
+    setTimeout(function(){ try{ em.focus(); }catch(e){} }, 40);
+    function submit(){
+      er.innerHTML="";
+      var e=(em.value||"").trim(), p=pw.value||"";
+      if(!e || !p){ redInto(er, "sign-in", new Error("Enter email and password.")); return; }
+      go.disabled=true; go.textContent="Signing in";
+      signIn(e, p).then(function(token){ loadBoard(token); })
+        .catch(function(ex){ go.disabled=false; go.textContent="Sign in"; er.innerHTML=""; redInto(er, "sign-in", ex); });
+    }
+    go.addEventListener("click", submit);
+    pw.addEventListener("keydown", function(ev){ if(ev.key==="Enter") submit(); });
+  }
 
-  <!-- Direction A pipeline strip: the five stage counts from board state, the stage the headline
-       speaks to lit in the rose accent. A quiet visual summary, so it is hidden from the reader
-       that the interactive tab bar already announces. -->
-  <div class="ops-pipeline" id="boardPipeline" aria-hidden="true"></div>
+  // The device-proven bare GoTrue password grant: apikey header, JSON POST, NO Authorization, cache no-store,
+  // body read via arrayBuffer + TextDecoder. Resolves with the access token (a local value), never stored.
+  function signIn(email, password){
+    var url = URL_BASE + "/auth/v1/token?grant_type=password";
+    return fetch(url, {
+      method:"POST",
+      headers:{ "apikey": ANON, "Content-Type":"application/json" },
+      body: JSON.stringify({ email:email, password:password }),
+      cache:"no-store"
+    }).then(function(res){
+      var read = (typeof res.arrayBuffer==="function")
+        ? res.arrayBuffer().then(function(b){ return new TextDecoder("utf-8").decode(b); })
+        : res.text();
+      return read.then(function(t){
+        t = String(t||""); if(t.charCodeAt(0)===0xFEFF) t=t.slice(1); t=t.trim();
+        var d=null; try{ d = t ? JSON.parse(t) : null; }catch(e){}
+        if(!res.ok || !d || !d.access_token){
+          throw new Error((d && (d.error_description||d.msg||d.message)) || ("HTTP "+res.status+" (sign-in)"));
+        }
+        return d.access_token;
+      });
+    });
+  }
 
-  <!-- Not synced. Not dismissable: a warning you can dismiss is one you dismiss on the day
-       you are busiest, which is the day it matters. -->
-  <div id="boardBand" hidden></div>
+  // 2. One REST GET of console_board with the token as the Bearer plus the apikey header.
+  function fetchBoard(token){
+    var url = URL_BASE + "/rest/v1/console_board?" + QUERY;
+    return fetch(url, {
+      method:"GET",
+      headers:{ "apikey": ANON, "Authorization": "Bearer " + token },
+      cache:"no-store"
+    }).then(function(res){
+      return res.text().then(function(t){
+        var d=null; try{ d = t ? JSON.parse(t) : null; }catch(e){}
+        if(!res.ok){ throw new Error((d && d.message) || ("HTTP "+res.status+" (board)")); }
+        return Array.isArray(d) ? d : [];
+      });
+    });
+  }
 
-  <!-- The day's batch. Nothing is written until the report has been read. -->
-  <section class="intake" id="intakeZone">
-    <div class="intake-head">
-      <h3 class="block-h" data-icon="import" data-i18n="in_h">Today's batch</h3>
-      <label class="btn ghost sm" for="intakeFile" data-i18n="in_pick">Choose files</label>
-      <input id="intakeFile" type="file" multiple accept=".html,.htm,.md,.txt,.json,.zip" hidden>
-    </div>
-    <p class="sub" data-i18n="in_p"></p>
-    <div class="intake-out" id="intakeOut"></div>
-  </section>
+  // 3. Render the rows as plain cards grouped by lane. Every field access defaults to empty.
+  function laneOf(row){ var st=(row && row.stage) || ""; return LANES.indexOf(st)>=0 ? st : "other"; }
+  function cardHtml(row){
+    row = row || {};
+    var biz = esc(row.business || row.slug || "(unnamed)");
+    var bits = [];
+    var sc = Number(row.sent_count||0), oc = Number(row.open_count||0);
+    if(sc) bits.push(sc + (sc===1?" send":" sends"));
+    if(oc) bits.push(oc + (oc===1?" open":" opens"));
+    if(row.replied) bits.push("replied");
+    if(row.idle_days!=null && row.idle_days!=="") bits.push(row.idle_days + "d idle");
+    var badges = "";
+    if(row.has_page)  badges += '<span class="badge">page</span>';
+    if(row.has_email) badges += '<span class="badge">email</span>';
+    if(row.archived)  badges += '<span class="badge">archived</span>';
+    return '<div class="card"><div class="b">' + biz + '</div>' +
+           (bits.length ? ('<div class="s">' + esc(bits.join("  \u00b7  ")) + '</div>') : '') +
+           (badges ? ('<div>' + badges + '</div>') : '') +
+           '</div>';
+  }
+  function renderBoard(rows){
+    rows = Array.isArray(rows) ? rows : [];
+    var groups = {}; LANES.concat(["other"]).forEach(function(l){ groups[l]=[]; });
+    rows.forEach(function(r){ try{ groups[laneOf(r)].push(r); }catch(e){} });
+    var order = LANES.slice(); if(groups.other.length) order.push("other");
+    var html = '<div class="top" style="border:0;padding:8px 2px"><span class="muted">' + rows.length +
+               ' opportunities</span><span class="row-actions"><button class="link" id="reload" type="button">Refresh</button></span></div>' +
+               '<div class="lanes">';
+    order.forEach(function(l){
+      var list = groups[l] || [];
+      html += '<div class="lane"><h2>' + esc(LABEL[l]||l) + '<span class="n">' + list.length + '</span></h2>';
+      html += list.length ? list.map(cardHtml).join("") : '<div class="empty">none</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    root.innerHTML = html;
+    var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(rl.__token); });
+    if(rl) rl.__token = renderBoard.__token;
+  }
 
-  <!-- Status tab bar. Shown only below the breakpoint, where the five columns cannot sit side by
-       side; it switches which lane is visible. Same icons and counts as the lanes, filled by initBoard. -->
-  <div class="board-tabs" id="boardTabs" role="tablist">
-    <button class="btab" data-tab="draft" role="tab" aria-selected="false"><span class="btab-ic" data-icon="edit" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_draft">Draft</span><span class="btab-n" data-count-tab="draft">0</span></button>
-    <button class="btab" data-tab="live" role="tab" aria-selected="false"><span class="btab-ic" data-icon="check" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_live">Live</span><span class="btab-n" data-count-tab="live">0</span></button>
-    <button class="btab" data-tab="sent" role="tab" aria-selected="false"><span class="btab-ic" data-icon="send" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_sent">Sent</span><span class="btab-n" data-count-tab="sent">0</span></button>
-    <button class="btab" data-tab="opened" role="tab" aria-selected="false"><span class="btab-ic" data-icon="spark" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_opened">Opened</span><span class="btab-n" data-count-tab="opened">0</span></button>
-    <button class="btab" data-tab="replied" role="tab" aria-selected="false"><span class="btab-ic" data-icon="mail" aria-hidden="true"></span><span class="btab-l" data-i18n="lane_replied">Replied</span><span class="btab-n" data-count-tab="replied">0</span></button>
-  </div>
+  function loadBoard(token){
+    renderBoard.__token = token;
+    root.innerHTML = '<div class="muted" style="padding:10px 2px">Loading the board...</div>';
+    fetchBoard(token)
+      .then(function(rows){ try{ renderBoard(rows); }catch(e){ redFull("render", e); } })
+      .catch(function(e){ redFull("board fetch", e); });
+  }
 
-  <!-- Lanes. Order is the order of the gradient, and the order is the journey. -->
-  <div class="board" id="boardLanes">
-    <section class="lane" data-lane="draft">
-      <header class="lane-head">
-        <span class="lane-ic" data-icon="edit" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_draft">Draft</span>
-        <span class="lane-count" data-count="draft">0</span>
-      </header>
-      <div class="lane-body" data-body="draft"></div>
-    </section>
-
-    <section class="lane" data-lane="live">
-      <header class="lane-head">
-        <span class="lane-ic" data-icon="check" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_live">Live</span>
-        <span class="lane-count" data-count="live">0</span>
-      </header>
-      <div class="lane-body" data-body="live"></div>
-    </section>
-
-    <section class="lane" data-lane="sent">
-      <header class="lane-head">
-        <span class="lane-ic" data-icon="send" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_sent">Sent</span>
-        <span class="lane-count" data-count="sent">0</span>
-      </header>
-      <div class="lane-body" data-body="sent"></div>
-    </section>
-
-    <section class="lane" data-lane="opened">
-      <header class="lane-head">
-        <span class="lane-ic" data-icon="spark" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_opened">Opened</span>
-        <span class="lane-count" data-count="opened">0</span>
-      </header>
-      <div class="lane-body" data-body="opened"></div>
-    </section>
-
-    <section class="lane" data-lane="replied">
-      <header class="lane-head">
-        <span class="lane-ic" data-icon="mail" aria-hidden="true"></span><span class="lane-title" data-i18n="lane_replied">Replied</span>
-        <span class="lane-count" data-count="replied">0</span>
-      </header>
-      <div class="lane-body" data-body="replied"></div>
-    </section>
-  </div>
-
-  <!-- Summary chips. Each one is a filter, so every number on this screen is
-       also an action. IDENTITY §9.2 -->
-  <div class="board-note" id="boardChips"></div>
-
-  <!-- Finished work. Counted, not competing for width. IDENTITY §3.3 -->
-  <section class="tray" id="boardTray">
-    <button class="tray-toggle" id="trayToggle" aria-expanded="false" aria-controls="trayBody">
-      <span class="tray-chev" data-icon="chevron" data-icon-size="12" aria-hidden="true"></span>
-      <span data-i18n="tray_closed">Closed</span>
-      <span class="lane-count" id="trayCount">0</span>
-    </button>
-    <div class="tray-body" id="trayBody">
-      <div class="tray-list" id="trayList"></div>
-    </div>
-  </section>
-
-  <!-- Signed-out read state. The Supabase store is the source of truth and it is scoped to a session,
-       so a signed-out read is asked to sign in, never shown as an empty board. This is not the empty
-       state and not the degrade banner: it appears only when reads come from Supabase with no session. -->
-  <div class="empty" id="boardAuth" hidden>
-    <span class="empty-ic" data-icon="lock" data-icon-size="32" aria-hidden="true"></span>
-    <h3 class="block-h" data-i18n="board_auth_h">Sign in to see your board.</h3>
-    <p class="sub" data-i18n="board_auth_p"></p>
-    <a class="btn" href="console.html#settings" data-icon="check" data-i18n="board_auth_cta">Go to sign-in</a>
-  </div>
-
-  <!-- Empty state. A designed state, not a missing one. IDENTITY §9.3 -->
-  <div class="empty" id="boardEmpty" hidden>
-    <span class="empty-ic" data-icon="spark" data-icon-size="32" aria-hidden="true"></span>
-    <h3 class="block-h" data-i18n="board_empty_h">No opportunities yet.</h3>
-    <p class="sub" data-i18n="board_empty_p"></p>
-    <a class="btn" href="editor.html" data-icon="page" data-i18n="new_opp">New opportunity</a>
-  </div>
-</main>
-
-<script src="icons.js" defer></script>
-<script src="i18n.js" defer></script>
-<script src="stage-model.js" defer></script>
-<script src="lifecycle.js" defer></script>
-<script src="intake.js" defer></script>
-<script src="numbers.js" defer></script>
-<script src="inbound.js" defer></script>
-<script src="kinds.js" defer></script>
-<script src="store.js" defer></script>
-<script src="drafts.js" defer></script>
-<script src="flows.js" defer></script>
-<script src="app.js" defer></script>
-<script>document.addEventListener("DOMContentLoaded",function(){ initLang(); initBoard(); });</script>
+  // 4. READ-ONLY: display only. Everything is wrapped; a boot failure prints red, never a black page.
+  try{ signinView(); }catch(e){ redFull("boot", e); }
+})();
+</script>
 </body>
 </html>

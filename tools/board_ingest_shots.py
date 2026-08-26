@@ -24,7 +24,7 @@ with sync_playwright() as p:
     for lang in ("en","ar"):
         for (w,h,tag) in [(390,900,"phone"),(1280,900,"desktop")]:
             pg=b.new_page(viewport={"width":w,"height":h})
-            pg.goto(f"{base}/library/board.html")
+            pg.goto(f"{base}/library/board.view.html")
             if pg.query_selector("#gateInput"): pg.fill("#gateInput","ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(300)
             if lang=="ar":
                 pg.evaluate("()=>{try{localStorage.setItem('thrive_lang','ar');}catch(e){}}"); pg.reload()

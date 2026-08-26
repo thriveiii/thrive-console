@@ -31,7 +31,7 @@ ck("the ratified AR tagline lands verbatim, no guillemets in the UI string",
    'board_sub:      "حيث يزدهر تواصلك مع العالم الخارجي"' in i18n and "«حيث" not in i18n)
 ck("the old tagline is gone from the source (greps to zero in library/)",
    "every opportunity stands" not in i18n and "أين تقف كل فرصة" not in i18n)
-for f in ["library/console.html","library/board.html","library/app.js"]:
+for f in ["library/console.html","library/board.view.html","library/app.js"]:
     txt=open(os.path.join(ROOT,f),encoding="utf-8").read()
     ck(f"the old tagline is absent from {f}",
        "every opportunity stands" not in txt and "أين تقف كل فرصة" not in txt)

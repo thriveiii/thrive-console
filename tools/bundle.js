@@ -24,7 +24,10 @@ const read = p => fs.readFileSync(p, "utf8");
 
 /* order matters: it is the reading order of the console itself */
 const VIEWS = [
-  { id: "board",     file: "board.html",     init: "initBoard",     key: "nav_board" },
+  // board.view.html is the hand-maintained board VIEW source (its <main> is spliced into console.html/app.html
+  // and the legacy per-view tests drive it). It was renamed from board.html so the served /library/board.html
+  // can be the tiny STANDALONE reader (buildBoard) that loads no app.js; the two must not share one filename.
+  { id: "board",     file: "board.view.html", init: "initBoard",    key: "nav_board" },
   /* Labelled Insights, not Overview: it is the only screen that answers which message is
      working, which campaign moved, and who is paying attention, and a name that does not say
      so is a name nobody taps. */
@@ -873,6 +876,211 @@ ${loader}
 `;
 }
 
+/* ---- STANDALONE_BOARD: library/board.html --------------------------------------------------------
+   A fresh, INDEPENDENT minimal reader of console_board that does NOT load app.js, gate.js, stage-model.js,
+   or any of the heavy chain. Every path that loads app.js (~890 KB) hangs at the board render on-device, so
+   this stops depending on it entirely. The OUTPUT is one self-contained document that loads nothing: no
+   external script, no external stylesheet, no console-app file. It is generated here only so the public
+   connection values stay in sync with config.js (SUPA_URL/SUPA_ANON, both public by design) and so it
+   carries the BUILD stamp; the served bytes have zero runtime dependency on the console app.
+
+   It does exactly four things, minimal vanilla JS: (1) one sign-in surface -> the device-proven bare GoTrue
+   password grant (apikey header, JSON POST, no Authorization, cache no-store, arrayBuffer + TextDecoder),
+   the token held in a local variable; (2) one REST GET of console_board with that token as the Bearer plus
+   the apikey header; (3) render the rows as plain HTML cards grouped by lane, every field access defaulting
+   to empty, dark #07070b, Lato, no blur; (4) READ-ONLY. Any error is printed as visible red text on screen. */
+function buildBoard(){
+  const BOARD_QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived&order=last_activity_ts.desc.nullslast";
+  return `<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="thrive-build" content="${BUILD}">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Thrive Board</title>
+<style>
+  html,body{margin:0;background:#07070b;color:#e7e7ea;font-family:Lato,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
+  *{box-sizing:border-box}
+  a{color:#71BFCC}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 14px;border-bottom:1px solid #17171f}
+  .brand{font-weight:800;letter-spacing:.02em;font-size:16px}
+  .muted{color:#8a8a93;font-size:12px}
+  .row-actions{display:flex;gap:10px;align-items:center}
+  .link{background:none;border:0;color:#71BFCC;font:inherit;cursor:pointer;padding:0}
+  .err{margin:10px 0;padding:10px 12px;border:1px solid #4a1d24;background:#1a0e11;color:#ff8a8a;border-radius:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .signin{max-width:340px;margin:8vh auto 0;background:#0e0e14;border:1px solid #1e1e28;border-radius:14px;padding:26px 22px;text-align:center}
+  .signin h1{font-size:18px;margin:0 0 6px}
+  .signin p{color:#8a8a93;font-size:13px;margin:0 0 16px}
+  input{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:11px 12px;font-size:15px;margin:6px 0;font-family:inherit;outline:none}
+  input:focus{border-color:#5D7FB7}
+  button.primary{width:100%;margin-top:10px;padding:11px 16px;border:0;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;color:#04252b;background:#71BFCC;font-family:inherit}
+  button.primary:disabled{opacity:.6;cursor:default}
+  .lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:start;margin-top:12px}
+  .lane{background:#0c0c12;border:1px solid #191921;border-radius:12px;padding:10px}
+  .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#9a9aa6;margin:2px 4px 10px;display:flex;justify-content:space-between;align-items:center}
+  .lane h2 .n{color:#6a6a74;font-weight:700}
+  .card{background:#111119;border:1px solid #20202a;border-radius:10px;padding:10px 11px;margin:0 0 8px}
+  .card .b{font-weight:700;font-size:14px;word-break:break-word}
+  .card .s{color:#8a8a93;font-size:12px;margin-top:4px;word-break:break-word}
+  .badge{display:inline-block;font-size:11px;color:#8a8a93;border:1px solid #26262f;border-radius:999px;padding:1px 7px;margin:6px 6px 0 0}
+  .empty{color:#5a5a64;font-size:12px;padding:8px 4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <span class="brand">Thrive Board</span>
+    <span class="muted">build ${BUILD}</span>
+  </div>
+  <div id="root"></div>
+</div>
+<script>
+(function(){
+  "use strict";
+  // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
+  var URL_BASE = ${JSON.stringify(SUPA_URL)}, ANON = ${JSON.stringify(SUPA_ANON)}, BUILD = ${JSON.stringify(BUILD)};
+  var QUERY = ${JSON.stringify(BOARD_QUERY)};
+  var LANES = ["draft","live","sent","opened","replied"];
+  var LABEL = { draft:"Draft", live:"Live", sent:"Sent", opened:"Opened", replied:"Replied", other:"Other" };
+  var root = document.getElementById("root");
+
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+  function redInto(node, where, e){
+    try{ var d=document.createElement("div"); d.className="err"; d.textContent="ERROR ("+where+"): "+((e&&e.message)||e); node.appendChild(d); }catch(x){}
+  }
+  function redFull(where, e){ try{ root.innerHTML=""; redInto(root, where, e); }catch(x){} }
+  // Any uncaught error becomes visible red text too, never a black screen.
+  window.addEventListener("error", function(ev){ try{ redInto(root, "uncaught", (ev&&ev.error)||(ev&&ev.message)||"error"); }catch(x){} });
+  window.addEventListener("unhandledrejection", function(ev){ try{ redInto(root, "promise", (ev&&ev.reason)||"promise rejected"); }catch(x){} });
+
+  // 1. The one sign-in surface. On submit, the bare GoTrue grant; the token is held in a local variable and
+  //    handed to loadBoard. No storage, no refresh, no redirect (READ-ONLY reader).
+  function signinView(){
+    root.innerHTML =
+      '<div class="signin">' +
+      '<h1>Thrive Board</h1>' +
+      '<p>Sign in to view the board.</p>' +
+      '<input id="em" type="email" autocomplete="username" spellcheck="false" placeholder="Operator email">' +
+      '<input id="pw" type="password" autocomplete="current-password" placeholder="Password">' +
+      '<button id="go" class="primary" type="button">Sign in</button>' +
+      '<div id="siErr"></div>' +
+      '</div>';
+    var em=document.getElementById("em"), pw=document.getElementById("pw"), go=document.getElementById("go"), er=document.getElementById("siErr");
+    setTimeout(function(){ try{ em.focus(); }catch(e){} }, 40);
+    function submit(){
+      er.innerHTML="";
+      var e=(em.value||"").trim(), p=pw.value||"";
+      if(!e || !p){ redInto(er, "sign-in", new Error("Enter email and password.")); return; }
+      go.disabled=true; go.textContent="Signing in";
+      signIn(e, p).then(function(token){ loadBoard(token); })
+        .catch(function(ex){ go.disabled=false; go.textContent="Sign in"; er.innerHTML=""; redInto(er, "sign-in", ex); });
+    }
+    go.addEventListener("click", submit);
+    pw.addEventListener("keydown", function(ev){ if(ev.key==="Enter") submit(); });
+  }
+
+  // The device-proven bare GoTrue password grant: apikey header, JSON POST, NO Authorization, cache no-store,
+  // body read via arrayBuffer + TextDecoder. Resolves with the access token (a local value), never stored.
+  function signIn(email, password){
+    var url = URL_BASE + "/auth/v1/token?grant_type=password";
+    return fetch(url, {
+      method:"POST",
+      headers:{ "apikey": ANON, "Content-Type":"application/json" },
+      body: JSON.stringify({ email:email, password:password }),
+      cache:"no-store"
+    }).then(function(res){
+      var read = (typeof res.arrayBuffer==="function")
+        ? res.arrayBuffer().then(function(b){ return new TextDecoder("utf-8").decode(b); })
+        : res.text();
+      return read.then(function(t){
+        t = String(t||""); if(t.charCodeAt(0)===0xFEFF) t=t.slice(1); t=t.trim();
+        var d=null; try{ d = t ? JSON.parse(t) : null; }catch(e){}
+        if(!res.ok || !d || !d.access_token){
+          throw new Error((d && (d.error_description||d.msg||d.message)) || ("HTTP "+res.status+" (sign-in)"));
+        }
+        return d.access_token;
+      });
+    });
+  }
+
+  // 2. One REST GET of console_board with the token as the Bearer plus the apikey header.
+  function fetchBoard(token){
+    var url = URL_BASE + "/rest/v1/console_board?" + QUERY;
+    return fetch(url, {
+      method:"GET",
+      headers:{ "apikey": ANON, "Authorization": "Bearer " + token },
+      cache:"no-store"
+    }).then(function(res){
+      return res.text().then(function(t){
+        var d=null; try{ d = t ? JSON.parse(t) : null; }catch(e){}
+        if(!res.ok){ throw new Error((d && d.message) || ("HTTP "+res.status+" (board)")); }
+        return Array.isArray(d) ? d : [];
+      });
+    });
+  }
+
+  // 3. Render the rows as plain cards grouped by lane. Every field access defaults to empty.
+  function laneOf(row){ var st=(row && row.stage) || ""; return LANES.indexOf(st)>=0 ? st : "other"; }
+  function cardHtml(row){
+    row = row || {};
+    var biz = esc(row.business || row.slug || "(unnamed)");
+    var bits = [];
+    var sc = Number(row.sent_count||0), oc = Number(row.open_count||0);
+    if(sc) bits.push(sc + (sc===1?" send":" sends"));
+    if(oc) bits.push(oc + (oc===1?" open":" opens"));
+    if(row.replied) bits.push("replied");
+    if(row.idle_days!=null && row.idle_days!=="") bits.push(row.idle_days + "d idle");
+    var badges = "";
+    if(row.has_page)  badges += '<span class="badge">page</span>';
+    if(row.has_email) badges += '<span class="badge">email</span>';
+    if(row.archived)  badges += '<span class="badge">archived</span>';
+    return '<div class="card"><div class="b">' + biz + '</div>' +
+           (bits.length ? ('<div class="s">' + esc(bits.join("  \\u00b7  ")) + '</div>') : '') +
+           (badges ? ('<div>' + badges + '</div>') : '') +
+           '</div>';
+  }
+  function renderBoard(rows){
+    rows = Array.isArray(rows) ? rows : [];
+    var groups = {}; LANES.concat(["other"]).forEach(function(l){ groups[l]=[]; });
+    rows.forEach(function(r){ try{ groups[laneOf(r)].push(r); }catch(e){} });
+    var order = LANES.slice(); if(groups.other.length) order.push("other");
+    var html = '<div class="top" style="border:0;padding:8px 2px"><span class="muted">' + rows.length +
+               ' opportunities</span><span class="row-actions"><button class="link" id="reload" type="button">Refresh</button></span></div>' +
+               '<div class="lanes">';
+    order.forEach(function(l){
+      var list = groups[l] || [];
+      html += '<div class="lane"><h2>' + esc(LABEL[l]||l) + '<span class="n">' + list.length + '</span></h2>';
+      html += list.length ? list.map(cardHtml).join("") : '<div class="empty">none</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    root.innerHTML = html;
+    var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(rl.__token); });
+    if(rl) rl.__token = renderBoard.__token;
+  }
+
+  function loadBoard(token){
+    renderBoard.__token = token;
+    root.innerHTML = '<div class="muted" style="padding:10px 2px">Loading the board...</div>';
+    fetchBoard(token)
+      .then(function(rows){ try{ renderBoard(rows); }catch(e){ redFull("render", e); } })
+      .catch(function(e){ redFull("board fetch", e); });
+  }
+
+  // 4. READ-ONLY: display only. Everything is wrapped; a boot failure prints red, never a black page.
+  try{ signinView(); }catch(e){ redFull("boot", e); }
+})();
+</script>
+</body>
+</html>
+`;
+}
+
 function emit(file, inline){
   const html = build(inline);
   const dest = path.join(ROOT, file);
@@ -892,6 +1100,17 @@ emit("dist/thrive-console.html", true);
   const dest = path.join(ROOT, "library/app.html");
   fs.writeFileSync(dest, html);
   console.log("wrote library/app.html  (" + Math.round(html.length / 1024) + " KB; clean single-document entry)");
+})();
+
+/* STANDALONE_BOARD: the tiny, self-contained board reader. Lives beside app.html/console.html in library/, so
+   it is committed like them and carried into publish/ by the "library" copy; reachable at /library/board.html.
+   It loads NO console-app file at runtime (no app.js, gate.js, stage-model.js, config.js), reads console_board
+   with one REST GET, and is READ-ONLY. */
+(function(){
+  const html = buildBoard();
+  const dest = path.join(ROOT, "library/board.html");
+  fs.writeFileSync(dest, html);
+  console.log("wrote library/board.html  (" + Math.round(html.length / 1024) + " KB; standalone console_board reader, loads nothing)");
 })();
 
 /* Part 1, the load-bearing cache fix: the root redirect carries the build id, so a new deploy points the

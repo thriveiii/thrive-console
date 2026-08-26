@@ -1,4 +1,4 @@
-"""P16 · The match join, completed, on the LIVE "Today's batch" board surface (library/board.html).
+"""P16 · The match join, completed, on the LIVE "Today's batch" board surface (library/board.view.html).
 
 The real batch-13 drop (Aug 18) resolved four and split two: hypergoat-coffee and drip-docx each showed a
 "needs message" page card AND a separately-spawned pageless draft (hypergoat-coffee-roasters,
@@ -73,7 +73,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
     pg = b.new_page(viewport={"width": 1280, "height": 1100})
     errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
-    pg.goto(f"{base}/library/board.html")
+    pg.goto(f"{base}/library/board.view.html")
     if pg.query_selector("#gateInput"):
         pg.fill("#gateInput", "ConThrive2030"); pg.click(".gate-btn"); pg.wait_for_timeout(400)
     pg.evaluate("(s)=>localStorage.setItem('thrive_opps_v1', s)", GHOST)
