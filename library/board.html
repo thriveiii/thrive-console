@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="f4349701">
+<meta name="thrive-build" content="32f716c5">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -121,6 +121,10 @@
   .act-status{font-size:12px;margin-top:8px;color:#8a8a93;min-height:16px;unicode-bidi:isolate}
   .act-status.ok{color:#7fd18b}
   .act-status.bad{color:#ff8a8a}
+  .pf-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 4px}
+  .pf-h2{font-size:16px;font-weight:650;color:#eef;margin:0}
+  .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
+  .pf-note{font-size:11.5px;color:#6a6a74;margin-top:6px}
   .notes-list{display:flex;flex-direction:column;gap:6px;margin:2px 0 10px}
   .note-item{font-size:12.5px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:7px 9px;word-break:break-word}
   .note-item .nmeta{display:block;font-size:10.5px;color:#6a6a74;margin-top:3px;unicode-bidi:isolate}
@@ -135,16 +139,17 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build f4349701</span>
+    <span class="muted">build 32f716c5</span>
   </div>
   <div id="root"></div>
 </div>
 <div id="scrim" class="scrim" hidden><div id="drawer" class="drawer" role="dialog" aria-modal="true"></div></div>
+<div id="pfScrim" class="scrim" hidden><div id="pfPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <script>
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "f4349701";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "32f716c5";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -164,6 +169,10 @@
     en: { title:"Thrive Board", sub:"Sign in to view the board.", email:"Operator email", pass:"Password",
           go:"Sign in", busy:"Signing in", err:"Could not sign in.",
           net:"Could not reach the service. Try again.", fill:"Enter email and password.",
+          pf_open:"Profile", pf_title:"Your profile", pf_email:"Email", pf_name:"Display name",
+          pf_name_ph:"How your name shows on notes and sends", pf_save:"Save name", pf_saving:"Saving\u2026",
+          pf_saved:"Saved.", pf_failed:"Could not save. Nothing changed.", pf_role_h:"Functional title",
+          pf_role_none:"Not set", pf_role_note:"Only an admin can change your functional title.", pf_close:"Close",
           refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
           none:"none", unnamed:"(unnamed)",
           l_draft:"Draft", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
@@ -196,6 +205,10 @@
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
+          pf_open:"الملف", pf_title:"ملفك", pf_email:"البريد", pf_name:"الاسم المعروض",
+          pf_name_ph:"كيف يظهر اسمك على الملاحظات والإرسال", pf_save:"حفظ الاسم", pf_saving:"جارٍ الحفظ\u2026",
+          pf_saved:"تم الحفظ.", pf_failed:"تعذّر الحفظ. لم يتغير شيء.", pf_role_h:"المسمى الوظيفي",
+          pf_role_none:"غير محدد", pf_role_note:"يمكن للمشرف فقط تغيير مسماك الوظيفي.", pf_close:"إغلاق",
           refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
           none:"لا شيء", unnamed:"(بدون اسم)",
           l_draft:"مسودة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
@@ -554,6 +567,105 @@ function isOwner(){ return currentRole()==="owner"; }
 // Read-only consumer hooks for later steps (and board_identity_test): the ONE resolver and the current uid.
 // resolveActor reads the live __profileIndex, so a call after loadIdentity settles sees the populated index.
 try{ window.__thriveResolveActor = resolveActor; window.__thriveCurrentUid = currentUid; window.__thriveCurrentRole = currentRole; }catch(e){}
+
+// ===================================================================================================
+// STEP 2B PROFILE SETTINGS. A member-facing surface, opened from the header, showing this operator's email
+// (read-only), display name (editable), and functional title (display only; an admin edits it in a later
+// step). This is the FIRST board.html write to console_profiles: a bounded own-row upsert keyed on
+// uid = currentUid() (== (auth.uid())::text, the live policy on the text uid column), writing ONLY
+// display_name. It never sends signature_title or role, so the admin-gated columns are untouched. The
+// owner/member role is not shown here at all: this surface speaks only the functional title.
+// ===================================================================================================
+
+function pfSetStatus(msg, cls){ var el=document.getElementById("pfStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
+
+// The panel: email (read-only, LTR), display name (editable), functional title (read-only + admin note).
+function profilePanelHtml(){
+  var email = authEmail();
+  var name  = __identity.name  || "";
+  var title = __identity.title || "";
+  return '<div class="pf-head"><h2 class="pf-h2">'+esc(t("pf_title"))+'</h2>'+
+      '<button class="link" id="pfClose" type="button">'+esc(t("pf_close"))+'</button></div>'+
+    '<div class="dw-sec"><h3>'+esc(t("pf_email"))+'</h3>'+
+      '<div class="pf-ro mono-iso" dir="ltr">'+esc(email)+'</div></div>'+
+    '<div class="dw-sec"><h3>'+esc(t("pf_name"))+'</h3>'+
+      '<input class="rec-in" id="pfName" type="text" autocomplete="off" spellcheck="false" '+
+        'value="'+esc(name)+'" placeholder="'+esc(t("pf_name_ph"))+'" aria-label="'+esc(t("pf_name"))+'">'+
+      '<div class="acts"><button class="act send" id="pfSave" type="button">'+esc(t("pf_save"))+'</button></div>'+
+      '<div class="act-status" id="pfStatus"></div></div>'+
+    '<div class="dw-sec"><h3>'+esc(t("pf_role_h"))+'</h3>'+
+      '<div class="pf-ro">'+esc(title || t("pf_role_none"))+'</div>'+
+      '<div class="pf-note">'+esc(t("pf_role_note"))+'</div></div>';
+}
+
+function wireProfile(){
+  var c=document.getElementById("pfClose"); if(c) c.addEventListener("click", closeProfile);
+  var s=document.getElementById("pfSave"); if(s) s.addEventListener("click", onSaveProfile);
+}
+function openProfile(){
+  var sc=document.getElementById("pfScrim"), pn=document.getElementById("pfPanel");
+  if(!sc || !pn) return;
+  pn.innerHTML = profilePanelHtml(); sc.hidden=false; pn.scrollTop=0; wireProfile();     // instant from __identity
+  var uid = currentUid();                                                                 // then refresh, best-effort
+  if(uid){
+    identGet("console_profiles?uid=eq."+enc(uid)+"&select=*&limit=1").then(function(rows){ // select=* so an unapplied column never 400s
+      var pr=(rows||[])[0]; if(!pr) return;
+      __identity.name  = (pr.display_name!=null) ? pr.display_name : __identity.name;
+      var prefs = (pr.prefs && typeof pr.prefs==="object") ? pr.prefs : {};
+      __identity.title = String(pr.signature_title || prefs.title || __identity.title || "");
+      var scr=document.getElementById("pfScrim");
+      if(scr && !scr.hidden){ var p2=document.getElementById("pfPanel"); if(p2){ p2.innerHTML=profilePanelHtml(); wireProfile(); } }
+    });
+  }
+}
+function closeProfile(){ var sc=document.getElementById("pfScrim"); if(sc) sc.hidden=true; }
+
+// The bounded own-row upsert. Body carries ONLY the key (uid) and display_name: signature_title and role are
+// never named, so they are never written. Same settle-always discipline as oppPatch (authFetchOnce timeout
+// REJECTS, one refresh-retry). uid = currentUid() equals (auth.uid())::text, satisfying the own-row policy.
+function profileSaveName(name, retried){
+  var uid = currentUid();
+  var body = { uid: uid, display_name: String(name==null?"":name) };
+  return authFetchOnce(URL_BASE + "/rest/v1/console_profiles", {
+    method:"POST",
+    headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Content-Type":"application/json",
+              "Prefer":"resolution=merge-duplicates,return=representation" },
+    cache:"no-store", body: JSON.stringify(body)
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return profileSaveName(name, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    return (Array.isArray(r.data) ? r.data[0] : r.data) || body;
+  });
+}
+// After a CONFIRMED save, reflect the new name in runtime + the resolver index so note metas show it at once
+// (Step 2A actorName reads __profileIndex live), no reload. Called only on success, so no phantom save.
+function applyNameLocally(name){
+  var uid = currentUid();
+  __identity.name = String(name==null?"":name);
+  if(uid){ if(!__profileIndex.byUid[uid]) __profileIndex.byUid[uid] = { uid:uid, name:"", email:authEmail() }; __profileIndex.byUid[uid].name = __identity.name; }
+  try{ if(window.__thriveIdentity) window.__thriveIdentity.name = __identity.name; }catch(e){}
+  try{ if(__drawerSlug && typeof renderNotesInto==="function") renderNotesInto(__drawerSlug); }catch(e){}
+}
+// Optimistic confirm-or-revert: the person controls their own display_name (any format, first-name-only or
+// full). Nothing is applied until the server confirms; a failure shows red and leaves the runtime name as it
+// was, never a phantom save. Reuses the shared __writing guard so a save never overlaps a send or note write.
+function onSaveProfile(){
+  var input = document.getElementById("pfName"); if(!input) return;
+  var name = String(input.value||"").trim();
+  if(__writing) return; __writing = true;
+  pfSetStatus(t("pf_saving"), ""); var btn=document.getElementById("pfSave"); if(btn) btn.disabled=true;
+  profileSaveName(name).then(function(row){
+    __writing = false; if(btn) btn.disabled=false;
+    applyNameLocally((row && row.display_name!=null) ? row.display_name : name);
+    var i2=document.getElementById("pfName"); if(i2) i2.value = __identity.name;
+    pfSetStatus(t("pf_saved"), "ok");
+  }).catch(function(e){
+    __writing = false; var b2=document.getElementById("pfSave"); if(b2) b2.disabled=false;
+    pfSetStatus((e && e.authRequired) ? t("err") : t("pf_failed"), "bad");
+  });
+}
 
 // ===================================================================================================
 // L5 SINGLE-RECIPIENT SEND - faithful clone of relaySend (app.js:7423) + compile (app.js:1438) for ONE
@@ -1003,12 +1115,14 @@ function onSaveRecipient(slug){
     return '<div class="top" style="padding:8px 2px">' +
       '<span class="muted" id="opChip">' + esc(authEmail()) + '</span>' +
       '<span class="row-actions">' + langBtn() +
+        '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
         '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
         '<button class="link" id="signout" type="button">' + esc(t("signout")) + '</button>' +
       '</span></div>';
   }
   function wireHeader(){
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
+    var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
     var so=document.getElementById("signout"); if(so) so.addEventListener("click", function(){ signOut().then(signinView); });
   }
@@ -1379,7 +1493,9 @@ function onSaveRecipient(slug){
   (function(){ try{
     var s=document.getElementById("scrim");
     if(s) s.addEventListener("click", function(e){ if(e.target===s) closeDrawer(); });
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeDrawer(); });
+    var ps=document.getElementById("pfScrim");                                            // Step 2B profile overlay
+    if(ps) ps.addEventListener("click", function(e){ if(e.target===ps) closeProfile(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); } });
   }catch(e){} })();
   boot();
 })();

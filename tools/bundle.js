@@ -1023,6 +1023,10 @@ function buildBoard(){
   .act-status{font-size:12px;margin-top:8px;color:#8a8a93;min-height:16px;unicode-bidi:isolate}
   .act-status.ok{color:#7fd18b}
   .act-status.bad{color:#ff8a8a}
+  .pf-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 4px}
+  .pf-h2{font-size:16px;font-weight:650;color:#eef;margin:0}
+  .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
+  .pf-note{font-size:11.5px;color:#6a6a74;margin-top:6px}
   .notes-list{display:flex;flex-direction:column;gap:6px;margin:2px 0 10px}
   .note-item{font-size:12.5px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:7px 9px;word-break:break-word}
   .note-item .nmeta{display:block;font-size:10.5px;color:#6a6a74;margin-top:3px;unicode-bidi:isolate}
@@ -1042,6 +1046,7 @@ function buildBoard(){
   <div id="root"></div>
 </div>
 <div id="scrim" class="scrim" hidden><div id="drawer" class="drawer" role="dialog" aria-modal="true"></div></div>
+<div id="pfScrim" class="scrim" hidden><div id="pfPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <script>
 (function(){
   "use strict";
@@ -1066,6 +1071,10 @@ function buildBoard(){
     en: { title:"Thrive Board", sub:"Sign in to view the board.", email:"Operator email", pass:"Password",
           go:"Sign in", busy:"Signing in", err:"Could not sign in.",
           net:"Could not reach the service. Try again.", fill:"Enter email and password.",
+          pf_open:"Profile", pf_title:"Your profile", pf_email:"Email", pf_name:"Display name",
+          pf_name_ph:"How your name shows on notes and sends", pf_save:"Save name", pf_saving:"Saving\\u2026",
+          pf_saved:"Saved.", pf_failed:"Could not save. Nothing changed.", pf_role_h:"Functional title",
+          pf_role_none:"Not set", pf_role_note:"Only an admin can change your functional title.", pf_close:"Close",
           refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
           none:"none", unnamed:"(unnamed)",
           l_draft:"Draft", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
@@ -1098,6 +1107,10 @@ function buildBoard(){
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
+          pf_open:"الملف", pf_title:"ملفك", pf_email:"البريد", pf_name:"الاسم المعروض",
+          pf_name_ph:"كيف يظهر اسمك على الملاحظات والإرسال", pf_save:"حفظ الاسم", pf_saving:"جارٍ الحفظ\\u2026",
+          pf_saved:"تم الحفظ.", pf_failed:"تعذّر الحفظ. لم يتغير شيء.", pf_role_h:"المسمى الوظيفي",
+          pf_role_none:"غير محدد", pf_role_note:"يمكن للمشرف فقط تغيير مسماك الوظيفي.", pf_close:"إغلاق",
           refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
           none:"لا شيء", unnamed:"(بدون اسم)",
           l_draft:"مسودة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
@@ -1409,12 +1422,14 @@ ${RECIP_SRC}
     return '<div class="top" style="padding:8px 2px">' +
       '<span class="muted" id="opChip">' + esc(authEmail()) + '</span>' +
       '<span class="row-actions">' + langBtn() +
+        '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
         '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
         '<button class="link" id="signout" type="button">' + esc(t("signout")) + '</button>' +
       '</span></div>';
   }
   function wireHeader(){
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
+    var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
     var so=document.getElementById("signout"); if(so) so.addEventListener("click", function(){ signOut().then(signinView); });
   }
@@ -1785,7 +1800,9 @@ ${RECIP_SRC}
   (function(){ try{
     var s=document.getElementById("scrim");
     if(s) s.addEventListener("click", function(e){ if(e.target===s) closeDrawer(); });
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeDrawer(); });
+    var ps=document.getElementById("pfScrim");                                            // Step 2B profile overlay
+    if(ps) ps.addEventListener("click", function(e){ if(e.target===ps) closeProfile(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); } });
   }catch(e){} })();
   boot();
 })();
