@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="38adafe8">
-<meta name="thrive-built-at" content="2026-08-26T00:50:55Z">
+<meta name="thrive-build" content="b9c3d2f6">
+<meta name="thrive-built-at" content="2026-08-26T05:48:57Z">
 <!-- CONSOLE_ENTRY_DIAG Part 3: paint-safe mode. FIRST script in the head, before any styling, so the class
      is on documentElement before the first frame is composed. Opening the console with ?paint=safe disables
      every filter, backdrop-filter, animation and transition. This is an INSTRUMENT, not a fix: it exists so
@@ -198,6 +198,15 @@
     var err = (r && typeof r === "object") ? r : { name: "UnhandledRejection", message: (r != null ? String(r) : "promise rejected"), stack: "" };
     panel("Console failed to start", "تعذّر بدء الكونسول", err);
   });
+  /* BOARD_PAINT_COLD_START: a board render fault surfaces itself through the SAME panel (the exact exception:
+     name + message + the throwing statement from the stack, plus the boot checkpoint and build), so a broken
+     paint NAMES itself on screen instead of leaving a black board. Public so the board's own try/catch and
+     the shell's view-init dispatch can report a caught error deterministically, never relying on an
+     unhandledrejection that a caught error would not even produce. */
+  window.__thriveBoardFault = function (err) {
+    var e = (err && typeof err === "object") ? err : { name: "BoardRenderError", message: (err != null ? String(err) : "board render failed"), stack: "" };
+    try { panel("Board did not paint", "لم تُرسم اللوحة", e); } catch (x) {}
+  };
 
   /* P43 version convergence, the first act of boot. The application now verifies ITS OWN freshness:
      fetch /version.json (written by the bundler beside the build stamp) with cache:"no-store", compare its
@@ -326,7 +335,7 @@ try{ setTimeout(__bwShow, 8000); setTimeout(__bwShow, 25000); }catch(e){}
      second which code is live and when it was built; every device capture is now labeled. Low contrast and
      pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
      the Arabic layout cannot reorder them. -->
-<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">38adafe8</bdi> · <bdi class="mono-iso">2026-08-26T00:50:55Z</bdi></div>
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">b9c3d2f6</bdi> · <bdi class="mono-iso">2026-08-26T05:48:57Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
 
@@ -1299,7 +1308,7 @@ try{ setTimeout(__bwShow, 8000); setTimeout(__bwShow, 25000); }catch(e){}
 <script src="./store.js?v=3cba9b8cff"></script>
 <script src="./drafts.js?v=302cc5b4e6"></script>
 <script src="./flows.js?v=377173fc32"></script>
-<script src="./app.js?v=000e43b1ab"></script>
+<script src="./app.js?v=13dbfa04f1"></script>
 <script>(function(){function f(){try{var l=document.createElement("link");l.rel="stylesheet";l.href="./fonts.css?v=4db13ad39c";(document.head||document.documentElement).appendChild(l);}catch(e){}}if(document.readyState==="complete")setTimeout(f,0);else addEventListener("load",function(){setTimeout(f,0);});})();</script>
 <script>
 /* One document, eight views. Each init runs the first time its view is shown, which is exactly
@@ -1371,7 +1380,16 @@ try{ setTimeout(__bwShow, 8000); setTimeout(__bwShow, 25000); }catch(e){}
         if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
       }
       started[id] = want; delete stale[id];
-      try{ window[v.init](); }catch(e){ console.error(e); }
+      // BOARD_PAINT_COLD_START: a view init may be async (initBoard is). A throw inside it rejects a promise
+      // the shell does NOT await, which the plain catch below can never see: it would vanish into an
+      // unhandledrejection with a black view beneath it. Catch BOTH the synchronous throw and the async
+      // rejection and surface the exact exception through the failsafe panel, so a failed init names itself
+      // on screen and never leaves a silent black view.
+      function __viewInitFault(e){ try{ console.error(e); }catch(_){} try{ if(typeof window.__thriveBoardFault === "function") window.__thriveBoardFault(e); }catch(_){} }
+      try{
+        var __rv = window[v.init]();
+        if(__rv && typeof __rv.catch === "function") __rv.catch(__viewInitFault);
+      }catch(e){ __viewInitFault(e); }
     }
     try{ window.scrollTo(0,0); }catch(e){}
   }
