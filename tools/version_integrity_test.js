@@ -55,7 +55,10 @@ ck("V2 index.html is a session-aware, single-navigation router (no meta race, no
   assert(/if\(!sess\|\|!sess\.access_token\)\{ toGate\(\); return; \}/.test(idx), "the no-session bounce to the gate is missing");
   assert(/if\(!expired\(sess\)\)\{ toConsole\(\); return; \}/.test(idx), "the live-session forward is missing");
   assert(/function toConsole\(\)\{ location\.replace\("\.\/library\/console\.html\?v="\+BUILD/.test(idx), "the forward to the baked shell is missing");
-  assert(/function toGate\(\)\{ location\.replace\("gate\.html"\); \}/.test(idx), "the bounce target must be gate.html");
+  // SESSION_HANDOFF delivery: the bounce target is gate.html, now VERSION-PINNED with ?v=BUILD so a device
+  // can never serve a stale gate.html (the file that writes the session into the URL fragment) against a
+  // fresh shell. The pin is required, not optional.
+  assert(/function toGate\(\)\{ location\.replace\("gate\.html\?v=" \+ BUILD\); \}/.test(idx), "the bounce target must be gate.html, version-pinned with ?v=BUILD");
   assert(/grant_type=refresh_token/.test(idx), "the expired-token silent refresh is missing");
   // The meta refresh is GONE: exactly one top-level navigation (the JS router), never a meta+JS race.
   assert(!/http-equiv="refresh"/.test(idx), "the 0s meta refresh must be removed (it raced the JS router and could hang WebKit)");
@@ -63,7 +66,9 @@ ck("V2 index.html is a session-aware, single-navigation router (no meta race, no
   assert(/setTimeout\(decide, \d+\)/.test(idx), "the single deferred hand-off (setTimeout(decide, ...)) is missing");
   assert(/\[\?&\]stay=1\(&\|\$\)/.test(idx), "the ?stay=1 manual-launcher guard is missing");
   // Static escapes painted in the markup (tappable even if a hung hand-off suspends JS).
-  assert(/class="esc"/.test(idx) && /href="gate\.html"/.test(idx) && /id="idxCon"/.test(idx), "the static escape links (sign-in / console) are missing");
+  // The sign-in escape link is now version-pinned (?v=BUILD), so a device following it can never fetch a
+  // stale gate.html. The pin is required.
+  assert(/class="esc"/.test(idx) && /href="gate\.html\?v=/.test(idx) && /id="idxCon"/.test(idx), "the static escape links (sign-in / console) are missing");
   // query-param carry-over (stale v/vr/warm/stay dropped) and hash carry-over must still be present
   assert(/indexOf\("v="\)!==0&&p\.indexOf\("vr="\)!==0/.test(idx), "stale v/vr param stripping missing");
   assert(/\(location\.hash\|\|""\)/.test(idx), "hash carry-over missing");

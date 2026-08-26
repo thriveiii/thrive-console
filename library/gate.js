@@ -402,7 +402,10 @@
   function opBouncedRecently() { try { var t = parseInt(localStorage.getItem(OP_BOUNCE) || "0", 10); return !!(t && (Date.now() - t) < 20000); } catch (e) { return false; } }
   function markOpBounce() { try { localStorage.setItem(OP_BOUNCE, String(Date.now())); } catch (e) { gnote("op bounce write", e); } }
   function clearOpBounce() { try { localStorage.removeItem(OP_BOUNCE); } catch (e) { gnote("op bounce clear", e); } }
-  function gateHref() { return "../gate.html"; }          // the standalone gate, relative to library/console.html
+  // Version-pinned so a device never serves a stale gate.html against a fresh shell (the exact reason the
+  // fragment hand-off did not reach the device). buildId() reads the shell's thrive-build meta, which
+  // bundle.js stamps with BUILD; gate.html is now folded into BUILD, so an edit to it moves this value.
+  function gateHref() { var v = buildId(); return "../gate.html" + (v ? ("?v=" + v) : ""); }   // the standalone gate, relative to library/console.html
   function redirectToGate() {
     if (window.__gateNoRedirect) return false;             // a test (or a deliberate override) keeps sign-in in-console
     if (opBouncedRecently()) return false;                 // just returned from gate.html without a session: fall back
