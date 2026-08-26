@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Engine Probe</title>
+<style>
+  html,body{margin:0;background:#07070b;color:#8a8a93;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  /* Fixed, always-visible, highest z-index. White on black. Scrolls on its own so a long trace stays reachable
+     on a phone. This is the ENTIRE point: whatever the old engine does, this div self-reports it on screen. */
+  #probe{position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#000;color:#fff;
+    font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:9px 11px;margin:0;
+    max-height:72vh;overflow:auto;-webkit-overflow-scrolling:touch;border-bottom:2px solid #333;
+    white-space:pre-wrap;word-break:break-word}
+  #probe .t{font-weight:800;letter-spacing:.03em;color:#71BFCC;margin-bottom:4px}
+  #probe div{margin:1px 0}
+  #probe .load{color:#9fb0c9}
+  #probe .ok{color:#7fd18b}
+  #probe .step{color:#e7d27f}
+  #probe .bad{color:#ff6b6b;font-weight:800}
+  #probe .end{color:#c9a24a;font-weight:800;margin-top:6px}
+  /* The real console shell is injected below the probe, dimmed. If the engine actually renders, you SEE it
+     (dimly) under the trace; if it hangs, the trace's last line names where. */
+  #shell{opacity:.28;pointer-events:none;padding-top:74vh}
+</style>
+</head>
+<body>
+<div id="probe"><div class="t">ENGINE PROBE — old app.js chain, post-gate render</div></div>
+<div id="shell"></div>
+<script>
+/* ENGINE_PROBE (diagnostic only; changes no engine logic; touches nothing board.html uses).
+   Why the old engine hangs after gate-resolve on every device, self-reported ON SCREEN.
+
+   Approach: gate.js already resolved on the failing (signed-in) device, so we do NOT re-run it (it would
+   redirect an un-gated visitor). Instead we load the POST-gate chain in the shell's proven order, inject the
+   REAL console shell DOM so the render runs against real containers, then SIMULATE the resolved warm gate
+   exactly as gate.js would (window.__gateUnlockedPending = true) and let app.js's DOMContentLoaded boot drain
+   it -> onGateUnlocked() -> the "unlock" hook -> renderBoard. Everything is wrapped; every throw, load failure,
+   4s timeout, or silent hang paints a line, and a failure STOPS the chain. */
+(function(){
+  "use strict";
+  var P = document.getElementById("probe");
+  function line(cls, msg){
+    try{ var d=document.createElement("div"); d.className=cls; d.textContent=msg; P.appendChild(d); P.scrollTop=P.scrollHeight; }catch(e){}
+    // Mirror to the console too: a remote debugger (or a headless capture) still receives the trace even if the
+    // main thread later pegs in a busy loop and stops repainting the div. Harmless on a phone.
+    try{ console.log("[PROBE] " + cls + ": " + msg); }catch(e){}
+  }
+  var STOPPED = false, lastMark = "";
+  function mark(m){ lastMark = m; }
+
+  // (3) Global throw handlers armed FIRST, before anything loads.
+  window.onerror = function(msg, src, ln, col, err){
+    line("bad", "THROW: " + msg + "  @ " + (src||"?").replace(/^.*\//,"") + ":" + (ln||"?") + (col?(":"+col):""));
+    return false;
+  };
+  window.addEventListener("unhandledrejection", function(e){
+    var r = e && e.reason;
+    line("bad", "THROW (promise): " + ((r && (r.stack || r.message)) || r || "unknown") );
+  });
+
+  // The engine chain minus failsafe + gate (both run BEFORE the render we are probing), in console.html's
+  // proven relative order (icons/i18n load early, exactly as the shell does).
+  var CHAIN = ["config","supabase","icons","i18n","stage-model","lifecycle","intake",
+               "numbers","inbound","kinds","store","drafts","flows","app"];
+
+  function loadOne(name){
+    return new Promise(function(resolve){
+      if(STOPPED){ resolve(false); return; }
+      line("load", "loading: " + name);
+      mark("loading: " + name);
+      var s = document.createElement("script");
+      s.src = "./" + name + ".js";          // current served file (no ?v pin) — probes what is deployed now
+      var done = false;
+      // (2) per-script 4s timeout -> FAILED and STOP (a script that never fires onload is itself the hang)
+      var to = setTimeout(function(){
+        if(done) return; done = true; STOPPED = true;
+        line("bad", "FAILED: " + name + " — timeout (4s: script fetched but never finished executing, or never loaded)");
+        resolve(false);
+      }, 4000);
+      s.onload = function(){ if(done) return; done = true; clearTimeout(to); line("ok", "ok: " + name); mark("ok: " + name); resolve(true); };
+      s.onerror = function(){ if(done) return; done = true; clearTimeout(to); STOPPED = true;
+        line("bad", "FAILED: " + name + " — did not load (404 / blocked / parse error)"); resolve(false); };
+      (document.head || document.documentElement).appendChild(s);
+    });
+  }
+
+  // Give the engine the REAL console shell DOM (header.top, #view-board, all containers) so startLiveSync does
+  // not bail and renderBoard runs against real elements — dying at the TRUE culprit line, not a trivial one.
+  function injectShell(){
+    line("step", "fetching the console shell DOM (console.html) so the render has real containers...");
+    return fetch("./console.html", {cache:"no-store"}).then(function(r){ return r.text(); }).then(function(html){
+      var body = html.replace(/[\s\S]*?<body[^>]*>/i, "").replace(/<\/body>[\s\S]*/i, "");
+      body = body.replace(/<script[\s\S]*?<\/script>/gi, "");   // strip the shell's own scripts; WE drive the boot
+      document.getElementById("shell").innerHTML = body;
+      line(document.querySelector("header.top") ? "ok" : "bad",
+           (document.querySelector("header.top") ? "ok" : "WARN") + ": shell DOM injected" +
+           (document.querySelector("header.top") ? " (header.top present)" : " (header.top MISSING — startLiveSync would bail)"));
+    }, function(){
+      line("bad", "WARN: could not fetch console.html — render will run without the shell containers");
+    });
+  }
+
+  // (4) The board-init dispatch + the render call, wrapped. This is the step that hangs after gate-resolve.
+  function fireRender(){
+    // simulate the warm gate that already resolved on the device (gate.js sets this before app.js boots)
+    try{ window.__gateUnlockedPending = true; line("step", "simulated resolved gate: __gateUnlockedPending = true"); }catch(e){}
+    // A synchronous hang in renderBoard pegs the event loop, so NO later timer (not even the heartbeat) can
+    // print. This one line makes the frozen trace self-diagnosing: if the trace stops below it, the render is
+    // the silent hang. (The board-init dispatch runs the boot, which fires the 'unlock' hook -> renderBoard.)
+    line("end", "▶ firing the post-gate board render NOW — IF THE TRACE STOPS BELOW THIS LINE, the render (renderBoard on the 'unlock' hook) is the silent hang.");
+    try{
+      line("step", "dispatching DOMContentLoaded (board-init dispatch)"); mark("DOMContentLoaded dispatch");
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+      line("ok", "DOMContentLoaded handlers returned (synchronous part)");
+    }catch(e){ line("bad", "RENDER FAILED: " + (e && (e.message||e)) + "  @ DOMContentLoaded dispatch"); return; }
+
+    // If startLiveSync ran (header.top present) it already drained the pending unlock -> onGateUnlocked ->
+    // the unlock hook -> renderBoard. If it bailed, drain it ourselves so the render is exercised regardless.
+    try{
+      if(window.__gateUnlockedPending && typeof window.onGateUnlocked === "function"){
+        window.__gateUnlockedPending = false;
+        line("step", "firing onGateUnlocked() directly (the post-gate unlock -> renderBoard)"); mark("onGateUnlocked()");
+        window.onGateUnlocked();
+        line("ok", "onGateUnlocked() returned (synchronous part)");
+      } else {
+        line("step", "the boot drained the unlock itself (renderBoard runs on the 'unlock' hook, async)");
+      }
+    }catch(e){ line("bad", "RENDER FAILED: " + (e && (e.message||e)) + "  @ onGateUnlocked / renderBoard"); return; }
+
+    // Belt-and-suspenders: also call renderBoard directly if it is a global, wrapped, to catch a render throw
+    // even if the unlock path above was a no-op.
+    try{
+      if(typeof window.renderBoard === "function"){
+        line("step", "calling renderBoard('probe') directly"); mark("renderBoard('probe')");
+        var r = window.renderBoard("probe");
+        if(r && typeof r.then === "function"){
+          r.then(function(){ line("ok", "renderBoard() promise resolved — the engine reached a settled board"); },
+                 function(e){ line("bad", "RENDER FAILED: renderBoard() rejected — " + ((e && (e.stack||e.message))||e)); });
+        } else {
+          line("ok", "renderBoard() returned synchronously");
+        }
+      }
+    }catch(e){ line("bad", "RENDER FAILED: " + (e && (e.message||e)) + "  @ renderBoard()"); }
+
+    // Silent-hang heartbeat: if nothing else prints, the last mark IS the point it hung.
+    var beats = 0;
+    var iv = setInterval(function(){
+      beats++;
+      if(beats > 4){ clearInterval(iv); line("end", "no further progress — the hang point is the last line above (\"" + lastMark + "\")"); return; }
+      line("step", "still alive " + (beats*3) + "s after render dispatch (last reached: " + lastMark + ")");
+    }, 3000);
+  }
+
+  // Sequence: shell DOM first (so anything reading the DOM at load finds it), then the chain, then the render.
+  injectShell().then(function(){
+    return CHAIN.reduce(function(prev, name){
+      return prev.then(function(prevOk){ if(prevOk === false || STOPPED) return false; return loadOne(name); });
+    }, Promise.resolve(true));
+  }).then(function(ok){
+    if(STOPPED){ line("end", "STOPPED at the failed script above — that script is the culprit."); return; }
+    line("ok", "all engine scripts loaded ok — the hang (if any) is now in the render step below");
+    fireRender();
+  });
+})();
+</script>
+</body>
+</html>
