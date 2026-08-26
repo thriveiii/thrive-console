@@ -894,6 +894,8 @@ function buildBoard(){
   // L5: the single-recipient send clone, authored as real JS (node-checkable) and INLINED verbatim here, so its
   // regexes need no template escaping. The relay endpoint is baked from library/sync.json (published.ep).
   const SEND_SRC = read(path.join(ROOT, "tools/board-send.src.js"));
+  // L5.5: the recipient field clone, inlined verbatim after the send clone (shares its scope + helpers).
+  const RECIP_SRC = read(path.join(ROOT, "tools/board-recipient.src.js"));
   const RELAY_EP = (published && published.ep) || "";
   return `<!doctype html>
 <html lang="en" dir="ltr">
@@ -1023,6 +1025,8 @@ function buildBoard(){
   .note-item .nmeta{display:block;font-size:10.5px;color:#6a6a74;margin-top:3px;unicode-bidi:isolate}
   .note-form{display:flex;flex-direction:column;gap:8px;margin-top:6px}
   textarea.note-in{width:100%;min-height:64px;resize:vertical;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:9px 11px;font-size:13px;font-family:inherit;outline:none}
+  textarea.rec-in{width:100%;min-height:44px;resize:vertical;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:10px 12px;font-size:14px;line-height:1.4;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;outline:none;margin-bottom:8px;direction:ltr;unicode-bidi:isolate}
+  textarea.rec-in:focus{border-color:#5D7FB7}
   textarea.note-in:focus{border-color:#5D7FB7}
 </style>
 </head>
@@ -1084,7 +1088,10 @@ function buildBoard(){
           a_note_saved:"Note saved.", a_note_failed:"Could not save the note.", a_notes:"Notes", a_note_by:"by",
           s_send:"Send email", s_sending:"Sending…", s_sent:"Sent.", s_confirming:"Email sent; confirming on the server…",
           s_failed:"Could not send. Nothing was sent.", s_no_recip:"No recipient email on this opportunity.",
-          s_no_msg:"No prepared message on this opportunity." },
+          s_no_msg:"No prepared message on this opportunity.",
+          r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
+          r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
+          r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -1113,7 +1120,10 @@ function buildBoard(){
           a_note_saved:"تم حفظ الملاحظة.", a_note_failed:"تعذّر حفظ الملاحظة.", a_notes:"الملاحظات", a_note_by:"بواسطة",
           s_send:"إرسال بريد", s_sending:"جارٍ الإرسال…", s_sent:"تم الإرسال.", s_confirming:"أُرسل البريد؛ يجري التأكيد على الخادم…",
           s_failed:"تعذّر الإرسال. لم يُرسل شيء.", s_no_recip:"لا يوجد بريد مستلم لهذه الفرصة.",
-          s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة." }
+          s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
+          r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
+          r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
+          r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1311,6 +1321,7 @@ function buildBoard(){
     });
   }
 ${SEND_SRC}
+${RECIP_SRC}
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
   // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
@@ -1566,7 +1577,7 @@ ${SEND_SRC}
     return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
       '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
       '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\\u00d7</button></div>'+
-      numsHtml(row, slug)+factsHtml(row)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
+      numsHtml(row, slug)+factsHtml(row)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
   }
   var __drawerSlug=null, __writing=false;
   function wireDrawer(){
@@ -1577,6 +1588,8 @@ ${SEND_SRC}
     });
     var na=document.getElementById("noteAdd");
     if(na) na.addEventListener("click", function(){ onAddNote(slug); });
+    var rs=document.getElementById("recSave");                          // L5.5 recipient save
+    if(rs) rs.addEventListener("click", function(){ onSaveRecipient(slug); });
   }
   function openDrawer(slug){
     __drawerSlug=slug;
@@ -1593,7 +1606,7 @@ ${SEND_SRC}
       }, function(){});
     }catch(e){ redFull("drawer", e); }
   }
-  function closeDrawer(){ var s=__drawerSlug; if(s){ delete __act[s]; } __drawerSlug=null; var sc=document.getElementById("scrim"); if(sc) sc.hidden=true; }
+  function closeDrawer(){ var s=__drawerSlug; if(s){ delete __act[s]; delete __recSaved[s]; } __drawerSlug=null; var sc=document.getElementById("scrim"); if(sc) sc.hidden=true; }
 
   // ---- L4 optimistic confirm-or-revert runner (spec item 4). The card updates IMMEDIATELY (mutate the in-memory
   //      row + repaint), then the write confirms; on confirm the board RE-READS console_board and paints from
