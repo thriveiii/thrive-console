@@ -273,6 +273,136 @@ const criticalGateCss =
   /* Held in reserve, applied only with the explicit svg=off companion; never on by default. */
   'html.paint-safe.no-svg svg{display:none!important}';
 
+/* The CARRY view router, one source of truth for every entry document (the served console.html and the
+   clean NEW single-document entry app.html). It shows one #view-* at a time, runs each view's init the first
+   time its view is shown (again with different params), and re-hydrates every view on the "unlock" event. It
+   reads no gate, no passcode, no fragment: it is pure view routing over the modules already loaded. */
+const routerScript = `<script>
+/* One document, eight views. Each init runs the first time its view is shown, which is exactly
+   what the served console does per page load, and again whenever the view is asked for with
+   DIFFERENT parameters, which is exactly what a second page load would do.
+
+   That second half was missing, and it is why "use this template", "compose with this" and the
+   Email button on a library card opened an empty screen: the destination was already started,
+   so the parameters were never read. Re-running an init over a DOM that has already been wired
+   would double every listener, so the view's markup is restored from the snapshot taken at boot
+   first. A view is then exactly as freshly loaded as it would be on its own page. */
+(function(){
+  var VIEWS = ${JSON.stringify(VIEWS.map(v => ({ id: v.id, init: v.init })))};
+  var started = {};      // id -> the parameter string it was started with
+  var stale = {};        // ids that must run again even with the same parameters
+  var snapshot = {};     // id -> its markup at boot, so a re-init starts clean
+
+  function snap(){
+    VIEWS.forEach(function(v){
+      var el = document.getElementById("view-" + v.id);
+      if(el) snapshot[v.id] = el.innerHTML;
+    });
+  }
+  function query(){
+    var h = location.hash || "", i = h.indexOf("?");
+    return i >= 0 ? h.slice(i + 1) : "";
+  }
+  function current(){ return (location.hash||"").replace(/^#/,"").split("?")[0] || VIEWS[0].id; }
+
+  // P27: owner-only views. A member (or any not-yet-owner session) is refused, including a direct hash
+  // navigation, and the URL is corrected to the board so it can never rest on an owner-only route. The
+  // real boundary is the database (RLS on console_members); this is the honest UI half of it. ownerOK
+  // fails CLOSED (owner status must be explicitly true), so a view is never shown before the role is known.
+  var OWNER_ONLY = { oversight:1 };
+  function ownerOK(){ try{ return !!(window.isOwnerMember && window.isOwnerMember()); }catch(e){ return false; } }
+  function ownerResolved(){ try{ return !!(window.ownerTierResolved && window.ownerTierResolved()); }catch(e){ return false; } }
+  function show(id){
+    var found = VIEWS.some(function(v){ return v.id === id; });
+    if(!found) id = VIEWS[0].id;
+    // Owner-only routing. Refuse outright ONLY once the role is resolved-and-not-owner: correct the URL to the
+    // board so it can never rest on an owner-only route. While the role is still resolving (a slow or failed
+    // roster read), do NOT bounce -- let the view through to its own init, which awaits the role and
+    // self-refuses if this turns out to be a member. So a possible owner is never briefly kicked to the board.
+    if(OWNER_ONLY[id] && !ownerOK() && ownerResolved()){
+      id = VIEWS[0].id; try{ if((location.hash||"").replace(/^#/,"").split("?")[0]==="oversight") location.replace("#"+VIEWS[0].id); }catch(e){}
+    }
+    // Going somewhere closes the sheet you were working in, and the sheet hands its view back.
+    if(window.thriveModal && window.thriveModal.isOpen && window.thriveModal.isOpen())
+      window.thriveModal.close(true);   // now, not after the transition: the view is needed here
+    var host = document.getElementById("modalHost");
+    VIEWS.forEach(function(v){
+      var el = document.getElementById("view-" + v.id);
+      if(!el) return;
+      if(host && el.parentNode === host) return;   // the window owns this one right now
+      el.hidden = (v.id !== id);
+    });
+    document.querySelectorAll(".nav a[data-view]").forEach(function(a){
+      a.classList.toggle("active", a.getAttribute("data-view") === id);
+    });
+    var v = VIEWS.filter(function(x){ return x.id === id; })[0];
+    var want = query();
+    var need = !(id in started) || started[id] !== want || stale[id];
+    if(v && need && typeof window[v.init] === "function"){
+      var el = document.getElementById("view-" + id);
+      // A restart, not a first start: put the markup back before wiring it again, so one
+      // element never ends up with two of the same listener.
+      if((id in started) && el && snapshot[id] != null){
+        el.innerHTML = snapshot[id];
+        if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
+      }
+      started[id] = want; delete stale[id];
+      // BOARD_PAINT_COLD_START: a view init may be async (initBoard is). A throw inside it rejects a promise
+      // the shell does NOT await, which the plain catch below can never see: it would vanish into an
+      // unhandledrejection with a black view beneath it. Catch BOTH the synchronous throw and the async
+      // rejection and surface the exact exception through the failsafe panel, so a failed init names itself
+      // on screen and never leaves a silent black view.
+      function __viewInitFault(e){ try{ console.error(e); }catch(_){} try{ if(typeof window.__thriveBoardFault === "function") window.__thriveBoardFault(e); }catch(_){} }
+      try{
+        var __rv = window[v.init]();
+        if(__rv && typeof __rv.catch === "function") __rv.catch(__viewInitFault);
+      }catch(e){ __viewInitFault(e); }
+    }
+    try{ window.scrollTo(0,0); }catch(e){}
+  }
+  /* Handing a view to something that is not the shell.
+     The opportunity window borrows the composer and the editor by moving their nodes, and it
+     re-runs their init every time a tab is entered. Over a DOM that init already wired, that is
+     a SECOND set of listeners on every control in it, which on a composer means one click on
+     Send sending twice. So the borrower asks for the view to be put back the way it was at
+     boot first, exactly as this shell already does for itself, and the shell marks it stale so
+     it re-inits when somebody navigates to it directly. */
+  window.thriveViewReset = function(id){
+    var el = document.getElementById("view-" + id);
+    if(el && snapshot[id] != null){
+      el.innerHTML = snapshot[id];
+      if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
+    }
+    stale[id] = 1;
+  };
+  // P27: once the role is known (loaded async after sign-in), re-evaluate the current route so an owner who
+  // deep-linked or clicked into an owner-only view lands correctly, and install the owner-only nav link.
+  window.thriveOwnerRecheck = function(){ try{ if(OWNER_ONLY[current()]) show(current()); }catch(e){} };
+  window.addEventListener("hashchange", function(){ show(current()); });
+  document.addEventListener("DOMContentLoaded", function(){
+    snap();
+    initLang();
+    if(typeof initModal === "function") initModal();
+    show(current());
+    // A fresh unlock lands on the first view with its data already pulled. Registered like
+    // every other listener, so it cannot displace the sync round or a view's own refresh.
+    if(typeof onThrive === "function") onThrive("unlock","shell",function(){
+      // Nothing was allowed to read data before the unlock, so every view that initialized while signed out
+      // must run again against the data it can finally see. Mark them all stale so each re-inits cleanly on
+      // its NEXT navigation. But do NOT re-show the CURRENTLY visible view here: on sign-in the operator lands
+      // on the board, and re-showing a started view resets its DOM to the empty boot snapshot
+      // (innerHTML = snapshot) and races the board's own in-place unlock render (renderBoard), which is what
+      // left the board blank after every read returned 200. The current view is refreshed in place by its own
+      // unlock handler; only a view that never started (a deep link straight into it) is shown now, and that
+      // is a clean first mount with no reset.
+      var cur = current();
+      Object.keys(started).forEach(function(k){ stale[k] = 1; });
+      if(!(cur in started)) show(cur);
+    });
+  });
+})();
+</script>`;
+
 function build(inline){
 const head = inline
   ? '<style>\n' + css + '\n.view[hidden]{display:none!important}\n</style>'
@@ -463,135 +593,180 @@ ${sections2}
 ${MODAL}
 
 ${body}
-<script>
-/* One document, eight views. Each init runs the first time its view is shown, which is exactly
-   what the served console does per page load, and again whenever the view is asked for with
-   DIFFERENT parameters, which is exactly what a second page load would do.
-
-   That second half was missing, and it is why "use this template", "compose with this" and the
-   Email button on a library card opened an empty screen: the destination was already started,
-   so the parameters were never read. Re-running an init over a DOM that has already been wired
-   would double every listener, so the view's markup is restored from the snapshot taken at boot
-   first. A view is then exactly as freshly loaded as it would be on its own page. */
-(function(){
-  var VIEWS = ${JSON.stringify(VIEWS.map(v => ({ id: v.id, init: v.init })))};
-  var started = {};      // id -> the parameter string it was started with
-  var stale = {};        // ids that must run again even with the same parameters
-  var snapshot = {};     // id -> its markup at boot, so a re-init starts clean
-
-  function snap(){
-    VIEWS.forEach(function(v){
-      var el = document.getElementById("view-" + v.id);
-      if(el) snapshot[v.id] = el.innerHTML;
-    });
-  }
-  function query(){
-    var h = location.hash || "", i = h.indexOf("?");
-    return i >= 0 ? h.slice(i + 1) : "";
-  }
-  function current(){ return (location.hash||"").replace(/^#/,"").split("?")[0] || VIEWS[0].id; }
-
-  // P27: owner-only views. A member (or any not-yet-owner session) is refused, including a direct hash
-  // navigation, and the URL is corrected to the board so it can never rest on an owner-only route. The
-  // real boundary is the database (RLS on console_members); this is the honest UI half of it. ownerOK
-  // fails CLOSED (owner status must be explicitly true), so a view is never shown before the role is known.
-  var OWNER_ONLY = { oversight:1 };
-  function ownerOK(){ try{ return !!(window.isOwnerMember && window.isOwnerMember()); }catch(e){ return false; } }
-  function ownerResolved(){ try{ return !!(window.ownerTierResolved && window.ownerTierResolved()); }catch(e){ return false; } }
-  function show(id){
-    var found = VIEWS.some(function(v){ return v.id === id; });
-    if(!found) id = VIEWS[0].id;
-    // Owner-only routing. Refuse outright ONLY once the role is resolved-and-not-owner: correct the URL to the
-    // board so it can never rest on an owner-only route. While the role is still resolving (a slow or failed
-    // roster read), do NOT bounce -- let the view through to its own init, which awaits the role and
-    // self-refuses if this turns out to be a member. So a possible owner is never briefly kicked to the board.
-    if(OWNER_ONLY[id] && !ownerOK() && ownerResolved()){
-      id = VIEWS[0].id; try{ if((location.hash||"").replace(/^#/,"").split("?")[0]==="oversight") location.replace("#"+VIEWS[0].id); }catch(e){}
-    }
-    // Going somewhere closes the sheet you were working in, and the sheet hands its view back.
-    if(window.thriveModal && window.thriveModal.isOpen && window.thriveModal.isOpen())
-      window.thriveModal.close(true);   // now, not after the transition: the view is needed here
-    var host = document.getElementById("modalHost");
-    VIEWS.forEach(function(v){
-      var el = document.getElementById("view-" + v.id);
-      if(!el) return;
-      if(host && el.parentNode === host) return;   // the window owns this one right now
-      el.hidden = (v.id !== id);
-    });
-    document.querySelectorAll(".nav a[data-view]").forEach(function(a){
-      a.classList.toggle("active", a.getAttribute("data-view") === id);
-    });
-    var v = VIEWS.filter(function(x){ return x.id === id; })[0];
-    var want = query();
-    var need = !(id in started) || started[id] !== want || stale[id];
-    if(v && need && typeof window[v.init] === "function"){
-      var el = document.getElementById("view-" + id);
-      // A restart, not a first start: put the markup back before wiring it again, so one
-      // element never ends up with two of the same listener.
-      if((id in started) && el && snapshot[id] != null){
-        el.innerHTML = snapshot[id];
-        if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
-      }
-      started[id] = want; delete stale[id];
-      // BOARD_PAINT_COLD_START: a view init may be async (initBoard is). A throw inside it rejects a promise
-      // the shell does NOT await, which the plain catch below can never see: it would vanish into an
-      // unhandledrejection with a black view beneath it. Catch BOTH the synchronous throw and the async
-      // rejection and surface the exact exception through the failsafe panel, so a failed init names itself
-      // on screen and never leaves a silent black view.
-      function __viewInitFault(e){ try{ console.error(e); }catch(_){} try{ if(typeof window.__thriveBoardFault === "function") window.__thriveBoardFault(e); }catch(_){} }
-      try{
-        var __rv = window[v.init]();
-        if(__rv && typeof __rv.catch === "function") __rv.catch(__viewInitFault);
-      }catch(e){ __viewInitFault(e); }
-    }
-    try{ window.scrollTo(0,0); }catch(e){}
-  }
-  /* Handing a view to something that is not the shell.
-     The opportunity window borrows the composer and the editor by moving their nodes, and it
-     re-runs their init every time a tab is entered. Over a DOM that init already wired, that is
-     a SECOND set of listeners on every control in it, which on a composer means one click on
-     Send sending twice. So the borrower asks for the view to be put back the way it was at
-     boot first, exactly as this shell already does for itself, and the shell marks it stale so
-     it re-inits when somebody navigates to it directly. */
-  window.thriveViewReset = function(id){
-    var el = document.getElementById("view-" + id);
-    if(el && snapshot[id] != null){
-      el.innerHTML = snapshot[id];
-      if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
-    }
-    stale[id] = 1;
-  };
-  // P27: once the role is known (loaded async after sign-in), re-evaluate the current route so an owner who
-  // deep-linked or clicked into an owner-only view lands correctly, and install the owner-only nav link.
-  window.thriveOwnerRecheck = function(){ try{ if(OWNER_ONLY[current()]) show(current()); }catch(e){} };
-  window.addEventListener("hashchange", function(){ show(current()); });
-  document.addEventListener("DOMContentLoaded", function(){
-    snap();
-    initLang();
-    if(typeof initModal === "function") initModal();
-    show(current());
-    // A fresh unlock lands on the first view with its data already pulled. Registered like
-    // every other listener, so it cannot displace the sync round or a view's own refresh.
-    if(typeof onThrive === "function") onThrive("unlock","shell",function(){
-      // Nothing was allowed to read data before the unlock, so every view that initialized while signed out
-      // must run again against the data it can finally see. Mark them all stale so each re-inits cleanly on
-      // its NEXT navigation. But do NOT re-show the CURRENTLY visible view here: on sign-in the operator lands
-      // on the board, and re-showing a started view resets its DOM to the empty boot snapshot
-      // (innerHTML = snapshot) and races the board's own in-place unlock render (renderBoard), which is what
-      // left the board blank after every read returned 200. The current view is refreshed in place by its own
-      // unlock handler; only a view that never started (a deep link straight into it) is shown now, and that
-      // is a clean first mount with no reset.
-      var cur = current();
-      Object.keys(started).forEach(function(k){ stale[k] = 1; });
-      if(!(cur in started)) show(cur);
-    });
-  });
-})();
-</script>
+${routerScript}
 </body>
 </html>
 `;
 return out;
+}
+
+/* ---- the clean NEW single-document entry: app.html --------------------------------------------------
+   MIGRATION (device-confirmed): the poisoned entry path (index.html -> gate.html -> library/console.html
+   with its passcode lobby, presence eject, boot watchdog and fragment hand-off) is RETIRED, not moved. This
+   one document is the whole entry: a minimal operator sign-in (email + password), the CARRY module set
+   loaded directly, and the CARRY view router. Everything sound moves unchanged: the board, the cards, the
+   lanes, every view command, and the send/receive pipeline, all of which need only an in-memory access token
+   (ThriveSupa.bearer()/rest()), never the gate/session machinery.
+
+   The four laws of this document:
+     1. Sign in once into memory. One screen, no passcode, no lobby, no navigation, no fragment. On submit,
+        ThriveSupa.signIn does the device-proven bare token grant (apikey header, JSON POST, no Authorization,
+        cache no-store, arrayBuffer + TextDecoder body read) and setSession into __memSession. That is the ONLY
+        job carried over from gate.js. No localStorage dependency, no read-back, no redirect.
+     2. Load the CARRY set directly, in dependency order. config, supabase (rest/bearer/session/setSession/
+        adoptSession), stage-model, the data modules, then app.js. No paint-lock, no BOARD_WAIT, no gate.js,
+        no fragment adopt.
+     3. Reveal + render via the CARRY router. The same router the served console uses shows #view-board and
+        dispatches initBoard; reveal() is a one-liner (drop gate-locked, arm the background relay). failsafe's
+        panel() + __thriveBoardFault stay for on-screen faults; no version-convergence / eject / watchdog is
+        wired.
+     4. Send/receive untouched. relaySend, supaConfirmMail, reconcileMailToServer, the campaign queue,
+        getInbound, supaHydrate and spawnChildrenFromReplies all run as-is on the in-memory token. */
+function buildApp(){
+  const head =
+    '<style id="gate-critical">' + criticalGateCss + '</style>' +
+    '\n<link rel="stylesheet" href="' + fp("styles.css") + '">' +
+    '\n<style>.view[hidden]{display:none!important}</style>';
+
+  // Law 1: the minimal operator sign-in, loaded right after supabase.js (it needs only ThriveSupa.signIn,
+  // never app.js). It paints fast, exactly where gate.js used to, but does nothing else gate.js did: no
+  // passcode, no lobby, no presence, no eject, no version watch. On success it reveals and fires the SAME
+  // unlock the console's warm boot fires, so every view re-hydrates against the now-live token.
+  const signin =
+    '<script>\n(function(){\n' +
+    '  "use strict";\n' +
+    '  var S = window.ThriveSupa;\n' +
+    '  var AR = (function(){ try{ return localStorage.getItem("thrive_lang")==="ar"; }catch(e){ return false; } })();\n' +
+    '  var T = AR\n' +
+    '    ? { title:"\\u0643\\u0648\\u0646\\u0633\\u0648\\u0644 \\u062b\\u0631\\u0627\\u064a\\u0641", sub:"\\u0633\\u062c\\u0651\\u0644 \\u0627\\u0644\\u062f\\u062e\\u0648\\u0644 \\u0643\\u0645\\u0634\\u063a\\u0651\\u0644 \\u0644\\u0644\\u0645\\u062a\\u0627\\u0628\\u0639\\u0629.",\n' +
+    '        email:"\\u0628\\u0631\\u064a\\u062f \\u0627\\u0644\\u0645\\u0634\\u063a\\u0651\\u0644", pass:"\\u0643\\u0644\\u0645\\u0629 \\u0627\\u0644\\u0645\\u0631\\u0648\\u0631", go:"\\u062a\\u0633\\u062c\\u064a\\u0644 \\u0627\\u0644\\u062f\\u062e\\u0648\\u0644",\n' +
+    '        busy:"\\u062c\\u0627\\u0631\\u064d \\u062a\\u0633\\u062c\\u064a\\u0644 \\u0627\\u0644\\u062f\\u062e\\u0648\\u0644", err:"\\u062a\\u0639\\u0630\\u0651\\u0631 \\u062a\\u0633\\u062c\\u064a\\u0644 \\u0627\\u0644\\u062f\\u062e\\u0648\\u0644.",\n' +
+    '        net:"\\u062a\\u0639\\u0630\\u0651\\u0631 \\u0627\\u0644\\u0648\\u0635\\u0648\\u0644 \\u0625\\u0644\\u0649 \\u0627\\u0644\\u062e\\u062f\\u0645\\u0629. \\u062d\\u0627\\u0648\\u0644 \\u0645\\u062c\\u062f\\u062f\\u064b\\u0627." }\n' +
+    '    : { title:"Thrive Console", sub:"Sign in as an operator to continue.",\n' +
+    '        email:"Operator email", pass:"Password", go:"Sign in", busy:"Signing in",\n' +
+    '        err:"Could not sign in.", net:"Could not reach the service. Try again." };\n' +
+    '  function reveal(){\n' +
+    '    try{ document.documentElement.classList.remove("gate-locked"); }catch(e){}\n' +
+    '    try{ window.__gateRevealed = true; }catch(e){}\n' +   // arm the background relay (app.js gates it on this flag AND __boardPainted)
+    '  }\n' +
+    '  function fireUnlock(){\n' +
+    '    try{ if(typeof window.onGateUnlocked === "function") window.onGateUnlocked(); else window.__gateUnlockedPending = true; }\n' +
+    '    catch(e){ try{ window.__gateUnlockedPending = true; }catch(x){} }\n' +   // drained by app.js at DOMContentLoaded
+    '  }\n' +
+    '  function done(){\n' +
+    '    try{ var o=document.getElementById("thriveGate"); if(o&&o.parentNode) o.parentNode.removeChild(o); }catch(e){}\n' +
+    '    reveal();\n' +
+    '    try{ if((location.hash||"").replace(/^#/,"").split("?")[0] !== "board") location.hash="board"; }catch(e){}\n' +
+    '    fireUnlock();\n' +
+    '  }\n' +
+    '  // Sign-out is a real operator command (app.js wires the button to window.thriveSignOut). gate.js used to\n' +
+    '  // define it; here it ends the in-memory session and reloads, which brings the sign-in card straight back.\n' +
+    '  window.thriveSignOut = async function(){\n' +
+    '    try{ if(S && S.signOut) await S.signOut(); }catch(e){}\n' +
+    '    try{ location.reload(); }catch(e){}\n' +
+    '  };\n' +
+    '  // Already signed in in THIS one document (an in-memory session): no second sign-in. A false or a throw\n' +
+    '  // simply shows the form, so this convenience can never lock the operator out.\n' +
+    '  try{ if(S && S.signedIn && S.signedIn()){ done(); return; } }catch(e){}\n' +
+    '  var wrap=document.createElement("div");\n' +
+    '  wrap.id="thriveGate";\n' +
+    '  wrap.setAttribute("dir", AR?"rtl":"ltr");\n' +
+    '  wrap.innerHTML =\n' +
+    '    \'<form class="gate-card" autocomplete="off">\' +\n' +
+    '    \'<img class="gate-logo" src="../assets/thrive-logo.png" alt="Thrive">\' +\n' +
+    '    \'<h1 class="gate-title">\'+T.title+\'</h1>\' +\n' +
+    '    \'<p class="gate-sub">\'+T.sub+\'</p>\' +\n' +
+    '    \'<input class="gate-input" id="siEmail" type="email" autocomplete="username" spellcheck="false" placeholder="\'+T.email+\'" aria-label="\'+T.email+\'">\' +\n' +
+    '    \'<input class="gate-input" id="siPass" type="password" autocomplete="current-password" placeholder="\'+T.pass+\'" aria-label="\'+T.pass+\'">\' +\n' +
+    '    \'<button class="gate-btn" type="submit">\'+T.go+\'</button>\' +\n' +
+    '    \'<p class="gate-err" id="siErr" hidden>\'+T.err+\'</p>\' +\n' +
+    '    \'</form>\';\n' +
+    '  (document.body||document.documentElement).appendChild(wrap);\n' +
+    '  var form=wrap.querySelector("form"), email=wrap.querySelector("#siEmail"), pass=wrap.querySelector("#siPass"),\n' +
+    '      err=wrap.querySelector("#siErr"), btn=wrap.querySelector(".gate-btn");\n' +
+    '  setTimeout(function(){ try{ email.focus(); }catch(e){} }, 50);\n' +
+    '  var busy=false;\n' +
+    '  form.addEventListener("submit", async function(e){\n' +
+    '    e.preventDefault();\n' +
+    '    if(busy) return;\n' +
+    '    var m=(email.value||"").trim(), p=pass.value||"";\n' +
+    '    if(!m || !p || !S || !S.signIn){ err.textContent=T.err; err.hidden=false; return; }\n' +
+    '    busy=true; email.disabled=pass.disabled=true; btn.textContent=T.busy; err.hidden=true;\n' +
+    '    try{\n' +
+    '      var sess = await S.signIn(m, p, { fresh:true });\n' +   // the device-proven token grant, into __memSession
+    '      if(sess && sess.access_token){ done(); return; }\n' +
+    '      throw new Error("no session");\n' +
+    '    }catch(ex){\n' +
+    '      busy=false; email.disabled=pass.disabled=false; btn.textContent=T.go;\n' +
+    '      var kind=(ex&&ex.kind)||"auth";\n' +
+    '      err.textContent=(kind==="timeout"||kind==="network"||kind==="unavailable") ? T.net : T.err;\n' +
+    '      err.hidden=false;\n' +
+    '      try{ (m?pass:email).focus(); }catch(e2){}\n' +
+    '    }\n' +
+    '  });\n' +
+    '})();\n</script>';
+
+  // Law 2: the CARRY module set, linked (content-hashed, revalidated by the publish _headers). Dependency
+  // order, app.js last. No gate.js, no fragment adopt, no paint-lock, no BOARD_WAIT.
+  const body =
+    '<script src="' + fp("config.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>' +
+    '\n' + signin +
+    '\n<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>' +
+    '\n<script src="' + fp("stage-model.js") + '"></script>\n<script src="' + fp("lifecycle.js") + '"></script>' +
+    '\n<script src="' + fp("intake.js") + '"></script>' +
+    '\n<script src="' + fp("numbers.js") + '"></script>' +
+    '\n<script src="' + fp("inbound.js") + '"></script>\n<script src="' + fp("kinds.js") + '"></script>' +
+    '\n<script src="' + fp("store.js") + '"></script>\n<script src="' + fp("drafts.js") + '"></script>' +
+    '\n<script src="' + fp("flows.js") + '"></script>\n<script src="' + fp("app.js") + '"></script>' +
+    // The webfonts, off the critical path, exactly as the served console loads them (added after load, no swap).
+    '\n<script>(function(){function f(){try{var l=document.createElement("link");l.rel="stylesheet";l.href="' + fp("fonts.css") + '";(document.head||document.documentElement).appendChild(l);}catch(e){}}' +
+    'if(document.readyState==="complete")setTimeout(f,0);else addEventListener("load",function(){setTimeout(f,0);});})();</script>';
+
+  // gate-locked hides the shell (.top/.wrap) until reveal(); the sign-in card sits above it. No paint-lock
+  // sessionStorage read decides this: it is simply the boot state, dropped the moment a session is in memory.
+  return `<!DOCTYPE html>
+<html lang="en" dir="ltr" class="gate-locked">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="thrive-build" content="${BUILD}">
+<meta name="thrive-built-at" content="${BUILT_AT}">
+<script>
+${failsafe}
+</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Thrive Console</title>
+<link rel="icon" href="../assets/thrive-logo.png">
+<script>(function(){var d=document.documentElement;
+/* Reading direction at the app root from the stored language, before any other script runs. */
+try{var __l=localStorage.getItem('thrive_lang');d.setAttribute('lang',__l==='ar'?'ar':'en');d.setAttribute('dir',__l==='ar'?'rtl':'ltr');}catch(e){}
+/* No service worker is registered by this console; unregister any stale one so old bytes can never be served. */
+try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){try{r.unregister();}catch(e){}});}).catch(function(){});}}catch(e){}
+})();</script>
+${head}
+</head>
+<body>
+<noscript><p class="bootfail">This console needs JavaScript to run. <span dir="rtl">يحتاج هذا الكونسول إلى تفعيل JavaScript.</span></p></noscript>
+<header class="top">
+  <a class="brand" href="#board"><img src="../assets/thrive-logo.png" alt="Thrive" width="26" height="26" decoding="async"><b data-i18n="brand">Thrive Digital Solutions</b></a>
+  <nav class="nav">
+    ${nav}
+    <button id="langbtn" class="langbtn">العربية</button>
+  </nav>
+</header>
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">${BUILD}</bdi> · <bdi class="mono-iso">${BUILT_AT}</bdi></div>
+
+${sectionsLinked}
+${MODAL}
+
+${body}
+${routerScript}
+</body>
+</html>
+`;
 }
 
 function emit(file, inline){
@@ -603,6 +778,17 @@ function emit(file, inline){
 }
 emit("library/console.html", false);
 emit("dist/thrive-console.html", true);
+
+/* The clean NEW single-document entry. Lives beside console.html in library/, so every ./module.js?v=hash
+   reference and ../assets/../version.json path resolves identically; committed like console.html (not a
+   gitignored artifact), and carried into publish/ by the "library" copy below. Reachable on the existing
+   Netlify site at /library/app.html, reusing the CARRY files with zero import from any RETIRE file. */
+(function(){
+  const html = buildApp();
+  const dest = path.join(ROOT, "library/app.html");
+  fs.writeFileSync(dest, html);
+  console.log("wrote library/app.html  (" + Math.round(html.length / 1024) + " KB; clean single-document entry)");
+})();
 
 /* Part 1, the load-bearing cache fix: the root redirect carries the build id, so a new deploy points the
    browser at console.html?v=<new BUILD>, a URL it has never cached, and it must fetch the fresh shell (and
