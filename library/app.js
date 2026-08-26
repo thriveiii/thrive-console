@@ -3317,6 +3317,9 @@ function initStateDiag(){
           "  body_head: "+String(td.body_head||"") ]; }
         tdLines.push("gate step: "+gateStep);
         tdLines.push(mirrorLine);
+        // BOARD_PAINT_COLD_START (read-only): if the board render ever threw, its exact exception is captured
+        // here so the diag panel names it alongside the on-screen failsafe panel; empty when the paint was clean.
+        if(window.__boardRenderError) tdLines.push("board render error: "+String(window.__boardRenderError).slice(0,240));
         // CONSOLE_ENTRY_DIAG (read-only): the six session-handoff facts captured by gate.js at boot, before
         // any eject. On a boot that ejects, app.js never reaches DOMContentLoaded, so this line shows only
         // when the console did NOT eject; the eject case is photographed on gate.html / the front door from
@@ -11342,12 +11345,34 @@ async function initBoard(){
   }
   // The synchronous paint, reused by the immediate boot paint and by each background boot read that resolves.
   // Generation- and mount-guarded; never starts a network call.
+  // BOARD_PAINT_COLD_START: a render fault must NEVER be a black board. Paint the SAFE empty state (the same
+  // three-surface contract render() itself decides), mark the boot painted so the watchdog and the diag agree
+  // the operator has a screen, record the exact exception for the diag panel, and surface it (name + message
+  // + the throwing statement) through the failsafe panel so the fault names itself and is never swallowed
+  // into an unhandledrejection. The next settle (the board-view read at renderBoard Step 2) repaints in place,
+  // so once data arrives a transient cold-start fault is replaced by the real board.
+  function boardRenderRecover(e){
+    const el=id=>document.getElementById(id);
+    try{
+      if(el("boardAuth")) el("boardAuth").hidden=true;
+      if(el("boardLanes")) el("boardLanes").hidden=true;
+      if(el("boardEmpty")) el("boardEmpty").hidden=false;
+      if(el("boardTabs")) el("boardTabs").hidden=true;
+      if(el("boardPipeline")) el("boardPipeline").hidden=true;
+      if(el("boardChips")) el("boardChips").hidden=true;
+      if(el("boardTray")) el("boardTray").hidden=true;
+    }catch(_){}
+    try{ window.__bootPainted=true; window.__boardPainted=true; window.__bootMark="board painted"; }catch(_){}
+    try{ window.__boardRenderError=(e && (e.stack||e.message)) ? String(e.stack||e.message) : String(e); }catch(_){}
+    try{ if(typeof window.__thriveBoardFault==="function") window.__thriveBoardFault(e); }catch(_){}
+    try{ console.error("[thrive] board render recovered to empty from:", e); }catch(_){}
+  }
   function boardRepaint(gen, trigger){
     if(gen!==__renderGen || __boardTornDown) return;
     if(!document.getElementById("boardLanes")) return;
     const source=resolveAuthority();
     __boardPin=source;
-    try{ render(trigger, source); } finally { __boardPin=null; }
+    try{ render(trigger, source); } catch(e){ boardRenderRecover(e); } finally { __boardPin=null; }
   }
 
   function render(trigger, source){
@@ -11417,7 +11442,7 @@ async function initBoard(){
     const v=ThriveBoard.verdict(b);
     const vLine=fmtRelative(v.key, v.n);
     const vNew=glowChanged("counter", v.key+":"+v.n) ? " is-glow-new" : "";
-    el("boardVerdict").innerHTML = '<span class="vtext'+vNew+'">'+vLine+'</span>';
+    if(el("boardVerdict")) el("boardVerdict").innerHTML = '<span class="vtext'+vNew+'">'+vLine+'</span>';
     // The hero subtitle speaks about the SAME state the headline is in, never another's line: the old
     // selection keyed the subtitle on b.summary.stalled alone, so a reply hero with any stalled card wore
     // "Untouched for N days or more." Selection and copy only, the count and recency come from the existing
@@ -11451,7 +11476,7 @@ async function initBoard(){
     else if(v.key==="vd_stalled"){
       subHtml = fmtRelative("vd_sub_stalled", ThriveBoard.STALL_DAYS); }
     else subHtml = txt("vd_sub_none");
-    el("boardVerdictSub").innerHTML = subHtml;
+    if(el("boardVerdictSub")) el("boardVerdictSub").innerHTML = subHtml;
 
     // The rose badge icon reflects the verdict, and the pipeline lights the stage the headline is
     // about. One accent (the dusty rose) across the badge, the number, and the lit chip.
@@ -11515,14 +11540,14 @@ async function initBoard(){
     const authReq = supaReadStatus().authRequired;
     if(authReq){
       // The header band must not say "a quiet board" over a locked store. It names the state instead.
-      el("boardVerdict").innerHTML='<span class="vtext">'+esc(t("board_auth_h"))+'</span>';
-      el("boardVerdictSub").innerHTML='';
+      if(el("boardVerdict")) el("boardVerdict").innerHTML='<span class="vtext">'+esc(t("board_auth_h"))+'</span>';
+      if(el("boardVerdictSub")) el("boardVerdictSub").innerHTML='';
       if(el("boardBadge")) el("boardBadge").innerHTML=ic("lock",20);
     }
     const empty=b.summary.total===0 && closed.length===0 && !authReq;
     if(el("boardAuth")) el("boardAuth").hidden=!authReq;
-    el("boardEmpty").hidden=!empty;
-    el("boardLanes").hidden=empty||authReq;
+    if(el("boardEmpty")) el("boardEmpty").hidden=!empty;
+    if(el("boardLanes")) el("boardLanes").hidden=empty||authReq;
     // P40: one of the three board states (auth prompt / empty / lanes) has now been decided and shown, so
     // the boot has PAINTED. The failsafe watchdog reads this flag; set it here means a healthy boot never
     // trips the stall panel. Assignment only, no behavior change.

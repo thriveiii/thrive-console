@@ -533,7 +533,16 @@ ${body}
         if(typeof applyLang === "function") try{ applyLang(); }catch(e){}
       }
       started[id] = want; delete stale[id];
-      try{ window[v.init](); }catch(e){ console.error(e); }
+      // BOARD_PAINT_COLD_START: a view init may be async (initBoard is). A throw inside it rejects a promise
+      // the shell does NOT await, which the plain catch below can never see: it would vanish into an
+      // unhandledrejection with a black view beneath it. Catch BOTH the synchronous throw and the async
+      // rejection and surface the exact exception through the failsafe panel, so a failed init names itself
+      // on screen and never leaves a silent black view.
+      function __viewInitFault(e){ try{ console.error(e); }catch(_){} try{ if(typeof window.__thriveBoardFault === "function") window.__thriveBoardFault(e); }catch(_){} }
+      try{
+        var __rv = window[v.init]();
+        if(__rv && typeof __rv.catch === "function") __rv.catch(__viewInitFault);
+      }catch(e){ __viewInitFault(e); }
     }
     try{ window.scrollTo(0,0); }catch(e){}
   }

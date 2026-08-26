@@ -172,6 +172,15 @@
     var err = (r && typeof r === "object") ? r : { name: "UnhandledRejection", message: (r != null ? String(r) : "promise rejected"), stack: "" };
     panel("Console failed to start", "تعذّر بدء الكونسول", err);
   });
+  /* BOARD_PAINT_COLD_START: a board render fault surfaces itself through the SAME panel (the exact exception:
+     name + message + the throwing statement from the stack, plus the boot checkpoint and build), so a broken
+     paint NAMES itself on screen instead of leaving a black board. Public so the board's own try/catch and
+     the shell's view-init dispatch can report a caught error deterministically, never relying on an
+     unhandledrejection that a caught error would not even produce. */
+  window.__thriveBoardFault = function (err) {
+    var e = (err && typeof err === "object") ? err : { name: "BoardRenderError", message: (err != null ? String(err) : "board render failed"), stack: "" };
+    try { panel("Board did not paint", "لم تُرسم اللوحة", e); } catch (x) {}
+  };
 
   /* P43 version convergence, the first act of boot. The application now verifies ITS OWN freshness:
      fetch /version.json (written by the bundler beside the build stamp) with cache:"no-store", compare its
