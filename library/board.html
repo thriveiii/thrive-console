@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="2cc83382">
+<meta name="thrive-build" content="d27b5e29">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -71,7 +71,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build 2cc83382</span>
+    <span class="muted">build d27b5e29</span>
   </div>
   <div id="root"></div>
 </div>
@@ -79,7 +79,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "2cc83382";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "d27b5e29";
   var QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived&order=last_activity_ts.desc.nullslast";
   var LANES = ["draft","live","sent","opened","replied"];
   // L2 lane completeness: the open lanes, plus bounced/failed as their own lanes; won/lost/dropped and archived
@@ -327,11 +327,15 @@
     var so=document.getElementById("signout"); if(so) so.addEventListener("click", function(){ signOut().then(signinView); });
   }
 
-  // Bucket by the SERVER stage only (never derived here): open lanes keep their stage; won/lost/dropped and any
-  // archived card go to the tray; "other" must end empty.
+  // Bucket by the SERVER stage only (never derived here). Domain law: a REPLIED opp is a terminal-success story
+  // and stays in Replied even once archived - archiving is end-of-conversation, NOT exclusion, so it must never
+  // subtract from the replied stage count. Every OTHER archived opp (and won/lost/dropped) belongs to the tray;
+  // the archived tray is rebuilt separately below from the archived flag, so a replied+archived opp shows in BOTH
+  // its Replied lane and the closed shelf. "other" must end empty.
   function laneOf(row){
-    if(row && row.archived) return "tray";
     var st=(row && row.stage) || "";
+    if(st==="replied") return "replied";
+    if(row && row.archived) return "tray";
     if(BOARD_LANES.indexOf(st)>=0) return st;
     if(TRAY_STAGES.indexOf(st)>=0) return "tray";
     return "other";
@@ -369,15 +373,18 @@
            reps +
            '</div>';
   }
-  function cnt(rows, st){ var n=0; rows.forEach(function(r){ if(r && r.stage===st && !r.archived) n++; }); return n; }
   function renderBoard(data){
     data = data || {}; __data = data; VIEW="board"; applyLang();
     var rows = Array.isArray(data.rows) ? data.rows : [];
     var groups = {}; BOARD_LANES.concat(["tray","other"]).forEach(function(l){ groups[l]=[]; });
     rows.forEach(function(r){ try{ groups[laneOf(r)].push(r); }catch(e){} });
+    // ONE bucketer, ONE count (no second count path): the verdict hero, the pipeline strip, and every lane header
+    // all read the SAME laneOf() grouping via laneN(). A replied+archived opp counts as Replied here precisely
+    // because laneOf() keeps it in "replied"; the old cnt() scan (which subtracted archived) is gone.
+    function laneN(l){ return (groups[l]||[]).length; }
 
     // Verdict hero (count-up) + the five-stage pipeline strip.
-    var draft=cnt(rows,"draft"), live=cnt(rows,"live"), sent=cnt(rows,"sent"), opened=cnt(rows,"opened"), replied=cnt(rows,"replied");
+    var draft=laneN("draft"), live=laneN("live"), sent=laneN("sent"), opened=laneN("opened"), replied=laneN("replied");
     var awaiting=sent+opened, heroN, heroK;
     if(replied>0){ heroN=replied; heroK="v_replied"; }
     else if(awaiting>0){ heroN=awaiting; heroK="v_awaiting"; }
@@ -385,7 +392,7 @@
     else { heroN=draft; heroK="v_draft"; }
     var verdict = '<div class="verdict"><span class="vnum" data-countup="' + heroN + '">0</span><span class="vlabel">' + esc(t(heroK)) + '</span></div>';
     var pipe = '<div class="pipe">' + ["draft","live","sent","opened","replied"].map(function(st){
-      return '<span class="pchip"><span class="pn" data-countup="' + cnt(rows,st) + '">0</span> ' + esc(t("l_"+st)) + '</span>';
+      return '<span class="pchip"><span class="pn" data-countup="' + laneN(st) + '">0</span> ' + esc(t("l_"+st)) + '</span>';
     }).join("") + '</div>';
 
     // Chips (display only in L2): stalled sent/opened cards, and archived count.
@@ -414,8 +421,10 @@
              (list.length ? list.map(cardHtml).join("") : '<div class="empty">' + esc(t("none")) + '</div>') + '</div>';
     }).join("") + '</div>';
 
-    // Closed/archived tray: collapsible (reopens as a disclosure); per-card lifecycle reopen is a later layer.
-    var tray = groups.tray || [];
+    // Closed/archived tray: the archived shelf lists EVERY archived opp plus won/lost/dropped, independent of the
+    // stage lane it also appears in - a replied+archived opp shows in Replied AND here, because archiving is a
+    // shelf, not an exclusion (and never subtracts from its stage count). Collapsible; per-card reopen is later.
+    var tray = rows.filter(function(r){ return r && (r.archived || TRAY_STAGES.indexOf((r && r.stage) || "")>=0); });
     var trayHtml = '<section class="tray"><button class="tray-toggle link" id="trayToggle" type="button" aria-expanded="false">' +
       esc(t("tray")) + ' <span class="n">' + tray.length + '</span></button>' +
       '<div class="tray-body" id="trayBody" hidden>' + (tray.length ? tray.map(cardHtml).join("") : '<div class="empty">'+esc(t("none"))+'</div>') + '</div></section>';
