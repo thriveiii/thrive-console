@@ -42,16 +42,17 @@ ck("stage moves disclosed as written to Supabase and re-read from the board view
    "written to Supabase and re-read from the board view" in board
    and "Stage moves are recorded on the device and are not in Supabase" not in board)
 # The board.html write surface is fenced: the ONLY data-write VERB is PATCH, and it targets ONLY console_opps
-# (L4 stage / archived / note). No PUT, no DELETE. POSTs are limited to three known kinds: the GoTrue auth call
-# (/auth/v1/), the L5 relay send (relayEp - the courier that reaches Resend server-side), and the L5 console_mail
-# confirm write. The drawer writes no other table. Per-scenario behavior is covered by board_write_test.py and
-# board_send_test.py; here we just fence the surface statically.
+# (L4 stage / archived / note). No PUT, no DELETE. POSTs are limited to known kinds: the GoTrue auth call
+# (/auth/v1/), the L5 relay send (relayEp - the courier that reaches Resend server-side), the L5 console_mail
+# confirm write, and the Step 2B own-row console_profiles upsert (the operator's own display_name only). The
+# drawer writes no other table. Per-scenario behavior is covered by board_write_test.py, board_send_test.py,
+# and board_profile_test.py; here we just fence the surface statically.
 _posts = [m.start() for m in re.finditer(r'method:"POST"', board)]
 _patches = [m.start() for m in re.finditer(r'method:"PATCH"', board)]
 def _post_ok(i):
     ctx = board[max(0,i-320):i+60]
-    return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx)
-ck("the only data write is PATCH to console_opps; no PUT/DELETE; every POST is auth, the relay send, or console_mail",
+    return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx) or ("console_profiles" in ctx)
+ck("the only data write is PATCH to console_opps; no PUT/DELETE; every POST is auth, relay send, console_mail, or the own-row console_profiles upsert",
    all(v not in board for v in ['method:"PUT"','method:"DELETE"'])
    and len(_patches) >= 1 and all("console_opps?slug=eq." in board[max(0,i-260):i+40] for i in _patches)
    and len(_posts) >= 1 and all(_post_ok(i) for i in _posts))

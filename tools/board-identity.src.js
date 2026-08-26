@@ -130,3 +130,102 @@ function isOwner(){ return currentRole()==="owner"; }
 // Read-only consumer hooks for later steps (and board_identity_test): the ONE resolver and the current uid.
 // resolveActor reads the live __profileIndex, so a call after loadIdentity settles sees the populated index.
 try{ window.__thriveResolveActor = resolveActor; window.__thriveCurrentUid = currentUid; window.__thriveCurrentRole = currentRole; }catch(e){}
+
+// ===================================================================================================
+// STEP 2B PROFILE SETTINGS. A member-facing surface, opened from the header, showing this operator's email
+// (read-only), display name (editable), and functional title (display only; an admin edits it in a later
+// step). This is the FIRST board.html write to console_profiles: a bounded own-row upsert keyed on
+// uid = currentUid() (== (auth.uid())::text, the live policy on the text uid column), writing ONLY
+// display_name. It never sends signature_title or role, so the admin-gated columns are untouched. The
+// owner/member role is not shown here at all: this surface speaks only the functional title.
+// ===================================================================================================
+
+function pfSetStatus(msg, cls){ var el=document.getElementById("pfStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
+
+// The panel: email (read-only, LTR), display name (editable), functional title (read-only + admin note).
+function profilePanelHtml(){
+  var email = authEmail();
+  var name  = __identity.name  || "";
+  var title = __identity.title || "";
+  return '<div class="pf-head"><h2 class="pf-h2">'+esc(t("pf_title"))+'</h2>'+
+      '<button class="link" id="pfClose" type="button">'+esc(t("pf_close"))+'</button></div>'+
+    '<div class="dw-sec"><h3>'+esc(t("pf_email"))+'</h3>'+
+      '<div class="pf-ro mono-iso" dir="ltr">'+esc(email)+'</div></div>'+
+    '<div class="dw-sec"><h3>'+esc(t("pf_name"))+'</h3>'+
+      '<input class="rec-in" id="pfName" type="text" autocomplete="off" spellcheck="false" '+
+        'value="'+esc(name)+'" placeholder="'+esc(t("pf_name_ph"))+'" aria-label="'+esc(t("pf_name"))+'">'+
+      '<div class="acts"><button class="act send" id="pfSave" type="button">'+esc(t("pf_save"))+'</button></div>'+
+      '<div class="act-status" id="pfStatus"></div></div>'+
+    '<div class="dw-sec"><h3>'+esc(t("pf_role_h"))+'</h3>'+
+      '<div class="pf-ro">'+esc(title || t("pf_role_none"))+'</div>'+
+      '<div class="pf-note">'+esc(t("pf_role_note"))+'</div></div>';
+}
+
+function wireProfile(){
+  var c=document.getElementById("pfClose"); if(c) c.addEventListener("click", closeProfile);
+  var s=document.getElementById("pfSave"); if(s) s.addEventListener("click", onSaveProfile);
+}
+function openProfile(){
+  var sc=document.getElementById("pfScrim"), pn=document.getElementById("pfPanel");
+  if(!sc || !pn) return;
+  pn.innerHTML = profilePanelHtml(); sc.hidden=false; pn.scrollTop=0; wireProfile();     // instant from __identity
+  var uid = currentUid();                                                                 // then refresh, best-effort
+  if(uid){
+    identGet("console_profiles?uid=eq."+enc(uid)+"&select=*&limit=1").then(function(rows){ // select=* so an unapplied column never 400s
+      var pr=(rows||[])[0]; if(!pr) return;
+      __identity.name  = (pr.display_name!=null) ? pr.display_name : __identity.name;
+      var prefs = (pr.prefs && typeof pr.prefs==="object") ? pr.prefs : {};
+      __identity.title = String(pr.signature_title || prefs.title || __identity.title || "");
+      var scr=document.getElementById("pfScrim");
+      if(scr && !scr.hidden){ var p2=document.getElementById("pfPanel"); if(p2){ p2.innerHTML=profilePanelHtml(); wireProfile(); } }
+    });
+  }
+}
+function closeProfile(){ var sc=document.getElementById("pfScrim"); if(sc) sc.hidden=true; }
+
+// The bounded own-row upsert. Body carries ONLY the key (uid) and display_name: signature_title and role are
+// never named, so they are never written. Same settle-always discipline as oppPatch (authFetchOnce timeout
+// REJECTS, one refresh-retry). uid = currentUid() equals (auth.uid())::text, satisfying the own-row policy.
+function profileSaveName(name, retried){
+  var uid = currentUid();
+  var body = { uid: uid, display_name: String(name==null?"":name) };
+  return authFetchOnce(URL_BASE + "/rest/v1/console_profiles", {
+    method:"POST",
+    headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Content-Type":"application/json",
+              "Prefer":"resolution=merge-duplicates,return=representation" },
+    cache:"no-store", body: JSON.stringify(body)
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return profileSaveName(name, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    return (Array.isArray(r.data) ? r.data[0] : r.data) || body;
+  });
+}
+// After a CONFIRMED save, reflect the new name in runtime + the resolver index so note metas show it at once
+// (Step 2A actorName reads __profileIndex live), no reload. Called only on success, so no phantom save.
+function applyNameLocally(name){
+  var uid = currentUid();
+  __identity.name = String(name==null?"":name);
+  if(uid){ if(!__profileIndex.byUid[uid]) __profileIndex.byUid[uid] = { uid:uid, name:"", email:authEmail() }; __profileIndex.byUid[uid].name = __identity.name; }
+  try{ if(window.__thriveIdentity) window.__thriveIdentity.name = __identity.name; }catch(e){}
+  try{ if(__drawerSlug && typeof renderNotesInto==="function") renderNotesInto(__drawerSlug); }catch(e){}
+}
+// Optimistic confirm-or-revert: the person controls their own display_name (any format, first-name-only or
+// full). Nothing is applied until the server confirms; a failure shows red and leaves the runtime name as it
+// was, never a phantom save. Reuses the shared __writing guard so a save never overlaps a send or note write.
+function onSaveProfile(){
+  var input = document.getElementById("pfName"); if(!input) return;
+  var name = String(input.value||"").trim();
+  if(__writing) return; __writing = true;
+  pfSetStatus(t("pf_saving"), ""); var btn=document.getElementById("pfSave"); if(btn) btn.disabled=true;
+  profileSaveName(name).then(function(row){
+    __writing = false; if(btn) btn.disabled=false;
+    applyNameLocally((row && row.display_name!=null) ? row.display_name : name);
+    var i2=document.getElementById("pfName"); if(i2) i2.value = __identity.name;
+    pfSetStatus(t("pf_saved"), "ok");
+  }).catch(function(e){
+    __writing = false; var b2=document.getElementById("pfSave"); if(b2) b2.disabled=false;
+    pfSetStatus((e && e.authRequired) ? t("err") : t("pf_failed"), "bad");
+  });
+}
