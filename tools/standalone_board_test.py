@@ -36,17 +36,18 @@ ck("dark #07070b, Lato, no blur", "#07070b" in board and "Lato" in board and "bl
 ck("the exact console_board query is used",
    "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived" in board
    and "/rest/v1/console_board?" in board)
-ck("the bare GoTrue grant shape (grant_type=password, no-store, arrayBuffer+TextDecoder)",
-   'grant_type=password' in board and 'cache:"no-store"' in board and 'TextDecoder' in board and 'arrayBuffer' in board)
+ck("the bare GoTrue grant shape (grant_type + no-store + arrayBuffer/TextDecoder)",
+   'grant_type=" + grant' in board and 'tokenPost("password"' in board
+   and 'cache:"no-store"' in board and 'TextDecoder' in board and 'arrayBuffer' in board)
 
-# The token POST must NOT carry Authorization: check the signIn fetch block specifically.
-signin_block = board.split('function signIn(')[1].split('function fetchBoard(')[0]
+# The token POST must NOT carry Authorization: check the tokenPost block (the one auth POST builder).
+tokenpost_block = board.split('function tokenPost(')[1].split('function signIn(')[0]
 ck("the token grant carries apikey + JSON only, never Authorization",
-   '"apikey": ANON' in signin_block and '"Content-Type":"application/json"' in signin_block
-   and 'Authorization' not in signin_block)
-rest_block = board.split('function fetchBoard(')[1].split('function laneOf(')[0]
+   '"apikey": ANON' in tokenpost_block and '"Content-Type":"application/json"' in tokenpost_block
+   and 'Authorization' not in tokenpost_block)
+rest_block = board.split('function fetchBoard(')[1].split('var VIEW')[0]
 ck("the REST GET carries the Bearer token AND the apikey header",
-   '"Authorization": "Bearer " + token' in rest_block and '"apikey": ANON' in rest_block and 'method:"GET"' in rest_block)
+   '"Authorization": "Bearer " + bearer()' in rest_block and '"apikey": ANON' in rest_block and 'method:"GET"' in rest_block)
 
 # ---- browser harness -----------------------------------------------------------------------------
 ROWS = [
@@ -134,7 +135,8 @@ with sync_playwright() as p:
     pg2.fill("#em", "op@thrive.test"); pg2.fill("#pw", "wrong"); pg2.click("#go")
     pg2.wait_for_timeout(500)
     err2 = pg2.evaluate("()=>{var e=document.querySelector('.err');return e?e.textContent:'';}")
-    ck("a sign-in failure prints visible red error text", "Invalid login credentials" in err2, err2)
+    # The sign-in error is now localized (chrome-language), not the raw GoTrue string: a 400 shows "Could not sign in."
+    ck("a sign-in failure prints visible red error text", "Could not sign in" in err2, err2)
     pg2.close()
 
     b.close()
