@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="d27b5e29">
+<meta name="thrive-build" content="96be45cb">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -65,21 +65,61 @@
   .tray{margin-top:14px;border-top:1px solid #17171f;padding-top:10px}
   .tray-toggle{font-size:13px;font-weight:700}
   .tray-body{margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;align-items:start}
+  /* L3 opportunity detail drawer (read-only), cloned from the engine card modal. Logical properties
+     (inset/border-inline) so RTL flips the panel to the opposite edge automatically. */
+  .card{cursor:pointer}
+  .card:focus-visible{outline:2px solid #5D7FB7;outline-offset:2px}
+  .scrim{position:fixed;inset:0;background:rgba(2,2,6,.66);z-index:40;display:flex;justify-content:flex-end}
+  .scrim[hidden]{display:none}
+  html[dir="rtl"] .scrim{justify-content:flex-start}
+  .drawer{width:min(480px,100%);height:100%;background:#0b0b11;border-inline-start:1px solid #1c1c26;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px 48px}
+  .dw-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border-bottom:1px solid #17171f;padding-bottom:12px}
+  .dw-name{font-weight:800;font-size:18px;word-break:break-word}
+  .dw-stage{display:inline-block;margin-top:6px;font-size:11px;color:#9a9aa6;border:1px solid #26262f;border-radius:999px;padding:1px 9px;text-transform:uppercase;letter-spacing:.06em}
+  html[dir="rtl"] .dw-stage{text-transform:none;letter-spacing:normal}
+  .dw-close{font-size:22px;line-height:1;color:#9a9aa6;background:none;border:0;cursor:pointer;padding:0 6px}
+  .dw-sec{margin:16px 0 0}
+  .dw-sec h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:0 0 8px;display:flex;gap:8px;align-items:center}
+  html[dir="rtl"] .dw-sec h3{text-transform:none;letter-spacing:normal}
+  .dw-nums{display:flex;flex-wrap:wrap;gap:8px}
+  .dw-num{flex:1 1 90px;background:#0e0e14;border:1px solid #191921;border-radius:10px;padding:8px 10px}
+  .dw-num .k{font-size:22px;font-weight:800;color:#fff;line-height:1}
+  .dw-num .l{font-size:11px;color:#8a8a93;margin-top:3px}
+  .dw-num .src{font-size:10px;color:#5a5a64;margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px;margin:0}
+  .dl dt{color:#8a8a93}
+  .dl dd{margin:0;color:#d7d7de;word-break:break-word}
+  .thread{display:flex;flex-direction:column;gap:8px}
+  .msg{border:1px solid #1c1c26;border-radius:10px;padding:8px 10px;max-width:92%}
+  .msg.in{background:#0e1512;border-color:#1e2a24;align-self:flex-start}
+  .msg.out{background:#0e0e17;border-color:#20202e;align-self:flex-end}
+  .msg .mh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .msg .mnum{color:#04252b;background:#7fd18b;border-radius:999px;font-weight:700;padding:0 7px;font-size:11px}
+  .msg .maddr{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#9fb0c9;word-break:break-all;unicode-bidi:isolate;direction:ltr}
+  .msg .mwho{color:#b9c6bb;font-weight:700;font-size:12px}
+  .msg .msubj{font-size:12px;color:#c9c9d2;margin-top:3px}
+  .msg .msnip{font-size:12px;color:#9a9aa6;margin-top:3px;white-space:pre-wrap;word-break:break-word}
+  .msg .mwhen{font-size:10px;color:#5a5a64;margin-top:4px;unicode-bidi:isolate}
+  .log{display:flex;flex-direction:column;gap:5px}
+  .logrow{font-size:12px;color:#b9b9c2;display:flex;gap:8px;align-items:baseline}
+  .logrow .lt{color:#6a6a74;font-size:11px;unicode-bidi:isolate;white-space:nowrap}
+  .note{font-size:11.5px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:8px;padding:6px 9px;margin-bottom:8px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build d27b5e29</span>
+    <span class="muted">build 96be45cb</span>
   </div>
   <div id="root"></div>
 </div>
+<div id="scrim" class="scrim" hidden><div id="drawer" class="drawer" role="dialog" aria-modal="true"></div></div>
 <script>
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "d27b5e29";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "96be45cb";
   var QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived&order=last_activity_ts.desc.nullslast";
   var LANES = ["draft","live","sent","opened","replied"];
   // L2 lane completeness: the open lanes, plus bounced/failed as their own lanes; won/lost/dropped and archived
@@ -103,7 +143,17 @@
           bg_page:"page", bg_email:"email", bg_archived:"archived",
           l_bounced:"Bounced", l_failed:"Failed", tray:"Closed",
           v_replied:"replied", v_awaiting:"awaiting reply", v_ready:"ready to send", v_draft:"in draft",
-          c_stalled:"stalled", c_archived:"archived", p_live:"live", p_waiting:"replies waiting", b_replies:"replies" },
+          c_stalled:"stalled", c_archived:"archived", p_live:"live", p_waiting:"replies waiting", b_replies:"replies",
+          d_close:"Close", d_signals:"Signals", n_sent:"sent", n_opens:"opens", n_replies:"replies",
+          src_mail:"console_mail", src_hits:"console_hits", src_inbound:"console_inbound",
+          d_channels:"Presence", d_email_l:"Email", d_page_l:"Page", d_idle_l:"Idle days", d_present:"present", d_absent:"none",
+          d_thread:"Reply conversation", d_no_thread:"No replies yet.", d_you:"Thrive",
+          d_record:"Record", d_no_notes:"No recorded notes.",
+          d_no_memory:"No accrued profile store; this is the opportunity record.",
+          d_prohibition:"Prohibition", d_drop:"Drop reason", d_lost:"Lost reason", d_pagemiss:"Page missing", d_tmplretired:"Template retired",
+          d_activity:"Activity", d_no_activity:"No activity yet.", d_loading:"Loading detail.",
+          e_sent:"Sent", e_open:"Opened", e_reply:"Reply",
+          d_stage_local:"Stage moves are recorded on the device and are not in Supabase; sends, opens and replies below are read live." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -114,7 +164,17 @@
           bg_page:"صفحة", bg_email:"رسالة", bg_archived:"مؤرشفة",
           l_bounced:"مرتدة", l_failed:"فشلت", tray:"مغلقة",
           v_replied:"ردود", v_awaiting:"بانتظار الرد", v_ready:"جاهزة للإرسال", v_draft:"مسودات",
-          c_stalled:"متوقفة", c_archived:"مؤرشفة", p_live:"مباشر", p_waiting:"ردود بانتظار الربط", b_replies:"ردود" }
+          c_stalled:"متوقفة", c_archived:"مؤرشفة", p_live:"مباشر", p_waiting:"ردود بانتظار الربط", b_replies:"ردود",
+          d_close:"إغلاق", d_signals:"المؤشرات", n_sent:"مُرسلة", n_opens:"فتحات", n_replies:"ردود",
+          src_mail:"console_mail", src_hits:"console_hits", src_inbound:"console_inbound",
+          d_channels:"الحضور", d_email_l:"البريد", d_page_l:"الصفحة", d_idle_l:"أيام الخمول", d_present:"موجود", d_absent:"لا شيء",
+          d_thread:"محادثة الردود", d_no_thread:"لا ردود بعد.", d_you:"ثرايف",
+          d_record:"السجل", d_no_notes:"لا ملاحظات مسجّلة.",
+          d_no_memory:"لا مخزن ملف متراكم؛ هذا هو سجل الفرصة.",
+          d_prohibition:"حظر", d_drop:"سبب الإسقاط", d_lost:"سبب الخسارة", d_pagemiss:"الصفحة مفقودة", d_tmplretired:"القالب متقاعد",
+          d_activity:"النشاط", d_no_activity:"لا نشاط بعد.", d_loading:"جارٍ تحميل التفاصيل.",
+          e_sent:"إرسال", e_open:"فتح", e_reply:"ردّ",
+          d_stage_local:"تُسجّل تنقلات المرحلة على الجهاز وليست في Supabase؛ الإرسالات والفتحات والردود أدناه تُقرأ مباشرة." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -236,6 +296,25 @@
       return res.text().then(function(tx){ var d=null; try{ d=tx?JSON.parse(tx):null; }catch(e){} return Array.isArray(d)?d:[]; });
     }, function(){ return []; });
   }
+  // L3 detail reads (best-effort, scoped to ONE opp, ONLY on drawer open): the opportunity RECORD (console_opps,
+  // for its carried notes - there is NO server-side accrued-memory store), its SENDS (console_mail) and OPENS
+  // (console_hits) for the activity timeline and the Thrive->prospect side of the thread. Any failure degrades to
+  // empty; the drawer's heart (the reply thread + the counts) already comes from the in-memory board row and the
+  // ONE reply resolver, so it never depends on these. Bearer + apikey, read-only. PRIVACY: prospect addresses/
+  // names/reply text are read LIVE here and only displayed - never written to storage, a log, or any artifact.
+  function enc(s){ return encodeURIComponent(String(s==null?"":s)); }
+  function restGet(path){
+    return fetch(URL_BASE + "/rest/v1/" + path, {
+      method:"GET", headers:{ "apikey": ANON, "Authorization": "Bearer " + bearer() }, cache:"no-store"
+    }).then(function(res){ if(!res.ok) return []; return res.text().then(function(tx){ var d=null; try{ d=tx?JSON.parse(tx):null; }catch(e){} return Array.isArray(d)?d:[]; }); }, function(){ return []; });
+  }
+  function fetchDetail(slug){
+    return Promise.all([
+      restGet("console_opps?slug=eq."+enc(slug)+"&select=slug,data&limit=1"),
+      restGet("console_mail?opp=eq."+enc(slug)+"&select=id,opp,ts,data&order=ts.asc"),
+      restGet("console_hits?slug=eq."+enc(slug)+"&select=id,slug,ts,data&order=ts.asc")
+    ]).then(function(a){ return { opp:(a[0]||[])[0]||null, mail:a[1]||[], hits:a[2]||[] }; }, function(){ return { opp:null, mail:[], hits:[] }; });
+  }
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
   // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
@@ -250,7 +329,8 @@
       var from=normFrom(data.from||r.from), ts=String(r.ts||data.ts||"");
       var g=byOpp[opp]||(byOpp[opp]={});
       var key=from||("_"+ts);
-      if(!g[key] || ts < g[key].ts) g[key]={ from:from, ts:ts, subject:(data.subject||"") };
+      // Keep a snippet for the L3 drawer thread (never changes the count/numbering; still one resolver).
+      if(!g[key] || ts < g[key].ts) g[key]={ from:from, ts:ts, subject:(data.subject||""), snippet:(data.snippet||data.body||data.text||"") };
     }catch(e){} });
     var count={}, list={};
     Object.keys(byOpp).forEach(function(slug){
@@ -366,13 +446,105 @@
         return '<div class="rep"><span class="repn">' + it.num + '</span> ' + esc(it.from || t("unnamed")) + '</div>';
       }).join("") + '</div>';
     }
-    return '<div class="card">' + dot +
+    return '<div class="card" data-slug="' + esc(slug) + '" role="button" tabindex="0">' + dot +
            '<div class="b">' + biz + nb + '</div>' +
            (bits.length ? ('<div class="s">' + esc(bits.join("  \u00b7  ")) + '</div>') : '') +
            (badges ? ('<div>' + badges + '</div>') : '') +
            reps +
            '</div>';
   }
+  // ---- L3 opportunity detail drawer (read-only): open and view; no edit/send/archive. Cloned from the engine
+  //      card modal (Overview + the reply thread + the activity trail). The board stays mounted underneath; the
+  //      drawer is an overlay, so Close returns to the board with NO reload. ----
+  function fmtWhen(ts){ ts=String(ts||""); if(!ts) return ""; return ts.replace("T"," ").replace(/\.\d+.*$/,"").replace(/Z$/,"").trim(); }
+  function numsHtml(row, slug){
+    var sc=Number(row.sent_count||0), oc=Number(row.open_count||0), rc=(__reps.count&&__reps.count[slug])||0;
+    function n(k,v,src){ return '<div class="dw-num"><div class="k">'+v+'</div><div class="l">'+esc(t(k))+'</div><div class="src">'+esc(src)+'</div></div>'; }
+    return '<div class="dw-sec"><h3>'+esc(t("d_signals"))+'</h3><div class="dw-nums">'+
+      n("n_sent",sc,t("src_mail"))+n("n_opens",oc,t("src_hits"))+n("n_replies",rc,t("src_inbound"))+'</div></div>';
+  }
+  function factsHtml(row){
+    function yn(b){ return b ? t("d_present") : t("d_absent"); }
+    var idle = (row.idle_days!=null && row.idle_days!=="") ? String(row.idle_days) : "-";
+    return '<div class="dw-sec"><h3>'+esc(t("d_channels"))+'</h3><dl class="dl">'+
+      '<dt>'+esc(t("d_email_l"))+'</dt><dd>'+esc(yn(row.has_email))+'</dd>'+
+      '<dt>'+esc(t("d_page_l"))+'</dt><dd>'+esc(yn(row.has_page))+'</dd>'+
+      '<dt>'+esc(t("d_idle_l"))+'</dt><dd>'+esc(idle)+'</dd></dl></div>';
+  }
+  // The reply thread is the HEART. Inbound replies come from the ONE resolver (__reps.list[slug]) - the SAME list
+  // and numbering as the card badge and the header count (§3 linked-everywhere-or-nowhere). The Thrive->prospect
+  // outbound sends (context) come from the best-effort console_mail read; they never change the reply count.
+  function threadHtml(slug, detail){
+    var list = (__reps.list && __reps.list[slug]) ? __reps.list[slug] : [];
+    var rc = (__reps.count && __reps.count[slug]) || 0;
+    var items = [];
+    if(detail && detail.mail) detail.mail.forEach(function(m){ m=m||{}; var d=m.data||{}; items.push({ dir:"out", ts:String(m.ts||d.ts||""), subject:(d.subject||m.subject||""), who:t("d_you") }); });
+    list.forEach(function(it){ items.push({ dir:"in", ts:String(it.ts||""), num:it.num, from:it.from, subject:it.subject, snip:it.snippet }); });
+    items.sort(function(a,b){ return a.ts<b.ts?-1:(a.ts>b.ts?1:0); });
+    var bubbles = items.map(function(m){
+      if(m.dir==="in"){
+        return '<div class="msg in" data-in="1"><div class="mh"><span class="mnum">#'+m.num+'</span><span class="maddr">'+esc(m.from||t("unnamed"))+'</span></div>'+
+          (m.subject?'<div class="msubj">'+esc(m.subject)+'</div>':'')+
+          (m.snip?'<div class="msnip">'+esc(m.snip)+'</div>':'')+
+          '<div class="mwhen">'+esc(fmtWhen(m.ts))+'</div></div>';
+      }
+      return '<div class="msg out"><div class="mh"><span class="mwho">'+esc(m.who)+'</span></div>'+
+        (m.subject?'<div class="msubj">'+esc(m.subject)+'</div>':'')+
+        '<div class="mwhen">'+esc(fmtWhen(m.ts))+'</div></div>';
+    }).join("");
+    var body = rc===0 ? ('<div class="empty">'+esc(t("d_no_thread"))+'</div>'+bubbles) : bubbles;
+    return '<div class="dw-sec"><h3>'+esc(t("d_thread"))+' <span class="nbadge" data-threadn="1">'+rc+'</span></h3><div class="thread">'+body+'</div></div>';
+  }
+  function recordHtml(detail){
+    if(!detail) return '<div class="dw-sec"><h3>'+esc(t("d_record"))+'</h3><div class="muted">'+esc(t("d_loading"))+'</div></div>';
+    var d = (detail.opp && detail.opp.data) || {};
+    var rows=[];
+    if(d.prohibition) rows.push([t("d_prohibition"), d.prohibition]);
+    if(d.drop_reason) rows.push([t("d_drop"), d.drop_reason]);
+    if(d.lost_reason) rows.push([t("d_lost"), d.lost_reason]);
+    if(d.page_missing) rows.push([t("d_pagemiss"), t("d_present")]);
+    if(d.template_retired) rows.push([t("d_tmplretired"), t("d_present")]);
+    var body = rows.length ? '<dl class="dl">'+rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+esc(String(r[1]))+'</dd>'; }).join("")+'</dl>' : '<div class="empty">'+esc(t("d_no_notes"))+'</div>';
+    return '<div class="dw-sec"><h3>'+esc(t("d_record"))+'</h3><div class="note">'+esc(t("d_no_memory"))+'</div>'+body+'</div>';
+  }
+  // Activity timeline: sends (console_mail) + opens (console_hits) + replies (the ONE resolver), newest first.
+  // Stage moves are local-only in the engine (no console_activity table), so they are honestly disclosed, absent.
+  function activityHtml(slug, detail){
+    if(!detail) return '<div class="dw-sec"><h3>'+esc(t("d_activity"))+'</h3><div class="muted">'+esc(t("d_loading"))+'</div></div>';
+    var ev=[];
+    (detail.mail||[]).forEach(function(m){ m=m||{}; var d=m.data||{}; var s=(d.subject||m.subject||""); ev.push({ ts:String(m.ts||d.ts||""), label:t("e_sent")+(s?(" - "+s):"") }); });
+    (detail.hits||[]).forEach(function(h){ h=h||{}; var d=h.data||{}; ev.push({ ts:String(h.ts||d.ts||""), label:t("e_open") }); });
+    ((__reps.list&&__reps.list[slug])||[]).forEach(function(it){ ev.push({ ts:String(it.ts||""), label:t("e_reply")+" #"+it.num }); });
+    ev.sort(function(a,b){ return a.ts>b.ts?-1:(a.ts<b.ts?1:0); });
+    var body = ev.length ? '<div class="log">'+ev.map(function(e){ return '<div class="logrow"><span class="lt">'+esc(fmtWhen(e.ts))+'</span> '+esc(e.label)+'</div>'; }).join("")+'</div>' : '<div class="empty">'+esc(t("d_no_activity"))+'</div>';
+    return '<div class="dw-sec"><h3>'+esc(t("d_activity"))+'</h3><div class="note">'+esc(t("d_stage_local"))+'</div>'+body+'</div>';
+  }
+  function drawerHtml(row, detail){
+    var slug=row.slug||"";
+    return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
+      '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
+      '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\u00d7</button></div>'+
+      numsHtml(row, slug)+factsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+activityHtml(slug, detail);
+  }
+  var __drawerSlug=null;
+  function wireDrawer(){ var b=document.getElementById("dwClose"); if(b) b.addEventListener("click", closeDrawer); }
+  function openDrawer(slug){
+    __drawerSlug=slug;
+    var scrim=document.getElementById("scrim"), dw=document.getElementById("drawer");
+    if(!scrim || !dw) return;
+    var row=null; if(__data && __data.rows) __data.rows.forEach(function(r){ if(r && r.slug===slug) row=r; });
+    if(!row) return;
+    try{
+      dw.innerHTML = drawerHtml(row, null);      // the heart renders instantly from in-memory data + the resolver
+      scrim.hidden=false; dw.scrollTop=0; wireDrawer();
+      fetchDetail(slug).then(function(detail){   // then enrich: record notes, outbound sends, activity timeline
+        if(__drawerSlug!==slug) return;
+        try{ dw.innerHTML = drawerHtml(row, detail); wireDrawer(); }catch(e){ redFull("drawer detail", e); }
+      }, function(){});
+    }catch(e){ redFull("drawer", e); }
+  }
+  function closeDrawer(){ __drawerSlug=null; var s=document.getElementById("scrim"); if(s) s.hidden=true; }
+
   function renderBoard(data){
     data = data || {}; __data = data; VIEW="board"; applyLang();
     var rows = Array.isArray(data.rows) ? data.rows : [];
@@ -435,6 +607,12 @@
     wireHeader();
     var tt=document.getElementById("trayToggle"), tb=document.getElementById("trayBody");
     if(tt && tb) tt.addEventListener("click", function(){ var open=tb.hidden; tb.hidden=!open; tt.setAttribute("aria-expanded", String(open)); });
+    // L3: tap any card (open lane OR tray) to open its read-only detail drawer.
+    [].forEach.call(root.querySelectorAll(".card[data-slug]"), function(c){
+      var slug=c.getAttribute("data-slug");
+      c.addEventListener("click", function(){ openDrawer(slug); });
+      c.addEventListener("keydown", function(e){ if(e.key==="Enter" || e.key===" "){ e.preventDefault(); openDrawer(slug); } });
+    });
     countUpAll();
   }
 
@@ -467,6 +645,12 @@
       refresh().then(function(ok){ ok ? loadBoard() : signinView(); }).catch(function(){ signinView(); });
     }catch(e){ redFull("boot", e); }
   }
+  // Drawer dismissal wired once: a backdrop tap or Escape closes it and returns to the board (no reload).
+  (function(){ try{
+    var s=document.getElementById("scrim");
+    if(s) s.addEventListener("click", function(e){ if(e.target===s) closeDrawer(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeDrawer(); });
+  }catch(e){} })();
   boot();
 })();
 </script>
