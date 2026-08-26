@@ -937,6 +937,27 @@ function buildBoard(){
   html[dir="rtl"] body, html[dir="rtl"] input, html[dir="rtl"] button{font-family:"SF Arabic","Geeza Pro",-apple-system,"Segoe UI",Tahoma,Arial,sans-serif}
   html[dir="rtl"] .brand{letter-spacing:normal}
   html[dir="rtl"] .lane h2{text-transform:none;letter-spacing:normal}
+  /* L2 read fidelity: verdict hero, pipeline strip, chips, pills, reply grouping + N-badge, new-activity dot, tray */
+  .verdict{display:flex;align-items:baseline;gap:10px;padding:10px 2px 2px}
+  .vnum{font-size:30px;font-weight:800;color:#fff;line-height:1}
+  .vlabel{color:#9a9aa6;font-size:13px}
+  .pipe{display:flex;flex-wrap:wrap;gap:8px;padding:6px 2px}
+  .pchip{font-size:12px;color:#9a9aa6;background:#0c0c12;border:1px solid #191921;border-radius:999px;padding:3px 9px}
+  .pchip .pn{color:#e7e7ea;font-weight:700}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;padding:2px}
+  .chip{font-size:11.5px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:999px;padding:2px 9px}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;padding:2px 2px 6px}
+  .pill{font-size:11px;border-radius:999px;padding:2px 9px;border:1px solid #1e2a1e;background:#0c130c;color:#7fd18b}
+  .pill.warn{border-color:#2a2410;background:#17130a;color:#c9a24a}
+  .card{position:relative}
+  .newdot{position:absolute;top:8px;inset-inline-end:8px;width:8px;height:8px;border-radius:50%;background:#71BFCC;box-shadow:0 0 0 2px #111119}
+  .nbadge{display:inline-block;font-size:11px;font-weight:700;color:#04252b;background:#7fd18b;border-radius:999px;padding:0 7px;vertical-align:middle}
+  .reps{margin-top:6px;border-top:1px solid #1c1c24;padding-top:6px;display:flex;flex-direction:column;gap:3px}
+  .rep{font-size:12px;color:#b9c6bb;word-break:break-word}
+  .repn{display:inline-block;min-width:15px;color:#6a6a74}
+  .tray{margin-top:14px;border-top:1px solid #17171f;padding-top:10px}
+  .tray-toggle{font-size:13px;font-weight:700}
+  .tray-body{margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;align-items:start}
 </style>
 </head>
 <body>
@@ -954,6 +975,12 @@ function buildBoard(){
   var URL_BASE = ${JSON.stringify(SUPA_URL)}, ANON = ${JSON.stringify(SUPA_ANON)}, BUILD = ${JSON.stringify(BUILD)};
   var QUERY = ${JSON.stringify(BOARD_QUERY)};
   var LANES = ["draft","live","sent","opened","replied"];
+  // L2 lane completeness: the open lanes, plus bounced/failed as their own lanes; won/lost/dropped and archived
+  // go to the collapsible tray. The stage ALWAYS comes from console_board (server authority); never derived here.
+  var BOARD_LANES = ["draft","live","sent","opened","replied","bounced","failed"];
+  var TRAY_STAGES = ["won","lost","dropped"];
+  var SEEN_KEY = "thrive_board_seen";
+  var __seen = {}, __reps = { count:{}, list:{}, waiting:0 };
   var LANG_KEY = "thrive_lang", SESSION_KEY = "console_sb_session", FETCH_TIMEOUT_MS = 15000;
 
   // ---- i18n (a compact clone of i18n.js t/setLang/applyLang, EN + AR). CHROME language (ui_lang) only; the
@@ -966,7 +993,10 @@ function buildBoard(){
           none:"none", unnamed:"(unnamed)",
           l_draft:"Draft", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
           b_send:"send", b_sends:"sends", b_open:"open", b_opens:"opens", b_replied:"replied", b_idle:"d idle",
-          bg_page:"page", bg_email:"email", bg_archived:"archived" },
+          bg_page:"page", bg_email:"email", bg_archived:"archived",
+          l_bounced:"Bounced", l_failed:"Failed", tray:"Closed",
+          v_replied:"replied", v_awaiting:"awaiting reply", v_ready:"ready to send", v_draft:"in draft",
+          c_stalled:"stalled", c_archived:"archived", p_live:"live", p_waiting:"replies waiting", b_replies:"replies" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -974,7 +1004,10 @@ function buildBoard(){
           none:"لا شيء", unnamed:"(بدون اسم)",
           l_draft:"مسودة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
           b_send:"إرسال", b_sends:"إرسال", b_open:"فتح", b_opens:"فتح", b_replied:"ردّ", b_idle:" يوم خمول",
-          bg_page:"صفحة", bg_email:"رسالة", bg_archived:"مؤرشفة" }
+          bg_page:"صفحة", bg_email:"رسالة", bg_archived:"مؤرشفة",
+          l_bounced:"مرتدة", l_failed:"فشلت", tray:"مغلقة",
+          v_replied:"ردود", v_awaiting:"بانتظار الرد", v_ready:"جاهزة للإرسال", v_draft:"مسودات",
+          c_stalled:"متوقفة", c_archived:"مؤرشفة", p_live:"مباشر", p_waiting:"ردود بانتظار الربط", b_replies:"ردود" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1085,10 +1118,61 @@ function buildBoard(){
     });
   }
 
+  // L2 reply detail comes from console_inbound (the reply resolver read path: repliesForOpp / replyCountFor).
+  // The board STAGE still comes only from console_board; this read adds reply COUNTS, never a stage. Best-effort:
+  // if it fails the board still renders and replies just do not show. Bearer + apikey, read-only.
+  function fetchInbound(){
+    return fetch(URL_BASE + "/rest/v1/console_inbound?select=id,opp,kind,bounce,ts,data&order=ts.asc", {
+      method:"GET", headers:{ "apikey": ANON, "Authorization": "Bearer " + bearer() }, cache:"no-store"
+    }).then(function(res){
+      if(!res.ok) return [];
+      return res.text().then(function(tx){ var d=null; try{ d=tx?JSON.parse(tx):null; }catch(e){} return Array.isArray(d)?d:[]; });
+    }, function(){ return []; });
+  }
+  function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
+  // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
+  // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
+  // earliest, sort, number 1..N. An unattributed human reply is inbox backlog (feeds the inbound-health pill).
+  function buildReplies(inbound){
+    var byOpp={}, waiting=0;
+    (Array.isArray(inbound)?inbound:[]).forEach(function(r){ try{
+      r=r||{}; var data=r.data||{};
+      if(r.kind==="auto" || r.bounce) return;
+      var opp=r.opp||"";
+      if(!opp){ waiting++; return; }
+      var from=normFrom(data.from||r.from), ts=String(r.ts||data.ts||"");
+      var g=byOpp[opp]||(byOpp[opp]={});
+      var key=from||("_"+ts);
+      if(!g[key] || ts < g[key].ts) g[key]={ from:from, ts:ts, subject:(data.subject||"") };
+    }catch(e){} });
+    var count={}, list={};
+    Object.keys(byOpp).forEach(function(slug){
+      var items=Object.keys(byOpp[slug]).map(function(k){ return byOpp[slug][k]; }).sort(function(a,b){ return a.ts<b.ts?-1:(a.ts>b.ts?1:0); });
+      items.forEach(function(it,i){ it.num=i+1; });
+      count[slug]=items.length; list[slug]=items;
+    });
+    return { count:count, list:list, waiting:waiting };
+  }
+  // new-activity (paintCardBadges spirit): per-card last-seen last_activity_ts, device-local. A card is "new"
+  // only if it was seen before AND its activity is newer; a first view marks nothing new.
+  function readSeen(){ try{ return JSON.parse(localStorage.getItem(SEEN_KEY)||"{}")||{}; }catch(e){ return {}; } }
+  function writeSeen(m){ try{ localStorage.setItem(SEEN_KEY, JSON.stringify(m||{})); }catch(e){} }
+  function countUpAll(){
+    try{
+      var els=root.querySelectorAll("[data-countup]");
+      [].forEach.call(els, function(el){
+        var to=Number(el.getAttribute("data-countup"))||0, dur=520, t0=null;
+        if(to<=0){ el.textContent="0"; return; }
+        function step(ts){ if(t0===null) t0=ts; var p=Math.min(1,(ts-t0)/dur); el.textContent=String(Math.round(p*to)); if(p<1) requestAnimationFrame(step); else el.textContent=String(to); }
+        requestAnimationFrame(step);
+      });
+    }catch(e){}
+  }
+
   // ---- views (localized; a lang toggle sits on the sign-in card and in the board header) ----
-  var VIEW = "signin", __rows = null;
+  var VIEW = "signin", __data = null;
   function langBtn(){ return '<button class="link" id="langBtn" type="button">' + esc(langLabel()) + '</button>'; }
-  function rerender(){ if(VIEW==="board" && __rows){ renderBoard(__rows); } else if(VIEW==="board"){ loadBoard(); } else { signinView(); } }
+  function rerender(){ if(VIEW==="board" && __data){ renderBoard(__data); } else if(VIEW==="board"){ loadBoard(); } else { signinView(); } }
 
   function signinView(){
     VIEW="signin"; applyLang();
@@ -1136,53 +1220,123 @@ function buildBoard(){
     var so=document.getElementById("signout"); if(so) so.addEventListener("click", function(){ signOut().then(signinView); });
   }
 
-  // Render the rows as plain cards grouped by lane. Every field access defaults to empty. NO local stage
-  // derivation: the server console_board stage is the authority (never-fabricate / one-stage-source hold).
-  function laneOf(row){ var st=(row && row.stage) || ""; return LANES.indexOf(st)>=0 ? st : "other"; }
+  // Bucket by the SERVER stage only (never derived here): open lanes keep their stage; won/lost/dropped and any
+  // archived card go to the tray; "other" must end empty.
+  function laneOf(row){
+    if(row && row.archived) return "tray";
+    var st=(row && row.stage) || "";
+    if(BOARD_LANES.indexOf(st)>=0) return st;
+    if(TRAY_STAGES.indexOf(st)>=0) return "tray";
+    return "other";
+  }
+  // A card. The NAME (business) is shown in BOTH languages, never the slug (the slug is only a last resort when
+  // an opp has no business at all). Counts/opens/idle and the reply N-badge come from the server; no stage math.
   function cardHtml(row){
     row = row || {};
+    var slug = row.slug || "";
     var biz = esc(row.business || row.slug || t("unnamed"));
+    var isNew = (__seen && (slug in __seen)) && (String(row.last_activity_ts||"") > String(__seen[slug]||""));
+    var rc = (__reps && __reps.count && __reps.count[slug]) || 0;
     var bits = [];
     var sc = Number(row.sent_count||0), oc = Number(row.open_count||0);
     if(sc) bits.push(sc + " " + t(sc===1 ? "b_send" : "b_sends"));
     if(oc) bits.push(oc + " " + t(oc===1 ? "b_open" : "b_opens"));
-    if(row.replied) bits.push(t("b_replied"));
     if(row.idle_days!=null && row.idle_days!=="") bits.push(row.idle_days + t("b_idle"));
     var badges = "";
     if(row.has_page)  badges += '<span class="badge">' + esc(t("bg_page")) + '</span>';
     if(row.has_email) badges += '<span class="badge">' + esc(t("bg_email")) + '</span>';
     if(row.archived)  badges += '<span class="badge">' + esc(t("bg_archived")) + '</span>';
-    return '<div class="card"><div class="b">' + biz + '</div>' +
+    var nb  = rc ? ' <span class="nbadge" title="' + esc(t("b_replies")) + '">' + rc + '</span>' : '';
+    var dot = isNew ? '<span class="newdot" aria-hidden="true"></span>' : '';
+    var reps = "";
+    if(rc && __reps.list && __reps.list[slug]){
+      // reply grouping (replyGroupHtml spirit): numbered repliers 1..N, the same count as the N-badge.
+      reps = '<div class="reps">' + __reps.list[slug].map(function(it){
+        return '<div class="rep"><span class="repn">' + it.num + '</span> ' + esc(it.from || t("unnamed")) + '</div>';
+      }).join("") + '</div>';
+    }
+    return '<div class="card">' + dot +
+           '<div class="b">' + biz + nb + '</div>' +
            (bits.length ? ('<div class="s">' + esc(bits.join("  \\u00b7  ")) + '</div>') : '') +
            (badges ? ('<div>' + badges + '</div>') : '') +
+           reps +
            '</div>';
   }
-  function renderBoard(rows){
-    rows = Array.isArray(rows) ? rows : []; __rows = rows; VIEW="board"; applyLang();
-    var groups = {}; LANES.concat(["other"]).forEach(function(l){ groups[l]=[]; });
+  function cnt(rows, st){ var n=0; rows.forEach(function(r){ if(r && r.stage===st && !r.archived) n++; }); return n; }
+  function renderBoard(data){
+    data = data || {}; __data = data; VIEW="board"; applyLang();
+    var rows = Array.isArray(data.rows) ? data.rows : [];
+    var groups = {}; BOARD_LANES.concat(["tray","other"]).forEach(function(l){ groups[l]=[]; });
     rows.forEach(function(r){ try{ groups[laneOf(r)].push(r); }catch(e){} });
-    var order = LANES.slice(); if(groups.other.length) order.push("other");   // dir=rtl flows the first lane to the right
-    var html = headerHtml() +
-      '<div class="muted" style="padding:2px">' + rows.length + ' ' + esc(t("opps")) + '</div>' +
-      '<div class="lanes">';
-    order.forEach(function(l){
+
+    // Verdict hero (count-up) + the five-stage pipeline strip.
+    var draft=cnt(rows,"draft"), live=cnt(rows,"live"), sent=cnt(rows,"sent"), opened=cnt(rows,"opened"), replied=cnt(rows,"replied");
+    var awaiting=sent+opened, heroN, heroK;
+    if(replied>0){ heroN=replied; heroK="v_replied"; }
+    else if(awaiting>0){ heroN=awaiting; heroK="v_awaiting"; }
+    else if(live>0){ heroN=live; heroK="v_ready"; }
+    else { heroN=draft; heroK="v_draft"; }
+    var verdict = '<div class="verdict"><span class="vnum" data-countup="' + heroN + '">0</span><span class="vlabel">' + esc(t(heroK)) + '</span></div>';
+    var pipe = '<div class="pipe">' + ["draft","live","sent","opened","replied"].map(function(st){
+      return '<span class="pchip"><span class="pn" data-countup="' + cnt(rows,st) + '">0</span> ' + esc(t("l_"+st)) + '</span>';
+    }).join("") + '</div>';
+
+    // Chips (display only in L2): stalled sent/opened cards, and archived count.
+    var stalled=0, archived=0;
+    rows.forEach(function(r){ if(r && r.archived) archived++; else if((r.stage==="sent"||r.stage==="opened") && Number(r.idle_days||0)>7) stalled++; });
+    var chips=""; if(stalled) chips+='<span class="chip">'+stalled+' '+esc(t("c_stalled"))+'</span>';
+    if(archived) chips+='<span class="chip">'+archived+' '+esc(t("c_archived"))+'</span>';
+    var chipsHtml = chips ? ('<div class="chips">'+chips+'</div>') : "";
+
+    // Pills: a truthful live-freshness pill, and the inbound-health pill (replies waiting to be filed) from the
+    // console_inbound read. The engine's drift/sync pills are intentionally NOT carried: the direct reader has
+    // no local ledger to drift from and no relay to be stale against, so there is nothing truthful to show.
+    var pills = '<span class="pill live">'+esc(t("p_live"))+'</span>';
+    var waiting = (__reps && __reps.waiting) || 0;
+    if(waiting) pills += '<span class="pill warn">'+waiting+' '+esc(t("p_waiting"))+'</span>';
+    var pillsHtml = '<div class="pills">'+pills+'</div>';
+
+    // Lanes: the five open lanes always; bounced/failed only when non-empty; "other" only if (unexpectedly) used.
+    var order = ["draft","live","sent","opened","replied"];
+    if((groups.bounced||[]).length) order.push("bounced");
+    if((groups.failed||[]).length) order.push("failed");
+    if((groups.other||[]).length) order.push("other");
+    var lanesHtml = '<div class="lanes">' + order.map(function(l){
       var list = groups[l] || [];
-      html += '<div class="lane"><h2>' + esc(t("l_" + l)) + '<span class="n">' + list.length + '</span></h2>';
-      html += list.length ? list.map(cardHtml).join("") : '<div class="empty">' + esc(t("none")) + '</div>';
-      html += '</div>';
-    });
-    html += '</div>';
-    root.innerHTML = html;
+      return '<div class="lane"><h2>' + esc(t("l_"+l)) + '<span class="n">' + list.length + '</span></h2>' +
+             (list.length ? list.map(cardHtml).join("") : '<div class="empty">' + esc(t("none")) + '</div>') + '</div>';
+    }).join("") + '</div>';
+
+    // Closed/archived tray: collapsible (reopens as a disclosure); per-card lifecycle reopen is a later layer.
+    var tray = groups.tray || [];
+    var trayHtml = '<section class="tray"><button class="tray-toggle link" id="trayToggle" type="button" aria-expanded="false">' +
+      esc(t("tray")) + ' <span class="n">' + tray.length + '</span></button>' +
+      '<div class="tray-body" id="trayBody" hidden>' + (tray.length ? tray.map(cardHtml).join("") : '<div class="empty">'+esc(t("none"))+'</div>') + '</div></section>';
+
+    root.innerHTML = headerHtml() + verdict + pipe + pillsHtml + chipsHtml +
+      '<div class="muted" style="padding:2px">' + rows.length + ' ' + esc(t("opps")) + '</div>' +
+      lanesHtml + trayHtml;
     wireHeader();
+    var tt=document.getElementById("trayToggle"), tb=document.getElementById("trayBody");
+    if(tt && tb) tt.addEventListener("click", function(){ var open=tb.hidden; tb.hidden=!open; tt.setAttribute("aria-expanded", String(open)); });
+    countUpAll();
   }
 
   function loadBoard(){
     VIEW="board"; applyLang();
     root.innerHTML = headerHtml() + '<div class="muted" style="padding:10px 2px">' + esc(t("loading")) + '</div>';
     wireHeader();
-    fetchBoard(false)
-      .then(function(rows){ try{ renderBoard(rows); }catch(e){ redFull("render", e); } })
-      .catch(function(e){ if(e && e.authRequired){ signinView(); } else { redFull("board fetch", e); } });
+    fetchBoard(false).then(function(rows){
+      return fetchInbound().then(function(inbound){
+        rows = Array.isArray(rows) ? rows : [];
+        __seen = readSeen();
+        __reps = buildReplies(inbound);
+        try{ renderBoard({ rows: rows }); }catch(e){ redFull("render", e); }
+        // update last-seen to current activity, so the NEXT load flags what changed since now
+        var next={}; rows.forEach(function(r){ if(r && r.slug) next[r.slug]=String(r.last_activity_ts||""); });
+        writeSeen(next);
+      });
+    }).catch(function(e){ if(e && e.authRequired){ signinView(); } else { redFull("board fetch", e); } });
   }
 
   // Warm boot: adopt a surviving mirrored session into memory (session() does it) and go STRAIGHT to the board,

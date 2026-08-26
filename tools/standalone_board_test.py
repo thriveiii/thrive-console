@@ -89,6 +89,7 @@ with sync_playwright() as p:
         route.fulfill(status=200, headers={"content-type":"application/json"}, body=json.dumps(ROWS))
     pg.route("**/auth/v1/token**", route_token)
     pg.route("**/rest/v1/console_board**", route_board)
+    pg.route("**/rest/v1/console_inbound**", lambda r: r.fulfill(status=200, headers={"content-type":"application/json"}, body="[]"))
 
     pg.goto(f"{base}/library/board.html", wait_until="load")
     pg.wait_for_timeout(300)
