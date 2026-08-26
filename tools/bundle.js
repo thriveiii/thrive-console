@@ -896,6 +896,9 @@ function buildBoard(){
   const SEND_SRC = read(path.join(ROOT, "tools/board-send.src.js"));
   // L5.5: the recipient field clone, inlined verbatim after the send clone (shares its scope + helpers).
   const RECIP_SRC = read(path.join(ROOT, "tools/board-recipient.src.js"));
+  // Step 1: the identity layer (actor resolver + profile/role load), inlined before the send clone so its
+  // currentUid() is defined for the send actor write. Shares the IIFE scope + helpers.
+  const IDENT_SRC = read(path.join(ROOT, "tools/board-identity.src.js"));
   const RELAY_EP = (published && published.ep) || "";
   return `<!doctype html>
 <html lang="en" dir="ltr">
@@ -1303,13 +1306,14 @@ function buildBoard(){
   }
   function isoNow(){ try{ return new Date().toISOString(); }catch(e){ return ""; } }
   // Add a note to the opp RECORD (console_opps.data.notes[]), read-modify-write so a concurrent note is not lost,
-  // then re-read to CONFIRM the note landed (the count grew). The note author is the signed-in OPERATOR's email
-  // (already shown in the header), never a prospect. Returns the confirmed notes array. Settles either way.
+  // then re-read to CONFIRM the note landed (the count grew). The note author is the signed-in OPERATOR's uid
+  // (Step 1: currentUid(), matching the engine's currentActor()=authUid() and the profile tables' key), never a
+  // prospect; resolveActor() turns it (or a legacy email row) into a name on read. Returns the confirmed notes.
   function addNote(slug, text){
     return oppReadData(slug).then(function(data){
       var notes = Array.isArray(data.notes) ? data.notes.slice() : [];
       var before = notes.length;
-      notes.push({ ts:isoNow(), text:String(text||""), by:authEmail() });
+      notes.push({ ts:isoNow(), text:String(text||""), by:currentUid() });
       var next = Object.assign({}, data, { notes:notes });
       return oppPatch(slug, { data:next, up:Date.now() }).then(function(){
         return oppReadData(slug).then(function(d2){                     // read-back confirm
@@ -1320,6 +1324,7 @@ function buildBoard(){
       });
     });
   }
+${IDENT_SRC}
 ${SEND_SRC}
 ${RECIP_SRC}
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
@@ -1755,6 +1760,7 @@ ${RECIP_SRC}
   }
   function loadBoard(){
     VIEW="board"; applyLang();
+    try{ loadIdentity(); }catch(e){}   // Step 1: fire-and-forget profile/role load; NEVER gates the render
     root.innerHTML = headerHtml() + '<div class="muted" style="padding:10px 2px">' + esc(t("loading")) + '</div>';
     wireHeader();
     reloadBoardData().catch(function(e){ if(e && e.authRequired){ signinView(); } else { redFull("board fetch", e); } });

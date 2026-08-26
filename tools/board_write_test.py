@@ -167,8 +167,8 @@ with sync_playwright() as p:
     ck("3: the new note renders in the drawer notes list", nres["shown"], nres)
     ck("3: the note persisted to the opp record (console_opps.data.notes)",
        any(n.get("text")=="Synthetic follow-up note" for n in OPPS["delta"]["data"].get("notes",[])), OPPS["delta"]["data"])
-    ck("3: the note author is the OPERATOR email, never a prospect",
-       (OPPS["delta"]["data"].get("notes",[{}])[-1].get("by")=="op@thrive.test"))
+    ck("3: the note author is the OPERATOR uid (Step 1 identity), never a prospect",
+       (OPPS["delta"]["data"].get("notes",[{}])[-1].get("by")=="u"))
     pg.evaluate("()=>{var s=document.getElementById('scrim'); if(s){var e=new KeyboardEvent('keydown',{key:'Escape'});document.dispatchEvent(e);}}")
     pg.wait_for_timeout(200)
 
