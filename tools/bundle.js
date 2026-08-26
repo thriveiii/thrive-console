@@ -902,6 +902,8 @@ function buildBoard(){
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Thrive Board</title>
+<script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
+(function(){try{var d=document.documentElement,l=localStorage.getItem("thrive_lang");d.setAttribute("lang",l==="ar"?"ar":"en");d.setAttribute("dir",l==="ar"?"rtl":"ltr");}catch(e){}})();</script>
 <style>
   html,body{margin:0;background:#07070b;color:#e7e7ea;font-family:Lato,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
   *{box-sizing:border-box}
@@ -929,6 +931,12 @@ function buildBoard(){
   .card .s{color:#8a8a93;font-size:12px;margin-top:4px;word-break:break-word}
   .badge{display:inline-block;font-size:11px;color:#8a8a93;border:1px solid #26262f;border-radius:999px;padding:1px 7px;margin:6px 6px 0 0}
   .empty{color:#5a5a64;font-size:12px;padding:8px 4px}
+  /* RTL: Arabic is chrome-language only. A system Arabic stack keeps the page self-contained (no webfont);
+     no letter-spacing and no uppercase on Arabic. Lane column order follows the base direction of .lanes,
+     so dir=rtl flows the first lane (draft) to the right automatically. */
+  html[dir="rtl"] body, html[dir="rtl"] input, html[dir="rtl"] button{font-family:"SF Arabic","Geeza Pro",-apple-system,"Segoe UI",Tahoma,Arial,sans-serif}
+  html[dir="rtl"] .brand{letter-spacing:normal}
+  html[dir="rtl"] .lane h2{text-transform:none;letter-spacing:normal}
 </style>
 </head>
 <body>
@@ -946,7 +954,35 @@ function buildBoard(){
   var URL_BASE = ${JSON.stringify(SUPA_URL)}, ANON = ${JSON.stringify(SUPA_ANON)}, BUILD = ${JSON.stringify(BUILD)};
   var QUERY = ${JSON.stringify(BOARD_QUERY)};
   var LANES = ["draft","live","sent","opened","replied"];
-  var LABEL = { draft:"Draft", live:"Live", sent:"Sent", opened:"Opened", replied:"Replied", other:"Other" };
+  var LANG_KEY = "thrive_lang", SESSION_KEY = "console_sb_session", FETCH_TIMEOUT_MS = 15000;
+
+  // ---- i18n (a compact clone of i18n.js t/setLang/applyLang, EN + AR). CHROME language (ui_lang) only; the
+  //      standalone reader has no document content, so doc_lang is never touched. Western numerals stay. ----
+  var STR = {
+    en: { title:"Thrive Board", sub:"Sign in to view the board.", email:"Operator email", pass:"Password",
+          go:"Sign in", busy:"Signing in", err:"Could not sign in.",
+          net:"Could not reach the service. Try again.", fill:"Enter email and password.",
+          refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
+          none:"none", unnamed:"(unnamed)",
+          l_draft:"Draft", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
+          b_send:"send", b_sends:"sends", b_open:"open", b_opens:"opens", b_replied:"replied", b_idle:"d idle",
+          bg_page:"page", bg_email:"email", bg_archived:"archived" },
+    ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
+          go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
+          net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
+          refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
+          none:"لا شيء", unnamed:"(بدون اسم)",
+          l_draft:"مسودة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
+          b_send:"إرسال", b_sends:"إرسال", b_open:"فتح", b_opens:"فتح", b_replied:"ردّ", b_idle:" يوم خمول",
+          bg_page:"صفحة", bg_email:"رسالة", bg_archived:"مؤرشفة" }
+  };
+  var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
+  function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
+  function langLabel(){ return LANG==="ar" ? "English" : "العربية"; }
+  function applyLang(){ try{ var d=document.documentElement; d.setAttribute("lang", LANG==="ar"?"ar":"en"); d.setAttribute("dir", LANG==="ar"?"rtl":"ltr"); }catch(e){} }
+  function setLang(l){ LANG = (l==="ar"?"ar":"en"); try{ localStorage.setItem(LANG_KEY, LANG); }catch(e){} applyLang(); rerender(); }
+  function toggleLang(){ setLang(LANG==="ar"?"en":"ar"); }
+
   var root = document.getElementById("root");
 
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
@@ -958,122 +994,210 @@ function buildBoard(){
   window.addEventListener("error", function(ev){ try{ redInto(root, "uncaught", (ev&&ev.error)||(ev&&ev.message)||"error"); }catch(x){} });
   window.addEventListener("unhandledrejection", function(ev){ try{ redInto(root, "promise", (ev&&ev.reason)||"promise rejected"); }catch(x){} });
 
-  // 1. The one sign-in surface. On submit, the bare GoTrue grant; the token is held in a local variable and
-  //    handed to loadBoard. No storage, no refresh, no redirect (READ-ONLY reader).
-  function signinView(){
-    root.innerHTML =
-      '<div class="signin">' +
-      '<h1>Thrive Board</h1>' +
-      '<p>Sign in to view the board.</p>' +
-      '<input id="em" type="email" autocomplete="username" spellcheck="false" placeholder="Operator email">' +
-      '<input id="pw" type="password" autocomplete="current-password" placeholder="Password">' +
-      '<button id="go" class="primary" type="button">Sign in</button>' +
-      '<div id="siErr"></div>' +
-      '</div>';
-    var em=document.getElementById("em"), pw=document.getElementById("pw"), go=document.getElementById("go"), er=document.getElementById("siErr");
-    setTimeout(function(){ try{ em.focus(); }catch(e){} }, 40);
-    function submit(){
-      er.innerHTML="";
-      var e=(em.value||"").trim(), p=pw.value||"";
-      if(!e || !p){ redInto(er, "sign-in", new Error("Enter email and password.")); return; }
-      go.disabled=true; go.textContent="Signing in";
-      signIn(e, p).then(function(token){ loadBoard(token); })
-        .catch(function(ex){ go.disabled=false; go.textContent="Sign in"; er.innerHTML=""; redInto(er, "sign-in", ex); });
-    }
-    go.addEventListener("click", submit);
-    pw.addEventListener("keydown", function(ev){ if(ev.key==="Enter") submit(); });
+  // ---- durable session (a clone of the supabase.js session layer): __memSession is memory-primary; the
+  //      localStorage mirror is best-effort and NEVER gates success. bearer() falls back to anon. ----
+  var __memSession = null, __mirrorOk = null;
+  function session(){
+    if(__memSession) return __memSession;
+    try{ var s=JSON.parse(localStorage.getItem(SESSION_KEY)||"null"); if(s) __memSession=s; return s; }catch(e){ return null; }
   }
+  function setSession(s){
+    __memSession = s || null;
+    try{ if(s) localStorage.setItem(SESSION_KEY, JSON.stringify(s)); else localStorage.removeItem(SESSION_KEY); __mirrorOk=true; }
+    catch(e){ __mirrorOk=false; }   // a mirror failure is recorded, never thrown
+  }
+  function signedIn(){ var s=session(); return !!(s && s.access_token); }     // warm-boot routing only
+  function bearer(){ var s=session(); return (s && s.access_token) ? s.access_token : ANON; }
+  function authEmail(){ var s=session(); return (s && s.email) || ""; }
+  function expired(s){ try{ if(!s || !s.expires_at) return false; return (Number(s.expires_at)*1000) < (Date.now()-5000); }catch(e){ return false; } }
 
-  // The device-proven bare GoTrue password grant: apikey header, JSON POST, NO Authorization, cache no-store,
-  // body read via arrayBuffer + TextDecoder. Resolves with the access token (a local value), never stored.
-  function signIn(email, password){
-    var url = URL_BASE + "/auth/v1/token?grant_type=password";
-    return fetch(url, {
-      method:"POST",
-      headers:{ "apikey": ANON, "Content-Type":"application/json" },
-      body: JSON.stringify({ email:email, password:password }),
-      cache:"no-store"
-    }).then(function(res){
-      var read = (typeof res.arrayBuffer==="function")
-        ? res.arrayBuffer().then(function(b){ return new TextDecoder("utf-8").decode(b); })
-        : res.text();
-      return read.then(function(t){
-        t = String(t||""); if(t.charCodeAt(0)===0xFEFF) t=t.slice(1); t=t.trim();
-        var d=null; try{ d = t ? JSON.parse(t) : null; }catch(e){}
-        if(!res.ok || !d || !d.access_token){
-          throw new Error((d && (d.error_description||d.msg||d.message)) || ("HTTP "+res.status+" (sign-in)"));
-        }
-        return d.access_token;
-      });
+  // Bounded fetch: an independent setTimeout race, not the AbortController, guarantees the promise settles
+  // (WebKit's AbortController+fetch is unreliable). Body read via arrayBuffer + TextDecoder, BOM stripped.
+  function timeoutError(ms){ var e=new Error("request timed out after "+ms+"ms"); e.kind="timeout"; return e; }
+  function authFetchOnce(url, opts){
+    var to={};
+    var race=new Promise(function(_,rej){ to.timer=setTimeout(function(){ to.fired=true; rej(timeoutError(FETCH_TIMEOUT_MS)); }, FETCH_TIMEOUT_MS); });
+    var run=(async function(){
+      var res=await fetch(url, opts);
+      var text=(typeof res.arrayBuffer==="function") ? new TextDecoder("utf-8").decode(await res.arrayBuffer()) : await res.text();
+      text=String(text||""); if(text.charCodeAt(0)===0xFEFF) text=text.slice(1); text=text.trim();
+      var data=null, parseFailed=false; if(text){ try{ data=JSON.parse(text); }catch(e){ parseFailed=true; } }
+      return { res:res, text:text, data:data, parseFailed:parseFailed };
+    })();
+    return Promise.race([run, race]).then(
+      function(v){ clearTimeout(to.timer); return v; },
+      function(e){ clearTimeout(to.timer); try{ run.catch(function(){}); }catch(x){} if(e && !e.kind) e.kind="network"; throw e; }
+    );
+  }
+  function tokenPost(grant, payload){
+    return authFetchOnce(URL_BASE + "/auth/v1/token?grant_type=" + grant, {
+      method:"POST", headers:{ "apikey": ANON, "Content-Type":"application/json" }, body: JSON.stringify(payload), cache:"no-store"
     });
   }
+  // signIn returns the parsed session; STORING it is not a precondition of returning. Typed throws for the
+  // sign-in card to branch on (empty / parse / auth / unavailable / timeout / network).
+  function signIn(email, password){
+    return tokenPost("password", { email:email, password:password }).then(function(r){
+      if(r.res.ok && r.text.length===0){ var ee=new Error("empty response body"); ee.kind="empty"; throw ee; }
+      if(r.res.ok && r.parseFailed){ var pe=new Error("response could not be parsed"); pe.kind="parse"; throw pe; }
+      var d=r.data;
+      if(!r.res.ok || !d || !d.access_token){
+        var err=new Error((d && (d.error_description||d.msg||d.message)) || ("HTTP "+r.res.status));
+        err.kind = (r.res.status>=500) ? "unavailable" : "auth"; throw err;
+      }
+      var sess={ access_token:d.access_token, refresh_token:d.refresh_token, expires_at:d.expires_at, email:email, uid:(d.user&&d.user.id)||"" };
+      setSession(sess);   // memory-primary; the mirror is best-effort and never gates this return
+      return sess;
+    });
+  }
+  function refresh(){
+    var s=session(); if(!s || !s.refresh_token) return Promise.resolve(false);
+    return tokenPost("refresh_token", { refresh_token:s.refresh_token }).then(function(r){
+      if(r.res.ok && r.data && r.data.access_token){
+        setSession({ access_token:r.data.access_token, refresh_token:r.data.refresh_token, expires_at:r.data.expires_at, email:s.email, uid:s.uid||((r.data.user&&r.data.user.id)||"") });
+        return true;
+      }
+      if(r.res.status===400 || r.res.status===401) setSession(null);   // definitive rejection only; a blip keeps it
+      return false;
+    }, function(){ return false; });
+  }
+  function signOut(){
+    var s=session();
+    var p = (s && s.access_token)
+      ? fetch(URL_BASE+"/auth/v1/logout", { method:"POST", headers:{ "apikey":ANON, "Authorization":"Bearer "+s.access_token }, cache:"no-store" }).then(function(){}, function(){})
+      : Promise.resolve();
+    return p.then(function(){ setSession(null); });
+  }
 
-  // 2. One REST GET of console_board with the token as the Bearer plus the apikey header.
-  function fetchBoard(token){
-    var url = URL_BASE + "/rest/v1/console_board?" + QUERY;
-    return fetch(url, {
-      method:"GET",
-      headers:{ "apikey": ANON, "Authorization": "Bearer " + token },
-      cache:"no-store"
+  // One REST GET of console_board with bearer() + apikey; one refresh-and-retry on 401/403 (rest() discipline).
+  function fetchBoard(retried){
+    return fetch(URL_BASE + "/rest/v1/console_board?" + QUERY, {
+      method:"GET", headers:{ "apikey": ANON, "Authorization": "Bearer " + bearer() }, cache:"no-store"
     }).then(function(res){
-      return res.text().then(function(t){
-        var d=null; try{ d = t ? JSON.parse(t) : null; }catch(e){}
-        if(!res.ok){ throw new Error((d && d.message) || ("HTTP "+res.status+" (board)")); }
+      if((res.status===401 || res.status===403) && !retried && session() && session().refresh_token){
+        return refresh().then(function(ok){ if(ok) return fetchBoard(true); var e=new Error("auth"); e.authRequired=true; throw e; });
+      }
+      return res.text().then(function(tx){
+        var d=null; try{ d = tx ? JSON.parse(tx) : null; }catch(e){}
+        if(!res.ok){ var e2=new Error((d && d.message) || ("HTTP "+res.status)); if(res.status===401||res.status===403) e2.authRequired=true; throw e2; }
         return Array.isArray(d) ? d : [];
       });
     });
   }
 
-  // 3. Render the rows as plain cards grouped by lane. Every field access defaults to empty.
+  // ---- views (localized; a lang toggle sits on the sign-in card and in the board header) ----
+  var VIEW = "signin", __rows = null;
+  function langBtn(){ return '<button class="link" id="langBtn" type="button">' + esc(langLabel()) + '</button>'; }
+  function rerender(){ if(VIEW==="board" && __rows){ renderBoard(__rows); } else if(VIEW==="board"){ loadBoard(); } else { signinView(); } }
+
+  function signinView(){
+    VIEW="signin"; applyLang();
+    root.innerHTML =
+      '<div class="signin">' +
+      '<h1>' + esc(t("title")) + '</h1>' +
+      '<p>' + esc(t("sub")) + '</p>' +
+      '<input id="em" type="email" autocomplete="username" spellcheck="false" placeholder="' + esc(t("email")) + '">' +
+      '<input id="pw" type="password" autocomplete="current-password" placeholder="' + esc(t("pass")) + '">' +
+      '<button id="go" class="primary" type="button">' + esc(t("go")) + '</button>' +
+      '<div id="siErr"></div>' +
+      '<p style="margin:14px 0 0">' + langBtn() + '</p>' +
+      '</div>';
+    var em=document.getElementById("em"), pw=document.getElementById("pw"), go=document.getElementById("go"), er=document.getElementById("siErr");
+    var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
+    setTimeout(function(){ try{ em.focus(); }catch(e){} }, 40);
+    function submit(){
+      er.innerHTML="";
+      var e=(em.value||"").trim(), p=pw.value||"";
+      if(!e || !p){ redInto(er, "sign-in", new Error(t("fill"))); return; }
+      go.disabled=true; go.textContent=t("busy");
+      signIn(e, p).then(function(){ loadBoard(); })
+        .catch(function(ex){
+          go.disabled=false; go.textContent=t("go"); er.innerHTML="";
+          var kind=(ex&&ex.kind)||"auth";
+          redInto(er, "sign-in", new Error((kind==="timeout"||kind==="network"||kind==="unavailable") ? t("net") : t("err")));
+        });
+    }
+    go.addEventListener("click", submit);
+    pw.addEventListener("keydown", function(ev){ if(ev.key==="Enter") submit(); });
+  }
+
+  // Operator chip (signed-in email) + language toggle + refresh + sign-out.
+  function headerHtml(){
+    return '<div class="top" style="padding:8px 2px">' +
+      '<span class="muted" id="opChip">' + esc(authEmail()) + '</span>' +
+      '<span class="row-actions">' + langBtn() +
+        '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
+        '<button class="link" id="signout" type="button">' + esc(t("signout")) + '</button>' +
+      '</span></div>';
+  }
+  function wireHeader(){
+    var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
+    var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
+    var so=document.getElementById("signout"); if(so) so.addEventListener("click", function(){ signOut().then(signinView); });
+  }
+
+  // Render the rows as plain cards grouped by lane. Every field access defaults to empty. NO local stage
+  // derivation: the server console_board stage is the authority (never-fabricate / one-stage-source hold).
   function laneOf(row){ var st=(row && row.stage) || ""; return LANES.indexOf(st)>=0 ? st : "other"; }
   function cardHtml(row){
     row = row || {};
-    var biz = esc(row.business || row.slug || "(unnamed)");
+    var biz = esc(row.business || row.slug || t("unnamed"));
     var bits = [];
     var sc = Number(row.sent_count||0), oc = Number(row.open_count||0);
-    if(sc) bits.push(sc + (sc===1?" send":" sends"));
-    if(oc) bits.push(oc + (oc===1?" open":" opens"));
-    if(row.replied) bits.push("replied");
-    if(row.idle_days!=null && row.idle_days!=="") bits.push(row.idle_days + "d idle");
+    if(sc) bits.push(sc + " " + t(sc===1 ? "b_send" : "b_sends"));
+    if(oc) bits.push(oc + " " + t(oc===1 ? "b_open" : "b_opens"));
+    if(row.replied) bits.push(t("b_replied"));
+    if(row.idle_days!=null && row.idle_days!=="") bits.push(row.idle_days + t("b_idle"));
     var badges = "";
-    if(row.has_page)  badges += '<span class="badge">page</span>';
-    if(row.has_email) badges += '<span class="badge">email</span>';
-    if(row.archived)  badges += '<span class="badge">archived</span>';
+    if(row.has_page)  badges += '<span class="badge">' + esc(t("bg_page")) + '</span>';
+    if(row.has_email) badges += '<span class="badge">' + esc(t("bg_email")) + '</span>';
+    if(row.archived)  badges += '<span class="badge">' + esc(t("bg_archived")) + '</span>';
     return '<div class="card"><div class="b">' + biz + '</div>' +
            (bits.length ? ('<div class="s">' + esc(bits.join("  \\u00b7  ")) + '</div>') : '') +
            (badges ? ('<div>' + badges + '</div>') : '') +
            '</div>';
   }
   function renderBoard(rows){
-    rows = Array.isArray(rows) ? rows : [];
+    rows = Array.isArray(rows) ? rows : []; __rows = rows; VIEW="board"; applyLang();
     var groups = {}; LANES.concat(["other"]).forEach(function(l){ groups[l]=[]; });
     rows.forEach(function(r){ try{ groups[laneOf(r)].push(r); }catch(e){} });
-    var order = LANES.slice(); if(groups.other.length) order.push("other");
-    var html = '<div class="top" style="border:0;padding:8px 2px"><span class="muted">' + rows.length +
-               ' opportunities</span><span class="row-actions"><button class="link" id="reload" type="button">Refresh</button></span></div>' +
-               '<div class="lanes">';
+    var order = LANES.slice(); if(groups.other.length) order.push("other");   // dir=rtl flows the first lane to the right
+    var html = headerHtml() +
+      '<div class="muted" style="padding:2px">' + rows.length + ' ' + esc(t("opps")) + '</div>' +
+      '<div class="lanes">';
     order.forEach(function(l){
       var list = groups[l] || [];
-      html += '<div class="lane"><h2>' + esc(LABEL[l]||l) + '<span class="n">' + list.length + '</span></h2>';
-      html += list.length ? list.map(cardHtml).join("") : '<div class="empty">none</div>';
+      html += '<div class="lane"><h2>' + esc(t("l_" + l)) + '<span class="n">' + list.length + '</span></h2>';
+      html += list.length ? list.map(cardHtml).join("") : '<div class="empty">' + esc(t("none")) + '</div>';
       html += '</div>';
     });
     html += '</div>';
     root.innerHTML = html;
-    var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(rl.__token); });
-    if(rl) rl.__token = renderBoard.__token;
+    wireHeader();
   }
 
-  function loadBoard(token){
-    renderBoard.__token = token;
-    root.innerHTML = '<div class="muted" style="padding:10px 2px">Loading the board...</div>';
-    fetchBoard(token)
+  function loadBoard(){
+    VIEW="board"; applyLang();
+    root.innerHTML = headerHtml() + '<div class="muted" style="padding:10px 2px">' + esc(t("loading")) + '</div>';
+    wireHeader();
+    fetchBoard(false)
       .then(function(rows){ try{ renderBoard(rows); }catch(e){ redFull("render", e); } })
-      .catch(function(e){ redFull("board fetch", e); });
+      .catch(function(e){ if(e && e.authRequired){ signinView(); } else { redFull("board fetch", e); } });
   }
 
-  // 4. READ-ONLY: display only. Everything is wrapped; a boot failure prints red, never a black page.
-  try{ signinView(); }catch(e){ redFull("boot", e); }
+  // Warm boot: adopt a surviving mirrored session into memory (session() does it) and go STRAIGHT to the board,
+  // no re-sign-in; an expired token gets one bounded refresh. Never a loop (refresh clears only on a definitive
+  // 400/401), never a black screen (everything wrapped; an auth failure returns the sign-in card, not red text).
+  function boot(){
+    applyLang();
+    try{
+      if(!signedIn()){ signinView(); return; }
+      var s=session();
+      if(!expired(s)){ loadBoard(); return; }
+      refresh().then(function(ok){ ok ? loadBoard() : signinView(); }).catch(function(){ signinView(); });
+    }catch(e){ redFull("boot", e); }
+  }
+  boot();
 })();
 </script>
 </body>
