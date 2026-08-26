@@ -42,7 +42,7 @@ ck("warm boot goes straight to the board when a live session survives",
 ck("i18n t/setLang/applyLang + thrive_lang, chrome-only",
    "function setLang" in board and "function applyLang" in board and 'localStorage.setItem(LANG_KEY' in board)
 ck("no local stage derivation retained (read foundation intact)",
-   "the server console_board stage is the authority" in board and "console_board?" in board)
+   "never derived here" in board and "console_board?" in board)
 
 # ---- browser harness -----------------------------------------------------------------------------
 ROWS = [
@@ -66,6 +66,7 @@ def wire(ctx, token_body=None, token_status=200):
     ctx.route("**/auth/v1/token**", lambda r: r.fulfill(status=token_status, headers={"content-type":"application/json"},
               body=json.dumps(token_body if token_body is not None else TOKEN)))
     ctx.route("**/rest/v1/console_board**", lambda r: r.fulfill(status=200, headers={"content-type":"application/json"}, body=json.dumps(ROWS)))
+    ctx.route("**/rest/v1/console_inbound**", lambda r: r.fulfill(status=200, headers={"content-type":"application/json"}, body="[]"))
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
