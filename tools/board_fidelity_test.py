@@ -28,6 +28,12 @@ board = open(os.path.join(ROOT, "library/board.html")).read()
 # ---- source guards -------------------------------------------------------------------------------
 ck("stage still comes from console_board only (bucketed, never derived)",
    "the SERVER stage only (never derived here)" in board and "BOARD_LANES.indexOf(st)" in board)
+ck("domain law: a replied opp stays Replied even when archived (archiving never subtracts from the stage)",
+   'if(st==="replied") return "replied";' in board)
+ck("ONE count path: the stage numbers read the lane grouping (laneN); the old archived-subtracting cnt() is gone",
+   "function laneN(l){ return (groups[l]||[]).length; }" in board and "function cnt(" not in board and "cnt(rows," not in board)
+ck("the archived tray lists every archived opp (shelf, not exclusion) independent of its stage lane",
+   "r.archived || TRAY_STAGES.indexOf" in board)
 ck("reply detail reads console_inbound (best-effort, never blocks the board)",
    "/rest/v1/console_inbound?select=" in board and "if(!res.ok) return [];" in board)
 ck("one resolver: auto/bounce excluded, dedup by sender, numbered",
@@ -47,6 +53,9 @@ ROWS = [
   {"slug":"wonn","business":"Won Co","stage":"won","sent_count":1,"open_count":1,"replied":True,"idle_days":9,"has_page":True,"has_email":True,"archived":False,"last_activity_ts":None},
   {"slug":"arch","business":"Archived Co","stage":"sent","sent_count":1,"open_count":0,"replied":False,"idle_days":30,"has_page":True,"has_email":True,"archived":True,"last_activity_ts":None},
   {"slug":"arab","business":"شركة الاختبار","stage":"live","sent_count":0,"open_count":0,"replied":False,"idle_days":None,"has_page":True,"has_email":True,"archived":False,"last_activity_ts":None},
+  # Domain law: a REPLIED opp that has been archived (conversation concluded successfully) is STILL Replied - it
+  # must count and appear in the Replied lane, AND still be listed on the archived shelf. This is the Basel case.
+  {"slug":"basl","business":"Basel Issa","stage":"replied","sent_count":1,"open_count":1,"replied":True,"idle_days":4,"has_page":True,"has_email":True,"archived":True,"last_activity_ts":"2026-01-04T00:00:00Z"},
 ]
 INBOUND = [  # for epsi: two distinct human repliers (a,b) + a dup a + one auto + one bounce; plus one unattributed
   {"opp":"epsi","kind":"human","bounce":None,"ts":"2026-01-01T10:00:00Z","data":{"from":"a@x.com","subject":"Re: hi"}},
@@ -55,6 +64,7 @@ INBOUND = [  # for epsi: two distinct human repliers (a,b) + a dup a + one auto 
   {"opp":"epsi","kind":"auto","bounce":None,"ts":"2026-01-04T10:00:00Z","data":{"from":"c@x.com"}},
   {"opp":"epsi","kind":"human","bounce":"hard","ts":"2026-01-05T10:00:00Z","data":{"from":"d@x.com"}},
   {"opp":"","kind":"human","bounce":None,"ts":"2026-01-06T10:00:00Z","data":{"from":"waiting@x.com"}},
+  {"opp":"basl","kind":"human","bounce":None,"ts":"2026-01-07T10:00:00Z","data":{"from":"basel@issa.com","subject":"Re: hi"}},
 ]
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -80,42 +90,53 @@ with sync_playwright() as p:
       var lanes={}; document.querySelectorAll('.lane h2').forEach(function(h){ lanes[h.childNodes[0].textContent.trim()]=h.querySelector('.n').textContent.trim(); });
       function laneCards(label){ var out=[]; document.querySelectorAll('.lane').forEach(function(l){ var h=l.querySelector('h2'); if(h && h.childNodes[0].textContent.trim()===label) out=[].map.call(l.querySelectorAll('.card .b'),function(x){return x.textContent;}); }); return out; }
       var epsiCard=null; document.querySelectorAll('.card').forEach(function(c){ if(/Epsilon/.test(c.textContent)) epsiCard=c; });
+      var baslCard=null; document.querySelectorAll('.card').forEach(function(c){ if(/Basel Issa/.test(c.textContent)) baslCard=c; });
       return {
         lanes:lanes,
         laneNames:[].map.call(document.querySelectorAll('.lane h2'), function(h){return h.childNodes[0].textContent.trim();}),
         openedCards:laneCards('Opened'),
+        repliedCards:laneCards('Replied'),
         hero:(document.querySelector('.vnum')||{}).textContent||'', heroLabel:(document.querySelector('.vlabel')||{}).textContent||'',
         pipe:[].map.call(document.querySelectorAll('.pchip .pn'),function(x){return x.textContent;}),
         chips:(document.querySelector('.chips')||{}).textContent||'',
         pills:(document.querySelector('.pills')||{}).textContent||'',
         trayN:(function(){var t=document.querySelector('.tray-toggle .n');return t?t.textContent.trim():'';})(),
         trayHidden:(function(){var b=document.getElementById('trayBody');return b?b.hidden:null;})(),
+        trayNames:(function(){var b=document.getElementById('trayBody');return b?[].map.call(b.querySelectorAll('.card .b'),function(x){return x.textContent;}):[];})(),
         epsiBadge:epsiCard?((epsiCard.querySelector('.nbadge')||{}).textContent||''):'',
         epsiReps:epsiCard?epsiCard.querySelectorAll('.reps .rep').length:-1,
+        baslBadge:baslCard?((baslCard.querySelector('.nbadge')||{}).textContent||''):'',
+        baslReps:baslCard?baslCard.querySelectorAll('.reps .rep').length:-1,
       };
     }""")
-    ck("1: five open lanes render with their server counts",
+    ck("1: five open lanes render with their server counts (Replied includes the archived Basel)",
        st["lanes"].get("Draft")=="1" and st["lanes"].get("Live")=="2" and st["lanes"].get("Sent")=="1"
-       and st["lanes"].get("Opened")=="1" and st["lanes"].get("Replied")=="1", st["lanes"])
+       and st["lanes"].get("Opened")=="1" and st["lanes"].get("Replied")=="2", st["lanes"])
     ck("1: bounced and failed appear as their own lanes",
        st["lanes"].get("Bounced")=="1" and st["lanes"].get("Failed")=="1", st["lanes"])
     ck("1: no 'other' catch-all lane (every stage has a home)", "Other" not in st["laneNames"], st["laneNames"])
-    ck("1: won + archived go to the tray (count 2), collapsed by default",
-       st["trayN"]=="2" and st["trayHidden"] is True, st)
+    # DOMAIN LAW: a replied+archived opp counts as Replied AND is listed on the archived shelf (dual presence).
+    ck("LAW: the archived-replied Basel appears in the Replied lane (not subtracted, not hidden)",
+       any("Basel Issa" in c for c in st["repliedCards"]) and any("Epsilon" in c for c in st["repliedCards"]), st["repliedCards"])
+    ck("LAW: the tray still lists archived opps including Basel (won + archived-sent + archived-replied = 3)",
+       st["trayN"]=="3" and st["trayHidden"] is True and any("Basel Issa" in c for c in st["trayNames"]), st)
     ck("5: no fabricated stage (Delta with opens sits in Opened, not promoted)", st["openedCards"]==["Delta Foods"], st["openedCards"])
-    ck("2: verdict hero counts up to the replied count with its label",
-       st["hero"]=="1" and ("replied" in st["heroLabel"]), st)
-    ck("2: pipeline strip shows the five stage counts", st["pipe"]==["1","2","1","1","1"], st["pipe"])
+    ck("2: verdict hero counts up to the replied count (2, includes archived) with its label",
+       st["hero"]=="2" and ("replied" in st["heroLabel"]), st)
+    ck("2: pipeline Replied count agrees with the lane header - ONE count path (both 2, includes archived)",
+       st["pipe"]==["1","2","1","1","2"] and st["lanes"].get("Replied")==st["pipe"][4], st["pipe"])
     ck("2: chips show stalled and archived", ("stalled" in st["chips"]) and ("archived" in st["chips"]), st["chips"])
     ck("3: reply N-badge equals the console_inbound grouping (2 distinct repliers, auto/bounce/dup excluded)",
        st["epsiBadge"]=="2" and st["epsiReps"]==2, st)
-    ck("3: inbound-health pill counts the one unattributed reply waiting",
+    ck("3: the archived Basel still carries his reply badge (N-badge == reply list == 1, one resolver)",
+       st["baslBadge"]=="1" and st["baslReps"]==1, st)
+    ck("3: inbound-health pill counts the one unattributed reply waiting (Basel's reply is attributed, not waiting)",
        "1" in st["pills"] and ("waiting" in st["pills"]), st["pills"])
 
     # tray reopens (disclosure)
     pg.click(".tray-toggle"); pg.wait_for_timeout(150)
-    ck("1: the tray reopens (disclosure), revealing the closed/archived cards",
-       pg.evaluate("()=>{var b=document.getElementById('trayBody');return b && !b.hidden && b.querySelectorAll('.card').length===2;}"), None)
+    ck("1: the tray reopens (disclosure), revealing the 3 closed/archived cards",
+       pg.evaluate("()=>{var b=document.getElementById('trayBody');return b && !b.hidden && b.querySelectorAll('.card').length===3;}"), None)
 
     # AR: names not slugs
     pg.click("#langBtn"); pg.wait_for_timeout(500)
