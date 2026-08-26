@@ -997,6 +997,25 @@ function buildBoard(){
   .logrow{font-size:12px;color:#b9b9c2;display:flex;gap:8px;align-items:baseline}
   .logrow .lt{color:#6a6a74;font-size:11px;unicode-bidi:isolate;white-space:nowrap}
   .note{font-size:11.5px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:8px;padding:6px 9px;margin-bottom:8px}
+  /* L4 write actions (drawer): stage moves, archive/reopen, note composer. Buttons are calm and full-width
+     on narrow drawers; a busy write disables the set and shows a status line; a failure shows red, never black. */
+  .acts{display:flex;flex-wrap:wrap;gap:8px}
+  .act{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border-radius:9px;padding:8px 12px;border:1px solid #26303a;background:#0e141b;color:#cfe0e6}
+  .act:hover{border-color:#37505c}
+  .act:focus-visible{outline:2px solid #5D7FB7;outline-offset:2px}
+  .act.win{border-color:#1e2a1e;background:#0c130c;color:#7fd18b}
+  .act.warn{border-color:#2a2410;background:#17130a;color:#c9a24a}
+  .act.danger{border-color:#3a1d24;background:#160e11;color:#e59aa2}
+  .act:disabled{opacity:.5;cursor:default}
+  .act-status{font-size:12px;margin-top:8px;color:#8a8a93;min-height:16px;unicode-bidi:isolate}
+  .act-status.ok{color:#7fd18b}
+  .act-status.bad{color:#ff8a8a}
+  .notes-list{display:flex;flex-direction:column;gap:6px;margin:2px 0 10px}
+  .note-item{font-size:12.5px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:7px 9px;word-break:break-word}
+  .note-item .nmeta{display:block;font-size:10.5px;color:#6a6a74;margin-top:3px;unicode-bidi:isolate}
+  .note-form{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+  textarea.note-in{width:100%;min-height:64px;resize:vertical;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:9px 11px;font-size:13px;font-family:inherit;outline:none}
+  textarea.note-in:focus{border-color:#5D7FB7}
 </style>
 </head>
 <body>
@@ -1046,7 +1065,12 @@ function buildBoard(){
           d_prohibition:"Prohibition", d_drop:"Drop reason", d_lost:"Lost reason", d_pagemiss:"Page missing", d_tmplretired:"Template retired",
           d_activity:"Activity", d_no_activity:"No activity yet.", d_loading:"Loading detail.",
           e_sent:"Sent", e_open:"Opened", e_reply:"Reply",
-          d_stage_local:"Stage moves are recorded on the device and are not in Supabase; sends, opens and replies below are read live." },
+          d_stage_local:"Stage moves and archiving are written to Supabase and re-read from the board view; sends, opens and replies below are read live.",
+          a_actions:"Actions", a_promote:"Promote to Live", a_revert:"Back to Draft",
+          a_won:"Mark Won", a_lost:"Mark Lost", a_drop:"Drop", a_archive:"Archive", a_reopen:"Reopen",
+          a_saving:"Saving…", a_saved:"Saved.", a_failed:"Could not save. Nothing changed on the board.",
+          a_note_ph:"Add a note to this opportunity", a_note_add:"Add note", a_note_saving:"Saving note…",
+          a_note_saved:"Note saved.", a_note_failed:"Could not save the note.", a_notes:"Notes", a_note_by:"by" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -1067,7 +1091,12 @@ function buildBoard(){
           d_prohibition:"حظر", d_drop:"سبب الإسقاط", d_lost:"سبب الخسارة", d_pagemiss:"الصفحة مفقودة", d_tmplretired:"القالب متقاعد",
           d_activity:"النشاط", d_no_activity:"لا نشاط بعد.", d_loading:"جارٍ تحميل التفاصيل.",
           e_sent:"إرسال", e_open:"فتح", e_reply:"ردّ",
-          d_stage_local:"تُسجّل تنقلات المرحلة على الجهاز وليست في Supabase؛ الإرسالات والفتحات والردود أدناه تُقرأ مباشرة." }
+          d_stage_local:"تُكتب تنقلات المرحلة والأرشفة إلى Supabase وتُقرأ من عرض اللوحة؛ الإرسالات والفتحات والردود أدناه تُقرأ مباشرة.",
+          a_actions:"إجراءات", a_promote:"ترقية إلى جاهزة", a_revert:"إرجاع إلى مسودة",
+          a_won:"وسمها رابحة", a_lost:"وسمها خاسرة", a_drop:"إسقاط", a_archive:"أرشفة", a_reopen:"إعادة فتح",
+          a_saving:"جارٍ الحفظ…", a_saved:"تم الحفظ.", a_failed:"تعذّر الحفظ. لم يتغيّر شيء على اللوحة.",
+          a_note_ph:"أضف ملاحظة إلى هذه الفرصة", a_note_add:"إضافة ملاحظة", a_note_saving:"جارٍ حفظ الملاحظة…",
+          a_note_saved:"تم حفظ الملاحظة.", a_note_failed:"تعذّر حفظ الملاحظة.", a_notes:"الملاحظات", a_note_by:"بواسطة" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1207,6 +1236,62 @@ function buildBoard(){
       restGet("console_mail?opp=eq."+enc(slug)+"&select=id,opp,ts,data&order=ts.asc"),
       restGet("console_hits?slug=eq."+enc(slug)+"&select=id,slug,ts,data&order=ts.asc")
     ]).then(function(a){ return { opp:(a[0]||[])[0]||null, mail:a[1]||[], hits:a[2]||[] }; }, function(){ return { opp:null, mail:[], hits:[] }; });
+  }
+  // ---- L4 WRITE path (cloned from the engine's console_opps upsert; NEVER a rewrite of the read path). The
+  //      engine wrote a WHOLE opp record via POST resolution=merge-duplicates because it held the full record.
+  //      The standalone board holds only the console_board VIEW row (partial), so it writes a partial PATCH to
+  //      console_opps by slug: PATCH can never insert a stub row and never touches a column it does not name, so
+  //      business / data / a sibling column is safe. Every write goes through authFetchOnce, so the promise ALWAYS
+  //      settles (a stalled write REJECTS on the setTimeout race, never a hung promise), and it reuses the exact
+  //      bearer + apikey + one-refresh-retry discipline of the reads. NO storage is touched on the write path. ----
+  function oppPatch(slug, patch, retried){
+    var url = URL_BASE + "/rest/v1/console_opps?slug=eq." + enc(slug);
+    return authFetchOnce(url, {
+      method:"PATCH",
+      headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Content-Type":"application/json", "Prefer":"return=minimal" },
+      cache:"no-store", body: JSON.stringify(patch)
+    }).then(function(r){
+      if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+        return refresh().then(function(ok){ if(ok) return oppPatch(slug, patch, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+      }
+      if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+      return true;                                                     // confirmed: the server holds the change
+    });
+  }
+  // Strict read of the opp record's data jsonb (for the note read-modify-write). Unlike restGet (best-effort,
+  // returns [] on failure), this REJECTS on a failed read so a note write never appends onto a guessed-empty
+  // object and clobbers the real notes. Settles via authFetchOnce (timeout REJECTS, never hangs).
+  function oppReadData(slug, retried){
+    var url = URL_BASE + "/rest/v1/console_opps?slug=eq." + enc(slug) + "&select=slug,data&limit=1";
+    return authFetchOnce(url, {
+      method:"GET", headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer() }, cache:"no-store"
+    }).then(function(r){
+      if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+        return refresh().then(function(ok){ if(ok) return oppReadData(slug, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+      }
+      if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+      var rows = Array.isArray(r.data) ? r.data : [];
+      return (rows[0] && rows[0].data && typeof rows[0].data==="object") ? rows[0].data : {};
+    });
+  }
+  function isoNow(){ try{ return new Date().toISOString(); }catch(e){ return ""; } }
+  // Add a note to the opp RECORD (console_opps.data.notes[]), read-modify-write so a concurrent note is not lost,
+  // then re-read to CONFIRM the note landed (the count grew). The note author is the signed-in OPERATOR's email
+  // (already shown in the header), never a prospect. Returns the confirmed notes array. Settles either way.
+  function addNote(slug, text){
+    return oppReadData(slug).then(function(data){
+      var notes = Array.isArray(data.notes) ? data.notes.slice() : [];
+      var before = notes.length;
+      notes.push({ ts:isoNow(), text:String(text||""), by:authEmail() });
+      var next = Object.assign({}, data, { notes:notes });
+      return oppPatch(slug, { data:next, up:Date.now() }).then(function(){
+        return oppReadData(slug).then(function(d2){                     // read-back confirm
+          var got = Array.isArray(d2.notes) ? d2.notes : [];
+          if(got.length <= before){ throw new Error("note did not persist"); }
+          return got;
+        });
+      });
+    });
   }
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
@@ -1401,7 +1486,8 @@ function buildBoard(){
     return '<div class="dw-sec"><h3>'+esc(t("d_record"))+'</h3><div class="note">'+esc(t("d_no_memory"))+'</div>'+body+'</div>';
   }
   // Activity timeline: sends (console_mail) + opens (console_hits) + replies (the ONE resolver), newest first.
-  // Stage moves are local-only in the engine (no console_activity table), so they are honestly disclosed, absent.
+  // L4 writes stage moves/archiving to console_opps and re-reads the board view; there is still no per-move
+  // console_activity table, so an individual move is not itemized here - its effect shows as the card's new lane.
   function activityHtml(slug, detail){
     if(!detail) return '<div class="dw-sec"><h3>'+esc(t("d_activity"))+'</h3><div class="muted">'+esc(t("d_loading"))+'</div></div>';
     var ev=[];
@@ -1412,15 +1498,66 @@ function buildBoard(){
     var body = ev.length ? '<div class="log">'+ev.map(function(e){ return '<div class="logrow"><span class="lt">'+esc(fmtWhen(e.ts))+'</span> '+esc(e.label)+'</div>'; }).join("")+'</div>' : '<div class="empty">'+esc(t("d_no_activity"))+'</div>';
     return '<div class="dw-sec"><h3>'+esc(t("d_activity"))+'</h3><div class="note">'+esc(t("d_stage_local"))+'</div>'+body+'</div>';
   }
+  // ---- L4 write-action surface (in the drawer): stage moves, archive/reopen, and a note composer. Only the
+  //      moves the board view HONORS as declared overrides are offered (draft<->live, and the terminal outcomes
+  //      won/lost/dropped); sent/opened/replied are EARNED from real signals, never fabricated by a button. ----
+  var __act = {}, __notes = {};   // __act: per-slug transient action status {msg,cls}, rendered on every drawer
+                    // paint so a "Saved." confirmation survives the detail-enrichment re-render. __notes: per-slug
+                    // in-session confirmed notes (from a read-back), so a just-added note shows without a refetch.
+  function actBtn(action, key, cls){ return '<button class="act'+(cls?(" "+cls):"")+'" type="button" data-act="'+action+'">'+esc(t(key))+'</button>'; }
+  function actionsHtml(row){
+    var st=(row && row.stage) || "", arch=!!(row && row.archived);
+    var inTray = arch || TRAY_STAGES.indexOf(st)>=0;                    // won/lost/dropped, or archived
+    var btns=[];
+    if(inTray){
+      btns.push(actBtn("reopen","a_reopen",""));                        // the only sensible write on a closed card
+    } else {
+      if(st==="draft") btns.push(actBtn("promote","a_promote","win")); // the one declarable forward step
+      else if(st==="live") btns.push(actBtn("revert","a_revert",""));
+      btns.push(actBtn("won","a_won","win"));
+      btns.push(actBtn("lost","a_lost","danger"));
+      btns.push(actBtn("drop","a_drop","warn"));
+      btns.push(actBtn("archive","a_archive","warn"));
+    }
+    var a=__act[row.slug]||{};
+    return '<div class="dw-sec"><h3>'+esc(t("a_actions"))+'</h3><div class="acts">'+btns.join("")+'</div>'+
+      '<div class="act-status'+(a.cls?(" "+a.cls):"")+'" id="actStatus">'+esc(a.msg||"")+'</div></div>';
+  }
+  function noteItemHtml(n){
+    n=n||{}; var meta=[fmtWhen(n.ts), (n.by ? (t("a_note_by")+" "+n.by) : "")].filter(Boolean).join("  \\u00b7  ");
+    return '<div class="note-item">'+esc(n.text||"")+(meta?'<span class="nmeta">'+esc(meta)+'</span>':'')+'</div>';
+  }
+  function notesFor(slug, detail){
+    if(__notes[slug]) return __notes[slug];                             // in-session confirmed notes take priority
+    var d=(detail && detail.opp && detail.opp.data) || {};
+    return Array.isArray(d.notes) ? d.notes : [];
+  }
+  function notesHtml(slug, detail){
+    var notes=notesFor(slug, detail);
+    var listInner = notes.length ? notes.slice().reverse().map(noteItemHtml).join("") : '<div class="empty">'+esc(t("d_no_notes"))+'</div>';
+    return '<div class="dw-sec"><h3>'+esc(t("a_notes"))+'</h3>'+
+      '<div class="notes-list" id="notesList">'+listInner+'</div>'+
+      '<div class="note-form"><textarea class="note-in" id="noteIn" placeholder="'+esc(t("a_note_ph"))+'"></textarea>'+
+      '<div class="acts"><button class="act note-add" id="noteAdd" type="button">'+esc(t("a_note_add"))+'</button></div>'+
+      '<div class="act-status" id="noteStatus"></div></div></div>';
+  }
   function drawerHtml(row, detail){
     var slug=row.slug||"";
     return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
       '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
       '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\\u00d7</button></div>'+
-      numsHtml(row, slug)+factsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+activityHtml(slug, detail);
+      numsHtml(row, slug)+factsHtml(row)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
   }
-  var __drawerSlug=null;
-  function wireDrawer(){ var b=document.getElementById("dwClose"); if(b) b.addEventListener("click", closeDrawer); }
+  var __drawerSlug=null, __writing=false;
+  function wireDrawer(){
+    var b=document.getElementById("dwClose"); if(b) b.addEventListener("click", closeDrawer);
+    var slug=__drawerSlug;
+    [].forEach.call(document.querySelectorAll("#drawer .act[data-act]"), function(btn){
+      btn.addEventListener("click", function(){ onAction(slug, btn.getAttribute("data-act")); });
+    });
+    var na=document.getElementById("noteAdd");
+    if(na) na.addEventListener("click", function(){ onAddNote(slug); });
+  }
   function openDrawer(slug){
     __drawerSlug=slug;
     var scrim=document.getElementById("scrim"), dw=document.getElementById("drawer");
@@ -1436,7 +1573,64 @@ function buildBoard(){
       }, function(){});
     }catch(e){ redFull("drawer", e); }
   }
-  function closeDrawer(){ __drawerSlug=null; var s=document.getElementById("scrim"); if(s) s.hidden=true; }
+  function closeDrawer(){ var s=__drawerSlug; if(s){ delete __act[s]; } __drawerSlug=null; var sc=document.getElementById("scrim"); if(sc) sc.hidden=true; }
+
+  // ---- L4 optimistic confirm-or-revert runner (spec item 4). The card updates IMMEDIATELY (mutate the in-memory
+  //      row + repaint), then the write confirms; on confirm the board RE-READS console_board and paints from
+  //      server truth (§3 - the optimistic stage is never the authority); on failure the row is restored, the
+  //      board repaints (the card jumps back), and a visible RED status shows - never a silent wrong state. ----
+  function findRow(slug){ var r=null; if(__data && __data.rows) __data.rows.forEach(function(x){ if(x && x.slug===slug) r=x; }); return r; }
+  function replaceRow(slug, snap){ if(!__data || !__data.rows) return; for(var i=0;i<__data.rows.length;i++){ if(__data.rows[i] && __data.rows[i].slug===slug){ __data.rows[i]=snap; return; } } }
+  function drawerActsDisabled(on){ var dw=document.getElementById("drawer"); if(!dw) return; [].forEach.call(dw.querySelectorAll(".act"), function(b){ b.disabled=!!on; }); }
+  function refreshDrawer(slug){ if(__drawerSlug!==slug) return; if(!findRow(slug)){ closeDrawer(); return; } openDrawer(slug); }
+  function runOppWrite(slug, optimistic, patch){
+    if(__writing) return; __writing=true;
+    var row=findRow(slug); if(!row){ __writing=false; return; }
+    var snap=JSON.parse(JSON.stringify(row));                            // exact pre-write state for a clean revert
+    try{ optimistic(row); }catch(e){}
+    __act[slug]={ msg:t("a_saving"), cls:"" };
+    drawerActsDisabled(true);
+    try{ renderBoard(__data); }catch(e){}                               // optimistic paint: the card jumps at once
+    oppPatch(slug, patch).then(function(){
+      return reloadBoardData();                                         // confirmed: adopt server truth
+    }).then(function(){
+      __writing=false; __act[slug]={ msg:t("a_saved"), cls:"ok" }; refreshDrawer(slug);
+    }).catch(function(e){
+      __writing=false;
+      replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){}     // revert the optimistic change
+      __act[slug]={ msg:((e&&e.authRequired)? t("err") : t("a_failed")), cls:"bad" };
+      if(__drawerSlug===slug) refreshDrawer(slug); else redInto(root, "write", new Error(t("a_failed")));
+    });
+  }
+  function onAction(slug, act){
+    var m=Date.now(), row=findRow(slug); if(!row) return; var st=row.stage||"";
+    if(act==="promote") return runOppWrite(slug, function(r){ r.stage="live"; }, { stage:"live", up:m });
+    if(act==="revert")  return runOppWrite(slug, function(r){ r.stage="draft"; }, { stage:"draft", up:m });
+    if(act==="won")     return runOppWrite(slug, function(r){ r.stage="won"; }, { stage:"won", up:m });
+    if(act==="lost")    return runOppWrite(slug, function(r){ r.stage="lost"; }, { stage:"lost", up:m });
+    if(act==="drop")    return runOppWrite(slug, function(r){ r.stage="dropped"; }, { stage:"dropped", up:m });
+    if(act==="archive") return runOppWrite(slug, function(r){ r.archived=true; }, { archived:true, up:m });   // stage untouched (domain law)
+    if(act==="reopen"){
+      var clear = TRAY_STAGES.indexOf(st)>=0;                           // a terminal declaration is cleared; a replied+archived card keeps its earned stage
+      return runOppWrite(slug, function(r){ r.archived=false; if(clear) r.stage=""; }, clear ? { archived:false, stage:"", up:m } : { archived:false, up:m });
+    }
+  }
+  function setNoteStatus(msg, cls){ var el=document.getElementById("noteStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
+  function renderNotesInto(slug){ var host=document.getElementById("notesList"); if(!host) return; var notes=__notes[slug]||[]; host.innerHTML = notes.length ? notes.slice().reverse().map(noteItemHtml).join("") : '<div class="empty">'+esc(t("d_no_notes"))+'</div>'; }
+  function onAddNote(slug){
+    var input=document.getElementById("noteIn"); if(!input) return;
+    var text=(input.value||"").trim(); setNoteStatus("", "");
+    if(!text) return;
+    if(__writing) return; __writing=true;
+    setNoteStatus(t("a_note_saving"), ""); var na=document.getElementById("noteAdd"); if(na) na.disabled=true;
+    addNote(slug, text).then(function(notes){                            // confirmed via read-back (count grew)
+      __writing=false; __notes[slug]=notes;
+      if(__drawerSlug===slug){ var i2=document.getElementById("noteIn"); if(i2) i2.value=""; renderNotesInto(slug); setNoteStatus(t("a_note_saved"), "ok"); var n2=document.getElementById("noteAdd"); if(n2) n2.disabled=false; }
+    }).catch(function(e){
+      __writing=false; var n3=document.getElementById("noteAdd"); if(n3) n3.disabled=false;
+      setNoteStatus((e&&e.authRequired)? t("err") : t("a_note_failed"), "bad");
+    });
+  }
 
   function renderBoard(data){
     data = data || {}; __data = data; VIEW="board"; applyLang();
@@ -1509,11 +1703,11 @@ function buildBoard(){
     countUpAll();
   }
 
-  function loadBoard(){
-    VIEW="board"; applyLang();
-    root.innerHTML = headerHtml() + '<div class="muted" style="padding:10px 2px">' + esc(t("loading")) + '</div>';
-    wireHeader();
-    fetchBoard(false).then(function(rows){
+  // ONE read path (fetchBoard + fetchInbound -> renderBoard), reused by the first load AND by every post-write
+  // re-read: after a confirmed write, the board reads console_board again and paints from SERVER TRUTH, never
+  // from the optimistic local stage (§3 stage-authority). Returns the settled promise so a write can chain on it.
+  function reloadBoardData(){
+    return fetchBoard(false).then(function(rows){
       return fetchInbound().then(function(inbound){
         rows = Array.isArray(rows) ? rows : [];
         __seen = readSeen();
@@ -1523,7 +1717,13 @@ function buildBoard(){
         var next={}; rows.forEach(function(r){ if(r && r.slug) next[r.slug]=String(r.last_activity_ts||""); });
         writeSeen(next);
       });
-    }).catch(function(e){ if(e && e.authRequired){ signinView(); } else { redFull("board fetch", e); } });
+    });
+  }
+  function loadBoard(){
+    VIEW="board"; applyLang();
+    root.innerHTML = headerHtml() + '<div class="muted" style="padding:10px 2px">' + esc(t("loading")) + '</div>';
+    wireHeader();
+    reloadBoardData().catch(function(e){ if(e && e.authRequired){ signinView(); } else { redFull("board fetch", e); } });
   }
 
   // Warm boot: adopt a surviving mirrored session into memory (session() does it) and go STRAIGHT to the board,

@@ -9,7 +9,7 @@ opportunity record, and the activity/history log. Close returns to the board wit
   2. Tap a Sent opp -> empty reply thread (0 inbound bubbles, count 0), no fabricated replies.
   3. The three numbers show with their sources (console_mail / console_hits / console_inbound).
   4. Record shows the opportunity's carried notes + the honest "no accrued memory store" disclosure.
-  5. Activity log lists sends + opens + replies in order + the "stage moves are local-only" disclosure.
+  5. Activity log lists sends + opens + replies in order + the "stage moves/archiving are written to Supabase" disclosure.
   6. Close (button / Escape / backdrop) returns to the board WITHOUT reload; the board stays mounted.
   7. AR flips the drawer to RTL with Arabic labels; the reply address stays LTR-isolated.
 
@@ -38,13 +38,18 @@ ck("detail reads are best-effort and scoped to one opp (console_opps/mail/hits),
    and "if(!res.ok) return [];" in board)
 ck("no server memory store is claimed; the record disclosure is present",
    "No accrued profile store" in board and "d_no_memory" in board)
-ck("stage moves disclosed as local-only (no console_activity table)",
-   "Stage moves are recorded on the device and are not in Supabase" in board)
-# read-only for DATA: no PATCH/PUT/DELETE anywhere, and every POST is an auth call (/auth/v1/), never a
-# /rest/v1 data write. (The two POSTs are the L1 GoTrue token grant + logout.)
+ck("stage moves disclosed as written to Supabase and re-read from the board view (L4)",
+   "written to Supabase and re-read from the board view" in board
+   and "Stage moves are recorded on the device and are not in Supabase" not in board)
+# L4 makes the drawer read-WRITE, but tightly: the ONLY data-write verb is PATCH, and it targets ONLY
+# console_opps (stage / archived / note data). No PUT, no DELETE, no bulk table POST, and every POST stays a
+# GoTrue auth call (/auth/v1/) - the drawer never sends an email or writes any other table. Detail is covered
+# by board_write_test.py; here we just fence the write surface.
 _posts = [m.start() for m in re.finditer(r'method:"POST"', board)]
-ck("read-only: no data writes - no PATCH/PUT/DELETE, and every POST is an auth call, never /rest/v1",
-   all(v not in board for v in ['method:"PATCH"','method:"PUT"','method:"DELETE"'])
+_patches = [m.start() for m in re.finditer(r'method:"PATCH"', board)]
+ck("the only data write is PATCH to console_opps; no PUT/DELETE; every POST stays an auth call",
+   all(v not in board for v in ['method:"PUT"','method:"DELETE"'])
+   and len(_patches) >= 1 and all("console_opps?slug=eq." in board[max(0,i-260):i+40] for i in _patches)
    and len(_posts) >= 1 and all("auth/v1" in board[max(0,i-320):i+40] for i in _posts))
 
 # ---- data (ALL addresses synthetic *.example.test) -----------------------------------------------
@@ -113,7 +118,7 @@ with sync_playwright() as p:
         record: dw.textContent.indexOf('synthetic hold')>=0,
         noMemory: dw.textContent.indexOf('No accrued profile store')>=0,
         logText: (dw.querySelector('.dw-sec:last-child')||{}).textContent||'',
-        stageDisclosed: dw.textContent.indexOf('Stage moves are recorded on the device')>=0,
+        stageDisclosed: dw.textContent.indexOf('written to Supabase and re-read from the board view')>=0,
         bodyText: dw.textContent
       };
     }""")
@@ -126,7 +131,7 @@ with sync_playwright() as p:
     ck("3: the three numbers show their values (sent 2, opens 3, replies 2)", d["nums"]==["2","3","2"], d["nums"])
     ck("3: each number names its source", "console_mail" in d["srcs"] and "console_hits" in d["srcs"] and "console_inbound" in d["srcs"], d["srcs"])
     ck("4: the record shows the carried note AND the no-memory-store disclosure", d["record"] and d["noMemory"], d)
-    ck("5: the activity log discloses stage moves are local-only", d["stageDisclosed"], d)
+    ck("5: the activity log discloses stage moves/archiving are written to Supabase (L4)", d["stageDisclosed"], d)
     ck("5: the activity log lists a Sent, an Opened and a Reply event", ("Sent" in d["logText"]) and ("Opened" in d["logText"]) and ("Reply" in d["logText"]), d["logText"])
 
     # ---- close returns to the board without reload ----
