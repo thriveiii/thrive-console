@@ -891,6 +891,10 @@ ${loader}
    to empty, dark #07070b, Lato, no blur; (4) READ-ONLY. Any error is printed as visible red text on screen. */
 function buildBoard(){
   const BOARD_QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived&order=last_activity_ts.desc.nullslast";
+  // L5: the single-recipient send clone, authored as real JS (node-checkable) and INLINED verbatim here, so its
+  // regexes need no template escaping. The relay endpoint is baked from library/sync.json (published.ep).
+  const SEND_SRC = read(path.join(ROOT, "tools/board-send.src.js"));
+  const RELAY_EP = (published && published.ep) || "";
   return `<!doctype html>
 <html lang="en" dir="ltr">
 <head>
@@ -1007,6 +1011,10 @@ function buildBoard(){
   .act.warn{border-color:#2a2410;background:#17130a;color:#c9a24a}
   .act.danger{border-color:#3a1d24;background:#160e11;color:#e59aa2}
   .act:disabled{opacity:.5;cursor:default}
+  .act.send{border-color:#1d3a4a;background:#0c1620;color:#8fd4ff}
+  .sendmark{display:inline-block;font-size:11px;color:#8fd4ff;border:1px solid #1d3a4a;background:#0c1620;border-radius:999px;padding:1px 8px;margin:6px 6px 0 0;animation:sendpulse 1.1s ease-in-out infinite}
+  @keyframes sendpulse{0%,100%{opacity:.55}50%{opacity:1}}
+  @media (prefers-reduced-motion:reduce){.sendmark{animation:none}}
   .act-status{font-size:12px;margin-top:8px;color:#8a8a93;min-height:16px;unicode-bidi:isolate}
   .act-status.ok{color:#7fd18b}
   .act-status.bad{color:#ff8a8a}
@@ -1032,6 +1040,9 @@ function buildBoard(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
   var URL_BASE = ${JSON.stringify(SUPA_URL)}, ANON = ${JSON.stringify(SUPA_ANON)}, BUILD = ${JSON.stringify(BUILD)};
+  // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
+  // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
+  var RELAY_EP = ${JSON.stringify(RELAY_EP)};
   var QUERY = ${JSON.stringify(BOARD_QUERY)};
   var LANES = ["draft","live","sent","opened","replied"];
   // L2 lane completeness: the open lanes, plus bounced/failed as their own lanes; won/lost/dropped and archived
@@ -1070,7 +1081,10 @@ function buildBoard(){
           a_won:"Mark Won", a_lost:"Mark Lost", a_drop:"Drop", a_archive:"Archive", a_reopen:"Reopen",
           a_saving:"Saving…", a_saved:"Saved.", a_failed:"Could not save. Nothing changed on the board.",
           a_note_ph:"Add a note to this opportunity", a_note_add:"Add note", a_note_saving:"Saving note…",
-          a_note_saved:"Note saved.", a_note_failed:"Could not save the note.", a_notes:"Notes", a_note_by:"by" },
+          a_note_saved:"Note saved.", a_note_failed:"Could not save the note.", a_notes:"Notes", a_note_by:"by",
+          s_send:"Send email", s_sending:"Sending…", s_sent:"Sent.", s_confirming:"Email sent; confirming on the server…",
+          s_failed:"Could not send. Nothing was sent.", s_no_recip:"No recipient email on this opportunity.",
+          s_no_msg:"No prepared message on this opportunity." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -1096,7 +1110,10 @@ function buildBoard(){
           a_won:"وسمها رابحة", a_lost:"وسمها خاسرة", a_drop:"إسقاط", a_archive:"أرشفة", a_reopen:"إعادة فتح",
           a_saving:"جارٍ الحفظ…", a_saved:"تم الحفظ.", a_failed:"تعذّر الحفظ. لم يتغيّر شيء على اللوحة.",
           a_note_ph:"أضف ملاحظة إلى هذه الفرصة", a_note_add:"إضافة ملاحظة", a_note_saving:"جارٍ حفظ الملاحظة…",
-          a_note_saved:"تم حفظ الملاحظة.", a_note_failed:"تعذّر حفظ الملاحظة.", a_notes:"الملاحظات", a_note_by:"بواسطة" }
+          a_note_saved:"تم حفظ الملاحظة.", a_note_failed:"تعذّر حفظ الملاحظة.", a_notes:"الملاحظات", a_note_by:"بواسطة",
+          s_send:"إرسال بريد", s_sending:"جارٍ الإرسال…", s_sent:"تم الإرسال.", s_confirming:"أُرسل البريد؛ يجري التأكيد على الخادم…",
+          s_failed:"تعذّر الإرسال. لم يُرسل شيء.", s_no_recip:"لا يوجد بريد مستلم لهذه الفرصة.",
+          s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1293,6 +1310,7 @@ function buildBoard(){
       });
     });
   }
+${SEND_SRC}
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
   // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
@@ -1417,6 +1435,7 @@ function buildBoard(){
     if(row.archived)  badges += '<span class="badge">' + esc(t("bg_archived")) + '</span>';
     var nb  = rc ? ' <span class="nbadge" title="' + esc(t("b_replies")) + '">' + rc + '</span>' : '';
     var dot = isNew ? '<span class="newdot" aria-hidden="true"></span>' : '';
+    var sendmark = row.__sending ? '<span class="sendmark">' + esc(t("s_sending")) + '</span>' : '';   // L5 optimistic send-in-flight
     var reps = "";
     if(rc && __reps.list && __reps.list[slug]){
       // reply grouping (replyGroupHtml spirit): numbered repliers 1..N, the same count as the N-badge.
@@ -1427,7 +1446,7 @@ function buildBoard(){
     return '<div class="card" data-slug="' + esc(slug) + '" role="button" tabindex="0">' + dot +
            '<div class="b">' + biz + nb + '</div>' +
            (bits.length ? ('<div class="s">' + esc(bits.join("  \\u00b7  ")) + '</div>') : '') +
-           (badges ? ('<div>' + badges + '</div>') : '') +
+           (badges || sendmark ? ('<div>' + sendmark + badges + '</div>') : '') +
            reps +
            '</div>';
   }
@@ -1512,6 +1531,7 @@ function buildBoard(){
     if(inTray){
       btns.push(actBtn("reopen","a_reopen",""));                        // the only sensible write on a closed card
     } else {
+      if(sendEligible(row)) btns.push(actBtn("send","s_send","send")); // L5: the opp has a prepared message (has_email) and is not closed
       if(st==="draft") btns.push(actBtn("promote","a_promote","win")); // the one declarable forward step
       else if(st==="live") btns.push(actBtn("revert","a_revert",""));
       btns.push(actBtn("won","a_won","win"));
@@ -1604,6 +1624,7 @@ function buildBoard(){
   }
   function onAction(slug, act){
     var m=Date.now(), row=findRow(slug); if(!row) return; var st=row.stage||"";
+    if(act==="send")    return runSend(slug);                             // L5 single-recipient send
     if(act==="promote") return runOppWrite(slug, function(r){ r.stage="live"; }, { stage:"live", up:m });
     if(act==="revert")  return runOppWrite(slug, function(r){ r.stage="draft"; }, { stage:"draft", up:m });
     if(act==="won")     return runOppWrite(slug, function(r){ r.stage="won"; }, { stage:"won", up:m });
