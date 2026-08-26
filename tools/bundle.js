@@ -1560,7 +1560,7 @@ ${RECIP_SRC}
       '<div class="act-status'+(a.cls?(" "+a.cls):"")+'" id="actStatus">'+esc(a.msg||"")+'</div></div>';
   }
   function noteItemHtml(n){
-    n=n||{}; var meta=[fmtWhen(n.ts), (n.by ? (t("a_note_by")+" "+n.by) : "")].filter(Boolean).join("  \\u00b7  ");
+    n=n||{}; var meta=[fmtWhen(n.ts), (n.by ? (t("a_note_by")+" "+actorName(n.by)) : "")].filter(Boolean).join("  \\u00b7  ");
     return '<div class="note-item">'+esc(n.text||"")+(meta?'<span class="nmeta">'+esc(meta)+'</span>':'')+'</div>';
   }
   function notesFor(slug, detail){
@@ -1607,6 +1607,9 @@ ${RECIP_SRC}
       scrim.hidden=false; dw.scrollTop=0; wireDrawer();
       fetchDetail(slug).then(function(detail){   // then enrich: record notes, outbound sends, activity timeline
         if(__drawerSlug!==slug) return;
+        // Cache the freshest server notes so a later note re-render (finishIdentity, Step 2A) has a source;
+        // notesFor already prioritizes __notes[slug], and this keeps it in sync with the latest detail.
+        try{ var dn=detail && detail.opp && detail.opp.data && detail.opp.data.notes; if(Array.isArray(dn)) __notes[slug]=dn; }catch(e){}
         try{ dw.innerHTML = drawerHtml(row, detail); wireDrawer(); }catch(e){ redFull("drawer detail", e); }
       }, function(){});
     }catch(e){ redFull("drawer", e); }
