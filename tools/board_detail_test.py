@@ -41,16 +41,20 @@ ck("no server memory store is claimed; the record disclosure is present",
 ck("stage moves disclosed as written to Supabase and re-read from the board view (L4)",
    "written to Supabase and re-read from the board view" in board
    and "Stage moves are recorded on the device and are not in Supabase" not in board)
-# L4 makes the drawer read-WRITE, but tightly: the ONLY data-write verb is PATCH, and it targets ONLY
-# console_opps (stage / archived / note data). No PUT, no DELETE, no bulk table POST, and every POST stays a
-# GoTrue auth call (/auth/v1/) - the drawer never sends an email or writes any other table. Detail is covered
-# by board_write_test.py; here we just fence the write surface.
+# The board.html write surface is fenced: the ONLY data-write VERB is PATCH, and it targets ONLY console_opps
+# (L4 stage / archived / note). No PUT, no DELETE. POSTs are limited to three known kinds: the GoTrue auth call
+# (/auth/v1/), the L5 relay send (relayEp - the courier that reaches Resend server-side), and the L5 console_mail
+# confirm write. The drawer writes no other table. Per-scenario behavior is covered by board_write_test.py and
+# board_send_test.py; here we just fence the surface statically.
 _posts = [m.start() for m in re.finditer(r'method:"POST"', board)]
 _patches = [m.start() for m in re.finditer(r'method:"PATCH"', board)]
-ck("the only data write is PATCH to console_opps; no PUT/DELETE; every POST stays an auth call",
+def _post_ok(i):
+    ctx = board[max(0,i-320):i+60]
+    return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx)
+ck("the only data write is PATCH to console_opps; no PUT/DELETE; every POST is auth, the relay send, or console_mail",
    all(v not in board for v in ['method:"PUT"','method:"DELETE"'])
    and len(_patches) >= 1 and all("console_opps?slug=eq." in board[max(0,i-260):i+40] for i in _patches)
-   and len(_posts) >= 1 and all("auth/v1" in board[max(0,i-320):i+40] for i in _posts))
+   and len(_posts) >= 1 and all(_post_ok(i) for i in _posts))
 
 # ---- data (ALL addresses synthetic *.example.test) -----------------------------------------------
 ROWS = [

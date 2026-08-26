@@ -226,7 +226,9 @@ with sync_playwright() as p:
     ck("5: the actions section is localized in AR", arr["hasActions"], arr)
 
     # ===== privacy + no uncaught errors =====
-    everything = pg.evaluate("()=>document.body.textContent + '\\n' + (document.getElementById('drawer')||{}).textContent")
+    # scan RENDERED text only (clone the body, drop <script> so the inline engine source - which legitimately
+    # carries Thrive's own hi@thriveiii.com and @-regex fragments - is not mistaken for a rendered address)
+    everything = pg.evaluate("""()=>{ var b=document.body.cloneNode(true); [].forEach.call(b.querySelectorAll('script'), function(s){s.remove();}); return b.textContent; }""")
     # every '@host' token that appears must resolve to a synthetic placeholder host
     hosts = [re.split(r'[\s<">,]', seg, 1)[0] for seg in re.split(r'@', everything)[1:] if seg.strip()]
     bad = [h for h in hosts if h and not h.startswith("example.test") and not h.startswith("thrive.test")]
