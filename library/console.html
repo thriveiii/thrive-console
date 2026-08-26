@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="96be45cb">
-<meta name="thrive-built-at" content="2026-08-26T10:25:58Z">
+<meta name="thrive-build" content="1141fca3">
+<meta name="thrive-built-at" content="2026-08-26T11:21:24Z">
 <!-- CONSOLE_ENTRY_DIAG Part 3: paint-safe mode. FIRST script in the head, before any styling, so the class
      is on documentElement before the first frame is composed. Opening the console with ?paint=safe disables
      every filter, backdrop-filter, animation and transition. This is an INSTRUMENT, not a fix: it exists so
@@ -24,6 +24,72 @@
      <script src="failsafe.js"> is gone; failsafe.js keeps its window.__thriveFailsafeLoaded idempotence
      guard regardless, so nothing can double-register or double-paint. -->
 <script>
+/* STORAGE_SAFE (the root fix): under WebKit storage partitioning, even ACCESSING window.localStorage or
+   window.sessionStorage throws SecurityError before any method is called. A single unguarded access anywhere
+   on the boot path (any of the engine's 169 storage calls across supabase/gate/app/index/gate.html) threw
+   unawaited and silent, killing the console after gate-resolve on every device. This first-of-boot block
+   installs a MEMORY-FIRST, never-throwing facade for BOTH stores, so every read and write engine-wide is
+   safe and memory-primary at once: the in-memory map is authoritative, the real store is a best-effort
+   mirror, no operation throws, and nothing is read back as a gate (the board.html pattern applied to the old
+   engine). It also defines ?boot=1, a PERMANENT on-screen boot trace (we have no Mac). Runs before every
+   module; idempotent. Touches no auth/session/read/render logic. */
+(function () {
+  "use strict";
+  try { if (window.__thriveStorageSafe) return; window.__thriveStorageSafe = true; } catch (e) { return; }
+  function install(kind) {
+    var mem = {}, real = null;
+    // Probe: accessing the getter may throw (partitioning); a working store must also accept a write.
+    try {
+      real = window[kind];
+      if (real) { var p = "__thr" + Math.random().toString(36).slice(2); real.setItem(p, "1"); real.removeItem(p); }
+    } catch (e) { real = null; }
+    function keys() { return Object.keys(mem); }
+    var api = {
+      getItem: function (k) { k = String(k); if (k in mem) return mem[k]; try { if (real) { var v = real.getItem(k); if (v != null) mem[k] = v; return v; } } catch (e) {} return null; },
+      setItem: function (k, v) { k = String(k); v = String(v); mem[k] = v; try { if (real) real.setItem(k, v); } catch (e) {} },
+      removeItem: function (k) { k = String(k); delete mem[k]; try { if (real) real.removeItem(k); } catch (e) {} },
+      clear: function () { mem = {}; try { if (real) real.clear(); } catch (e) {} },
+      key: function (i) { try { if (real) return real.key(i); } catch (e) {} var k = keys()[i]; return k != null ? k : null; },
+      get length() { try { if (real) return real.length; } catch (e) {} return keys().length; }
+    };
+    // Shadow the throwing prototype getter with an own property that returns the safe facade.
+    try { Object.defineProperty(window, kind, { configurable: true, get: function () { return api; } }); } catch (e) {}
+    return !!real;
+  }
+  var lsReal = install("localStorage");
+  var ssReal = install("sessionStorage");
+  try { window.__storageMode = (lsReal && ssReal) ? "real" : (lsReal || ssReal ? "partial" : "memory-only"); } catch (e) {}
+
+  /* ?boot=1: a permanent on-screen boot trace, kept forever (never auto-removed). Prints the storage mode,
+     every boot checkpoint the app already sets (wired from the __bootMark / __signMark setters below), and
+     any uncaught error / rejection, so a stall NAMES its last step on the device with no inspector. */
+  var showBoot = false; try { showBoot = /[?&]boot=1(&|$)/.test(location.search || ""); } catch (e) {}
+  var bl = null;
+  window.__bootLog = function (msg, cls) {
+    try {
+      if (!showBoot) return;
+      if (!bl) {
+        bl = document.createElement("div"); bl.id = "thriveBootLog"; bl.setAttribute("dir", "ltr");
+        bl.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:2147483645;max-height:45vh;overflow:auto;" +
+          "-webkit-overflow-scrolling:touch;margin:0;padding:6px 10px;background:#000;color:#dfe;" +
+          "font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word;" +
+          "border-top:2px solid #244;-webkit-text-size-adjust:100%";
+        (document.body || document.documentElement).appendChild(bl);
+        var d0 = document.createElement("div"); d0.textContent = "boot=1 · storage " + (window.__storageMode || "?"); bl.appendChild(d0);
+      }
+      var d = document.createElement("div"); if (cls === "bad") d.style.color = "#ff8a8a"; d.textContent = String(msg); bl.appendChild(d);
+      bl.scrollTop = bl.scrollHeight;
+    } catch (e) {}
+  };
+  if (showBoot) {
+    try { if (document.readyState !== "loading") window.__bootLog("mark: parse"); else document.addEventListener("DOMContentLoaded", function () { window.__bootLog("mark: DOMContentLoaded"); }); } catch (e) {}
+    try {
+      window.addEventListener("error", function (e) { window.__bootLog("ERROR: " + ((e && e.message) || "script error") + (e && e.filename ? (" @ " + String(e.filename).replace(/^.*\//, "") + ":" + (e.lineno || "?")) : ""), "bad"); }, true);
+      window.addEventListener("unhandledrejection", function (e) { var r = e && e.reason; window.__bootLog("REJECTION: " + ((r && (r.message || r.stack)) || r || "?"), "bad"); });
+    } catch (e) {}
+  }
+})();
+
 /* P40 failsafe: a first-script, zero-dependency reveal surface. It exists to make a silent client death
    SPEAK. It NEVER paints a pixel in a healthy boot; it appears only on (a) an uncaught error, (b) an
    unhandled promise rejection, or (c) a resource (script/stylesheet) that failed to load. It prints
@@ -96,14 +162,14 @@
   // Intercept the assignments the app already makes (P40) so each one drives the heartbeat; reads still
   // return the stored value, so the P40 panel and watchdog read exactly what they did before.
   try {
-    Object.defineProperty(window, "__bootMark", { configurable: true, get: function () { return _mark; }, set: function (v) { _mark = v; ensureStrip(); updateStrip(); } });
-    Object.defineProperty(window, "__boardRows", { configurable: true, get: function () { return _rows; }, set: function (v) { _rows = v; updateStrip(); } });
-    Object.defineProperty(window, "__bootPainted", { configurable: true, get: function () { return _painted; }, set: function (v) { _painted = v; if (v) { try { if (removeTimer) clearTimeout(removeTimer); } catch (e) {} removeTimer = setTimeout(removeStrip, 3000); } } });
+    Object.defineProperty(window, "__bootMark", { configurable: true, get: function () { return _mark; }, set: function (v) { _mark = v; ensureStrip(); updateStrip(); try { window.__bootLog && window.__bootLog("mark: " + v); } catch (e) {} } });
+    Object.defineProperty(window, "__boardRows", { configurable: true, get: function () { return _rows; }, set: function (v) { _rows = v; updateStrip(); try { window.__bootLog && window.__bootLog("board rows: " + v); } catch (e) {} } });
+    Object.defineProperty(window, "__bootPainted", { configurable: true, get: function () { return _painted; }, set: function (v) { _painted = v; if (v) { try { window.__bootLog && window.__bootLog("BOARD PAINTED"); } catch (e) {} try { if (removeTimer) clearTimeout(removeTimer); } catch (e) {} removeTimer = setTimeout(removeStrip, 3000); } } });
     // P44: the sign-in CLICK path's own mark. Every prior instrument watched the boot; the "Signing in"
     // hang lives here. The gate and signIn() assign it at each step; the strip renders it live, and a
     // sign-in click re-shows the strip even after a healthy boot removed it, so the progression is
     // visible on the device with no inspector.
-    Object.defineProperty(window, "__signMark", { configurable: true, get: function () { return _sign; }, set: function (v) { _sign = v; stripGone = false; ensureStrip(); updateStrip(); } });
+    Object.defineProperty(window, "__signMark", { configurable: true, get: function () { return _sign; }, set: function (v) { _sign = v; stripGone = false; ensureStrip(); updateStrip(); try { window.__bootLog && window.__bootLog("sign: " + v); } catch (e) {} } });
   } catch (e) {}
   ensureStrip();   // render the heartbeat NOW, at parse time, before any module runs
 
@@ -335,7 +401,7 @@ try{ setTimeout(__bwShow, 8000); setTimeout(__bwShow, 25000); }catch(e){}
      second which code is live and when it was built; every device capture is now labeled. Low contrast and
      pointer-events:none, so it never obstructs the board. The values are ASCII and isolated in a bdi run so
      the Arabic layout cannot reorder them. -->
-<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">96be45cb</bdi> · <bdi class="mono-iso">2026-08-26T10:25:58Z</bdi></div>
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">1141fca3</bdi> · <bdi class="mono-iso">2026-08-26T11:21:24Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
 

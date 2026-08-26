@@ -1591,6 +1591,13 @@ emit("dist/thrive-console.html", true);
    is what guarantees a merged-and-deployed build is the build that runs. Generated here so BUILD is always
    current, never a hand-typed version to forget. */
 const rootIndex = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<script>/* STORAGE_SAFE: memory-first, never-throwing storage facade, FIRST script on the root entry redirect
+   (WebKit partitioning makes accessing window.localStorage throw). Same facade as the engine failsafe. */
+(function(){try{if(window.__thriveStorageSafe)return;window.__thriveStorageSafe=true;}catch(e){return;}
+function install(kind){var mem={},real=null;try{real=window[kind];if(real){var p="__thr"+Math.random().toString(36).slice(2);real.setItem(p,"1");real.removeItem(p);}}catch(e){real=null;}
+function keys(){return Object.keys(mem);}var api={getItem:function(k){k=String(k);if(k in mem)return mem[k];try{if(real){var v=real.getItem(k);if(v!=null)mem[k]=v;return v;}}catch(e){}return null;},setItem:function(k,v){k=String(k);v=String(v);mem[k]=v;try{if(real)real.setItem(k,v);}catch(e){}},removeItem:function(k){k=String(k);delete mem[k];try{if(real)real.removeItem(k);}catch(e){}},clear:function(){mem={};try{if(real)real.clear();}catch(e){}},key:function(i){try{if(real)return real.key(i);}catch(e){}var k=keys()[i];return k!=null?k:null;},get length(){try{if(real)return real.length;}catch(e){}return keys().length;}};
+try{Object.defineProperty(window,kind,{configurable:true,get:function(){return api;}});}catch(e){}}
+install("localStorage");install("sessionStorage");})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">

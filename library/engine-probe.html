@@ -27,7 +27,7 @@
 </style>
 </head>
 <body>
-<div id="probe"><div class="t">ENGINE PROBE — old app.js chain, post-gate render</div></div>
+<div id="probe"><div class="t">ENGINE PROBE - old app.js chain, post-gate render</div></div>
 <div id="shell"></div>
 <script>
 /* ENGINE_PROBE (diagnostic only; changes no engine logic; touches nothing board.html uses).
@@ -72,23 +72,23 @@
       line("load", "loading: " + name);
       mark("loading: " + name);
       var s = document.createElement("script");
-      s.src = "./" + name + ".js";          // current served file (no ?v pin) — probes what is deployed now
+      s.src = "./" + name + ".js";          // current served file (no ?v pin) - probes what is deployed now
       var done = false;
       // (2) per-script 4s timeout -> FAILED and STOP (a script that never fires onload is itself the hang)
       var to = setTimeout(function(){
         if(done) return; done = true; STOPPED = true;
-        line("bad", "FAILED: " + name + " — timeout (4s: script fetched but never finished executing, or never loaded)");
+        line("bad", "FAILED: " + name + " - timeout (4s: script fetched but never finished executing, or never loaded)");
         resolve(false);
       }, 4000);
       s.onload = function(){ if(done) return; done = true; clearTimeout(to); line("ok", "ok: " + name); mark("ok: " + name); resolve(true); };
       s.onerror = function(){ if(done) return; done = true; clearTimeout(to); STOPPED = true;
-        line("bad", "FAILED: " + name + " — did not load (404 / blocked / parse error)"); resolve(false); };
+        line("bad", "FAILED: " + name + " - did not load (404 / blocked / parse error)"); resolve(false); };
       (document.head || document.documentElement).appendChild(s);
     });
   }
 
   // Give the engine the REAL console shell DOM (header.top, #view-board, all containers) so startLiveSync does
-  // not bail and renderBoard runs against real elements — dying at the TRUE culprit line, not a trivial one.
+  // not bail and renderBoard runs against real elements - dying at the TRUE culprit line, not a trivial one.
   function injectShell(){
     line("step", "fetching the console shell DOM (console.html) so the render has real containers...");
     return fetch("./console.html", {cache:"no-store"}).then(function(r){ return r.text(); }).then(function(html){
@@ -97,9 +97,9 @@
       document.getElementById("shell").innerHTML = body;
       line(document.querySelector("header.top") ? "ok" : "bad",
            (document.querySelector("header.top") ? "ok" : "WARN") + ": shell DOM injected" +
-           (document.querySelector("header.top") ? " (header.top present)" : " (header.top MISSING — startLiveSync would bail)"));
+           (document.querySelector("header.top") ? " (header.top present)" : " (header.top MISSING - startLiveSync would bail)"));
     }, function(){
-      line("bad", "WARN: could not fetch console.html — render will run without the shell containers");
+      line("bad", "WARN: could not fetch console.html - render will run without the shell containers");
     });
   }
 
@@ -110,7 +110,7 @@
     // A synchronous hang in renderBoard pegs the event loop, so NO later timer (not even the heartbeat) can
     // print. This one line makes the frozen trace self-diagnosing: if the trace stops below it, the render is
     // the silent hang. (The board-init dispatch runs the boot, which fires the 'unlock' hook -> renderBoard.)
-    line("end", "▶ firing the post-gate board render NOW — IF THE TRACE STOPS BELOW THIS LINE, the render (renderBoard on the 'unlock' hook) is the silent hang.");
+    line("end", "▶ firing the post-gate board render NOW - IF THE TRACE STOPS BELOW THIS LINE, the render (renderBoard on the 'unlock' hook) is the silent hang.");
     try{
       line("step", "dispatching DOMContentLoaded (board-init dispatch)"); mark("DOMContentLoaded dispatch");
       document.dispatchEvent(new Event("DOMContentLoaded"));
@@ -137,8 +137,8 @@
         line("step", "calling renderBoard('probe') directly"); mark("renderBoard('probe')");
         var r = window.renderBoard("probe");
         if(r && typeof r.then === "function"){
-          r.then(function(){ line("ok", "renderBoard() promise resolved — the engine reached a settled board"); },
-                 function(e){ line("bad", "RENDER FAILED: renderBoard() rejected — " + ((e && (e.stack||e.message))||e)); });
+          r.then(function(){ line("ok", "renderBoard() promise resolved - the engine reached a settled board"); },
+                 function(e){ line("bad", "RENDER FAILED: renderBoard() rejected - " + ((e && (e.stack||e.message))||e)); });
         } else {
           line("ok", "renderBoard() returned synchronously");
         }
@@ -149,7 +149,7 @@
     var beats = 0;
     var iv = setInterval(function(){
       beats++;
-      if(beats > 4){ clearInterval(iv); line("end", "no further progress — the hang point is the last line above (\"" + lastMark + "\")"); return; }
+      if(beats > 4){ clearInterval(iv); line("end", "no further progress - the hang point is the last line above (\"" + lastMark + "\")"); return; }
       line("step", "still alive " + (beats*3) + "s after render dispatch (last reached: " + lastMark + ")");
     }, 3000);
   }
@@ -160,8 +160,8 @@
       return prev.then(function(prevOk){ if(prevOk === false || STOPPED) return false; return loadOne(name); });
     }, Promise.resolve(true));
   }).then(function(ok){
-    if(STOPPED){ line("end", "STOPPED at the failed script above — that script is the culprit."); return; }
-    line("ok", "all engine scripts loaded ok — the hang (if any) is now in the render step below");
+    if(STOPPED){ line("end", "STOPPED at the failed script above - that script is the culprit."); return; }
+    line("ok", "all engine scripts loaded ok - the hang (if any) is now in the render step below");
     fireRender();
   });
 })();
