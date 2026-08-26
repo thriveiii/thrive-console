@@ -240,7 +240,7 @@ function runSend(slug){
       if(d && d.ok===false){ var e3=new Error(d.error||"send failed"); e3.__kind="reject"; throw e3; }
       // Resend accepted. Write the server row ONLY now. id = the open token (== console_hits.data.r join target).
       var mailRow = { id:art.token, opp:slug, status:"sent", to_addr:art.to, subject:art.subject, ts:isoNow(),
-        actor:authEmail(), up:Date.now(),
+        actor:currentUid(), up:Date.now(),   // Step 1: actor is the uid (currentActor()=authUid() parity), not the email
         data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:(d && d.id) || "", provider:"endpoint", direction:"out" } };
       return confirmMail(mailRow).then(function(){
         return reloadBoardData().then(function(){ __writing=false; __act[slug]={ msg:t("s_sent"), cls:"ok" }; if(__drawerSlug===slug) refreshDrawer(slug); });
