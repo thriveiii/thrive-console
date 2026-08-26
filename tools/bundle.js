@@ -706,21 +706,123 @@ function buildApp(){
     '  });\n' +
     '})();\n</script>';
 
-  // Law 2: the CARRY module set, linked (content-hashed, revalidated by the publish _headers). Dependency
-  // order, app.js last. No gate.js, no fragment adopt, no paint-lock, no BOARD_WAIT.
-  const body =
-    '<script src="' + fp("config.js") + '"></script>\n<script src="' + fp("supabase.js") + '"></script>' +
-    '\n' + signin +
-    '\n<script src="' + fp("icons.js") + '"></script>\n<script src="' + fp("i18n.js") + '"></script>' +
-    '\n<script src="' + fp("stage-model.js") + '"></script>\n<script src="' + fp("lifecycle.js") + '"></script>' +
-    '\n<script src="' + fp("intake.js") + '"></script>' +
-    '\n<script src="' + fp("numbers.js") + '"></script>' +
-    '\n<script src="' + fp("inbound.js") + '"></script>\n<script src="' + fp("kinds.js") + '"></script>' +
-    '\n<script src="' + fp("store.js") + '"></script>\n<script src="' + fp("drafts.js") + '"></script>' +
-    '\n<script src="' + fp("flows.js") + '"></script>\n<script src="' + fp("app.js") + '"></script>' +
-    // The webfonts, off the critical path, exactly as the served console loads them (added after load, no swap).
-    '\n<script>(function(){function f(){try{var l=document.createElement("link");l.rel="stylesheet";l.href="' + fp("fonts.css") + '";(document.head||document.documentElement).appendChild(l);}catch(e){}}' +
-    'if(document.readyState==="complete")setTimeout(f,0);else addEventListener("load",function(){setTimeout(f,0);});})();</script>';
+  // BOOT_TRACE: the inline boot steps (the sign-in card, the fonts loader, the view router) are the same code
+  // as before, but stripped of their <script> wrapper so the instrumented loader can hold them as text and run
+  // them in sequence. Nothing about what they DO changes; only how they are dispatched.
+  const signinCode = signin.replace(/^<script>\n/, "").replace(/\n<\/script>$/, "");
+  const routerCode = routerScript.replace(/^<script>\n/, "").replace(/\n<\/script>$/, "");
+  const fontsCode =
+    '(function(){function f(){try{var l=document.createElement("link");l.rel="stylesheet";l.href="' + fp("fonts.css") + '";(document.head||document.documentElement).appendChild(l);}catch(e){}}' +
+    'if(document.readyState==="complete")setTimeout(f,0);else addEventListener("load",function(){setTimeout(f,0);});})();';
+
+  // BOOT_TRACE: the ordered boot steps. External files carry a src; inline steps carry the id of a text block.
+  // The order is EXACTLY the CARRY order (sign-in right after supabase; router last), unchanged from the tags.
+  const BOOT_TIMEOUT = 4000;
+  const stepsJson = JSON.stringify([
+    { n: "config.js",       s: fp("config.js") },
+    { n: "supabase.js",     s: fp("supabase.js") },
+    { n: "sign-in card",    i: "boot-signin" },
+    { n: "icons.js",        s: fp("icons.js") },
+    { n: "i18n.js",         s: fp("i18n.js") },
+    { n: "stage-model.js",  s: fp("stage-model.js") },
+    { n: "lifecycle.js",    s: fp("lifecycle.js") },
+    { n: "intake.js",       s: fp("intake.js") },
+    { n: "numbers.js",      s: fp("numbers.js") },
+    { n: "inbound.js",      s: fp("inbound.js") },
+    { n: "kinds.js",        s: fp("kinds.js") },
+    { n: "store.js",        s: fp("store.js") },
+    { n: "drafts.js",       s: fp("drafts.js") },
+    { n: "flows.js",        s: fp("flows.js") },
+    { n: "app.js",          s: fp("app.js") },
+    { n: "fonts.css loader", i: "boot-fonts" },
+    { n: "view router",     i: "boot-router" }
+  ]);
+
+  /* BOOT_TRACE point 3: the self-reporting surface + global error handlers, the VERY FIRST script on the page,
+     before any module. A fixed black panel at the top receives one line per boot step, and every uncaught
+     error or promise rejection is written to it with its message and source:line. No Web Inspector needed:
+     whatever halts the boot names itself on screen. Instrument only: it changes no boot logic, no sign-in, no
+     CARRY script, no auth, no Supabase, no data. The failsafe panel is intentionally NOT loaded in this
+     diagnostic build so #bootTrace is the single, unambiguous surface; app.js/router still reference
+     window.__thriveBoardFault, so it is defined here to route a board fault to the same panel. */
+  const bootGuard = `<script>
+(function(){
+  function box(){
+    var b = document.getElementById("bootTrace");
+    if(!b){
+      b = document.createElement("div"); b.id = "bootTrace"; b.setAttribute("dir","ltr");
+      b.setAttribute("style","position:fixed;top:0;left:0;right:0;z-index:2147483647;max-height:64vh;overflow:auto;-webkit-overflow-scrolling:touch;margin:0;padding:8px 10px;background:#000;color:#fff;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word");
+      (document.body || document.documentElement).appendChild(b);
+    }
+    return b;
+  }
+  window.__bootLine = function(t, color){
+    try{ var b=box(); var p=document.createElement("div"); if(color) p.style.color=color; p.textContent=String(t); b.appendChild(p); b.scrollTop=b.scrollHeight; }catch(e){}
+  };
+  window.addEventListener("error", function(e){
+    try{
+      var t = e && e.target;
+      if(t && t !== window && t.tagName){ window.__bootLine("FAILED (resource): " + (t.src || t.href || ("<"+t.tagName+">")), "#ff6b6b"); return; }
+      var msg=(e&&e.message)||"error", src=(e&&e.filename)||"", ln=(e&&e.lineno!=null)?e.lineno:"", col=(e&&e.colno!=null)?e.colno:"";
+      window.__bootLine("ONERROR: " + msg + "  " + src + ":" + ln + ":" + col, "#ff6b6b");
+    }catch(x){}
+  }, true);
+  window.addEventListener("unhandledrejection", function(e){
+    try{ var r=e&&e.reason, m=(r&&(r.message||String(r)))||"promise rejected", at=(r&&r.stack)?(" "+(String(r.stack).split("\\n")[1]||"").trim()):""; window.__bootLine("UNHANDLEDREJECTION: " + m + at, "#ff6b6b"); }catch(x){}
+  });
+  // Referenced by app.js/router (the failsafe panel is not loaded here); a board fault becomes a red line.
+  window.__thriveBoardFault = function(err){ try{ window.__bootLine("BOARD FAULT: " + ((err && err.message) || err), "#ff6b6b"); }catch(e){} };
+  window.__thriveFailsafeArm = function(){};
+  window.__bootLine("boot trace armed, build ${BUILD}");
+})();
+</script>`;
+
+  /* BOOT_TRACE points 1 and 2: the instrumented sequential loader. BEFORE each script it writes "loading: NAME"
+     to #bootTrace; on load it writes "loaded: NAME"; on error OR a ${BOOT_TIMEOUT}ms timeout it writes a red
+     "FAILED: NAME - <reason>" and STOPS, so the last visible line always names the culprit (or the last
+     "loading:" line if it truly hangs with no error). Inline steps (the sign-in card, the fonts loader, the
+     view router) are held as text blocks below and run via new Function so a throw is caught and STOPS too.
+     The view router registers a DOMContentLoaded listener; once every step has run, the loader dispatches a
+     synthetic DOMContentLoaded so the mount happens exactly as the static-tag boot intended. */
+  const loader = `<script>
+(function(){
+  var STEPS = ${stepsJson};
+  var TIMEOUT = ${BOOT_TIMEOUT};
+  var i = 0, stopped = false, L = window.__bootLine || function(){};
+  function stop(){ stopped = true; }
+  function ext(step){
+    L("loading: " + step.n);
+    var sc = document.createElement("script"), settled = false;
+    var t = setTimeout(function(){
+      if(stopped || settled) return; settled = true;
+      L("FAILED: " + step.n + " - timeout after " + (TIMEOUT/1000) + "s (no load, no error)", "#ff6b6b");
+      stop();
+    }, TIMEOUT);
+    sc.onload = function(){ if(stopped || settled) return; settled = true; clearTimeout(t); L("loaded: " + step.n); next(); };
+    sc.onerror = function(){ if(stopped || settled) return; settled = true; clearTimeout(t); L("FAILED: " + step.n + " - could not load " + step.s, "#ff6b6b"); stop(); };
+    sc.src = step.s;
+    (document.body || document.documentElement).appendChild(sc);
+  }
+  function inl(step){
+    L("running: " + step.n);
+    var el = document.getElementById(step.i), code = el ? el.textContent : "";
+    try{ (new Function(code))(); L("ran: " + step.n); next(); }
+    catch(e){ L("FAILED: " + step.n + " - " + ((e && e.message) || e), "#ff6b6b"); stop(); }
+  }
+  function next(){
+    if(stopped) return;
+    if(i >= STEPS.length){ finish(); return; }
+    var step = STEPS[i++];
+    if(step.s) ext(step); else inl(step);
+  }
+  function finish(){
+    L("all steps ran - dispatching DOMContentLoaded");
+    try{ document.dispatchEvent(new Event("DOMContentLoaded")); }
+    catch(e){ try{ var ev=document.createEvent("Event"); ev.initEvent("DOMContentLoaded", false, false); document.dispatchEvent(ev); }catch(x){} }
+  }
+  next();
+})();
+</script>`;
 
   // gate-locked hides the shell (.top/.wrap) until reveal(); the sign-in card sits above it. No paint-lock
   // sessionStorage read decides this: it is simply the boot state, dropped the moment a session is in memory.
@@ -732,9 +834,7 @@ function buildApp(){
 <meta name="robots" content="noindex, nofollow">
 <meta name="thrive-build" content="${BUILD}">
 <meta name="thrive-built-at" content="${BUILT_AT}">
-<script>
-${failsafe}
-</script>
+${bootGuard}
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -762,8 +862,12 @@ ${head}
 ${sectionsLinked}
 ${MODAL}
 
-${body}
-${routerScript}
+<!-- BOOT_TRACE inline steps, held as text and executed in sequence by the loader below (type="text/plain" so
+     the browser never auto-runs them; the loader reads textContent and runs each via new Function). -->
+<script type="text/plain" id="boot-signin">${signinCode}</script>
+<script type="text/plain" id="boot-fonts">${fontsCode}</script>
+<script type="text/plain" id="boot-router">${routerCode}</script>
+${loader}
 </body>
 </html>
 `;

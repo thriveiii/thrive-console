@@ -4,238 +4,38 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="33f81c61">
-<meta name="thrive-built-at" content="2026-08-26T06:43:36Z">
+<meta name="thrive-build" content="a34646b4">
+<meta name="thrive-built-at" content="2026-08-26T07:21:58Z">
 <script>
-/* P40 failsafe: a first-script, zero-dependency reveal surface. It exists to make a silent client death
-   SPEAK. It NEVER paints a pixel in a healthy boot; it appears only on (a) an uncaught error, (b) an
-   unhandled promise rejection, or (c) a resource (script/stylesheet) that failed to load. It prints
-   DIAGNOSTICS ONLY: error name/message/first stack line, the build stamp, the boot checkpoint, a ROW COUNT
-   for the board read, and whether a session blob EXISTS in storage. It NEVER prints or embeds a token value
-   or any row content. It depends on no app CSS, no app module, and no render path: it builds its own panel
-   imperatively on documentElement, so it still speaks when everything else has failed.
-
-   P48: the boot-stall WATCHDOG that used to live here is gone; the single watchdog is now the 20s
-   bootWatchdog in the head boot script. This file keeps the reveal panel, the P41 heartbeat / sign-step
-   strip, the P43 version convergence, and __thriveFailsafeArm as a safe no-op (gate.js still calls it).
-
-   This is P40's whole job: reveal, not fix. Zero behavior change to auth, session, reads, or rendering. */
-(function () {
-  "use strict";
-  /* P42 idempotence. The shell carries this file BOTH inlined (parse-time, cannot 404) and as a first
-     src tag (survives a stale shell whose inline block was stripped). Whichever runs first installs the
-     failsafe and marks the tab; the second copy is a no-op, so there is never a second strip, a second
-     listener set, or a fought-over accessor. */
-  try { if (window.__thriveFailsafeLoaded) return; window.__thriveFailsafeLoaded = true; } catch (e) {}
-  var shown = false;
-
-  function meta(name) { try { var m = document.querySelector('meta[name="' + name + '"]'); return (m && m.getAttribute("content")) || ""; } catch (e) { return ""; } }
-  function buildStamp() { return meta("thrive-build") || "(unknown)"; }
-  // Existence only. The token value is never read into a variable, never printed, never embedded.
-  function sessionPresent() { try { return localStorage.getItem("console_sb_session") ? "present" : "null"; } catch (e) { return "unknown"; } }
-  function ephemeral() { try { return (window.ThriveSupa && window.ThriveSupa.sessionEphemeral) ? String(window.ThriveSupa.sessionEphemeral()) : "unknown"; } catch (e) { return "unknown"; } }
-  // Count only, recorded by the app where the board payload is already parsed. Never the rows themselves.
-  function boardRows() { try { return (typeof window.__boardRows === "number") ? String(window.__boardRows) : "unknown"; } catch (e) { return "unknown"; } }
-  function checkpoint() { try { return String(window.__bootMark || "(none)"); } catch (e) { return "(none)"; } }
-
-  /* P41 heartbeat. A synchronous one-line strip created at PARSE TIME on every document, before any other
-     script, so its presence, its frozen value, or its absence is itself the datum when even the P40 panel
-     stays silent:
-       - never appears on the black screen  -> branch A: the post-sign-in document is dead (the failsafe
-         never ran there), a routing/404/stale-shell defect on that document;
-       - frozen at a mark                   -> branch B: the main thread is synchronously blocked, and the
-         mark NAMES the step holding it (parse / merge / paint);
-       - reaches "board painted" over black -> branch C: the board painted invisibly, a CSS/scope defect.
-     It shows "boot <mark> · build <stamp>", updates on every checkpoint, appends "rows <n>" at
-     payload-parsed (count only, never content), and REMOVES itself 3s after the board paints, so a healthy
-     boot shows a brief line and loses it (the P36 no-lingering-diagnostics spirit). It is driven off the
-     existing P40 checkpoint globals via accessors, so it needs ZERO further change to the app. Temporary:
-     deleted in the closing PR of this outage. */
-  var _mark; try { _mark = window.__bootMark; } catch (e) {}
-  var _rows; try { _rows = window.__boardRows; } catch (e) {}
-  var _painted; try { _painted = window.__bootPainted; } catch (e) {}
-  var _sign; try { _sign = window.__signMark; } catch (e) {}   // P44: the CLICK path's own mark
-  var strip = null, stripGone = false, removeTimer = null;
-  function stripText() {
-    var t = "boot " + (_mark || "start") + " · build " + buildStamp();
-    if (typeof _rows === "number") t += " · rows " + _rows;
-    if (_sign) t += " · sign " + _sign;   // P44: sign-in progress, live on the device, no inspector
-    return t;
-  }
-  function ensureStrip() {
-    if (strip || stripGone) return;
-    try {
-      strip = document.createElement("div");
-      strip.id = "thriveHeartbeat"; strip.setAttribute("dir", "ltr");
-      strip.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:2147483646;margin:0;padding:4px 10px;" +
-        "background:#111318;color:#9ca3af;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;" +
-        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;-webkit-text-size-adjust:100%";
-      strip.textContent = stripText();
-      (document.body || document.documentElement).appendChild(strip);
-    } catch (e) {}
-  }
-  function updateStrip() { if (strip && !stripGone) { try { strip.textContent = stripText(); } catch (e) {} } }
-  function removeStrip() { stripGone = true; try { if (strip && strip.parentNode) strip.parentNode.removeChild(strip); } catch (e) {} strip = null; }
-  // Intercept the assignments the app already makes (P40) so each one drives the heartbeat; reads still
-  // return the stored value, so the P40 panel and watchdog read exactly what they did before.
-  try {
-    Object.defineProperty(window, "__bootMark", { configurable: true, get: function () { return _mark; }, set: function (v) { _mark = v; ensureStrip(); updateStrip(); } });
-    Object.defineProperty(window, "__boardRows", { configurable: true, get: function () { return _rows; }, set: function (v) { _rows = v; updateStrip(); } });
-    Object.defineProperty(window, "__bootPainted", { configurable: true, get: function () { return _painted; }, set: function (v) { _painted = v; if (v) { try { if (removeTimer) clearTimeout(removeTimer); } catch (e) {} removeTimer = setTimeout(removeStrip, 3000); } } });
-    // P44: the sign-in CLICK path's own mark. Every prior instrument watched the boot; the "Signing in"
-    // hang lives here. The gate and signIn() assign it at each step; the strip renders it live, and a
-    // sign-in click re-shows the strip even after a healthy boot removed it, so the progression is
-    // visible on the device with no inspector.
-    Object.defineProperty(window, "__signMark", { configurable: true, get: function () { return _sign; }, set: function (v) { _sign = v; stripGone = false; ensureStrip(); updateStrip(); } });
-  } catch (e) {}
-  ensureStrip();   // render the heartbeat NOW, at parse time, before any module runs
-
-  /* P44: the sign-in stall reporter. The gate calls this when its hard 15s race around the whole click
-     path fires (or when a step rejects in a way that must not stay silent): the panel names the LAST
-     __signMark reached, which is the exact step that never returned, alongside the standard storage and
-     ephemeral datums the panel already prints. */
-  window.__thriveSignStall = function (detail) {
-    var last = "(none)"; try { last = String(window.__signMark || "(none)"); } catch (e) {}
-    panel("Sign-in stalled", "توقّف تسجيل الدخول",
-      { name: "SignInStalled", message: "last step: " + last + (detail ? (" · " + detail) : ""), stack: "" }, true);
-  };
-
-  // One datum, EN then AR. Arabic keeps letter-spacing normal and reads right to left.
-  function pair(box, en, ar) {
-    var e = document.createElement("p");
-    e.setAttribute("dir", "ltr");
-    e.style.cssText = "margin:0;padding:2px 0;white-space:pre-wrap;word-break:break-word";
-    e.textContent = en; box.appendChild(e);
-    var a = document.createElement("p");
-    a.setAttribute("dir", "rtl");
-    a.style.cssText = "margin:0 0 12px;padding:2px 0;white-space:pre-wrap;word-break:break-word;letter-spacing:normal";
-    a.textContent = ar; box.appendChild(a);
-  }
-
-  /* P42 GAP 3, the reveal guarantee. Whenever the panel fires, the static shell must stop being hidden:
-     diagnostics over a black void help less than diagnostics over the visible shell. The shell is hidden
-     by the `gate-locked` class on <html> (styles.css: html.gate-locked .top/.wrap display:none), removed
-     in a healthy boot by gate.js reveal(). A dead boot never reaches reveal(), so the failsafe removes it
-     here, restores body scrolling, and drops any stranded gate overlay. Black becomes impossible: either
-     the app painted, or the shell + this panel are visible. */
-  function revealShell(keepGate) {
-    try { document.documentElement.classList.remove("gate-locked"); } catch (e) {}
-    try { if (document.body) document.body.style.overflow = ""; } catch (e) {}
-    // P44: a sign-in stall keeps the gate ON SCREEN beneath the panel: the operator needs the form to
-    // retry. Every other panel (boot death) still drops a stranded overlay so the shell is reachable.
-    if (!keepGate) { try { var g = document.getElementById("thriveGate"); if (g && g.parentNode) g.parentNode.removeChild(g); } catch (e) {} }
-  }
-
-  function panel(headEn, headAr, err, keepGate) {
-    if (shown) return; shown = true;
-    revealShell(keepGate);
-    var root = document.documentElement;
-    var box = document.createElement("div");
-    box.id = "thriveFailsafe";
-    box.setAttribute("dir", "ltr");
-    // A top sheet, not a full-screen cover (P42): the revealed shell stays visible beneath it, so the
-    // photograph carries both the diagnostics and the state of the page they describe.
-    box.style.cssText = "position:fixed;top:0;left:0;right:0;max-height:75vh;z-index:2147483647;overflow:auto;-webkit-overflow-scrolling:touch;" +
-      "background:#0a0a0c;color:#e5e7eb;border-bottom:1px solid #2a2f3a;box-shadow:0 12px 40px rgba(0,0,0,.6);" +
-      "font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;padding:22px;-webkit-text-size-adjust:100%";
-    var h = document.createElement("p");
-    h.style.cssText = "margin:0 0 16px;font-weight:700;font-size:15px;line-height:1.4";
-    h.textContent = headEn + "   ·   " + headAr; box.appendChild(h);
-
-    if (err && err.resourceUrl) {
-      // P42 GAP 1: a resource death names its URL (URL only, never content).
-      pair(box, "Resource failed: " + err.resourceUrl, "تعذّر تحميل المورد: " + err.resourceUrl);
-    } else if (err) {
-      var name = (err && err.name) || "Error";
-      var msg = (err && (err.message !== undefined ? err.message : String(err))) || "(no message)";
-      pair(box, "Error: " + name + ": " + msg, "الخطأ: " + name + ": " + msg);
-      var at = ""; try { at = (String((err && err.stack) || "").split("\n")[1] || "").trim(); } catch (e) {}
-      if (at) pair(box, "At: " + at, "عند: " + at);
+(function(){
+  function box(){
+    var b = document.getElementById("bootTrace");
+    if(!b){
+      b = document.createElement("div"); b.id = "bootTrace"; b.setAttribute("dir","ltr");
+      b.setAttribute("style","position:fixed;top:0;left:0;right:0;z-index:2147483647;max-height:64vh;overflow:auto;-webkit-overflow-scrolling:touch;margin:0;padding:8px 10px;background:#000;color:#fff;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word");
+      (document.body || document.documentElement).appendChild(b);
     }
-    pair(box, "Build: " + buildStamp(), "الإصدار: " + buildStamp());
-    pair(box, "Checkpoint: " + checkpoint(), "المرحلة: " + checkpoint());
-    pair(box, "Board rows: " + boardRows(), "صفوف اللوحة: " + boardRows());
-    pair(box, "Session in storage: " + sessionPresent(), "الجلسة في التخزين: " + sessionPresent());
-    pair(box, "Ephemeral: " + ephemeral(), "مؤقتة: " + ephemeral());
-
-    try { root.appendChild(box); } catch (e) { try { (document.body || root).appendChild(box); } catch (x) {} }
+    return b;
   }
-
-  window.addEventListener("error", function (e) {
-    var err = (e && e.error) || { name: "Error", message: (e && e.message) || "script error", stack: "" };
-    panel("Console failed to start", "تعذّر بدء الكونسول", err);
-  });
-  /* P42 GAP 1: a 404ing script or stylesheet fires its error on the ELEMENT, which never bubbles to the
-     window listener above; a document whose app.js 404s died mute by construction. Capture-phase sees it.
-     A resource target (script/link/img with a URL) panels with the failing URL only, never content; a
-     plain uncaught error passing through capture is left for the bubble listener above (same panel, and
-     `shown` guards a double-fire anyway). */
-  window.addEventListener("error", function (e) {
-    var t = e && e.target;
-    if (!t || t === window || !t.tagName) return;
-    var url = t.src || t.href || "";
-    panel("Console failed to start", "تعذّر بدء الكونسول", { resourceUrl: String(url || ("<" + t.tagName + ">")) });
+  window.__bootLine = function(t, color){
+    try{ var b=box(); var p=document.createElement("div"); if(color) p.style.color=color; p.textContent=String(t); b.appendChild(p); b.scrollTop=b.scrollHeight; }catch(e){}
+  };
+  window.addEventListener("error", function(e){
+    try{
+      var t = e && e.target;
+      if(t && t !== window && t.tagName){ window.__bootLine("FAILED (resource): " + (t.src || t.href || ("<"+t.tagName+">")), "#ff6b6b"); return; }
+      var msg=(e&&e.message)||"error", src=(e&&e.filename)||"", ln=(e&&e.lineno!=null)?e.lineno:"", col=(e&&e.colno!=null)?e.colno:"";
+      window.__bootLine("ONERROR: " + msg + "  " + src + ":" + ln + ":" + col, "#ff6b6b");
+    }catch(x){}
   }, true);
-  window.addEventListener("unhandledrejection", function (e) {
-    var r = e && e.reason;
-    var err = (r && typeof r === "object") ? r : { name: "UnhandledRejection", message: (r != null ? String(r) : "promise rejected"), stack: "" };
-    panel("Console failed to start", "تعذّر بدء الكونسول", err);
+  window.addEventListener("unhandledrejection", function(e){
+    try{ var r=e&&e.reason, m=(r&&(r.message||String(r)))||"promise rejected", at=(r&&r.stack)?(" "+(String(r.stack).split("\n")[1]||"").trim()):""; window.__bootLine("UNHANDLEDREJECTION: " + m + at, "#ff6b6b"); }catch(x){}
   });
-  /* BOARD_PAINT_COLD_START: a board render fault surfaces itself through the SAME panel (the exact exception:
-     name + message + the throwing statement from the stack, plus the boot checkpoint and build), so a broken
-     paint NAMES itself on screen instead of leaving a black board. Public so the board's own try/catch and
-     the shell's view-init dispatch can report a caught error deterministically, never relying on an
-     unhandledrejection that a caught error would not even produce. */
-  window.__thriveBoardFault = function (err) {
-    var e = (err && typeof err === "object") ? err : { name: "BoardRenderError", message: (err != null ? String(err) : "board render failed"), stack: "" };
-    try { panel("Board did not paint", "لم تُرسم اللوحة", e); } catch (x) {}
-  };
-
-  /* P43 version convergence, the first act of boot. The application now verifies ITS OWN freshness:
-     fetch /version.json (written by the bundler beside the build stamp) with cache:"no-store", compare its
-     build to this document's baked stamp, and if they differ replace the location with the same URL
-     carrying ?v=<current build> (old v dropped, other params and the hash preserved), which forces
-     revalidated HTML. The one-shot guard is a URL flag (vr=1), NOT storage, so it survives where storage
-     is blocked: if vr=1 is already present and the stamps STILL differ, we never loop; the failsafe panel
-     reports "Mixed build" with both stamps instead, so the state is self-reporting, never silent. If
-     version.json is unreachable (offline copy, first deploy, network), boot proceeds untouched:
-     convergence is best-effort, never a wall.
-     Module-level note: per-module build stamps are impossible by construction here (BUILD is a content
-     hash of the modules; stamping it into them changes the content, changing BUILD), and every module URL
-     carries its per-file content hash, so a NEW document can never load OLD module bytes: the only mixed
-     state possible is an OLD DOCUMENT, which is exactly what this check catches and heals. */
-  try {
-    var docBuild = buildStamp();
-    if (docBuild && docBuild !== "(unknown)" && typeof fetch === "function") {
-      fetch("../version.json", { cache: "no-store" })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (j) {
-          var server = j && j.build;
-          if (!server || server === docBuild) return;
-          if (/(^|[?&])vr=1(&|$)/.test(location.search || "")) {
-            // Already force-converged once this navigation and the stamps still differ: report, never loop.
-            panel("Mixed build detected", "تم اكتشاف بناء مختلط",
-              { name: "MixedBuild", message: "document " + docBuild + " · server " + server, stack: "" });
-            return;
-          }
-          var parts = (location.search || "").replace(/^\?/, "").split("&")
-            .filter(function (p) { return p && p.indexOf("v=") !== 0 && p.indexOf("vr=") !== 0; });
-          parts.unshift("v=" + server); parts.push("vr=1");
-          location.replace(location.pathname + "?" + parts.join("&") + (location.hash || ""));
-        })
-        .catch(function () {});
-    }
-  } catch (e) {}
-
-  /* P48: the two failsafe watchdog timers (the app-armed __thriveFailsafeArm timeout and the self-armed
-     thrive-build sentry) are removed. The SINGLE boot watchdog is now the 20s bootWatchdog in the head
-     boot script (bundle.js), so there is exactly one watchdog surface and they cannot compete. But gate.js
-     finish() still calls window.__thriveFailsafeArm(), so it is kept DEFINED as a safe no-op: the call
-     never throws, and it no longer starts a second stall timer. The error / unhandledrejection / resource
-     reveal panel above remains the one "speak on silent death" surface, guarded by `shown`. */
-  window.__thriveFailsafeArm = function () {};
+  // Referenced by app.js/router (the failsafe panel is not loaded here); a board fault becomes a red line.
+  window.__thriveBoardFault = function(err){ try{ window.__bootLine("BOARD FAULT: " + ((err && err.message) || err), "#ff6b6b"); }catch(e){} };
+  window.__thriveFailsafeArm = function(){};
+  window.__bootLine("boot trace armed, build a34646b4");
 })();
-
 </script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -267,7 +67,7 @@ try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){naviga
     <button id="langbtn" class="langbtn">العربية</button>
   </nav>
 </header>
-<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">33f81c61</bdi> · <bdi class="mono-iso">2026-08-26T06:43:36Z</bdi></div>
+<div class="build-stamp" aria-hidden="true">build <bdi class="mono-iso">a34646b4</bdi> · <bdi class="mono-iso">2026-08-26T07:21:58Z</bdi></div>
 
 <main class="wrap view" id="view-board" hidden>
 
@@ -1225,10 +1025,9 @@ try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){naviga
   </div>
 </div>
 
-<script src="./config.js?v=806f4221bf"></script>
-<script src="./supabase.js?v=7d782b6f4f"></script>
-<script>
-(function(){
+<!-- BOOT_TRACE inline steps, held as text and executed in sequence by the loader below (type="text/plain" so
+     the browser never auto-runs them; the loader reads textContent and runs each via new Function). -->
+<script type="text/plain" id="boot-signin">(function(){
   "use strict";
   var S = window.ThriveSupa;
   var AR = (function(){ try{ return localStorage.getItem("thrive_lang")==="ar"; }catch(e){ return false; } })();
@@ -1299,23 +1098,9 @@ try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){naviga
       try{ (m?pass:email).focus(); }catch(e2){}
     }
   });
-})();
-</script>
-<script src="./icons.js?v=f4b0d9edc8"></script>
-<script src="./i18n.js?v=dd824e08d4"></script>
-<script src="./stage-model.js?v=1f1786d20e"></script>
-<script src="./lifecycle.js?v=df368247ea"></script>
-<script src="./intake.js?v=7a5d67423d"></script>
-<script src="./numbers.js?v=2fa1ded9ee"></script>
-<script src="./inbound.js?v=885dc046a6"></script>
-<script src="./kinds.js?v=6ab99c4e8b"></script>
-<script src="./store.js?v=3cba9b8cff"></script>
-<script src="./drafts.js?v=302cc5b4e6"></script>
-<script src="./flows.js?v=377173fc32"></script>
-<script src="./app.js?v=13dbfa04f1"></script>
-<script>(function(){function f(){try{var l=document.createElement("link");l.rel="stylesheet";l.href="./fonts.css?v=4db13ad39c";(document.head||document.documentElement).appendChild(l);}catch(e){}}if(document.readyState==="complete")setTimeout(f,0);else addEventListener("load",function(){setTimeout(f,0);});})();</script>
-<script>
-/* One document, eight views. Each init runs the first time its view is shown, which is exactly
+})();</script>
+<script type="text/plain" id="boot-fonts">(function(){function f(){try{var l=document.createElement("link");l.rel="stylesheet";l.href="./fonts.css?v=4db13ad39c";(document.head||document.documentElement).appendChild(l);}catch(e){}}if(document.readyState==="complete")setTimeout(f,0);else addEventListener("load",function(){setTimeout(f,0);});})();</script>
+<script type="text/plain" id="boot-router">/* One document, eight views. Each init runs the first time its view is shown, which is exactly
    what the served console does per page load, and again whenever the view is asked for with
    DIFFERENT parameters, which is exactly what a second page load would do.
 
@@ -1437,6 +1222,44 @@ try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){naviga
       if(!(cur in started)) show(cur);
     });
   });
+})();</script>
+<script>
+(function(){
+  var STEPS = [{"n":"config.js","s":"./config.js?v=806f4221bf"},{"n":"supabase.js","s":"./supabase.js?v=7d782b6f4f"},{"n":"sign-in card","i":"boot-signin"},{"n":"icons.js","s":"./icons.js?v=f4b0d9edc8"},{"n":"i18n.js","s":"./i18n.js?v=dd824e08d4"},{"n":"stage-model.js","s":"./stage-model.js?v=1f1786d20e"},{"n":"lifecycle.js","s":"./lifecycle.js?v=df368247ea"},{"n":"intake.js","s":"./intake.js?v=7a5d67423d"},{"n":"numbers.js","s":"./numbers.js?v=2fa1ded9ee"},{"n":"inbound.js","s":"./inbound.js?v=885dc046a6"},{"n":"kinds.js","s":"./kinds.js?v=6ab99c4e8b"},{"n":"store.js","s":"./store.js?v=3cba9b8cff"},{"n":"drafts.js","s":"./drafts.js?v=302cc5b4e6"},{"n":"flows.js","s":"./flows.js?v=377173fc32"},{"n":"app.js","s":"./app.js?v=13dbfa04f1"},{"n":"fonts.css loader","i":"boot-fonts"},{"n":"view router","i":"boot-router"}];
+  var TIMEOUT = 4000;
+  var i = 0, stopped = false, L = window.__bootLine || function(){};
+  function stop(){ stopped = true; }
+  function ext(step){
+    L("loading: " + step.n);
+    var sc = document.createElement("script"), settled = false;
+    var t = setTimeout(function(){
+      if(stopped || settled) return; settled = true;
+      L("FAILED: " + step.n + " - timeout after " + (TIMEOUT/1000) + "s (no load, no error)", "#ff6b6b");
+      stop();
+    }, TIMEOUT);
+    sc.onload = function(){ if(stopped || settled) return; settled = true; clearTimeout(t); L("loaded: " + step.n); next(); };
+    sc.onerror = function(){ if(stopped || settled) return; settled = true; clearTimeout(t); L("FAILED: " + step.n + " - could not load " + step.s, "#ff6b6b"); stop(); };
+    sc.src = step.s;
+    (document.body || document.documentElement).appendChild(sc);
+  }
+  function inl(step){
+    L("running: " + step.n);
+    var el = document.getElementById(step.i), code = el ? el.textContent : "";
+    try{ (new Function(code))(); L("ran: " + step.n); next(); }
+    catch(e){ L("FAILED: " + step.n + " - " + ((e && e.message) || e), "#ff6b6b"); stop(); }
+  }
+  function next(){
+    if(stopped) return;
+    if(i >= STEPS.length){ finish(); return; }
+    var step = STEPS[i++];
+    if(step.s) ext(step); else inl(step);
+  }
+  function finish(){
+    L("all steps ran - dispatching DOMContentLoaded");
+    try{ document.dispatchEvent(new Event("DOMContentLoaded")); }
+    catch(e){ try{ var ev=document.createEvent("Event"); ev.initEvent("DOMContentLoaded", false, false); document.dispatchEvent(ev); }catch(x){} }
+  }
+  next();
 })();
 </script>
 </body>

@@ -35,7 +35,9 @@ app = open(os.path.join(ROOT, "library/app.html")).read()
 # ---- Law 2: the CARRY module set, in order, app.js last ------------------------------------------
 CARRY = ["config.js", "supabase.js", "icons.js", "i18n.js", "stage-model.js", "lifecycle.js",
          "intake.js", "numbers.js", "inbound.js", "kinds.js", "store.js", "drafts.js", "flows.js", "app.js"]
-order = re.findall(r'src="\./([a-z0-9-]+\.js)\?v=', app)
+# BOOT_TRACE: the modules are loaded by the instrumented sequential loader, so their order lives in the STEPS
+# array as "s":"./NAME.js?v=hash" (external steps), interleaved with inline steps that carry no ".js" src.
+order = re.findall(r'"s":"\./([a-z0-9-]+\.js)\?v=', app)
 ck("Law 2: the CARRY modules load in dependency order, app.js last", order == CARRY, order)
 
 # ---- Law 4: RETIRE is not imported ---------------------------------------------------------------
@@ -60,13 +62,18 @@ ck("Law 1: sign-out is a real command again (app.js wires window.thriveSignOut)"
 ck("Law 3: the CARRY view router is present (VIEWS + initBoard dispatch)",
    '"init":"initBoard"' in app and 'window[v.init]()' in app)
 ck("Law 3: the board view container is present", 'id="view-board"' in app)
-ck("Law 3: failsafe on-screen fault surface is kept (panel + __thriveBoardFault)",
-   'window.__thriveBoardFault = function' in app and 'panel("Board did not paint"' in app)
+# BOOT_TRACE: the failsafe panel is not loaded in this build; the on-screen fault surface is #bootTrace, and
+# window.__thriveBoardFault routes a board fault to it (a red BOARD FAULT line).
+ck("Law 3: an on-screen fault surface is kept (__thriveBoardFault routes to the boot panel)",
+   'window.__thriveBoardFault = function' in app and 'BOARD FAULT:' in app)
 
 # ---- Browser: Law 1 end to end against the REAL supabase.js token grant ---------------------------
-m = re.search(r'(<script>\n\(function\(\)\{\n  "use strict";\n  var S = window\.ThriveSupa;[\s\S]*?\}\)\(\);\n</script>)', app)
-signin_block = m.group(1) if m else ""
-ck("the sign-in script was extracted from the emitted app.html", bool(signin_block))
+# BOOT_TRACE: the sign-in code now lives in the boot-signin text/plain block; extract that raw JS and wrap it.
+m = re.search(r'<script type="text/plain" id="boot-signin">([\s\S]*?)</script>', app)
+signin_code = m.group(1) if m else ""
+signin_block = ("<script>\n" + signin_code + "\n</script>") if signin_code else ""
+ck("the sign-in script was extracted from the emitted app.html",
+   bool(signin_code) and 'var S = window.ThriveSupa;' in signin_code)
 
 # A tiny page: real config + real supabase + the document's own sign-in script, over a gate-locked shell.
 PAGE = ('<!doctype html><html class="gate-locked" lang="en"><head><meta charset="utf-8">'
