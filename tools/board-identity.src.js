@@ -56,6 +56,16 @@ function resolveActor(v){
   return { uid:val, name:"", email:"" };
 }
 
+// Display helper for a stored actor value (Step 2A): the resolved display name if the profile index knows it,
+// else the raw value verbatim (a uid, or a legacy email) so it is NEVER blank. Escaping stays the caller's
+// job. Used by the note meta render (bundle.js noteItemHtml). A uid not in the index, or an index not yet
+// settled, degrades to the raw value; a later re-render (finishIdentity below) upgrades it to the name.
+function actorName(v){
+  if(v==null || v==="") return "";
+  try{ var r = resolveActor(v); return (r && r.name) ? r.name : String(v); }
+  catch(e){ return String(v); }
+}
+
 // Signature is per-operator in console_profiles.prefs; the engine writes sig_en / sig_ar (app.js:1789), and a
 // generic prefs.signature is honored too. Language-agnostic pick for now; a later step localizes it.
 function pickSignature(prefs){
@@ -104,6 +114,10 @@ function finishIdentity(){
   try{ window.__thriveIdentity = { uid:__identity.uid, email:__identity.email, name:__identity.name,
         title:__identity.title, signature:__identity.signature, hasSignature:!!__identity.signature,
         role:__identity.role, loaded:true }; }catch(e){}
+  // Step 2A: the profile index just settled (fire-and-forget from loadBoard, so it may finish AFTER a drawer
+  // was opened). Re-paint the open drawer's notes ONCE so an actor uid that showed raw on first paint now
+  // reads as the display name. One synchronous re-render, no polling, no await; guarded so it never throws.
+  try{ if(__drawerSlug && typeof renderNotesInto==="function") renderNotesInto(__drawerSlug); }catch(e){}
   return __identity;
 }
 
