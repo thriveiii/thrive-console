@@ -7,9 +7,11 @@ server-held token. Stateful mock of Supabase REST + the relay (page_publish + se
 Assertions:
   1. Activate POSTs op=page_publish to the relay with the slug and the html; NO GitHub token in any client payload;
   2. the beacon is injected into the html the client hands to the relay (mirror withBeacon);
-  3. E2's console_pages write is untouched: activation READS console_pages.html, it does not POST it;
-  4. once the live GET returns ok, activation flips to live and a send goes through (one console_mail);
-  5. a page that is committed but not yet served shows an honest PUBLISHING state (not live, not a false success);
+  3. activation READS console_pages.html and never re-POSTs it (it PATCHes only the live_verified_at stamp);
+  4. once the live GET returns ok, activation stamps console_pages.live_verified_at (the SINGLE liveness truth,
+     no flag written to console_opps.data), the drawer shows live, and a send goes through (one console_mail);
+  5. a page committed but not yet served is NOT stamped (no false success) and shows an honest publishing line
+     on the transient #upActStatus, marked bad;
   6. send is BLOCKED until verify-live returns ok on the real /opp/<slug> URL;
   7. the relay source carries the page_publish op, the GH_TOKEN read, the slug sanitizer, and withBeacon_;
   8. AR RTL uses the تنشيط / مُنشّطة / غير مُنشّطة vocabulary; privacy: synthetic *.example.test only.
@@ -28,15 +30,17 @@ def ck(n, c, d=None):
         if d is not None: print("      " + str(d)[:600])
 
 # ---- stateful server model (all addresses synthetic *.example.test) ------------------------------
+# PR1: liveness lives on console_pages.live_verified_at, NOT on any flag in the opp's data. The opp draft has
+# no page_active / page_live / page_dead / page_publishing (those are retired).
 def opp(slug, biz, subject, body, addr):
-    return {"slug":slug, "business":biz, "data":{"source":"upload", "page_active":False, "page_live":False,
-            "page_publishing":False, "page_dead":False, "page_title":subject,
+    return {"slug":slug, "business":biz, "data":{"source":"upload", "page_title":subject,
             "outreach_subject":subject, "outreach_text":body, "recipients":[{"addr":addr, "name":"", "lang":"en"}]}}
 OPPS = { "acme-co": opp("acme-co", "Acme Co", "A note for Acme Co", "Hi Acme, here is a page: [LINK]", "buyer.acme@example.test"),
          "fresh-labs": opp("fresh-labs", "Fresh Labs", "Fresh Labs intro", "Hi Fresh Labs: [LINK]", "buyer.fresh@example.test") }
 PAGES = { "acme-co": "<!doctype html><html><head><title>Acme Co</title></head><body><h1>Acme Co</h1></body></html>",
           "fresh-labs": "<!doctype html><html><head><title>Fresh Labs</title></head><body><h1>Fresh Labs</h1></body></html>" }
-MAIL = []; RELAY_PUBLISH = []; RELAY_SEND = []; PAGE_POSTS = []; OPP_PATCHES = []
+STAMP = {}  # slug -> live_verified_at ISO string; set ONLY by the board's pageStampLive PATCH after a real verify-live ok
+MAIL = []; RELAY_PUBLISH = []; RELAY_SEND = []; PAGE_POSTS = []; STAMP_PATCHES = []; OPP_PATCHES = []
 LIVE = {}   # slug -> "ok" | "dead"
 
 def sent_count(slug): return sum(1 for m in MAIL if m.get("opp")==slug)
@@ -46,10 +50,12 @@ def board_rows():
         d = o.get("data",{}) or {}
         he = bool(str(d.get("outreach_text","")).strip() or str(d.get("outreach_subject","")).strip())
         sc = sent_count(o["slug"])
-        stage = "sent" if sc>0 else ("live" if (he or o["slug"] in PAGES) else "draft")
+        # PR1 view law: has_page and the 'live' page-signal come SOLELY from the live_verified_at stamp.
+        stamped = bool(STAMP.get(o["slug"]))
+        stage = "sent" if sc>0 else ("live" if (he or stamped) else "draft")
         rows.append({"slug":o["slug"], "business":o.get("business",""), "stage":stage, "sent_count":sc,
           "open_count":0, "replied":False, "idle_days":0, "last_activity_ts":"2026-01-04T00:00:00Z",
-          "has_page":o["slug"] in PAGES, "has_email":he, "archived":False})
+          "has_page":stamped, "has_email":he, "archived":False})
     return rows
 def slug_of(url):
     m = re.search(r'slug=eq\.([^&]+)', url); return m.group(1) if m else ""
@@ -85,11 +91,19 @@ def route_opps(r):
 def route_pages(r):
     req = r.request
     if req.method == "POST":
-        PAGE_POSTS.append(req.post_data or "")     # F2 must NOT write here; recorded so the test can assert it did not
+        PAGE_POSTS.append(req.post_data or "")     # activation must NOT re-insert here; recorded to assert it did not
+        return r.fulfill(status=204, body="")
+    if req.method == "PATCH":                       # PR1 pageStampLive: the single liveness write
+        slug = slug_of(req.url)
+        try: body = json.loads(req.post_data or "{}")
+        except Exception: body = {}
+        stamp = body.get("live_verified_at")
+        if slug and stamp: STAMP[slug] = stamp; STAMP_PATCHES.append({"slug":slug, "live_verified_at":stamp})
         return r.fulfill(status=204, body="")
     slug = slug_of(req.url)
     html = PAGES.get(slug)
-    return J(r, [{"html":html}] if html is not None else [])
+    # GET returns html (pageReadHtml) AND the live_verified_at stamp (fetchDetail select=slug,live_verified_at).
+    return J(r, [{"slug":slug, "html":html, "live_verified_at":STAMP.get(slug)}] if html is not None else [])
 def route_mail(r):
     req = r.request
     if req.method == "POST":
@@ -159,10 +173,11 @@ with sync_playwright() as p:
     ck("2: the beacon was injected into the committed html (mirror withBeacon)", BEACON in pub_html, pub_html[-140:])
     blob = json.dumps(RELAY_PUBLISH) + json.dumps(RELAY_SEND)
     ck("1: NO GitHub token in any client payload to the relay", not re.search(r"ghp_|github_pat|gh_token|GH_TOKEN|Authorization|Bearer", blob), blob[:200])
-    ck("3: E2's console_pages write is UNTOUCHED (activation reads it, never POSTs)", len(PAGE_POSTS)==0, PAGE_POSTS)
-    ck("4: activation flipped the opp to activated + live", OPPS["acme-co"]["data"].get("page_active")==True and OPPS["acme-co"]["data"].get("page_live")==True, OPPS["acme-co"]["data"])
+    ck("3: the stored page html is never re-POSTed (activation READS html, PATCHes only the stamp)", len(PAGE_POSTS)==0, PAGE_POSTS)
+    ck("4: activation stamped console_pages.live_verified_at (the SINGLE liveness truth)", bool(STAMP.get("acme-co")) and len(STAMP_PATCHES)==1 and STAMP_PATCHES[0].get("slug")=="acme-co", {"stamp":STAMP.get("acme-co"), "patches":STAMP_PATCHES})
+    ck("4: activation wrote NO liveness flag to console_opps.data (the split source is retired)", not any(p.get("slug")=="acme-co" for p in OPP_PATCHES), OPP_PATCHES)
     st = pg.evaluate("()=>{var e=document.getElementById('upState'); return e?e.className+'|'+e.textContent:'';}")
-    ck("4: the drawer shows a live state", "ok" in st and "live" in st.lower(), st)
+    ck("4: the drawer shows a live state (derived from the stamp)", "ok" in st and "live" in st.lower(), st)
     # send now goes through (activated + live)
     pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
     pg.wait_for_timeout(1200)
@@ -178,10 +193,11 @@ with sync_playwright() as p:
     pg2.evaluate("()=>{var b=document.getElementById('upActBtn'); if(b) b.click();}")
     pg2.wait_for_timeout(11000)                             # the bounded verify-live poll (3 x 3s) then settle
     ck("5: the page committed via the relay (publishing path too)", any(x.get("slug")=="fresh-labs" for x in RELAY_PUBLISH), RELAY_PUBLISH)
-    ck("5: a committed-but-unserved page is PUBLISHING, not live and not a false success",
-       OPPS["fresh-labs"]["data"].get("page_active")==True and OPPS["fresh-labs"]["data"].get("page_live")==False and OPPS["fresh-labs"]["data"].get("page_publishing")==True, OPPS["fresh-labs"]["data"])
-    st2 = pg2.evaluate("()=>{var e=document.getElementById('upState'); return e?e.className+'|'+e.textContent:'';}")
-    ck("5: the drawer shows an honest publishing state (not live, not dead)", "publish" in st2.lower(), st2)
+    ck("5: a committed-but-unserved page is NOT stamped (no false success; live_verified_at stays unset)",
+       not STAMP.get("fresh-labs") and not any(p.get("slug")=="fresh-labs" for p in STAMP_PATCHES), {"stamp":STAMP.get("fresh-labs"), "patches":STAMP_PATCHES})
+    st2 = pg2.evaluate("()=>{var e=document.getElementById('upActStatus'); return e?{txt:e.textContent,cls:e.className}:{};}")
+    ck("5: the transient #upActStatus shows an honest publishing line, marked bad (not a false success)",
+       "publish" in (st2.get("txt") or "").lower() and "bad" in (st2.get("cls") or ""), st2)
     n_before = sent_count("fresh-labs")
     pg2.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
     pg2.wait_for_timeout(1000)

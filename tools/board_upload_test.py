@@ -91,6 +91,7 @@ build_batch_zip()
 
 # ---- stateful server model (ALL addresses synthetic *.example.test) ------------------------------
 OPPS = {}; PAGES = {}; MAIL = []; RELAY_CALLS = []; OPP_POSTS = []; PAGE_POSTS = []
+STAMP = {}  # slug -> live_verified_at ISO; set ONLY by the board's pageStampLive PATCH after a real verify-live ok
 LIVE = {}   # slug -> "ok" | "dead" ; the live /opp/<slug> fetch outcome
 
 def sent_count(slug): return sum(1 for m in MAIL if m.get("opp")==slug)
@@ -99,7 +100,9 @@ def board_rows():
     for o in OPPS.values():
         d = o.get("data",{}) or {}
         he = bool(str(d.get("outreach_text","")).strip() or str(d.get("outreach_subject","")).strip())
-        hp = o["slug"] in PAGES
+        # PR1 view law: has_page and the 'live' page-signal derive SOLELY from the live_verified_at stamp,
+        # not from bare console_pages row-existence. A stored-but-unstamped page is a DRAFT.
+        hp = bool(STAMP.get(o["slug"]))
         sc = sent_count(o["slug"])
         stage = "sent" if sc>0 else ("live" if (he or hp) else "draft")
         rows.append({"slug":o["slug"], "business":o.get("business",""), "stage":stage, "sent_count":sc,
@@ -160,8 +163,16 @@ def route_pages(r):
         for row in (rows if isinstance(rows, list) else [rows]):
             if isinstance(row, dict) and row.get("slug"): PAGE_POSTS.append(row); PAGES[row["slug"]] = row.get("html","")
         return r.fulfill(status=204, body="")
-    slug = slug_of(req.url)                                   # F2: activation reads console_pages.html back by slug
-    return J(r, [{"html":PAGES[slug]}] if slug in PAGES else [])
+    if req.method == "PATCH":                                # PR1 pageStampLive: the single liveness write
+        slug = slug_of(req.url)
+        try: body = json.loads(req.post_data or "{}")
+        except Exception: body = {}
+        stamp = body.get("live_verified_at")
+        if slug and stamp: STAMP[slug] = stamp
+        return r.fulfill(status=204, body="")
+    slug = slug_of(req.url)                                   # activation reads console_pages.html back; the drawer
+    # also reads live_verified_at (fetchDetail select=slug,live_verified_at) - return both, client picks fields.
+    return J(r, [{"slug":slug, "html":PAGES[slug], "live_verified_at":STAMP.get(slug)}] if slug in PAGES else [])
 def route_mail(r):
     req = r.request
     if req.method == "POST":
@@ -250,8 +261,10 @@ with sync_playwright() as p:
     pg.wait_for_timeout(1400)
     ck("4: Approve created draft opps (console_opps rows)", "acme-co" in OPPS and "fresh-labs" in OPPS, list(OPPS.keys()))
     ck("4: each uploaded html became a console_pages row", "acme-co" in PAGES and "fresh-labs" in PAGES, list(PAGES.keys()))
-    ck("4: the opp is a DRAFT from upload (source=upload, page not active, not sent)",
-       OPPS["acme-co"]["data"].get("source")=="upload" and OPPS["acme-co"]["data"].get("page_active")==False and sent_count("acme-co")==0, OPPS["acme-co"]["data"])
+    ck("4: the opp is a DRAFT from upload (source=upload, page not stamped live, no retired flags, not sent)",
+       OPPS["acme-co"]["data"].get("source")=="upload" and not STAMP.get("acme-co")
+       and "page_active" not in OPPS["acme-co"]["data"] and "page_live" not in OPPS["acme-co"]["data"]
+       and sent_count("acme-co")==0, {"data":OPPS["acme-co"]["data"], "stamp":STAMP.get("acme-co")})
     ck("4: the recipient persisted bare on the draft opp",
        (OPPS["acme-co"]["data"].get("recipients") or [{}])[0].get("addr")=="buyer.acme@example.test", OPPS["acme-co"]["data"].get("recipients"))
 
@@ -277,7 +290,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(1600)
     ck("5: activation committed the page via the relay (op=page_publish)",
        any(c.get("op")=="page_publish" and c.get("slug")=="acme-co" for c in RELAY_CALLS), RELAY_CALLS)
-    ck("5: activating a LIVE link flips to a live state", OPPS["acme-co"]["data"].get("page_live")==True, OPPS["acme-co"]["data"])
+    ck("5: activating a LIVE link stamps console_pages.live_verified_at (the single liveness truth)", bool(STAMP.get("acme-co")), {"stamp":STAMP.get("acme-co")})
     pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
     pg.wait_for_timeout(1200)
     ck("5: once activated AND live, the send goes through (one console_mail row via L5)", sent_count("acme-co")==1, MAIL)
