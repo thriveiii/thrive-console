@@ -277,11 +277,16 @@ with sync_playwright() as p:
     pg2.goto(f"{base}/library/board.html", wait_until="load"); pg2.wait_for_timeout(500); wait_ident(pg2)
     pg2.evaluate(OPEN, "Fresh Co"); pg2.wait_for_timeout(500)
     ck("5: the editor renders even when the opp has no prepared message", pg2.evaluate("()=>!!document.getElementById('edSubj')"))
-    ck("5: Send is absent before a message exists (no has_email)", not pg2.evaluate(HAS_SEND))
+    # UNIFY (c): the recipient field renders in the drawer for an editable card even when has_email is false.
+    ck("5c: the recipient field #recIn renders even with no prepared message (ungated from has_email)", pg2.evaluate("()=>!!document.getElementById('recIn')"))
+    # UNIFY: Send is now GATED, not hidden. Fresh Co has a recipient but no message, so Send renders DISABLED.
+    ck("5: Send renders but is DISABLED before a message exists (gated on subject+body+recipient, not has_email)",
+       pg2.evaluate(HAS_SEND) and pg2.evaluate(SEND_DISABLED)==True, {"has":pg2.evaluate(HAS_SEND), "dis":pg2.evaluate(SEND_DISABLED)})
     pg2.fill("#edSubj", "Intro to Fresh")
     pg2.fill("#edBody", "Hello Fresh, see the page.")
     pg2.wait_for_timeout(1600)   # debounce + save + the one board reload that flips has_email
-    ck("5: after writing a message, Send appears (the no-message gate is now satisfiable)", pg2.evaluate(HAS_SEND))
+    ck("5: after writing a message (recipient already present), Send ENABLES", pg2.evaluate(HAS_SEND) and pg2.evaluate(SEND_DISABLED)==False,
+       {"has":pg2.evaluate(HAS_SEND), "dis":pg2.evaluate(SEND_DISABLED)})
     pg2.close(); ctx2.close()
 
     # ===== 6: a reply carries the opp slug (Reply-To hi+<slug>) =====
