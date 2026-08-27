@@ -262,8 +262,12 @@ function adminPanelHtml(){
 function rosterInnerHtml(){
   if(!__roster.length) return '<div class="muted" id="admRosterEmpty">'+esc(t("pf_admin_loading"))+'</div>';
   return __roster.map(function(m, i){
+    // The member LABEL preference: display_name, then email (the view resolves it from auth.users, so a
+    // real member always has one), then a short "unnamed" label. The raw uuid is NEVER shown as a name:
+    // m.name is console_team_roster.display_name, and "unnamed" appears only if display_name AND email are
+    // both truly null, which a real auth user never hits now that email comes from auth.users.
     return '<div class="pf-mem" data-uid="'+esc(m.uid)+'">'+
-      '<div class="pf-mem-id"><span class="pf-mem-name">'+esc(m.name || m.email || m.uid)+'</span>'+
+      '<div class="pf-mem-id"><span class="pf-mem-name">'+esc(m.name || m.email || t("unnamed"))+'</span>'+
         '<span class="pf-mem-email mono-iso" dir="ltr">'+esc(m.email||"")+'</span></div>'+
       '<input class="rec-in pf-title-in" id="pfT'+i+'" type="text" autocomplete="off" spellcheck="false" '+
         'value="'+esc(m.title||"")+'" placeholder="'+esc(t("pf_admin_ph"))+'" aria-label="'+esc(t("pf_admin_title"))+'">'+
@@ -278,15 +282,19 @@ function wireRoster(){
 }
 function setTitleStatus(idx, msg, cls){ var el=document.getElementById("pfTS"+idx); if(el){ el.className="act-status pf-title-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
 
-// Load the roster (owner only). Members come from console_members (owner-scoped read via
-// console_members_read_owner); ONLY id/name/email are selected, never role. Current titles come from
-// console_profiles.signature_title; a member with no profile row, or a row the reader cannot see, shows a
-// BLANK title (never a crash). Both reads are bounded and best-effort (identGet over authFetchOnce).
+// Load the roster (owner only). Members come from ONE owner-gated server view, console_team_roster, which
+// resolves each member's email from auth.users SERVER-SIDE (the client cannot read auth.users directly, so
+// the old console_members.email mirror column was null and the email never reached the row). The view
+// returns uid, email, display_name, role and enforces the owner scope itself via is_console_owner(); a
+// non-owner (or signed-out) caller gets zero rows. isOwner() still gates the UI. Current titles are layered
+// on from console_profiles.signature_title exactly as before, keyed on uid; a member with no title, or a
+// row the reader cannot see, shows a BLANK title (never a crash). Both reads are bounded and best-effort
+// (identGet over authFetchOnce).
 function loadRoster(){
   if(!isOwner()) return Promise.resolve();
-  return identGet("console_members?select=id,name,email&order=name.asc").then(function(mrows){
-    var members = (mrows||[]).map(function(r){ return { uid:(r&&r.id)||"", name:(r&&r.name)||"", email:(r&&r.email)||"" }; })
-                             .filter(function(m){ return m.uid; });
+  return identGet("console_team_roster?select=uid,email,display_name,role&order=display_name.asc").then(function(rows){
+    var members = (rows||[]).map(function(r){ return { uid:(r&&r.uid)||"", name:(r&&r.display_name)||"", email:(r&&r.email)||"" }; })
+                            .filter(function(m){ return m.uid; });
     return identGet("console_profiles?select=uid,signature_title").then(function(prows){
       var byUid = {}; (prows||[]).forEach(function(p){ if(p && p.uid) byUid[p.uid] = String(p.signature_title||""); });
       __roster = members.map(function(m){ m.title = byUid[m.uid] || ""; return m; });

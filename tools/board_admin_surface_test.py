@@ -11,8 +11,10 @@ gate stays the live RLS policy + trigger; isOwner() only decides whether the sur
 Stateful mock of Supabase REST (never a real network call). Assertions:
   1. an owner sees a SEPARATE Admin header entry; opening it renders the roster in the admin panel, while
      the personal profile panel contains NO roster (the two surfaces are separated);
-  2. the roster lists every member with name / email / current title; a member with no display_name shows
-     by email and never crashes (all four live members render);
+  2. the roster comes from ONE owner-gated server view (console_team_roster: uid, email, display_name,
+     role); the member label preference is display_name, then email, then "unnamed"; the raw uuid is NEVER
+     rendered, and "unnamed" appears only when display_name AND email are both truly null; all members
+     render, and titles still layer on from console_profiles keyed by uid;
   3. saving a title issues ONE PATCH to console_profiles keyed on the TARGET uid carrying only
      signature_title (never the admin's uid, never display_name / role);
   4. optimistic green on success; a forced (trigger-style 42501) failure reverts red with no phantom save;
@@ -34,15 +36,24 @@ def ck(n, c, d=None):
         fails.append(n)
         if d is not None: print("      " + str(d)[:600])
 
-# Four live members: two owners, two members (mirrors the live team). CAROL has NO display_name (blank),
-# to prove the roster falls back to her email and never crashes on a null name.
+# The team as the server VIEW console_team_roster returns it: uid, email (resolved from auth.users so a
+# real member always has one), display_name (the operator's own, may be null), role. Two owners, three
+# members spanning the label ladder: ALICE has a display_name (shows the name), CAROL has only an email
+# (shows the email), EVE has neither (shows "unnamed", an edge a real auth user never hits since email
+# comes from auth.users). role is never shown in the UI.
 OWNER = {"uid":"uid-owner-0001", "email":"owner@example.test", "name":"Owner One"}
 DANA  = {"uid":"uid-dana-0004",  "email":"dana@example.test",  "name":"Dana Two"}    # second owner
 ALICE = {"uid":"uid-alice-0002", "email":"alice@example.test", "name":"Alice Member"}
-CAROL = {"uid":"uid-carol-0003", "email":"carol@example.test", "name":""}            # member, no display_name
-ROSTER = [OWNER, DANA, ALICE, CAROL]
+CAROL = {"uid":"uid-carol-0003", "email":"carol@example.test", "name":""}            # member, email only
+EVE   = {"uid":"uid-eve-0005",   "email":"",                   "name":""}            # member, both null
+ROSTER = [OWNER, DANA, ALICE, CAROL, EVE]
+# What the view returns for each row (None = SQL null): display_name and email.
+VIEW_NAME  = {OWNER["uid"]:"Owner One", DANA["uid"]:"Dana Two", ALICE["uid"]:"Alice Member", CAROL["uid"]:None, EVE["uid"]:None}
+VIEW_EMAIL = {OWNER["uid"]:"owner@example.test", DANA["uid"]:"dana@example.test", ALICE["uid"]:"alice@example.test", CAROL["uid"]:"carol@example.test", EVE["uid"]:None}
+ROLE       = {OWNER["uid"]:"owner", DANA["uid"]:"owner", ALICE["uid"]:"member", CAROL["uid"]:"member", EVE["uid"]:"member"}
+# Own-row profile name (loadIdentity / openProfile read console_profile_names + console_profiles own row).
 NAMES  = {m["uid"]:m["name"] for m in ROSTER}
-TITLES = {OWNER["uid"]:"Director", DANA["uid"]:"Partner", ALICE["uid"]:"Project Manager", CAROL["uid"]:""}
+TITLES = {OWNER["uid"]:"Director", DANA["uid"]:"Partner", ALICE["uid"]:"Project Manager", CAROL["uid"]:"", EVE["uid"]:""}
 OWNER_UIDS = {OWNER["uid"], DANA["uid"]}   # role decides only whether the surface opens; never shown
 
 TITLE_PATCHES = []   # captured PATCH {target, body}
@@ -71,14 +82,20 @@ def route_empty(r): J(r, [])
 def route_board(r): J(r, [])
 def route_pnames(r):
     J(r, [{"uid":m["uid"], "display_name":NAMES.get(m["uid"],""), "email":m["email"]} for m in ROSTER])
-ROSTER_READS = []   # captured console_members roster-read URLs (must never request role)
+ROSTER_READS = []   # captured console_team_roster read URLs (the single owner-gated view)
+def route_team_roster(r):
+    # The owner-gated server view: one clean row per member, uid + email + display_name + role. The view
+    # enforces the owner scope server-side; here we return it only for an owner session (CUR role owner).
+    ROSTER_READS.append(r.request.url)
+    if CUR["role"] != "owner":
+        return J(r, [])                                           # a non-owner caller gets zero rows
+    return J(r, [{"uid":m["uid"], "email":VIEW_EMAIL[m["uid"]], "display_name":VIEW_NAME[m["uid"]], "role":ROLE[m["uid"]]} for m in ROSTER])
 def route_members(r):
     url = r.request.url
+    # console_members is now read ONLY for the loadIdentity own-row role probe; the roster no longer reads it.
     if "select=id,role" in url or "select=id%2Crole" in url:      # loadIdentity own-row role probe
         return J(r, [{"id":CUR["uid"], "role":CUR["role"]}])
-    # roster read: id,name,email ONLY (never role). Owner-scoped in reality; here return the whole roster.
-    ROSTER_READS.append(url)
-    return J(r, [{"id":m["uid"], "name":m["name"], "email":m["email"]} for m in ROSTER])
+    return J(r, [])                                               # any other console_members read: empty (unused)
 def route_profiles(r):
     req = r.request; url = req.url
     if req.method == "PATCH":                                     # title write, keyed on ?uid=eq.<target>
@@ -114,6 +131,7 @@ def wire(ctx, uid, email, lang=None):
     ctx.route("**/rest/v1/console_mail**", route_empty)
     ctx.route("**/rest/v1/console_hits**", route_empty)
     ctx.route("**/rest/v1/console_profile_names**", route_pnames)
+    ctx.route("**/rest/v1/console_team_roster**", route_team_roster)
     ctx.route("**/rest/v1/console_profiles**", route_profiles)
     ctx.route("**/rest/v1/console_members**", route_members)
     ctx.route("**/rest/v1/console_admins**", route_empty)
@@ -171,20 +189,29 @@ with sync_playwright() as p:
 
     rows = pg.evaluate(ROSTER_DATA)
     by = { r["uid"]:r for r in rows }
-    ck("2: all four live members render in the roster", len(rows)==4 and all(m["uid"] in by for m in ROSTER), rows)
-    ck("2: each member shows name and email",
-       by.get(ALICE["uid"],{}).get("name")==ALICE["name"] and ALICE["email"] in by.get(ALICE["uid"],{}).get("email",""), rows)
-    ck("2: a member with no display_name falls back to email and does not crash",
-       by.get(CAROL["uid"],{}).get("name")==CAROL["email"] and CAROL["email"] in by.get(CAROL["uid"],{}).get("email",""), rows)
-    ck("2: the roster shows each member's current title (blank when none)",
+    UNNAMED = "(unnamed)"   # t("unnamed") in EN
+    ck("2: the roster is read from the single owner-gated view console_team_roster",
+       any("console_team_roster" in u for u in ROSTER_READS), ROSTER_READS)
+    ck("2: all five members render in the roster from the view", len(rows)==5 and all(m["uid"] in by for m in ROSTER), rows)
+    # THE LABEL LADDER: display_name, then email, then "unnamed", never the raw uuid.
+    ck("2a: a member WITH a display_name shows the name",
+       by.get(ALICE["uid"],{}).get("name")=="Alice Member", by.get(ALICE["uid"]))
+    ck("2b: a member with only an email shows the EMAIL (never the uid)",
+       by.get(CAROL["uid"],{}).get("name")==CAROL["email"], by.get(CAROL["uid"]))
+    uid_shown = [ by.get(m["uid"],{}).get("name","") for m in ROSTER if by.get(m["uid"],{}).get("name","")==m["uid"] ]
+    ck("2c: the raw uuid is NEVER rendered as a member label", not uid_shown, uid_shown)
+    ck("2d: a member with NO display_name AND NO email shows unnamed, never the uid",
+       by.get(EVE["uid"],{}).get("name")==UNNAMED and by.get(EVE["uid"],{}).get("name")!=EVE["uid"], by.get(EVE["uid"]))
+    ck("2: each member's title still layers on from console_profiles keyed by uid (blank when none)",
        by.get(ALICE["uid"],{}).get("title")=="Project Manager" and by.get(CAROL["uid"],{}).get("title")=="", rows)
 
-    # 5: role is never SHOWN: the roster read never requests role, and no leaf element renders exactly owner/member
+    # 5: role is never SHOWN. The view read carries role server-side (uid,email,display_name,role), but the
+    # client never renders it: no leaf element in the roster displays exactly owner/member.
     role_leaf = pg.evaluate("""()=>{ var bad=false; document.querySelectorAll('#admPanel .pf-mem *').forEach(function(el){
         var t=(el.textContent||'').trim().toLowerCase();
         if(el.children.length===0 && (t==='owner'||t==='member')) bad=true; }); return bad; }""")
-    ck("5: the owner/member role is NEVER shown in the admin UI (no role in the roster read, no role tag)",
-       (not role_leaf) and len(ROSTER_READS)>0 and all("role" not in u for u in ROSTER_READS), {"role_leaf":role_leaf, "reads":ROSTER_READS})
+    ck("5: the owner/member role is NEVER shown in the admin UI (no role tag on any roster leaf)",
+       (not role_leaf) and len(ROSTER_READS)>0, {"role_leaf":role_leaf, "reads":ROSTER_READS})
 
     # 3: save ALICE's title -> one PATCH keyed on ALICE.uid, body only signature_title
     idx = pg.evaluate(IDX_FOR, ALICE["uid"])
