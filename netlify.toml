@@ -6,3 +6,19 @@
 [build]
   command = "node tools/bundle.js"
   publish = "publish"
+
+# F1 LIVE PAGE SERVING. The functions live in netlify/functions (net-new; there was no functions dir before).
+# library/config.js is bundled beside the function so it can read the public supaUrl/supaAnon at runtime with
+# no extra configuration (env SUPABASE_URL / SUPABASE_ANON_KEY override it if set).
+[functions]
+  directory = "netlify/functions"
+  included_files = ["library/config.js"]
+
+# Serve /opp/<slug> from console_pages when no static file matches. This rule is NON-FORCED (no force = true),
+# so Netlify serves an existing static asset FIRST and only rewrites to the function when none matches. The
+# committed opp/<slug>/index.html pages therefore keep serving statically and untouched; the function serves
+# only db-only uploaded pages. The ?slug=:splat is a fallback; the function reads the slug from the path.
+[[redirects]]
+  from = "/opp/*"
+  to = "/.netlify/functions/opp?slug=:splat"
+  status = 200
