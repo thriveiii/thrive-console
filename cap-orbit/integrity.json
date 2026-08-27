@@ -1,0 +1,25 @@
+{
+  "algorithm": "sha256",
+  "files": {
+    "sources/vesper-atlas.html": {
+      "bytes": 1631697,
+      "sha256": "c362f5fd4af1ff6e2b2fbfd30dcadea89d10fec43214537515a2ff695a5a7aa9",
+      "gitBlobSha1": "24ea8e0c16d024a2b9e88d18db1b3afe0b82d9d8"
+    },
+    "sources/qamar-lexicon.html": {
+      "bytes": 1895459,
+      "sha256": "c4cc607efa497a33a3910bf6b7f51a75969d30dc6737594039c4e298dbd41b93",
+      "gitBlobSha1": "90981e75735e49210b10b3ffcde1ceb74faef40e"
+    },
+    "sources/sidra-meridian.html": {
+      "bytes": 1621014,
+      "sha256": "51235b4c0ab7aa2a919a4d0f9144b1cb4a4a080e8478db10c164528d04691692",
+      "gitBlobSha1": "f3a0c23e318ed076a1d3fab25d3a75fb4f0478e1"
+    },
+    "sources/nujum-cedar.html": {
+      "bytes": 1895530,
+      "sha256": "bd1a7327c9b2f49afef841c68b9676c66d44bd30c8a8518496471d2a4441bd2c",
+      "gitBlobSha1": "9f78e41125658bb2fee5c6c39d9a8413eea1212b"
+    }
+  }
+}
