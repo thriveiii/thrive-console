@@ -118,6 +118,9 @@ function finishIdentity(){
   // was opened). Re-paint the open drawer's notes ONCE so an actor uid that showed raw on first paint now
   // reads as the display name. One synchronous re-render, no polling, no await; guarded so it never throws.
   try{ if(__drawerSlug && typeof renderNotesInto==="function") renderNotesInto(__drawerSlug); }catch(e){}
+  // Step 2D: the role just settled, so reveal (or keep hidden) the Admin header entry now that isOwner() is
+  // authoritative. paintAdminSlot lives in bundle.js and is idempotent; guarded so it never throws here.
+  try{ if(typeof window.__thrivePaintAdminSlot==="function") window.__thrivePaintAdminSlot(); }catch(e){}
   return __identity;
 }
 
@@ -158,20 +161,19 @@ function profilePanelHtml(){
       '<div class="act-status" id="pfStatus"></div></div>'+
     '<div class="dw-sec"><h3>'+esc(t("pf_role_h"))+'</h3>'+
       '<div class="pf-ro">'+esc(title || t("pf_role_none"))+'</div>'+
-      '<div class="pf-note">'+esc(t("pf_role_note"))+'</div></div>'+
-    adminSectionHtml();                                        // Step 2C: owner-only, empty string for a member
+      '<div class="pf-note">'+esc(t("pf_role_note"))+'</div></div>';
+    // Step 2D: the personal profile is PERSONAL only. The team-titles roster moved to its own owner-only
+    // Admin surface (openAdmin), so this panel never mixes a person's own profile with executive controls.
 }
 
 function wireProfile(){
   var c=document.getElementById("pfClose"); if(c) c.addEventListener("click", closeProfile);
   var s=document.getElementById("pfSave"); if(s) s.addEventListener("click", onSaveProfile);
-  wireRoster();                                                // Step 2C: (no-op when the admin section is absent)
 }
 function openProfile(){
   var sc=document.getElementById("pfScrim"), pn=document.getElementById("pfPanel");
   if(!sc || !pn) return;
   pn.innerHTML = profilePanelHtml(); sc.hidden=false; pn.scrollTop=0; wireProfile();     // instant from __identity
-  if(isOwner()){ try{ loadRoster(); }catch(e){} }             // Step 2C: owner-only roster load, fire-and-forget
   var uid = currentUid();                                                                 // then refresh, best-effort
   if(uid){
     identGet("console_profiles?uid=eq."+enc(uid)+"&select=*&limit=1").then(function(rows){ // select=* so an unapplied column never 400s
@@ -234,26 +236,31 @@ function onSaveProfile(){
 }
 
 // ===================================================================================================
-// STEP 2C ADMIN TITLE EDITOR. An owner-only section inside the 2B profile panel: the team roster with an
-// editable functional title per member. Rendered ONLY when isOwner() is true (a UI gate for convenience);
-// the REAL gate is live: console_profiles_owner_update (UPDATE, is_console_owner()) plus the BEFORE UPDATE
-// trigger guard_profile_title that rejects a signature_title change unless is_console_owner(). The title
-// write is keyed on the TARGET member's uid (never the admin's currentUid()) and carries ONLY
-// signature_title. The owner/member ROLE is never shown or edited here; role decides only whether this
-// section renders. The 2B own-row write (display_name only) is untouched.
+// STEP 2D ADMIN EXECUTIVE SURFACE (was 2C, relocated). A SEPARATE owner-only surface, opened from its own
+// header entry, NOT from the personal profile panel: the team roster with an editable functional title per
+// member. This is the seed of a future executive/performance view; keeping it apart from the person's own
+// profile means the two never mix. Rendered ONLY when isOwner() is true (a UI gate for convenience); the
+// REAL gate is live and unchanged from 2C: console_profiles_owner_update (UPDATE, is_console_owner()) plus
+// the BEFORE UPDATE trigger guard_profile_title that rejects a signature_title change unless
+// is_console_owner(). The title write is keyed on the TARGET member's uid (never the admin's currentUid())
+// and carries ONLY signature_title. The owner/member ROLE is never shown or edited here; role decides only
+// whether this surface opens at all. The 2B own-row write (display_name only) is untouched.
 // ===================================================================================================
 
 var __roster = [];   // [{ uid, name, email, title }] loaded for an owner; role is never read into this
 
-// The section wrapper. Empty string for a non-owner, so a member never sees it.
-function adminSectionHtml(){
+// The Admin panel body. Empty string for a non-owner, so a member who somehow reaches the DOM sees nothing;
+// the header entry is also hidden for a member, and the RLS policy is the real gate on the write itself.
+function adminPanelHtml(){
   if(!isOwner()) return "";
-  return '<div class="dw-sec pf-admin"><h3>'+esc(t("pf_admin_h"))+'</h3>'+
-    '<div class="pf-note">'+esc(t("pf_admin_note"))+'</div>'+
-    '<div id="pfRoster">'+rosterInnerHtml()+'</div></div>';
+  return '<div class="pf-head"><h2 class="pf-h2">'+esc(t("adm_title"))+'</h2>'+
+      '<button class="link" id="admClose" type="button">'+esc(t("pf_close"))+'</button></div>'+
+    '<div class="dw-sec pf-admin"><h3>'+esc(t("pf_admin_h"))+'</h3>'+
+      '<div class="pf-note">'+esc(t("pf_admin_note"))+'</div>'+
+      '<div id="admRoster">'+rosterInnerHtml()+'</div></div>';
 }
 function rosterInnerHtml(){
-  if(!__roster.length) return '<div class="muted" id="pfRosterEmpty">'+esc(t("pf_admin_loading"))+'</div>';
+  if(!__roster.length) return '<div class="muted" id="admRosterEmpty">'+esc(t("pf_admin_loading"))+'</div>';
   return __roster.map(function(m, i){
     return '<div class="pf-mem" data-uid="'+esc(m.uid)+'">'+
       '<div class="pf-mem-id"><span class="pf-mem-name">'+esc(m.name || m.email || m.uid)+'</span>'+
@@ -283,10 +290,10 @@ function loadRoster(){
     return identGet("console_profiles?select=uid,signature_title").then(function(prows){
       var byUid = {}; (prows||[]).forEach(function(p){ if(p && p.uid) byUid[p.uid] = String(p.signature_title||""); });
       __roster = members.map(function(m){ m.title = byUid[m.uid] || ""; return m; });
-      var host=document.getElementById("pfRoster"); if(host){ host.innerHTML = rosterInnerHtml(); wireRoster(); }
+      var host=document.getElementById("admRoster"); if(host){ host.innerHTML = rosterInnerHtml(); wireRoster(); }
     }, function(){                                             // titles unreadable: still render the roster, blank titles
       __roster = members.map(function(m){ m.title=""; return m; });
-      var host=document.getElementById("pfRoster"); if(host){ host.innerHTML = rosterInnerHtml(); wireRoster(); }
+      var host=document.getElementById("admRoster"); if(host){ host.innerHTML = rosterInnerHtml(); wireRoster(); }
     });
   }, function(){ /* roster read failed: leave the loading note, never crash */ });
 }
@@ -328,3 +335,20 @@ function onSaveTitle(targetUid, idx){
     setTitleStatus(idx, (e && e.authRequired) ? t("err") : t("pf_admin_failed"), "bad");   // rejected -> red, nothing applied
   });
 }
+
+// The Admin surface open/close/wire, mirroring the profile panel but on its own #admScrim/#admPanel overlay.
+// openAdmin is a no-op for a non-owner (adminPanelHtml returns "" and the header entry is hidden anyway), so
+// there is no way for a member to open it. On open we paint instantly from state, then load the roster.
+function wireAdmin(){ var c=document.getElementById("admClose"); if(c) c.addEventListener("click", closeAdmin); }
+function openAdmin(){
+  if(!isOwner()) return;                                                                   // members never open this
+  var sc=document.getElementById("admScrim"), pn=document.getElementById("admPanel");
+  if(!sc || !pn) return;
+  pn.innerHTML = adminPanelHtml(); sc.hidden=false; pn.scrollTop=0; wireAdmin();
+  try{ loadRoster(); }catch(e){}                                                           // bounded, best-effort
+}
+function closeAdmin(){ var sc=document.getElementById("admScrim"); if(sc) sc.hidden=true; }
+
+// Read-only hooks so bundle.js can wire the header entry and the Escape/backdrop handler without reaching
+// into module internals.
+try{ window.__thriveOpenAdmin = openAdmin; window.__thriveCloseAdmin = closeAdmin; window.__thriveOpenProfile = openProfile; window.__thriveCloseProfile = closeProfile; }catch(e){}
