@@ -176,8 +176,11 @@ function bodyParasHtml(bodyPlain){
 // POSTAL/STOP footer. The open pixel is appended by the caller so it is the LAST and ONLY image.
 function lightHtml(bodyPlain, sig, lang){
   var font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif";
+  // E0: the signature block is a clear grey (not the near-transparent #888888), small, its own block, its
+  // multi-line value (name / title / site) rendered with real <br> line breaks, separated from the body by
+  // space above. Empty sig renders nothing (fully optional). The grey POSTAL/STOP footer stays distinct below.
   var sigHtml = (sig && sig.trim())
-    ? '<div style="margin-top:18px;font-size:13px;color:#888888">' + esc(String(sig)).split("\n").join("<br>") + '</div>'
+    ? '<div style="margin-top:18px;font-size:13px;line-height:1.5;color:#595959">' + esc(String(sig)).split("\n").join("<br>") + '</div>'
     : "";
   return '<div style="font-family:' + font + ';font-size:15px;line-height:1.6;color:#111111">'
     + bodyParasHtml(bodyPlain) + sigHtml + '</div>' + footerHtml(lang);

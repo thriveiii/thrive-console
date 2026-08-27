@@ -11,9 +11,11 @@
 // WHAT IT DOES (one surface for both first compose and reply):
 //   * subject input + body textarea (textarea so newlines are real, the L5.5 lesson), pre-filled from the
 //     opp record (data.outreach_subject / data.outreach_text) or empty.
-//   * signature from RUNTIME identity: content.sig = name + ", " + title (name alone if no title; nothing if
-//     no name, never invented). Written to data.sig so compile()/sendCompile place it via brandWrap exactly
-//     where the send renders the closing (EDITOR_EVIDENCE 1 + 5).
+//   * a SEPARATE, OPTIONAL Signature field (E0, Thyab): its own textarea (#edSig), distinct from the body.
+//     Its live value IS data.sig - the single source. Empty = no signature block appended (fully optional).
+//     A "Use my signature" button FILLS the field from runtime identity as three lines (name / title / site);
+//     it is a convenience fill only, never an automatic injection. The editor NEVER derives or fuses a
+//     signature into the body: the body is shown and sent exactly as typed.
 //   * the opp link inserted as the LINK merge token (MF_LINK, built by concatenation), which sendCompile
 //     tokenizes to liveUrl(slug) = console.thriveiii.com/opp/<slug> (EDITOR_EVIDENCE 3); never a hardcoded URL.
 //   * a live preview compiled by the SAME sendCompile the send path uses, so preview == send (no
@@ -46,15 +48,26 @@ function editorEligible(row){
   return true;
 }
 
-// The signature, from runtime identity ONLY (never the record's stale sig). name + ", " + title; name alone
-// if the title is unset; "" if the name is unset (never invented). This is the exact string compile places.
+// E0: the signature is the operator's OWN field, not an auto-derived value. edSignature() is the LIVE value of
+// the Signature textarea (#edSig) - authoritative and OPTIONAL: an empty field ships an empty data.sig, so NO
+// signature block is appended (sendCompile/lightHtml render nothing when sig is empty). The editor never
+// injects a signature on its own; the operator types one, fills one from identity via "Use my signature", or
+// leaves it blank.
 function edIdentity(){ try{ return window.__thriveIdentity || {}; }catch(e){ return {}; } }
-function edSignature(){
+function edSignature(){ return edVal("edSig"); }
+// The "Use my signature" preset: a quiet three-line block from runtime identity, name / title / site, each on
+// its own line. Title omitted if unset (name then site); name omitted if unset (site alone). This only FILLS
+// the field on demand; it is never applied automatically. The site is the send-side agency constant.
+function edSignaturePreset(){
   var id = edIdentity();
   var name = String(id.name==null?"":id.name).trim();
   var title = String(id.title==null?"":id.title).trim();
-  if(!name) return "";
-  return title ? (name + ", " + title) : name;
+  var site = (typeof AGENCY_SITE_L5!=="undefined" && AGENCY_SITE_L5) ? AGENCY_SITE_L5 : "thriveiii.com";
+  var lines = [];
+  if(name) lines.push(name);
+  if(title) lines.push(title);
+  lines.push(site);
+  return lines.join("\n");
 }
 
 function edVal(id){ var el=document.getElementById(id); return el ? String(el.value||"") : ""; }
@@ -76,8 +89,8 @@ function edMessageReady(slug){
 }
 
 // Build the data jsonb the preview/send compiles from: the captured base overlaid with the LIVE subject,
-// body, and the identity signature. edCompileFrom then runs the SAME sendCompile the send path uses, so the
-// preview html equals the send payload html for identical inputs.
+// body, and the operator's signature FIELD value (empty allowed). edCompileFrom then runs the SAME sendCompile
+// the send path uses, so the preview html equals the send payload html for identical inputs.
 function edLiveData(slug){
   var base = __edBase[slug] || {};
   return Object.assign({}, base, { outreach_subject:edVal("edSubj"), outreach_text:edVal("edBody"), sig:edSignature() });
@@ -101,6 +114,9 @@ function editorHtml(slug, row, detail){
   var ck = function(id, ok, key){
     return '<li class="ed-ck '+(ok?"ck-ok":"ck-no")+'" id="'+id+'">'+esc(t(key))+'</li>';
   };
+  // The signature FIELD pre-fills from the persisted record's data.sig (empty if none); on re-render inside an
+  // open drawer it keeps the live typed value so a paint never clobbers an in-progress signature.
+  var sig = data ? String(data.sig||"") : (edVal("edSig"));
   var subjOk = !!subj.trim(), bodyOk = !!body.trim(), linkOk = edHasLink(slug, body);
   return '<div class="dw-sec ed-sec"><h3>'+esc(t("ed_h"))+'</h3>'+
     '<input class="ed-subj" id="edSubj" type="text" autocomplete="off" spellcheck="true" '+
@@ -112,7 +128,12 @@ function editorHtml(slug, row, detail){
       ck("ckSubj", subjOk, "ed_ck_subj")+ck("ckBody", bodyOk, "ed_ck_body")+
       ck("ckRecip", hasRecip, "ed_ck_recip")+ck("ckLink", linkOk, "ed_ck_link")+
     '</ul>'+
-    '<div class="ed-sig"><span class="ed-sig-lab">'+esc(t("ed_sig"))+'</span> <bdi>'+esc(edSignature()||t("none"))+'</bdi></div>'+
+    '<div class="ed-sig-field">'+
+      '<div class="ed-sig-head"><span class="ed-sig-lab">'+esc(t("ed_sig"))+'</span>'+
+        '<button class="act ed-sig-use" id="edSigFill" type="button">'+esc(t("ed_sig_use"))+'</button></div>'+
+      '<textarea class="rec-in ed-sig-in" id="edSig" rows="3" autocomplete="off" spellcheck="true" '+
+        'placeholder="'+esc(t("ed_sig_ph"))+'" aria-label="'+esc(t("ed_sig"))+'">'+esc(sig)+'</textarea>'+
+    '</div>'+
     '<div class="ed-prev-h">'+esc(t("ed_preview"))+'</div>'+
     '<iframe class="ed-preview" id="edPreview" title="'+esc(t("ed_preview"))+'" sandbox="" referrerpolicy="no-referrer" srcdoc=""></iframe>'+
     '<div class="act-status'+(st.cls?(" "+st.cls):"")+'" id="edStatus">'+esc(st.msg||"")+'</div></div>';
@@ -129,7 +150,6 @@ function edRefreshChecks(slug){
   set("ckSubj", !!edVal("edSubj").trim());
   set("ckBody", !!edVal("edBody").trim());
   set("ckLink", edHasLink(slug, edVal("edBody")));
-  var sigEl=document.querySelector(".ed-sig bdi"); if(sigEl) sigEl.textContent = edSignature() || t("none");
 }
 // Grey the Send button while the MESSAGE is incomplete (subject/body/link). Recipient stays enforced by
 // runSend, so the no-recipient refusal remains a live, clickable path.
@@ -161,6 +181,17 @@ function edInsertLink(slug){
     var pos=s+token.length; try{ el.selectionStart=el.selectionEnd=pos; }catch(_){}
     try{ el.dispatchEvent(new Event("input", { bubbles:true })); }catch(_){}
   }
+  edTick(slug); edScheduleSave(slug, 300);
+}
+
+// "Use my signature": a convenience FILL of the Signature field with the identity preset (name / title / site,
+// each on its own line). It is never automatic - the operator taps it, then may edit or clear the field. After
+// filling, refresh the preview and debounce a save so the chosen signature persists like any typed one.
+function edFillSignature(slug){
+  var el=document.getElementById("edSig"); if(!el) return;
+  el.value = edSignaturePreset();
+  try{ el.dispatchEvent(new Event("input", { bubbles:true })); }catch(_){}
+  try{ el.focus(); }catch(_){}
   edTick(slug); edScheduleSave(slug, 300);
 }
 
@@ -210,7 +241,9 @@ function wireEditor(slug){
   var onInput=function(){ edTick(slug); edScheduleSave(slug, 700); };
   if(subjEl) subjEl.addEventListener("input", onInput);
   if(bodyEl) bodyEl.addEventListener("input", onInput);
+  var sigEl=document.getElementById("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven
   var lk=document.getElementById("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
+  var sf=document.getElementById("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
   edTick(slug);                                                // initial checklist + gate + preview
 }
 
@@ -221,5 +254,6 @@ function wireEditor(slug){
 try{
   window.__thriveComposeArtifact = function(slug){ return oppReadData(slug).then(function(data){ return edCompileFrom(slug, data); }); };
   window.__thriveReplyTo = function(slug){ try{ return outboundHeaders(slug)["Reply-To"]; }catch(e){ return ""; } };
-  window.__thriveEditorSignature = function(){ return edSignature(); };
+  window.__thriveEditorSignature = function(){ return edSignature(); };     // the LIVE field value (empty allowed)
+  window.__thriveSignaturePreset = function(){ return edSignaturePreset(); }; // the "Use my signature" fill (name/title/site)
 }catch(e){}

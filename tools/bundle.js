@@ -1056,8 +1056,11 @@ function buildBoard(){
   .ed-ck.ck-ok::before{background:#3fae63}
   .ed-ck.ck-no{color:#d8b48a;border-color:#4b3a27}
   .ed-ck.ck-no::before{background:#c98b3a}
-  .ed-sig{font-size:12px;color:#9aa0aa;margin:4px 0 10px}
-  .ed-sig-lab{color:#6f7480}
+  .ed-sig-field{margin:6px 0 10px}
+  .ed-sig-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .ed-sig-lab{font-size:12px;color:#8a8a93}
+  .ed-sig-use{font-size:12px;padding:5px 10px}
+  textarea.ed-sig-in{min-height:64px;line-height:1.5;unicode-bidi:plaintext;font-size:13px}
   .ed-prev-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:6px 0 6px}
   html[dir="rtl"] .ed-prev-h{text-transform:none;letter-spacing:normal}
   iframe.ed-preview{width:100%;height:220px;border:1px solid #22222e;border-radius:9px;background:#fff}
@@ -1137,7 +1140,8 @@ function buildBoard(){
           r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email.",
           ed_h:"Message", ed_subj:"Subject", ed_subj_ph:"Subject line",
           ed_body:"Body", ed_body_ph:"Write the message. Use Insert opp link to add the page link.",
-          ed_link:"Insert opp link", ed_sig:"Signed as", ed_preview:"Preview (exactly what will send)",
+          ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature",
+          ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
           ed_ck_subj:"Subject", ed_ck_body:"Body", ed_ck_recip:"Recipient", ed_ck_link:"Opp link" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
@@ -1181,7 +1185,8 @@ function buildBoard(){
           r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا.",
           ed_h:"الرسالة", ed_subj:"الموضوع", ed_subj_ph:"سطر الموضوع",
           ed_body:"النص", ed_body_ph:"اكتب الرسالة. استخدم إدراج رابط الفرصة لإضافة رابط الصفحة.",
-          ed_link:"إدراج رابط الفرصة", ed_sig:"موقّعة باسم", ed_preview:"معاينة (ما سيُرسل تمامًا)",
+          ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي",
+          ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",
           ed_ck_subj:"الموضوع", ed_ck_body:"النص", ed_ck_recip:"المستلم", ed_ck_link:"رابط الفرصة" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();

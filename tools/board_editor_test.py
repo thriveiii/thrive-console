@@ -1,16 +1,20 @@
 """UNIFIED MESSAGE EDITOR (board.html compose + reply, fails-when-broken, ZERO real network send).
 
-A net-new editing surface in the drawer lets the operator write subject + body for an opp, auto-inserts the
-opp link as a merge token, appends the runtime signature (name + functional title from __thriveIdentity),
-previews EXACTLY what will send (the same sendCompile the send path uses), and hands the composed content to
-the unchanged L5 send. Stateful mock of Supabase REST (never a real send). Assertions:
+A net-new editing surface in the drawer lets the operator write subject + body for an opp, insert the opp
+link as a merge token, and control a SEPARATE, OPTIONAL Signature field (E0): its value IS data.sig, empty
+means NO signature block, and "Use my signature" fills it with the identity preset (name / title / site).
+The preview uses the SAME sendCompile the send path uses (preview == send parity), and hands the composed
+content to the unchanged L5 send. Stateful mock of Supabase REST (never a real send). Assertions:
   1. subject + body edits save to data.outreach_subject / data.outreach_text via oppPatch and persist across
      a full reload; the save never resets the textarea value (undo stack preserved);
-  2. the signature written to data.sig is exactly name + ", " + title from identity, and appears in the
-     compiled preview identically to what the send payload html carries (preview == send parity);
+  E0. the Signature is a SEPARATE editable field distinct from the body; its value becomes data.sig and
+     persists; EMPTY signature yields NO sig block in the compiled html/text (fully optional); "Use my
+     signature" fills name / title / thriveiii.com as three lines and stays editable; the body renders
+     verbatim with no auto-signature fused into it; the sig block grey is the darker value (not #888888);
+     a multi-line sig renders with real <br> line breaks; preview == send parity is driven by the field;
   3. the opp-link token inserts and tokenizes to console.thriveiii.com/opp/<slug> in the compiled html;
   4. the pre-send checklist tracks subject / body / recipient / link, and Send is disabled until the message
-     (subject + body) is present;
+     (subject + body) is present (the signature is never required);
   5. giving a message to an opp that had none flips the L5 gate so Send appears (no compose surface before);
   6. a reply carries the opp slug (Reply-To hi+<slug>@thriveiii.com), never the whole campaign;
   7. a forced write failure reverts visibly (red) with no phantom save (the record is unchanged);
@@ -32,7 +36,9 @@ def ck(n, c, d=None):
 UID = "u"
 DISPLAY_NAME = "Alice Op"
 TITLE = "Growth Lead"
-SIG = DISPLAY_NAME + ", " + TITLE                    # what the editor must build and write to data.sig
+SIG = DISPLAY_NAME + ", " + TITLE                    # a legacy comma-form sig (used by the baked fixture only)
+PRESET = DISPLAY_NAME + "\n" + TITLE + "\n" + "thriveiii.com"   # the "Use my signature" 3-line fill
+FREE = "Warm regards,\nAlice Op"                     # a freely typed signature (operator authored)
 
 # ---- opps (ALL addresses synthetic *.example.test) -----------------------------------------------
 def opp(slug, biz, subject, text, addr):
@@ -147,13 +153,23 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: perr.append(str(e)))
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(500); wait_ident(pg)
 
-    ck("2: identity signature is name + title", pg.evaluate("()=>window.__thriveEditorSignature()")==SIG, pg.evaluate("()=>window.__thriveEditorSignature()"))
+    # E0: the identity PRESET (what "Use my signature" fills) is name / title / site, three lines - not an
+    # auto-applied value. edSignaturePreset reads identity only, so it resolves before any drawer opens.
+    ck("E0: the identity preset is name / title / thriveiii.com (three lines)",
+       pg.evaluate("()=>window.__thriveSignaturePreset()")==PRESET, pg.evaluate("()=>window.__thriveSignaturePreset()"))
 
     pg.evaluate(OPEN, "Acme Co"); pg.wait_for_timeout(500)
     ck("editor: subject + body fields render in the drawer", pg.evaluate("()=>!!(document.getElementById('edSubj')&&document.getElementById('edBody'))"))
     ck("editor: pre-fills the subject from the record", pg.evaluate("()=>document.getElementById('edSubj').value")=="Acme x Thrive")
 
-    # edit subject + body (with a real paragraph break), insert the opp link, let the debounced save land
+    # E0: a SEPARATE Signature field exists, distinct from the body, editable, and starts EMPTY (acme has no sig)
+    ck("E0: a separate Signature field (#edSig) exists, distinct from the body (#edBody)",
+       pg.evaluate("()=>{var s=document.getElementById('edSig'),b=document.getElementById('edBody'); return !!s && !!b && s!==b && s.tagName==='TEXTAREA';}"))
+    ck("E0: the Signature field is editable (not disabled or readonly)",
+       pg.evaluate("()=>{var s=document.getElementById('edSig'); return !s.disabled && !s.readOnly;}"))
+    ck("E0: the Signature field starts EMPTY for an opp with no saved sig", pg.evaluate("()=>document.getElementById('edSig').value")=="")
+
+    # edit subject + body (with a real paragraph break), insert the opp link, leave the SIGNATURE EMPTY, save
     pg.fill("#edSubj", "Acme partnership")
     pg.fill("#edBody", "First paragraph.\n\nSecond paragraph.\n")
     pg.evaluate("()=>{ var b=document.getElementById('edLink'); if(b) b.click(); }")   # insert the {{LINK}} token
@@ -167,30 +183,59 @@ with sync_playwright() as p:
     last = pb[-1]["body"]["data"] if pb else {}
     ck("1: subject + body saved to data.outreach_subject / data.outreach_text",
        last.get("outreach_subject")=="Acme partnership" and "First paragraph" in str(last.get("outreach_text","")), last)
-    ck("2: the signature written to data.sig is exactly name + title", last.get("sig")==SIG, last.get("sig"))
+    ck("E0: an EMPTY signature field saves data.sig as empty", str(last.get("sig",""))=="", last.get("sig"))
 
-    # preview == send parity, LIGHT-HTML direction: the persisted-record compile (what runSend uses) is the
-    # light-HTML message, and the preview iframe shows byte-identical html
-    art = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('acme'); }")
-    txt, htm = art.get("text",""), art.get("html","")
-    ck("LIGHT: the sent TEXT preserves the paragraph break (newlines not collapsed)",
-       "First paragraph.\n\nSecond paragraph." in txt, txt[:300])
-    ck("LIGHT: the signature is separated from the body by a blank line in the text",
-       ("\n\n"+SIG) in txt, txt[-200:])
-    ck("2: the compiled preview carries the exact signature (preview == send)", SIG in htm and SIG in txt, htm[:200])
-    ck("2: the signature appears EXACTLY ONCE in the html and once in the text (no duplicate sig block)",
-       htm.count(SIG)==1 and txt.count(SIG)==1, {"html":htm.count(SIG), "text":txt.count(SIG)})
+    # E0 preview==send with an EMPTY signature: NO sig block, and the body shows verbatim
+    art0 = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('acme'); }")
+    txt0, htm0 = art0.get("text",""), art0.get("html","")
+    ck("E0: EMPTY signature yields NO sig block in the html (no #595959 / #888888 sig div)",
+       "#595959" not in htm0 and "#888888" not in htm0, htm0[:240])
+    ck("E0: with no signature, the body text is rendered verbatim (no auto-sig fused in)",
+       "First paragraph.\n\nSecond paragraph." in txt0 and "First paragraph" in htm0
+       and "Growth Lead" not in htm0 and "Growth Lead" not in txt0, {"txt":txt0[:200]})
+    ck("E0: preview iframe EQUALS the send html even with an empty signature",
+       pg.evaluate(SRCDOC)==htm0, {"srcdoc_len":len(pg.evaluate(SRCDOC) or ""), "art_len":len(htm0)})
+
+    # E0: type a FREE signature (operator authored, multi-line) -> it becomes data.sig; sig block appears
+    pg.fill("#edSig", FREE)
+    pg.wait_for_timeout(1300)
+    pbF = [c for c in PATCH_CALLS if c["slug"]=="acme"]
+    lastF = pbF[-1]["body"]["data"] if pbF else {}
+    ck("E0: a freely typed signature becomes data.sig verbatim", str(lastF.get("sig",""))==FREE, lastF.get("sig"))
+    artF = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('acme'); }")
+    txtF, htmF = artF.get("text",""), artF.get("html","")
+    ck("E0: the typed signature is a separate closing block in the DARKER grey (#595959, not #888888)",
+       "#595959" in htmF and "#888888" not in htmF, htmF[-260:])
+    ck("E0: the multi-line signature renders with real <br> line breaks",
+       "Warm regards,<br>Alice Op" in htmF, htmF[-260:])
+    ck("E0: the body still renders verbatim above the typed signature",
+       "First paragraph.\n\nSecond paragraph." in txtF and ("<p " in htmF or "<p>" in htmF), htmF[:200])
+    ck("E0: the signature is separated from the body by a blank line in the text", ("\n\n"+FREE) in txtF, txtF[-200:])
+    ck("E0: preview iframe EQUALS the send html with the typed signature (field-driven parity)",
+       pg.evaluate(SRCDOC)==htmF, {"srcdoc_len":len(pg.evaluate(SRCDOC) or ""), "art_len":len(htmF)})
     ck("3: the opp link is a plain tokenized URL in the text (channel 2, clickable in a plain email)",
-       "console.thriveiii.com/opp/acme" in txt and re.search(r"[?&]r=", txt) is not None, txt[-200:])
-    ck("LIGHT: real paragraph breaks in the html (<p> body paragraphs), never a run-on block",
-       ("<p " in htm or "<p>" in htm), htm[:200])
-    ck("LIGHT: light formatting - a grey smaller closing/footer, the pixel is the ONLY image, no logo/table/background",
-       ("#888888" in htm or "#9aa0aa" in htm) and htm.count("<img")==1 and 'width="1" height="1"' in htm
-       and "thrive-logo.png" not in htm and "<table" not in htm and "background" not in htm, htm[:220])
+       "console.thriveiii.com/opp/acme" in txtF and re.search(r"[?&]r=", txtF) is not None, txtF[-200:])
     ck("LIGHT: the one open pixel carries op=hit and r=<token> in the html",
-       re.search(r"op=hit[^\"'<>]*?r=[^&;\"'\s<]+", htm) is not None, htm[-260:])
-    ck("2: the preview iframe html EQUALS the send payload html (no false-success gap, light direction)",
-       pg.evaluate(SRCDOC)==htm, {"srcdoc_len":len(pg.evaluate(SRCDOC) or ""), "art_len":len(htm)})
+       re.search(r"op=hit[^\"'<>]*?r=[^&;\"'\s<]+", htmF) is not None, htmF[-260:])
+    ck("LIGHT: the pixel is the only image, no logo/table/background",
+       htmF.count("<img")==1 and 'width="1" height="1"' in htmF and "thrive-logo.png" not in htmF
+       and "<table" not in htmF and "background" not in htmF, htmF[:220])
+
+    # E0: "Use my signature" FILLS the field with the 3-line preset, and it stays editable
+    pg.evaluate("()=>{ var b=document.getElementById('edSigFill'); if(b) b.click(); }")
+    pg.wait_for_timeout(200)
+    ck("E0: 'Use my signature' fills the field with name / title / thriveiii.com (three lines)",
+       pg.evaluate("()=>document.getElementById('edSig').value")==PRESET, pg.evaluate("()=>document.getElementById('edSig').value"))
+    ck("E0: after the preset fill the field is still editable (not locked)",
+       pg.evaluate("()=>{var s=document.getElementById('edSig'); return !s.disabled && !s.readOnly;}"))
+    pg.wait_for_timeout(1200)   # let the fill save
+    pbP = [c for c in PATCH_CALLS if c["slug"]=="acme"]
+    lastP = pbP[-1]["body"]["data"] if pbP else {}
+    ck("E0: the preset signature persists to data.sig as three lines", str(lastP.get("sig",""))==PRESET, lastP.get("sig"))
+    artP = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('acme'); }")
+    htmP = artP.get("html","")
+    ck("E0: the preset renders as three lines with <br> between name / title / site",
+       (DISPLAY_NAME+"<br>"+TITLE+"<br>thriveiii.com") in htmP, htmP[-300:])
 
     # ===== ROOT duplicate-signature fix: a body with a baked agency closing has it stripped at compile =====
     bart = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('baked'); }")
@@ -211,15 +256,17 @@ with sync_playwright() as p:
     ck("4: clearing the subject disables Send (pre-flight)", pg.evaluate(SEND_DISABLED)==True, pg.evaluate(SEND_DISABLED))
     ck("4: the subject check reads missing when empty", "ck-no" in pg.evaluate(CK, "ckSubj"), pg.evaluate(CK, "ckSubj"))
 
-    # persistence across a full reload
+    # persistence across a full reload: the subject/body/SIGNATURE all restore from the persisted record
     pg.wait_for_timeout(1200)   # let the empty-subject edit settle (does not matter what it saved)
-    OPPS["acme"]["data"]["outreach_subject"] = "Acme partnership"   # restore a clean persisted subject for the reload check
+    OPPS["acme"]["data"]["outreach_subject"] = "Acme partnership"   # restore a clean persisted record for the reload check
     OPPS["acme"]["data"]["outreach_text"]    = body_after_insert
-    OPPS["acme"]["data"]["sig"]              = SIG
+    OPPS["acme"]["data"]["sig"]              = PRESET
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(500); wait_ident(pg)
     pg.evaluate(OPEN, "Acme Co"); pg.wait_for_timeout(500)
     ck("1: after a full reload the saved subject + body are still there",
        pg.evaluate("()=>document.getElementById('edSubj').value")=="Acme partnership" and "{{LINK}}" in pg.evaluate("()=>document.getElementById('edBody').value"))
+    ck("E0: after a full reload the Signature FIELD restores the saved value (persisted, not lost)",
+       pg.evaluate("()=>document.getElementById('edSig').value")==PRESET, pg.evaluate("()=>document.getElementById('edSig').value"))
     pg.close(); ctx.close()
 
     # ===== 5: an opp with NO message can be given one from the board, flipping the L5 gate =====
