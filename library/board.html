@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="c4cd27c1">
+<meta name="thrive-build" content="d728c66f">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -139,13 +139,33 @@
   textarea.rec-in{width:100%;min-height:44px;resize:vertical;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:10px 12px;font-size:14px;line-height:1.4;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;outline:none;margin-bottom:8px;direction:ltr;unicode-bidi:isolate}
   textarea.rec-in:focus{border-color:#5D7FB7}
   textarea.note-in:focus{border-color:#5D7FB7}
+  /* Unified message editor (compose + reply) */
+  input.ed-subj{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:10px 12px;font-size:14px;line-height:1.4;outline:none;margin-bottom:8px}
+  input.ed-subj:focus{border-color:#5D7FB7}
+  textarea.ed-body{min-height:120px;line-height:1.5;unicode-bidi:plaintext}
+  .act:disabled{opacity:.45;cursor:not-allowed}
+  .ed-checks{list-style:none;margin:8px 0 4px;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+  .ed-ck{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid #22222e;color:#8a8a93;background:#14141c;display:flex;align-items:center;gap:5px}
+  .ed-ck::before{content:"";width:7px;height:7px;border-radius:50%;background:#4a4a55;display:inline-block}
+  .ed-ck.ck-ok{color:#a9d5b6;border-color:#274b34}
+  .ed-ck.ck-ok::before{background:#3fae63}
+  .ed-ck.ck-no{color:#d8b48a;border-color:#4b3a27}
+  .ed-ck.ck-no::before{background:#c98b3a}
+  .ed-sig-field{margin:6px 0 10px}
+  .ed-sig-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .ed-sig-lab{font-size:12px;color:#8a8a93}
+  .ed-sig-use{font-size:12px;padding:5px 10px}
+  textarea.ed-sig-in{min-height:64px;line-height:1.5;unicode-bidi:plaintext;font-size:13px}
+  .ed-prev-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:6px 0 6px}
+  html[dir="rtl"] .ed-prev-h{text-transform:none;letter-spacing:normal}
+  iframe.ed-preview{width:100%;height:220px;border:1px solid #22222e;border-radius:9px;background:#fff}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build c4cd27c1</span>
+    <span class="muted">build d728c66f</span>
   </div>
   <div id="root"></div>
 </div>
@@ -156,7 +176,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "c4cd27c1";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "d728c66f";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -212,7 +232,12 @@
           s_no_msg:"No prepared message on this opportunity.",
           r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
           r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
-          r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email." },
+          r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email.",
+          ed_h:"Message", ed_subj:"Subject", ed_subj_ph:"Subject line",
+          ed_body:"Body", ed_body_ph:"Write the message. Use Insert opp link to add the page link.",
+          ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature",
+          ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
+          ed_ck_subj:"Subject", ed_ck_body:"Body", ed_ck_recip:"Recipient", ed_ck_link:"Opp link" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -252,7 +277,12 @@
           s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
           r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
           r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
-          r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا." }
+          r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا.",
+          ed_h:"الرسالة", ed_subj:"الموضوع", ed_subj_ph:"سطر الموضوع",
+          ed_body:"النص", ed_body_ph:"اكتب الرسالة. استخدم إدراج رابط الفرصة لإضافة رابط الصفحة.",
+          ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي",
+          ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",
+          ed_ck_subj:"الموضوع", ed_ck_body:"النص", ed_ck_recip:"المستلم", ed_ck_link:"رابط الفرصة" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -948,9 +978,65 @@ function toPlainText(html, sig){                                                
   s = s.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim();
   return sig ? (s + "\n\n" + sig) : s;
 }
-// compile(recipient, content) for ONE recipient (app.js:1438). Content is the opp RECORD's prepared message
-// (console_opps.data.outreach_subject / outreach_text), so the body is byte-for-byte what the engine composes:
-// merged fields + branding + the ONE footer + the ONE open pixel and tokenized page link (channels 1 and 2).
+// LIGHT-HTML law of the new console: outreach sends light, clean HTML - not heavy branded HTML, not
+// plain-only. Allowed: black body text in one system font, a smaller grey closing/signature and grey
+// footer, real paragraph breaks, the plain opp link, and the one 1x1 open pixel. Forbidden: logo, tables,
+// background colors, multi-color styling, any image other than the tracking pixel, inline-styled cards.
+
+// The two fixed agency strings of the OLD engine's signature (renderSignature = name + AGENCY_NAME +
+// AGENCY_SITE, app.js:6285-6290). They only ever appear in a signature, so they are a reliable anchor for
+// stripping an old baked-in closing out of a body.
+var AGENCY_NAME_L5 = "Thrive Digital Solutions";
+var AGENCY_SITE_L5 = "thriveiii.com";
+
+// ROOT fix for the double signature: the operator's outreach_text was authored VERBATIM by the old engine
+// (app.js:13172 "content used verbatim"), so many bodies END with a hand-written closing of the shape
+// name / AGENCY_NAME / AGENCY_SITE. sendCompile now appends the ONE identity signature (data.sig) itself,
+// so any such baked-in closing in the body is a duplicate. Strip exactly that trailing block (the two fixed
+// agency lines, plus an optional sign-off name line directly above them). Keyed on the fixed agency strings,
+// so it never touches normal body content.
+function stripBakedSig(body){
+  var s = String(body==null?"":body).replace(/\r\n/g, "\n");
+  var agN = AGENCY_NAME_L5.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  var agS = AGENCY_SITE_L5.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // trailing: (optional name line) AGENCY_NAME AGENCY_SITE, with flexible whitespace and blank lines
+  var reNamed = new RegExp("\\n+[ \\t]*[^\\n]+\\n[ \\t]*" + agN + "[ \\t]*\\n[ \\t]*" + agS + "[ \\t]*\\n*[ \\t]*$", "i");
+  var rePlain = new RegExp("\\n+[ \\t]*" + agN + "[ \\t]*\\n[ \\t]*" + agS + "[ \\t]*\\n*[ \\t]*$", "i");
+  s = s.replace(reNamed, "").replace(rePlain, "");
+  return s.replace(/\s+$/, "");
+}
+
+// Body paragraphs as light HTML: split on blank lines into <p>, single newlines become <br>. Black text,
+// one system font, normal size. No wrapper card, no colors, no tables.
+function bodyParasHtml(bodyPlain){
+  var s = String(bodyPlain==null?"":bodyPlain).replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+  if(!s) return "";
+  return s.split(/\n{2,}/).map(function(b){
+    b = b.replace(/^\n+|\n+$/g, "");
+    return b ? '<p style="margin:0 0 14px 0">' + esc(b).split("\n").join("<br>") + '</p>' : "";
+  }).filter(Boolean).join("");
+}
+
+// The one light-HTML document: body (black), then the identity signature in smaller grey, then the grey
+// POSTAL/STOP footer. The open pixel is appended by the caller so it is the LAST and ONLY image.
+function lightHtml(bodyPlain, sig, lang){
+  var font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif";
+  // E0: the signature block is a clear grey (not the near-transparent #888888), small, its own block, its
+  // multi-line value (name / title / site) rendered with real <br> line breaks, separated from the body by
+  // space above. Empty sig renders nothing (fully optional). The grey POSTAL/STOP footer stays distinct below.
+  var sigHtml = (sig && sig.trim())
+    ? '<div style="margin-top:18px;font-size:13px;line-height:1.5;color:#595959">' + esc(String(sig)).split("\n").join("<br>") + '</div>'
+    : "";
+  return '<div style="font-family:' + font + ';font-size:15px;line-height:1.6;color:#111111">'
+    + bodyParasHtml(bodyPlain) + sigHtml + '</div>' + footerHtml(lang);
+}
+
+// compile(recipient, content) for ONE recipient. Content is the opp RECORD's prepared message
+// (console_opps.data.outreach_subject / outreach_text / sig). LIGHT-HTML: the body is the operator's text
+// with any old baked-in closing stripped (stripBakedSig), so the ONE identity signature (data.sig) appears
+// EXACTLY ONCE, in smaller grey, above the grey footer. The plain-text arm mirrors it (body + blank line +
+// sig + footer). The tokenized opp-page link (channel 2) rides in both as a plain URL; the 1x1 open pixel
+// (channel 1) is the ONLY image, appended last.
 function sendCompile(slug, row, data, rcpt){
   data = data || {}; rcpt = rcpt || {};
   var full = String(rcpt.name==null?"":rcpt.name).trim();
@@ -958,20 +1044,19 @@ function sendCompile(slug, row, data, rcpt){
   var lang = (rcpt.lang==="ar" || data.lang==="ar") ? "ar" : "en";
   var addr = bareAddress(rcpt.addr||"");
   var ctx = { business:(row&&row.business)||data.business||"", link:liveUrl(slug), month:data.month||"" };
-  var inner = mergeFieldsInto(data.outreach_text||"", name, ctx);
+  var inner = stripBakedSig(mergeFieldsInto(data.outreach_text||"", name, ctx));   // ROOT: drop any old baked closing
   var subject = mergeFieldsInto(data.outreach_subject||"", name, ctx).replace(/^\s+|\s+$/g, "");
   var sig = data.sig || "";
   var plan = planAttachments(data.attachments||[]);
-  if(plan.hosted.length) inner = inner + attachHostedBlockHtml(plan.hosted, lang);
-  var html = brandWrap(inner, !!data.branded, sig) + footerHtml(lang);
-  var rawText = toPlainText(inner, sig) + attachHostedBlockText(plan.hosted, lang);
-  var text = rawText + footerText(lang);
+  var bodyPlain = inner + attachHostedBlockText(plan.hosted, lang);   // hosted-image links ride as text lines
   var token = recipientOpenToken(slug, addr, subject);       // == the console_mail row id (attribution join)
   if(token){
     var base = liveUrl(slug), tokd = base + (base.indexOf("?")<0?"?":"&") + "r=" + encodeURIComponent(token);
-    html = html.split(base).join(tokd); text = text.split(base).join(tokd);   // channel 2: the page link carries the token
-    html = html + openPixelHtml(slug, token, relayEp());                       // channel 1: one open pixel
+    bodyPlain = bodyPlain.split(base).join(tokd);            // channel 2: the opp page link carries the token
   }
+  var text = toPlainText(bodyPlain, sig) + footerText(lang);            // plain-text alternative part
+  var html = lightHtml(bodyPlain, sig, lang);                          // light-HTML primary part
+  if(token) html = html + openPixelHtml(slug, token, relayEp());       // channel 1: the one open pixel (last, only image)
   return { to:addr, name:name, subject:subject, html:html, text:text, token:token, lang:lang, attachments:plan.attach };
 }
 
@@ -1178,6 +1263,266 @@ function onSaveRecipient(slug){
     setRecStatus((e && e.authRequired) ? t("err") : t("r_failed"), "bad");
   });
 }
+
+// ===================================================================================================
+// UNIFIED MESSAGE EDITOR (compose + reply) - net-new on board.html (EDITOR_EVIDENCE 2: no compose surface
+// exists today; the L5 send refuses when data.outreach_subject/outreach_text are both empty, board.html
+// gate). Inlined verbatim into library/board.html by tools/bundle.js (interpolated as a string, so no
+// template escaping; this file therefore uses NO backticks and NO dollar-brace). Runs inside board.html's
+// IIFE alongside the L5 send clone (board-send.src.js) and the L5.5 recipient field (board-recipient.src.js),
+// reusing their scope: esc, t, oppReadData, oppPatch, sendCompile, firstRecipient, liveUrl, MF_LINK,
+// bareAddress, isEmail, findRow, refreshDrawer, reloadBoardData, __drawerSlug, __writing, __act, root,
+// and window.__thriveIdentity (Step 2 identity).
+//
+// WHAT IT DOES (one surface for both first compose and reply):
+//   * subject input + body textarea (textarea so newlines are real, the L5.5 lesson), pre-filled from the
+//     opp record (data.outreach_subject / data.outreach_text) or empty.
+//   * a SEPARATE, OPTIONAL Signature field (E0, Thyab): its own textarea (#edSig), distinct from the body.
+//     Its live value IS data.sig - the single source. Empty = no signature block appended (fully optional).
+//     A "Use my signature" button FILLS the field from runtime identity as three lines (name / title / site);
+//     it is a convenience fill only, never an automatic injection. The editor NEVER derives or fuses a
+//     signature into the body: the body is shown and sent exactly as typed.
+//   * the opp link inserted as the LINK merge token (MF_LINK, built by concatenation), which sendCompile
+//     tokenizes to liveUrl(slug) = console.thriveiii.com/opp/<slug> (EDITOR_EVIDENCE 3); never a hardcoded URL.
+//   * a live preview compiled by the SAME sendCompile the send path uses, so preview == send (no
+//     false-success gap): the preview iframe html is byte-identical to what runSend would POST.
+//   * debounced auto-save to data.outreach_subject/outreach_text/sig via the bounded oppPatch (same shape
+//     as L4/2B/L5.5 writes), optimistic confirm-or-revert with a visible red on failure and NEVER a phantom
+//     save. No forced value reset on each keystroke, so the native textarea undo stack is preserved (ConTh 4).
+//   * a light pre-send checklist (subject / body / recipient / link). The Send button is greyed while the
+//     MESSAGE is incomplete (subject/body/link); the RECIPIENT check is shown but stays enforced by the
+//     existing runSend gate (its red refusal is the tested backstop), so this pre-flight never walls off the
+//     send path. Reply carries the opp's slug for free: the editor is bound to one slug and runSend(slug)
+//     stamps outboundHeaders(slug) Reply-To hi+<slug> (EDITOR_EVIDENCE 4), never a campaign.
+//   * Send itself is UNCHANGED: the editor only prepares subject/body/sig/link on the record; the actual
+//     send is the existing L5 single-recipient path (runSend). No fork, no duplicate send logic.
+// ===================================================================================================
+
+var __edT = {};        // per-slug debounce timer id
+var __edSaving = false; // editor's own in-flight guard (separate from the shared __writing send/note lock)
+var __edBase = {};      // per-slug base data jsonb (non-message fields), captured at render for the preview compile
+var __edStat = {};      // per-slug transient save status {msg,cls}, re-rendered on each drawer paint
+
+// The editor renders for any editable opp: not archived, not a terminal tray declaration (won/lost/dropped).
+// It deliberately does NOT require has_email, so an opp with NO prepared message can be given one from the
+// board, flipping the L5 gate on the next reload. Sent/replied/live/draft all show it (reply is just a new
+// compose on the same slug).
+function editorEligible(row){
+  if(!row) return false;
+  if(row.archived) return false;
+  if(TRAY_STAGES.indexOf((row&&row.stage)||"")>=0) return false;
+  return true;
+}
+
+// E0: the signature is the operator's OWN field, not an auto-derived value. edSignature() is the LIVE value of
+// the Signature textarea (#edSig) - authoritative and OPTIONAL: an empty field ships an empty data.sig, so NO
+// signature block is appended (sendCompile/lightHtml render nothing when sig is empty). The editor never
+// injects a signature on its own; the operator types one, fills one from identity via "Use my signature", or
+// leaves it blank.
+function edIdentity(){ try{ return window.__thriveIdentity || {}; }catch(e){ return {}; } }
+function edSignature(){ return edVal("edSig"); }
+// The "Use my signature" preset: a quiet three-line block from runtime identity, name / title / site, each on
+// its own line. Title omitted if unset (name then site); name omitted if unset (site alone). This only FILLS
+// the field on demand; it is never applied automatically. The site is the send-side agency constant.
+function edSignaturePreset(){
+  var id = edIdentity();
+  var name = String(id.name==null?"":id.name).trim();
+  var title = String(id.title==null?"":id.title).trim();
+  var site = (typeof AGENCY_SITE_L5!=="undefined" && AGENCY_SITE_L5) ? AGENCY_SITE_L5 : "thriveiii.com";
+  var lines = [];
+  if(name) lines.push(name);
+  if(title) lines.push(title);
+  lines.push(site);
+  return lines.join("\n");
+}
+
+function edVal(id){ var el=document.getElementById(id); return el ? String(el.value||"") : ""; }
+// The link is present when the body carries the merge token OR an already-tokenized/literal opp URL.
+function edHasLink(slug, body){
+  var b = String(body||"");
+  if(b.indexOf(MF_LINK) >= 0) return true;
+  try{ if(b.indexOf(liveUrl(slug)) >= 0) return true; }catch(e){}
+  return false;
+}
+// The Send-disable gate covers ONLY what the editor exclusively owns and what makes an opp sendable at all:
+// a non-empty subject AND body. The link and the recipient are shown in the checklist as pass states, but
+// they are NOT part of the disable gate: the recipient has its own field and runSend's red refusal is the
+// tested backstop, and a prepared message may legitimately carry the page link in an already-tokenized form.
+// Gating only on subject+body keeps the pre-flight light (never a wall) and never disables Send for an opp
+// that already has a message, so the existing send-gate paths stay clickable.
+function edMessageReady(slug){
+  return !!(edVal("edSubj").trim() && edVal("edBody").trim());
+}
+
+// Build the data jsonb the preview/send compiles from: the captured base overlaid with the LIVE subject,
+// body, and the operator's signature FIELD value (empty allowed). edCompileFrom then runs the SAME sendCompile
+// the send path uses, so the preview html equals the send payload html for identical inputs.
+function edLiveData(slug){
+  var base = __edBase[slug] || {};
+  return Object.assign({}, base, { outreach_subject:edVal("edSubj"), outreach_text:edVal("edBody"), sig:edSignature() });
+}
+function edCompileFrom(slug, data){
+  var row = findRow(slug) || { slug:slug, business:(data&&data.business)||"" };
+  var rcpt = firstRecipient(data) || { addr:"", name:"", lang:"" };
+  return sendCompile(slug, row, data, rcpt);          // the send path's own compiler (EDITOR_EVIDENCE 1)
+}
+
+// The editor surface. Placed just before the recipient field and the Send action in the drawer, so compose
+// -> recipient -> send read top to bottom. Pre-fills from the record; empty for a fresh compose.
+function editorHtml(slug, row, detail){
+  if(!editorEligible(row)) return "";
+  var data = (detail && detail.opp && detail.opp.data) || null;
+  __edBase[slug] = data || __edBase[slug] || {};       // capture base for the preview compile (enrich paint sets it)
+  var subj = data ? String(data.outreach_subject||"") : (edVal("edSubj"));
+  var body = data ? String(data.outreach_text||"") : (edVal("edBody"));
+  var hasRecip = data ? !!firstRecipient(data) : false;
+  var st = __edStat[slug] || {};
+  var ck = function(id, ok, key){
+    return '<li class="ed-ck '+(ok?"ck-ok":"ck-no")+'" id="'+id+'">'+esc(t(key))+'</li>';
+  };
+  // The signature FIELD pre-fills from the persisted record's data.sig (empty if none); on re-render inside an
+  // open drawer it keeps the live typed value so a paint never clobbers an in-progress signature.
+  var sig = data ? String(data.sig||"") : (edVal("edSig"));
+  var subjOk = !!subj.trim(), bodyOk = !!body.trim(), linkOk = edHasLink(slug, body);
+  return '<div class="dw-sec ed-sec"><h3>'+esc(t("ed_h"))+'</h3>'+
+    '<input class="ed-subj" id="edSubj" type="text" autocomplete="off" spellcheck="true" '+
+      'placeholder="'+esc(t("ed_subj_ph"))+'" aria-label="'+esc(t("ed_subj"))+'" value="'+esc(subj)+'">'+
+    '<textarea class="rec-in ed-body" id="edBody" rows="6" autocomplete="off" spellcheck="true" '+
+      'placeholder="'+esc(t("ed_body_ph"))+'" aria-label="'+esc(t("ed_body"))+'">'+esc(body)+'</textarea>'+
+    '<div class="acts"><button class="act" id="edLink" type="button">'+esc(t("ed_link"))+'</button></div>'+
+    '<ul class="ed-checks">'+
+      ck("ckSubj", subjOk, "ed_ck_subj")+ck("ckBody", bodyOk, "ed_ck_body")+
+      ck("ckRecip", hasRecip, "ed_ck_recip")+ck("ckLink", linkOk, "ed_ck_link")+
+    '</ul>'+
+    '<div class="ed-sig-field">'+
+      '<div class="ed-sig-head"><span class="ed-sig-lab">'+esc(t("ed_sig"))+'</span>'+
+        '<button class="act ed-sig-use" id="edSigFill" type="button">'+esc(t("ed_sig_use"))+'</button></div>'+
+      '<textarea class="rec-in ed-sig-in" id="edSig" rows="3" autocomplete="off" spellcheck="true" '+
+        'placeholder="'+esc(t("ed_sig_ph"))+'" aria-label="'+esc(t("ed_sig"))+'">'+esc(sig)+'</textarea>'+
+    '</div>'+
+    '<div class="ed-prev-h">'+esc(t("ed_preview"))+'</div>'+
+    '<iframe class="ed-preview" id="edPreview" title="'+esc(t("ed_preview"))+'" sandbox="" referrerpolicy="no-referrer" srcdoc=""></iframe>'+
+    '<div class="act-status'+(st.cls?(" "+st.cls):"")+'" id="edStatus">'+esc(st.msg||"")+'</div></div>';
+}
+
+function edSetStatus(slug, msg, cls){
+  __edStat[slug] = { msg:msg||"", cls:cls||"" };
+  var el=document.getElementById("edStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; }
+}
+// Re-mark the four check items from the LIVE values (no value reset, so undo is untouched). Recipient is not
+// re-derived on keystroke (it changes only via the recipient field, which reloads the drawer).
+function edRefreshChecks(slug){
+  var set=function(id, ok){ var el=document.getElementById(id); if(el) el.className="ed-ck "+(ok?"ck-ok":"ck-no"); };
+  set("ckSubj", !!edVal("edSubj").trim());
+  set("ckBody", !!edVal("edBody").trim());
+  set("ckLink", edHasLink(slug, edVal("edBody")));
+}
+// Grey the Send button while the MESSAGE is incomplete (subject/body/link). Recipient stays enforced by
+// runSend, so the no-recipient refusal remains a live, clickable path.
+function edApplyGate(slug){
+  var b=document.querySelector('#drawer .act[data-act="send"]');
+  if(b) b.disabled = !edMessageReady(slug);
+}
+// Recompile the preview from the LIVE values, through the send path's own sendCompile, and show it. The
+// srcdoc html is byte-identical to what runSend would POST for the same record (proven by edCompileFrom
+// reusing sendCompile). Best-effort: a compile hiccup never throws into the editor.
+function edRenderPreview(slug){
+  try{
+    var art = edCompileFrom(slug, edLiveData(slug));
+    var f=document.getElementById("edPreview"); if(f) f.setAttribute("srcdoc", art.html);
+  }catch(e){}
+}
+function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); }
+
+// Insert the opp-link token at the cursor via execCommand, which PRESERVES the native undo stack (ConTh 4).
+// Falls back to a splice + manual input event if execCommand is unavailable.
+function edInsertLink(slug){
+  var el=document.getElementById("edBody"); if(!el) return;
+  el.focus();
+  var token=MF_LINK, ok=false;
+  try{ ok=document.execCommand("insertText", false, token); }catch(e){ ok=false; }
+  if(!ok){
+    var s=el.selectionStart==null?el.value.length:el.selectionStart, e2=el.selectionEnd==null?el.value.length:el.selectionEnd;
+    el.value = el.value.slice(0,s) + token + el.value.slice(e2);
+    var pos=s+token.length; try{ el.selectionStart=el.selectionEnd=pos; }catch(_){}
+    try{ el.dispatchEvent(new Event("input", { bubbles:true })); }catch(_){}
+  }
+  edTick(slug); edScheduleSave(slug, 300);
+}
+
+// "Use my signature": a convenience FILL of the Signature field with the identity preset (name / title / site,
+// each on its own line). It is never automatic - the operator taps it, then may edit or clear the field. After
+// filling, refresh the preview and debounce a save so the chosen signature persists like any typed one.
+function edFillSignature(slug){
+  var el=document.getElementById("edSig"); if(!el) return;
+  el.value = edSignaturePreset();
+  try{ el.dispatchEvent(new Event("input", { bubbles:true })); }catch(_){}
+  try{ el.focus(); }catch(_){}
+  edTick(slug); edScheduleSave(slug, 300);
+}
+
+function edScheduleSave(slug, delay){
+  if(__edT[slug]) clearTimeout(__edT[slug]);
+  __edT[slug] = setTimeout(function(){ __edT[slug]=null; edSaveNow(slug); }, delay||700);
+}
+// Bounded, optimistic confirm-or-revert save. The textarea IS the optimistic state; on a CONFIRMED write we
+// show green (never a phantom "Saved" without persistence); on failure we show red and leave the operator's
+// text intact (reverting it would lose typing). Never fights the shared send/note lock: if one is in flight,
+// reschedule shortly so the text is never dropped. On the FIRST message that makes an opp sendable, reload
+// the board once so the L5 gate flips and Send appears; ongoing edits do not reload (undo preserved).
+function edSaveNow(slug){
+  if(__drawerSlug!==slug) return;
+  var subjEl=document.getElementById("edSubj"), bodyEl=document.getElementById("edBody");
+  if(!subjEl || !bodyEl) return;
+  if(__writing || __edSaving){ edScheduleSave(slug, 500); return; }
+  __edSaving = true;
+  var subj=String(subjEl.value||""), body=String(bodyEl.value||""), sig=edSignature();
+  edSetStatus(slug, t("a_saving"), "");
+  oppReadData(slug).then(function(data){
+    var wasEmpty = !(String(data.outreach_subject||"").trim() || String(data.outreach_text||"").trim());
+    var nowHas = !!(subj.trim() || body.trim());
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig });
+    return oppPatch(slug, { data:next, up:Date.now() }).then(function(){
+      __edSaving = false;
+      __edBase[slug] = next;                                   // keep the preview base in sync with the persisted record
+      var row = findRow(slug);
+      var reveal = wasEmpty && nowHas && row && !row.has_email; // first message: flip the L5 gate so Send appears
+      if(reveal){
+        return reloadBoardData().then(function(){ edSetStatus(slug, t("a_saved"), "ok"); if(__drawerSlug===slug) refreshDrawer(slug); },
+                                     function(){ edSetStatus(slug, t("a_saved"), "ok"); });
+      }
+      edSetStatus(slug, t("a_saved"), "ok"); edRenderPreview(slug);
+    });
+  }).catch(function(e){
+    __edSaving = false;
+    edSetStatus(slug, (e && e.authRequired) ? t("err") : t("a_failed"), "bad");   // red, no phantom save; text kept
+  });
+}
+
+// Wire the editor after each drawer paint (called from wireDrawer). Input listeners update the checklist,
+// the Send gate, and the live preview, then debounce a save. No value is ever reset here, so undo is intact.
+function wireEditor(slug){
+  var subjEl=document.getElementById("edSubj"), bodyEl=document.getElementById("edBody");
+  if(!subjEl && !bodyEl) return;
+  var onInput=function(){ edTick(slug); edScheduleSave(slug, 700); };
+  if(subjEl) subjEl.addEventListener("input", onInput);
+  if(bodyEl) bodyEl.addEventListener("input", onInput);
+  var sigEl=document.getElementById("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven
+  var lk=document.getElementById("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
+  var sf=document.getElementById("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
+  edTick(slug);                                                // initial checklist + gate + preview
+}
+
+// Read-only hooks for later steps and board_editor_test:
+//   __thriveComposeArtifact(slug): the artifact compiled from the PERSISTED record, byte-identical to what
+//     runSend compiles before it POSTs (oppReadData -> firstRecipient -> sendCompile), so preview == send.
+//   __thriveReplyTo(slug): the Reply-To the send stamps, proving a reply carries the opp slug (never a campaign).
+try{
+  window.__thriveComposeArtifact = function(slug){ return oppReadData(slug).then(function(data){ return edCompileFrom(slug, data); }); };
+  window.__thriveReplyTo = function(slug){ try{ return outboundHeaders(slug)["Reply-To"]; }catch(e){ return ""; } };
+  window.__thriveEditorSignature = function(){ return edSignature(); };     // the LIVE field value (empty allowed)
+  window.__thriveSignaturePreset = function(){ return edSignaturePreset(); }; // the "Use my signature" fill (name/title/site)
+}catch(e){}
 
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
@@ -1450,7 +1795,7 @@ function onSaveRecipient(slug){
     return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
       '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
       '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\u00d7</button></div>'+
-      numsHtml(row, slug)+factsHtml(row)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
+      numsHtml(row, slug)+factsHtml(row)+editorHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
   }
   var __drawerSlug=null, __writing=false;
   function wireDrawer(){
@@ -1463,6 +1808,7 @@ function onSaveRecipient(slug){
     if(na) na.addEventListener("click", function(){ onAddNote(slug); });
     var rs=document.getElementById("recSave");                          // L5.5 recipient save
     if(rs) rs.addEventListener("click", function(){ onSaveRecipient(slug); });
+    try{ wireEditor(slug); }catch(e){}                                  // unified message editor (compose + reply)
   }
   function openDrawer(slug){
     __drawerSlug=slug;

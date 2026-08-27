@@ -896,6 +896,9 @@ function buildBoard(){
   const SEND_SRC = read(path.join(ROOT, "tools/board-send.src.js"));
   // L5.5: the recipient field clone, inlined verbatim after the send clone (shares its scope + helpers).
   const RECIP_SRC = read(path.join(ROOT, "tools/board-recipient.src.js"));
+  // Unified message editor (compose + reply): net-new compose surface, inlined after the send + recipient
+  // clones so it reuses sendCompile / firstRecipient / oppPatch / MF_LINK from the same IIFE scope.
+  const EDITOR_SRC = read(path.join(ROOT, "tools/board-editor.src.js"));
   // Step 1: the identity layer (actor resolver + profile/role load), inlined before the send clone so its
   // currentUid() is defined for the send actor write. Shares the IIFE scope + helpers.
   const IDENT_SRC = read(path.join(ROOT, "tools/board-identity.src.js"));
@@ -1041,6 +1044,26 @@ function buildBoard(){
   textarea.rec-in{width:100%;min-height:44px;resize:vertical;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:10px 12px;font-size:14px;line-height:1.4;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;outline:none;margin-bottom:8px;direction:ltr;unicode-bidi:isolate}
   textarea.rec-in:focus{border-color:#5D7FB7}
   textarea.note-in:focus{border-color:#5D7FB7}
+  /* Unified message editor (compose + reply) */
+  input.ed-subj{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:10px 12px;font-size:14px;line-height:1.4;outline:none;margin-bottom:8px}
+  input.ed-subj:focus{border-color:#5D7FB7}
+  textarea.ed-body{min-height:120px;line-height:1.5;unicode-bidi:plaintext}
+  .act:disabled{opacity:.45;cursor:not-allowed}
+  .ed-checks{list-style:none;margin:8px 0 4px;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+  .ed-ck{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid #22222e;color:#8a8a93;background:#14141c;display:flex;align-items:center;gap:5px}
+  .ed-ck::before{content:"";width:7px;height:7px;border-radius:50%;background:#4a4a55;display:inline-block}
+  .ed-ck.ck-ok{color:#a9d5b6;border-color:#274b34}
+  .ed-ck.ck-ok::before{background:#3fae63}
+  .ed-ck.ck-no{color:#d8b48a;border-color:#4b3a27}
+  .ed-ck.ck-no::before{background:#c98b3a}
+  .ed-sig-field{margin:6px 0 10px}
+  .ed-sig-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .ed-sig-lab{font-size:12px;color:#8a8a93}
+  .ed-sig-use{font-size:12px;padding:5px 10px}
+  textarea.ed-sig-in{min-height:64px;line-height:1.5;unicode-bidi:plaintext;font-size:13px}
+  .ed-prev-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:6px 0 6px}
+  html[dir="rtl"] .ed-prev-h{text-transform:none;letter-spacing:normal}
+  iframe.ed-preview{width:100%;height:220px;border:1px solid #22222e;border-radius:9px;background:#fff}
 </style>
 </head>
 <body>
@@ -1114,7 +1137,12 @@ function buildBoard(){
           s_no_msg:"No prepared message on this opportunity.",
           r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
           r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
-          r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email." },
+          r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email.",
+          ed_h:"Message", ed_subj:"Subject", ed_subj_ph:"Subject line",
+          ed_body:"Body", ed_body_ph:"Write the message. Use Insert opp link to add the page link.",
+          ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature",
+          ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
+          ed_ck_subj:"Subject", ed_ck_body:"Body", ed_ck_recip:"Recipient", ed_ck_link:"Opp link" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -1154,7 +1182,12 @@ function buildBoard(){
           s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
           r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
           r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
-          r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا." }
+          r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا.",
+          ed_h:"الرسالة", ed_subj:"الموضوع", ed_subj_ph:"سطر الموضوع",
+          ed_body:"النص", ed_body_ph:"اكتب الرسالة. استخدم إدراج رابط الفرصة لإضافة رابط الصفحة.",
+          ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي",
+          ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",
+          ed_ck_subj:"الموضوع", ed_ck_body:"النص", ed_ck_recip:"المستلم", ed_ck_link:"رابط الفرصة" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1355,6 +1388,7 @@ function buildBoard(){
 ${IDENT_SRC}
 ${SEND_SRC}
 ${RECIP_SRC}
+${EDITOR_SRC}
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
   // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
@@ -1626,7 +1660,7 @@ ${RECIP_SRC}
     return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
       '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
       '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\\u00d7</button></div>'+
-      numsHtml(row, slug)+factsHtml(row)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
+      numsHtml(row, slug)+factsHtml(row)+editorHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
   }
   var __drawerSlug=null, __writing=false;
   function wireDrawer(){
@@ -1639,6 +1673,7 @@ ${RECIP_SRC}
     if(na) na.addEventListener("click", function(){ onAddNote(slug); });
     var rs=document.getElementById("recSave");                          // L5.5 recipient save
     if(rs) rs.addEventListener("click", function(){ onSaveRecipient(slug); });
+    try{ wireEditor(slug); }catch(e){}                                  // unified message editor (compose + reply)
   }
   function openDrawer(slug){
     __drawerSlug=slug;
