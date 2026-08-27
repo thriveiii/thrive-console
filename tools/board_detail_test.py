@@ -52,9 +52,13 @@ _patches = [m.start() for m in re.finditer(r'method:"PATCH"', board)]
 def _post_ok(i):
     ctx = board[max(0,i-320):i+60]
     return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx) or ("console_profiles" in ctx)
-ck("the only data write is PATCH to console_opps; no PUT/DELETE; every POST is auth, relay send, console_mail, or the own-row console_profiles upsert",
+def _patch_ok(i):
+    ctx = board[max(0,i-260):i+40]
+    # L4 opp writes hit console_opps by slug; the Step 2C admin title write hits console_profiles by uid.
+    return ("console_opps?slug=eq." in ctx) or ("console_profiles?uid=eq." in ctx)
+ck("no PUT/DELETE; every PATCH targets console_opps (by slug) or console_profiles (by uid, admin title); every POST is auth, relay send, console_mail, or an own-row console_profiles upsert",
    all(v not in board for v in ['method:"PUT"','method:"DELETE"'])
-   and len(_patches) >= 1 and all("console_opps?slug=eq." in board[max(0,i-260):i+40] for i in _patches)
+   and len(_patches) >= 1 and all(_patch_ok(i) for i in _patches)
    and len(_posts) >= 1 and all(_post_ok(i) for i in _posts))
 
 # ---- data (ALL addresses synthetic *.example.test) -----------------------------------------------

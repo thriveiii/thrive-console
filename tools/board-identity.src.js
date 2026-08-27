@@ -158,17 +158,20 @@ function profilePanelHtml(){
       '<div class="act-status" id="pfStatus"></div></div>'+
     '<div class="dw-sec"><h3>'+esc(t("pf_role_h"))+'</h3>'+
       '<div class="pf-ro">'+esc(title || t("pf_role_none"))+'</div>'+
-      '<div class="pf-note">'+esc(t("pf_role_note"))+'</div></div>';
+      '<div class="pf-note">'+esc(t("pf_role_note"))+'</div></div>'+
+    adminSectionHtml();                                        // Step 2C: owner-only, empty string for a member
 }
 
 function wireProfile(){
   var c=document.getElementById("pfClose"); if(c) c.addEventListener("click", closeProfile);
   var s=document.getElementById("pfSave"); if(s) s.addEventListener("click", onSaveProfile);
+  wireRoster();                                                // Step 2C: (no-op when the admin section is absent)
 }
 function openProfile(){
   var sc=document.getElementById("pfScrim"), pn=document.getElementById("pfPanel");
   if(!sc || !pn) return;
   pn.innerHTML = profilePanelHtml(); sc.hidden=false; pn.scrollTop=0; wireProfile();     // instant from __identity
+  if(isOwner()){ try{ loadRoster(); }catch(e){} }             // Step 2C: owner-only roster load, fire-and-forget
   var uid = currentUid();                                                                 // then refresh, best-effort
   if(uid){
     identGet("console_profiles?uid=eq."+enc(uid)+"&select=*&limit=1").then(function(rows){ // select=* so an unapplied column never 400s
@@ -227,5 +230,101 @@ function onSaveProfile(){
   }).catch(function(e){
     __writing = false; var b2=document.getElementById("pfSave"); if(b2) b2.disabled=false;
     pfSetStatus((e && e.authRequired) ? t("err") : t("pf_failed"), "bad");
+  });
+}
+
+// ===================================================================================================
+// STEP 2C ADMIN TITLE EDITOR. An owner-only section inside the 2B profile panel: the team roster with an
+// editable functional title per member. Rendered ONLY when isOwner() is true (a UI gate for convenience);
+// the REAL gate is live: console_profiles_owner_update (UPDATE, is_console_owner()) plus the BEFORE UPDATE
+// trigger guard_profile_title that rejects a signature_title change unless is_console_owner(). The title
+// write is keyed on the TARGET member's uid (never the admin's currentUid()) and carries ONLY
+// signature_title. The owner/member ROLE is never shown or edited here; role decides only whether this
+// section renders. The 2B own-row write (display_name only) is untouched.
+// ===================================================================================================
+
+var __roster = [];   // [{ uid, name, email, title }] loaded for an owner; role is never read into this
+
+// The section wrapper. Empty string for a non-owner, so a member never sees it.
+function adminSectionHtml(){
+  if(!isOwner()) return "";
+  return '<div class="dw-sec pf-admin"><h3>'+esc(t("pf_admin_h"))+'</h3>'+
+    '<div class="pf-note">'+esc(t("pf_admin_note"))+'</div>'+
+    '<div id="pfRoster">'+rosterInnerHtml()+'</div></div>';
+}
+function rosterInnerHtml(){
+  if(!__roster.length) return '<div class="muted" id="pfRosterEmpty">'+esc(t("pf_admin_loading"))+'</div>';
+  return __roster.map(function(m, i){
+    return '<div class="pf-mem" data-uid="'+esc(m.uid)+'">'+
+      '<div class="pf-mem-id"><span class="pf-mem-name">'+esc(m.name || m.email || m.uid)+'</span>'+
+        '<span class="pf-mem-email mono-iso" dir="ltr">'+esc(m.email||"")+'</span></div>'+
+      '<input class="rec-in pf-title-in" id="pfT'+i+'" type="text" autocomplete="off" spellcheck="false" '+
+        'value="'+esc(m.title||"")+'" placeholder="'+esc(t("pf_admin_ph"))+'" aria-label="'+esc(t("pf_admin_title"))+'">'+
+      '<div class="acts"><button class="act send pf-title-save" data-uid="'+esc(m.uid)+'" data-i="'+i+'" type="button">'+esc(t("pf_admin_save"))+'</button></div>'+
+      '<div class="act-status pf-title-status" id="pfTS'+i+'"></div></div>';
+  }).join("");
+}
+function wireRoster(){
+  [].forEach.call(document.querySelectorAll(".pf-title-save"), function(btn){
+    btn.addEventListener("click", function(){ onSaveTitle(btn.getAttribute("data-uid"), btn.getAttribute("data-i")); });
+  });
+}
+function setTitleStatus(idx, msg, cls){ var el=document.getElementById("pfTS"+idx); if(el){ el.className="act-status pf-title-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
+
+// Load the roster (owner only). Members come from console_members (owner-scoped read via
+// console_members_read_owner); ONLY id/name/email are selected, never role. Current titles come from
+// console_profiles.signature_title; a member with no profile row, or a row the reader cannot see, shows a
+// BLANK title (never a crash). Both reads are bounded and best-effort (identGet over authFetchOnce).
+function loadRoster(){
+  if(!isOwner()) return Promise.resolve();
+  return identGet("console_members?select=id,name,email&order=name.asc").then(function(mrows){
+    var members = (mrows||[]).map(function(r){ return { uid:(r&&r.id)||"", name:(r&&r.name)||"", email:(r&&r.email)||"" }; })
+                             .filter(function(m){ return m.uid; });
+    return identGet("console_profiles?select=uid,signature_title").then(function(prows){
+      var byUid = {}; (prows||[]).forEach(function(p){ if(p && p.uid) byUid[p.uid] = String(p.signature_title||""); });
+      __roster = members.map(function(m){ m.title = byUid[m.uid] || ""; return m; });
+      var host=document.getElementById("pfRoster"); if(host){ host.innerHTML = rosterInnerHtml(); wireRoster(); }
+    }, function(){                                             // titles unreadable: still render the roster, blank titles
+      __roster = members.map(function(m){ m.title=""; return m; });
+      var host=document.getElementById("pfRoster"); if(host){ host.innerHTML = rosterInnerHtml(); wireRoster(); }
+    });
+  }, function(){ /* roster read failed: leave the loading note, never crash */ });
+}
+
+// The title write: a PATCH (pure UPDATE) keyed on the TARGET member's uid, body ONLY { signature_title }.
+// This triggers exactly console_profiles_owner_update (UPDATE) + guard_profile_title, which the server
+// permits only for an owner and rejects for a member. Bounded (authFetchOnce timeout REJECTS), one
+// refresh-retry, Prefer return=minimal (the owner may lack SELECT on another row, so success is the 2xx
+// status, not a read-back). Never keyed on currentUid(); never carries display_name or role.
+function titlePatch(targetUid, title, retried){
+  var url = URL_BASE + "/rest/v1/console_profiles?uid=eq." + enc(targetUid);
+  return authFetchOnce(url, {
+    method:"PATCH",
+    headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Content-Type":"application/json", "Prefer":"return=minimal" },
+    cache:"no-store", body: JSON.stringify({ signature_title: String(title==null?"":title) })
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return titlePatch(targetUid, title, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    return true;
+  });
+}
+// Optimistic confirm-or-revert per member row: apply the typed title ONLY on a 2xx (the server policy +
+// trigger accepted it), so a rejected write (a non-owner, or any failure) reverts red with no phantom save.
+function onSaveTitle(targetUid, idx){
+  var input = document.getElementById("pfT"+idx); if(!input || !targetUid) return;
+  var title = String(input.value||"").trim();
+  if(__writing) return; __writing = true;
+  setTitleStatus(idx, t("pf_saving"), ""); var btn=document.querySelector('.pf-title-save[data-i="'+idx+'"]'); if(btn) btn.disabled=true;
+  titlePatch(targetUid, title).then(function(){
+    __writing = false; if(btn) btn.disabled=false;
+    for(var i=0;i<__roster.length;i++){ if(__roster[i].uid===targetUid){ __roster[i].title = title; break; } }
+    if(__profileIndex.byUid[targetUid]) __profileIndex.byUid[targetUid].title = title;   // refresh the index
+    if(currentUid()===targetUid){ __identity.title = title; try{ if(window.__thriveIdentity) window.__thriveIdentity.title = title; }catch(e){} }
+    setTitleStatus(idx, t("pf_saved"), "ok");
+  }).catch(function(e){
+    __writing = false; var b2=document.querySelector('.pf-title-save[data-i="'+idx+'"]'); if(b2) b2.disabled=false;
+    setTitleStatus(idx, (e && e.authRequired) ? t("err") : t("pf_admin_failed"), "bad");   // rejected -> red, nothing applied
   });
 }
