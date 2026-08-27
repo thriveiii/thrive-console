@@ -41,17 +41,19 @@ ck("no server memory store is claimed; the record disclosure is present",
 ck("stage moves disclosed as written to Supabase and re-read from the board view (L4)",
    "written to Supabase and re-read from the board view" in board
    and "Stage moves are recorded on the device and are not in Supabase" not in board)
-# The board.html write surface is fenced: the ONLY data-write VERB is PATCH, and it targets ONLY console_opps
-# (L4 stage / archived / note). No PUT, no DELETE. POSTs are limited to known kinds: the GoTrue auth call
-# (/auth/v1/), the L5 relay send (relayEp - the courier that reaches Resend server-side), the L5 console_mail
-# confirm write, and the Step 2B own-row console_profiles upsert (the operator's own display_name only). The
-# drawer writes no other table. Per-scenario behavior is covered by board_write_test.py, board_send_test.py,
-# and board_profile_test.py; here we just fence the surface statically.
+# The board.html write surface is fenced: the ONLY data-write VERB is PATCH/POST, no PUT, no DELETE. PATCH
+# targets ONLY console_opps (L4 stage / archived / note) or console_profiles (Step 2C admin title). POSTs are
+# limited to known kinds: the GoTrue auth call (/auth/v1/), the L5 relay send (relayEp - the courier that
+# reaches Resend server-side), the L5 console_mail confirm write, the Step 2B own-row console_profiles upsert
+# (the operator's own display_name only), and the E1 New Message lightweight-opp upsert to console_opps (the
+# standalone-draft create-or-update, same table the drawer's PATCH targets). The drawer writes no other table.
+# Per-scenario behavior is covered by board_write_test.py, board_send_test.py, board_profile_test.py, and
+# board_newmsg_test.py; here we just fence the surface statically.
 _posts = [m.start() for m in re.finditer(r'method:"POST"', board)]
 _patches = [m.start() for m in re.finditer(r'method:"PATCH"', board)]
 def _post_ok(i):
     ctx = board[max(0,i-320):i+60]
-    return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx) or ("console_profiles" in ctx)
+    return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx) or ("console_profiles" in ctx) or ("console_opps" in ctx)
 def _patch_ok(i):
     ctx = board[max(0,i-260):i+40]
     # L4 opp writes hit console_opps by slug; the Step 2C admin title write hits console_profiles by uid.

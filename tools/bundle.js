@@ -899,6 +899,9 @@ function buildBoard(){
   // Unified message editor (compose + reply): net-new compose surface, inlined after the send + recipient
   // clones so it reuses sendCompile / firstRecipient / oppPatch / MF_LINK from the same IIFE scope.
   const EDITOR_SRC = read(path.join(ROOT, "tools/board-editor.src.js"));
+  // E1: New message as a standalone editor overlay, inlined after the editor so it reuses editorHtml /
+  // edSignature / edInsertLink / sendCompile / runSend / oppPatch / parseAddrs from the same IIFE scope.
+  const NEWMSG_SRC = read(path.join(ROOT, "tools/board-newmsg.src.js"));
   // Step 1: the identity layer (actor resolver + profile/role load), inlined before the send clone so its
   // currentUid() is defined for the send actor write. Shares the IIFE scope + helpers.
   const IDENT_SRC = read(path.join(ROOT, "tools/board-identity.src.js"));
@@ -1028,6 +1031,10 @@ function buildBoard(){
   .act-status.bad{color:#ff8a8a}
   .pf-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 4px}
   .pf-h2{font-size:16px;font-weight:650;color:#eef;margin:0}
+  .nm-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 10px}
+  .nm-head h2{font-size:17px;font-weight:650;color:#eef;margin:0}
+  .nm-x{white-space:nowrap}
+  .nm-body .dw-sec{margin-top:14px}
   .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
   .pf-note{font-size:11.5px;color:#6a6a74;margin-top:6px}
   .pf-admin{border-top:1px solid #191921;padding-top:14px;margin-top:20px}
@@ -1077,6 +1084,7 @@ function buildBoard(){
 <div id="scrim" class="scrim" hidden><div id="drawer" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="pfScrim" class="scrim" hidden><div id="pfPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="admScrim" class="scrim" hidden><div id="admPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
+<div id="nmScrim" class="scrim" hidden><div id="nmPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <script>
 (function(){
   "use strict";
@@ -1142,7 +1150,9 @@ function buildBoard(){
           ed_body:"Body", ed_body_ph:"Write the message. Use Insert opp link to add the page link.",
           ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature",
           ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
-          ed_ck_subj:"Subject", ed_ck_body:"Body", ed_ck_recip:"Recipient", ed_ck_link:"Opp link" },
+          ed_ck_subj:"Subject", ed_ck_body:"Body", ed_ck_recip:"Recipient", ed_ck_link:"Opp link",
+          nm_open:"New message", nm_h:"New message", nm_to:"To", nm_to_ph:"recipient@example.com",
+          nm_send:"Send message", nm_need_msg:"Add a subject and body first.", nm_need_to:"Add a recipient email first." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -1187,7 +1197,9 @@ function buildBoard(){
           ed_body:"النص", ed_body_ph:"اكتب الرسالة. استخدم إدراج رابط الفرصة لإضافة رابط الصفحة.",
           ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي",
           ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",
-          ed_ck_subj:"الموضوع", ed_ck_body:"النص", ed_ck_recip:"المستلم", ed_ck_link:"رابط الفرصة" }
+          ed_ck_subj:"الموضوع", ed_ck_body:"النص", ed_ck_recip:"المستلم", ed_ck_link:"رابط الفرصة",
+          nm_open:"رسالة جديدة", nm_h:"رسالة جديدة", nm_to:"إلى", nm_to_ph:"recipient@example.com",
+          nm_send:"إرسال الرسالة", nm_need_msg:"أضف موضوعًا ونصًا أولًا.", nm_need_to:"أضف بريد المستلم أولًا." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1389,6 +1401,7 @@ ${IDENT_SRC}
 ${SEND_SRC}
 ${RECIP_SRC}
 ${EDITOR_SRC}
+${NEWMSG_SRC}
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
   // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
@@ -1475,6 +1488,9 @@ ${EDITOR_SRC}
         // for an owner. isOwner() resolves async (loadIdentity), so paintAdminSlot() runs both now and again
         // from finishIdentity once the role settles. A member never sees this control, and openAdmin() is a
         // no-op for a non-owner besides, so the real gate stays the RLS policy on the write.
+        // E1: New message opens the editor as its own overlay (compose to any recipient, with or without an
+        // opp link). Visible to every signed-in operator, beside Profile.
+        '<button class="link" id="newMsgBtn" type="button">' + esc(t("nm_open")) + '</button>' +
         '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
         '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
         '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
@@ -1490,6 +1506,7 @@ ${EDITOR_SRC}
   try{ window.__thrivePaintAdminSlot = paintAdminSlot; }catch(e){}
   function wireHeader(){
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
+    var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ openNewMessage(); });   // E1
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
@@ -1868,7 +1885,9 @@ ${EDITOR_SRC}
     if(ps) ps.addEventListener("click", function(e){ if(e.target===ps) closeProfile(); });
     var as=document.getElementById("admScrim");                                           // Step 2D admin overlay
     if(as) as.addEventListener("click", function(e){ if(e.target===as) closeAdmin(); });
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); } });
+    var ns=document.getElementById("nmScrim");                                            // E1 new-message overlay
+    if(ns) ns.addEventListener("click", function(e){ if(e.target===ns) closeNewMessage(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); } });
   }catch(e){} })();
   boot();
 })();
