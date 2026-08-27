@@ -278,6 +278,12 @@ function runSend(slug){
     var rcpt = firstRecipient(data);
     if(!rcpt) { var e0=new Error("no recipient"); e0.__kind="norecip"; throw e0; }
     if(!(data && (String(data.outreach_text||"").trim() || String(data.outreach_subject||"").trim()))){ var e1=new Error("no message"); e1.__kind="nomsg"; throw e1; }
+    // E2 ConTh-3: an uploaded-page opp must be proven LIVE - its page ACTIVATED and a real fetch of the live
+    // /opp/<slug> URL returning ok - before ANY send. A preview looking good is never the proof; the live
+    // fetch is (app.js:832-833 pageSendable). Non-upload opps pass straight through. The gate throws
+    // __kind="notlive"/"deadlink" so the catch below reverts the optimistic send with a clear reason.
+    var __liveGate = (typeof upSendLiveGate==="function") ? upSendLiveGate(slug, data) : Promise.resolve();
+    return __liveGate.then(function(){
     var art = sendCompile(slug, row, data, rcpt);
     var idem = sendIdem(slug, art.to, art.subject, art.html);          // app.js:7429 default idempotency key
     var msgid = newMessageId();                                        // app.js:7430 / :8824
@@ -305,11 +311,14 @@ function runSend(slug){
                                       function(){ __writing=false; __act[slug]={ msg:t("s_confirming"), cls:"" }; if(__drawerSlug===slug) refreshDrawer(slug); });
       });
     });
+    });
   }).catch(function(e){
     __writing = false;
     if(snap){ replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){} }   // revert the optimistic send (no phantom Sent)
     var kind = e && e.__kind;
-    var msg = (kind==="norecip") ? t("s_no_recip") : (kind==="nomsg") ? t("s_no_msg") : (e && e.authRequired) ? t("err") : t("s_failed");
+    var msg = (kind==="norecip") ? t("s_no_recip") : (kind==="nomsg") ? t("s_no_msg")
+      : (kind==="notlive") ? t("s_not_live") : (kind==="deadlink") ? t("s_dead_link")
+      : (e && e.authRequired) ? t("err") : t("s_failed");
     __act[slug] = { msg:msg, cls:"bad" };
     if(__drawerSlug===slug) refreshDrawer(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
   });

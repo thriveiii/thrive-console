@@ -196,6 +196,10 @@ function edFillSignature(slug){
 }
 
 function edScheduleSave(slug, delay){
+  // E1 seam: when the standalone New Message overlay owns this slug, its own single writer persists the
+  // message + recipient together (one read-modify-write, no data-jsonb race with the drawer writer). Every
+  // editor input / link-insert / signature-fill routes here, so this is the one place that redirects the save.
+  if(typeof nmActive==="function" && nmActive(slug)){ if(typeof nmScheduleSave==="function") nmScheduleSave(slug, delay); return; }
   if(__edT[slug]) clearTimeout(__edT[slug]);
   __edT[slug] = setTimeout(function(){ __edT[slug]=null; edSaveNow(slug); }, delay||700);
 }
