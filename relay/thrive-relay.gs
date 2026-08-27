@@ -43,7 +43,10 @@
  * send into a relay it does not match. Bump it whenever the request or response
  * shape changes, and only then, in the same commit as the change.
  */
-var RELAY_VERSION = 8;   // v8 (P23, attachments): sendMail_ forwards d.attachments (each { filename, path } where
+var RELAY_VERSION = 9;   // v9 (F2, static activation): a new page_publish op commits opp/<slug>/index.html to the
+                         // repo via the GitHub Contents API using a GH_TOKEN Script Property (the token lives ONLY
+                         // here, never in the client), so GitHub Pages serves an uploaded page as a static file.
+                         // v8 (P23, attachments): sendMail_ forwards d.attachments (each { filename, path } where
                          // path is a public Storage URL Resend fetches) to Resend, and the outbox carries them per
                          // queued row, so a campaign attaches the same image for every recipient. A change to the
                          // send REQUEST shape, so the number moves with it (docs/RELAY.md, the version contract).
@@ -813,6 +816,52 @@ function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
+/* ===================== F2: static page activation (GitHub Pages serving) ===================== */
+/* The beacon tag and its injection rule, byte-identical to the console's withBeacon (library/app.js:3493-3502):
+   insert before </body>, else before </html>, else append; no-op if the page already carries beacon.js. So an
+   uploaded page records opens exactly like a page the old engine committed. */
+var BEACON_TAG_ = '<script src="/beacon.js" defer></' + 'script>';
+function withBeacon_(html) {
+  var h = String(html || '');
+  if (!h.trim()) return h;
+  if (/beacon\.js/.test(h)) return h;
+  if (/<\/body\s*>/i.test(h)) return h.replace(/<\/body\s*>/i, BEACON_TAG_ + '\n</body>');
+  if (/<\/html\s*>/i.test(h)) return h.replace(/<\/html\s*>/i, BEACON_TAG_ + '\n</html>');
+  return h + '\n' + BEACON_TAG_;
+}
+/* Commit opp/<slug>/index.html to the repo via the GitHub Contents API, the same publish the old engine did
+   from the browser (ghPutFile, app.js:3462-3466 / 3530) but with the token held HERE, never in the client.
+   The slug is hard-sanitized to [a-z0-9-] and the path is fixed to opp/<slug>/index.html, so this op can only
+   ever publish a public opp page, never an arbitrary path, a workflow, or a secret. Idempotent: an existing
+   file is updated in place by its sha. The token comes from the GH_TOKEN Script Property; owner/repo/branch
+   default to this repo and can be overridden by GH_OWNER / GH_REPO / GH_BRANCH properties. */
+function pagePublish_(d) {
+  var slug = String((d && d.slug) || '').toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug)) return { ok: false, error: 'bad slug' };
+  var html = String((d && d.html) || '');
+  if (!html.trim()) return { ok: false, error: 'empty html' };
+  html = withBeacon_(html);                                   // the committed page carries the beacon
+  var token = props_().getProperty('GH_TOKEN');
+  if (!token) return { ok: false, error: 'GH_TOKEN not set' };
+  var owner = props_().getProperty('GH_OWNER') || 'thriveiii';
+  var repo = props_().getProperty('GH_REPO') || 'thrive-console';
+  var branch = props_().getProperty('GH_BRANCH') || 'main';
+  var path = 'opp/' + slug + '/index.html';
+  var api = 'https://api.github.com/repos/' + owner + '/' + repo + '/contents/' + path;
+  var ghHeaders = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+  var sha = '';
+  var g = UrlFetchApp.fetch(api + '?ref=' + encodeURIComponent(branch), { method: 'get', muteHttpExceptions: true, headers: ghHeaders });
+  if (g.getResponseCode() === 200) { try { sha = (JSON.parse(g.getContentText()) || {}).sha || ''; } catch (e1) {} }
+  var body = { message: 'Publish opp/' + slug, content: Utilities.base64Encode(Utilities.newBlob(html).getBytes()), branch: branch };
+  if (sha) body.sha = sha;                                    // update in place if it exists (never duplicates)
+  var p = UrlFetchApp.fetch(api, { method: 'put', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(body), headers: ghHeaders });
+  var code = p.getResponseCode();
+  if (code !== 200 && code !== 201) return { ok: false, error: 'github ' + code + ': ' + String(p.getContentText() || '').slice(0, 140) };
+  var out = {}; try { out = JSON.parse(p.getContentText()); } catch (e2) {}
+  return { ok: true, slug: slug, path: path, url: 'https://console.thriveiii.com/opp/' + slug,
+           sha: (out.content && out.content.sha) || '', commit: (out.commit && out.commit.sha) || '' };
+}
+
 function doGet(e) {
   var op = (e && e.parameter && e.parameter.op) || '';
   if (op === 'hit') {
@@ -867,6 +916,14 @@ function doPost(e) {
       hitPut_(ev);
       return json_({ ok: true });
     }
+
+    /* F2 static activation. The console (a static GitHub Pages client) cannot hold a repo-write token, so the
+       relay holds it (GH_TOKEN, a Script Property) and commits the page here. This op is answered BEFORE
+       authOk_ for the same reason the bare send is: the console carries no SYNC_KEY, so the /exec URL is the
+       capability, exactly as for email. The blast radius is bounded far below send: pagePublish_ sanitizes the
+       slug to [a-z0-9-] and only ever writes opp/<slug>/index.html (public opp-page content), never an
+       arbitrary path, workflow, or secret. The GitHub token never leaves this server. */
+    if (op === 'page_publish') return json_(pagePublish_(d));
 
     authOk_(d.auth);
 

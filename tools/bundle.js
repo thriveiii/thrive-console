@@ -1184,9 +1184,12 @@ function buildBoard(){
           up_col_email:"To", up_col_subject:"Subject", up_no_text:"No message matched this page.",
           up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Message with no page", up_warn_generic:"check this row",
           up_info:"Informational (not a per-page message)",
-          up_page_h:"Hosted page", up_state_draft:"Draft. Activate the page before sending.", up_state_pending:"Activated. Confirming the live link.",
+          up_page_h:"Hosted page", up_state_draft:"Not activated. Activate the page before sending.", up_state_pending:"Activated. Confirming the live link.",
           up_state_dead:"The page link is not live. Sending is blocked.",
-          up_state_live:"Live. The page link resolves.", up_activate:"Activate and verify live", up_verifying:"Verifying the live link...",
+          up_state_publishing:"Activated. The page is publishing.",
+          up_state_live:"Activated and live. The page link resolves.", up_activate:"Activate the page", up_verifying:"Verifying the live link...",
+          up_committing:"Publishing the page...", up_commit_failed:"Could not publish the page. Nothing is live.", up_no_html:"No uploaded page found to publish.",
+          up_publishing:"Published. The page is going live (this can take a moment).",
           up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
@@ -1242,10 +1245,13 @@ function buildBoard(){
           up_col_email:"إلى", up_col_subject:"الموضوع", up_no_text:"لا رسالة مطابِقة لهذه الصفحة.",
           up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"رسالة بلا صفحة", up_warn_generic:"راجع هذا الصف",
           up_info:"للمعلومة (ليست رسالة لصفحة)",
-          up_page_h:"الصفحة المستضافة", up_state_draft:"مسودّة. فعّل الصفحة قبل الإرسال.", up_state_pending:"مُفعّلة. جارٍ تأكيد الرابط الحيّ.",
-          up_state_dead:"رابط الصفحة غير فعّال. الإرسال متوقّف.",
-          up_state_live:"حيّة. رابط الصفحة يعمل.", up_activate:"فعّل وتحقّق من الحيّ", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
-          up_now_live:"الصفحة حيّة.", up_dead:"الرابط ميت. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ." }
+          up_page_h:"الصفحة المستضافة", up_state_draft:"غير مُنشّطة. نشّط الصفحة قبل الإرسال.", up_state_pending:"مُنشّطة. جارٍ تأكيد الرابط الحيّ.",
+          up_state_dead:"غير مُنشّطة. رابط الصفحة لا يعمل. الإرسال متوقّف.",
+          up_state_publishing:"مُنشّطة. جارٍ نشر الصفحة.",
+          up_state_live:"مُنشّطة وحيّة. رابط الصفحة يعمل.", up_activate:"تنشيط الصفحة", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
+          up_committing:"جارٍ نشر الصفحة...", up_commit_failed:"تعذّر نشر الصفحة. لا شيء حيّ.", up_no_html:"لا توجد صفحة مرفوعة للنشر.",
+          up_publishing:"نُشرت. الصفحة في طريقها إلى العمل (قد يستغرق لحظة).",
+          up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }

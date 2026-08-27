@@ -290,6 +290,60 @@ function upCommit(plan){
   return one(0);
 }
 
+// ---- F2 static activation: commit opp/<slug>/index.html via the relay (the token lives on the relay) -------
+// The live host is GitHub Pages, which serves committed static files; a page in console_pages is not served
+// until it is committed as opp/<slug>/index.html (exactly how the old engine published, app.js:3530). board.html
+// is a static client and must NOT hold a repo-write token, so activation POSTs the html to the relay (the same
+// endpoint the send uses) and the RELAY commits it with a server-held GH_TOKEN. The client never sees the token.
+var BEACON_TAG_UP = '<script src="/beacon.js" defer></' + 'script>';   // byte-identical to app.js:3493 withBeacon
+function withBeaconClient(html){                                        // mirror app.js:3494-3502 (idempotent)
+  var h = String(html || "");
+  if(!h.trim()) return h;
+  if(/beacon\.js/.test(h)) return h;
+  if(/<\/body\s*>/i.test(h)) return h.replace(/<\/body\s*>/i, BEACON_TAG_UP + "\n</body>");
+  if(/<\/html\s*>/i.test(h)) return h.replace(/<\/html\s*>/i, BEACON_TAG_UP + "\n</html>");
+  return h + "\n" + BEACON_TAG_UP;
+}
+// Read the uploaded page html back from console_pages (the column E2's pageUpsert wrote). F2 only READS it.
+function pageReadHtml(slug, retried){
+  var url = URL_BASE + "/rest/v1/console_pages?slug=eq." + encodeURIComponent(slug) + "&select=html&limit=1";
+  return authFetchOnce(url, { method:"GET", headers:{ "apikey":ANON, "Authorization":"Bearer " + bearer() }, cache:"no-store" }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return pageReadHtml(slug, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ var e2=new Error("HTTP " + r.res.status); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    var row = (r.data && r.data[0]) || null;
+    return row ? String(row.html == null ? "" : row.html) : "";
+  });
+}
+// POST the page to the relay to commit it as a static file. The client sends only { op, slug, html } - no token.
+function pagePublishRelay(slug, html){
+  return relayPost({ op:"page_publish", slug:slug, html:html }).then(function(r){
+    if(!r.res.ok){ var e=new Error("relay " + r.res.status); throw e; }
+    var d = r.data || {};
+    if(d.ok === false){ var e2=new Error(d.error || "publish failed"); throw e2; }
+    return d;
+  });
+}
+// A bounded wait (never a hang): a real setTimeout wrapped in a promise, used only to space verify-live polls.
+function upDelay(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
+// Verify-live with a bounded poll for the GitHub Pages publish delay. Pages takes a moment to serve a fresh
+// commit, so a 404 right after activation is "still publishing", not dead. Poll up to `tries` with `gap`, then
+// settle: ok -> live; otherwise -> publishing (honest, never a false success). This runs AFTER a successful
+// commit, so the file exists in the repo; a persistent 404 means Pages has not published it yet, not that it
+// is dead. The send gate re-checks live at send time regardless, so nothing sends before a real ok.
+function verifyLivePoll(slug, tries, gap){
+  tries = tries || 3; gap = gap || 3000;
+  function attempt(n){
+    return verifyLive(slug).then(function(v){
+      if(v.ok) return { ok:true, publishing:false };
+      if(n >= tries) return { ok:false, publishing:true };     // committed but not yet served -> publishing
+      return upDelay(gap).then(function(){ return attempt(n + 1); });
+    });
+  }
+  return attempt(1);
+}
+
 // ---- verify-live (the real fetch that is the ONLY proof) -----------------------------------------
 // A real GET of the live /opp/<slug> URL. 404/410 -> dead; ok -> live; anything else -> unknown (blocks).
 // This is the truth the send gate reads; a stored flag is never trusted as proof (app.js:832-833).
@@ -403,6 +457,7 @@ function uploadActivateHtml(slug, row, detail){
   var stateKey, stateCls;
   if(data.page_live){ stateKey = "up_state_live"; stateCls = "ok"; }
   else if(data.page_active && data.page_dead){ stateKey = "up_state_dead"; stateCls = "bad"; }   // verified dead
+  else if(data.page_active && data.page_publishing){ stateKey = "up_state_publishing"; stateCls = ""; }  // committed, Pages building
   else if(data.page_active){ stateKey = "up_state_pending"; stateCls = ""; }
   else { stateKey = "up_state_draft"; stateCls = "bad"; }
   return '<div class="dw-sec up-act-sec"><h3>' + esc(t("up_page_h")) + '</h3>'+
@@ -411,23 +466,38 @@ function uploadActivateHtml(slug, row, detail){
     '<div class="act-status" id="upActStatus"></div></div>';
 }
 function upActStatus(msg, cls){ var el=document.getElementById("upActStatus"); if(el){ el.className="act-status" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; } }
+// Activation, the GitHub-Pages sacred order (mirror app.js:3586 activateAndConfirm): COMMIT the static file
+// via the relay, then CONFIRM live with a real bounded poll, then FLIP the state. The client never holds the
+// token (the relay commits). A commit failure leaves the page NOT activated. After a successful commit, a page
+// that is not yet served is PUBLISHING (honest), not dead or a false success; the send gate re-verifies live.
 function upActivate(slug){
   if(__writing || __upBusy) return; __upBusy = true;
-  upActStatus(t("up_verifying"), ""); var b=document.getElementById("upActBtn"); if(b) b.disabled = true;
+  upActStatus(t("up_committing"), ""); var b=document.getElementById("upActBtn"); if(b) b.disabled = true;
+  var baseData = null;
   oppReadData(slug).then(function(data){
-    var next = Object.assign({}, data, { source:"upload", page_active:true });
-    return oppPatch(slug, { data:next, up:Date.now() }).then(function(){ return verifyLive(slug); }).then(function(v){
-      var d2 = Object.assign({}, next, { page_live: !!v.ok, page_dead: !v.ok });
-      return oppPatch(slug, { data:d2, up:Date.now() }).then(function(){ return v; }, function(){ return v; });
+    baseData = data || {};
+    return pageReadHtml(slug);                                          // read the uploaded html (E2's write)
+  }).then(function(html){
+    if(!String(html || "").trim()){ var e0=new Error("no page html"); e0.__kind="nohtml"; throw e0; }
+    return pagePublishRelay(slug, withBeaconClient(html));              // relay commits opp/<slug>/index.html
+  }).then(function(){
+    var active = Object.assign({}, baseData, { source:"upload", page_active:true, page_dead:false, page_publishing:true, page_live:false });
+    return oppPatch(slug, { data:active, up:Date.now() }).then(function(){
+      upActStatus(t("up_verifying"), "");
+      return verifyLivePoll(slug).then(function(v){                     // bounded poll for the Pages build delay
+        var d2 = Object.assign({}, active, { page_live: !!v.ok, page_publishing: !v.ok, page_dead:false });
+        return oppPatch(slug, { data:d2, up:Date.now() }).then(function(){ return v; }, function(){ return v; });
+      });
     });
   }).then(function(v){
     __upBusy = false;
     if(v.ok){ upActStatus(t("up_now_live"), "ok"); }
-    else { upActStatus(v.dead ? t("up_dead") : t("up_unconfirmed"), "bad"); }
+    else { upActStatus(t("up_publishing"), ""); }                       // committed, still publishing (honest)
     if(__drawerSlug === slug) refreshDrawer(slug);
   }).catch(function(e){
     __upBusy = false; var b2=document.getElementById("upActBtn"); if(b2) b2.disabled = false;
-    upActStatus((e && e.authRequired) ? t("err") : t("up_write_failed"), "bad");
+    var kind = e && e.__kind;
+    upActStatus((e && e.authRequired) ? t("err") : (kind==="nohtml") ? t("up_no_html") : t("up_commit_failed"), "bad");
   });
 }
 function upWireActivate(slug){ var b=document.getElementById("upActBtn"); if(b) b.addEventListener("click", function(){ upActivate(slug); }); }
