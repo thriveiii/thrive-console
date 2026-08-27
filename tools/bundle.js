@@ -1053,6 +1053,7 @@ function buildBoard(){
 </div>
 <div id="scrim" class="scrim" hidden><div id="drawer" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="pfScrim" class="scrim" hidden><div id="pfPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
+<div id="admScrim" class="scrim" hidden><div id="admPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <script>
 (function(){
   "use strict";
@@ -1084,6 +1085,7 @@ function buildBoard(){
           pf_admin_h:"Team titles", pf_admin_note:"Assign each member a functional title. Members cannot change their own.",
           pf_admin_loading:"Loading the team\\u2026", pf_admin_title:"Functional title", pf_admin_ph:"Functional title",
           pf_admin_save:"Save title", pf_admin_failed:"Could not save. Nothing changed.",
+          adm_open:"Admin", adm_title:"Team admin",
           refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
           none:"none", unnamed:"(unnamed)",
           l_draft:"Draft", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
@@ -1123,6 +1125,7 @@ function buildBoard(){
           pf_admin_h:"مسميات الفريق", pf_admin_note:"عيّن لكل عضو مسماه الوظيفي. لا يمكن للأعضاء تغيير مسماهم.",
           pf_admin_loading:"جارٍ تحميل الفريق\\u2026", pf_admin_title:"المسمى الوظيفي", pf_admin_ph:"المسمى الوظيفي",
           pf_admin_save:"حفظ المسمى", pf_admin_failed:"تعذّر الحفظ. لم يتغير شيء.",
+          adm_open:"الإدارة", adm_title:"إدارة الفريق",
           refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
           none:"لا شيء", unnamed:"(بدون اسم)",
           l_draft:"مسودة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
@@ -1434,16 +1437,30 @@ ${RECIP_SRC}
     return '<div class="top" style="padding:8px 2px">' +
       '<span class="muted" id="opChip">' + esc(authEmail()) + '</span>' +
       '<span class="row-actions">' + langBtn() +
+        // Step 2D: the Admin executive surface is a SEPARATE header entry, hidden by default and revealed only
+        // for an owner. isOwner() resolves async (loadIdentity), so paintAdminSlot() runs both now and again
+        // from finishIdentity once the role settles. A member never sees this control, and openAdmin() is a
+        // no-op for a non-owner besides, so the real gate stays the RLS policy on the write.
+        '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
         '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
         '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
         '<button class="link" id="signout" type="button">' + esc(t("signout")) + '</button>' +
       '</span></div>';
   }
+  // Reveal the Admin entry only for an owner. Safe to call repeatedly (idempotent) and before the role settles.
+  function paintAdminSlot(){
+    var ab=document.getElementById("adminBtn"); if(!ab) return;
+    var owner=false; try{ owner = (typeof isOwner==="function") && isOwner(); }catch(e){}
+    ab.hidden = !owner;
+  }
+  try{ window.__thrivePaintAdminSlot = paintAdminSlot; }catch(e){}
   function wireHeader(){
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
+    var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
     var so=document.getElementById("signout"); if(so) so.addEventListener("click", function(){ signOut().then(signinView); });
+    paintAdminSlot();
   }
 
   // Bucket by the SERVER stage only (never derived here). Domain law: a REPLIED opp is a terminal-success story
@@ -1814,7 +1831,9 @@ ${RECIP_SRC}
     if(s) s.addEventListener("click", function(e){ if(e.target===s) closeDrawer(); });
     var ps=document.getElementById("pfScrim");                                            // Step 2B profile overlay
     if(ps) ps.addEventListener("click", function(e){ if(e.target===ps) closeProfile(); });
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); } });
+    var as=document.getElementById("admScrim");                                           // Step 2D admin overlay
+    if(as) as.addEventListener("click", function(e){ if(e.target===as) closeAdmin(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); } });
   }catch(e){} })();
   boot();
 })();
