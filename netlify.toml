@@ -1,8 +1,8 @@
 # NETLIFY_DEPLOY: build the same site the GitHub Pages flow builds, and serve HTML that can never be stale.
 # `node tools/bundle.js` regenerates the console (library/console.html, index.html, version.json, dist) and
 # then assembles a clean publish/ tree with a _headers file that forces revalidation on every file. The
-# ?v=BUILD asset pins remain, so revalidation is cheap (304s); they now coexist with the no-store HTML header
-# as belt and suspenders.
+# Capability Orbit emitter runs only after the console build succeeds, verifies all four pinned source
+# hashes byte-for-byte, then adds the isolated capability pages and host rewrites to publish/.
 [build]
-  command = "node tools/bundle.js"
+  command = "node tools/bundle.js && node cap-orbit/emit.js"
   publish = "publish"
