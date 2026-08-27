@@ -1027,6 +1027,12 @@ function buildBoard(){
   .pf-h2{font-size:16px;font-weight:650;color:#eef;margin:0}
   .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
   .pf-note{font-size:11.5px;color:#6a6a74;margin-top:6px}
+  .pf-admin{border-top:1px solid #191921;padding-top:14px;margin-top:20px}
+  .pf-mem{background:#0e0e14;border:1px solid #191921;border-radius:9px;padding:10px 11px;margin:8px 0}
+  .pf-mem-id{display:flex;flex-direction:column;gap:2px;margin-bottom:7px}
+  .pf-mem-name{font-size:13.5px;color:#eef;font-weight:600}
+  .pf-mem-email{font-size:11px;color:#7a7a84}
+  input.pf-title-in{margin-bottom:6px}
   .notes-list{display:flex;flex-direction:column;gap:6px;margin:2px 0 10px}
   .note-item{font-size:12.5px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:7px 9px;word-break:break-word}
   .note-item .nmeta{display:block;font-size:10.5px;color:#6a6a74;margin-top:3px;unicode-bidi:isolate}
@@ -1075,6 +1081,9 @@ function buildBoard(){
           pf_name_ph:"How your name shows on notes and sends", pf_save:"Save name", pf_saving:"Saving\\u2026",
           pf_saved:"Saved.", pf_failed:"Could not save. Nothing changed.", pf_role_h:"Functional title",
           pf_role_none:"Not set", pf_role_note:"Only an admin can change your functional title.", pf_close:"Close",
+          pf_admin_h:"Team titles", pf_admin_note:"Assign each member a functional title. Members cannot change their own.",
+          pf_admin_loading:"Loading the team\\u2026", pf_admin_title:"Functional title", pf_admin_ph:"Functional title",
+          pf_admin_save:"Save title", pf_admin_failed:"Could not save. Nothing changed.",
           refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
           none:"none", unnamed:"(unnamed)",
           l_draft:"Draft", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
@@ -1111,6 +1120,9 @@ function buildBoard(){
           pf_name_ph:"كيف يظهر اسمك على الملاحظات والإرسال", pf_save:"حفظ الاسم", pf_saving:"جارٍ الحفظ\\u2026",
           pf_saved:"تم الحفظ.", pf_failed:"تعذّر الحفظ. لم يتغير شيء.", pf_role_h:"المسمى الوظيفي",
           pf_role_none:"غير محدد", pf_role_note:"يمكن للمشرف فقط تغيير مسماك الوظيفي.", pf_close:"إغلاق",
+          pf_admin_h:"مسميات الفريق", pf_admin_note:"عيّن لكل عضو مسماه الوظيفي. لا يمكن للأعضاء تغيير مسماهم.",
+          pf_admin_loading:"جارٍ تحميل الفريق\\u2026", pf_admin_title:"المسمى الوظيفي", pf_admin_ph:"المسمى الوظيفي",
+          pf_admin_save:"حفظ المسمى", pf_admin_failed:"تعذّر الحفظ. لم يتغير شيء.",
           refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
           none:"لا شيء", unnamed:"(بدون اسم)",
           l_draft:"مسودة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
