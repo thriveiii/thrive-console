@@ -138,28 +138,12 @@ function toPlainText(html, sig){                                                
 // footer, real paragraph breaks, the plain opp link, and the one 1x1 open pixel. Forbidden: logo, tables,
 // background colors, multi-color styling, any image other than the tracking pixel, inline-styled cards.
 
-// The two fixed agency strings of the OLD engine's signature (renderSignature = name + AGENCY_NAME +
-// AGENCY_SITE, app.js:6285-6290). They only ever appear in a signature, so they are a reliable anchor for
-// stripping an old baked-in closing out of a body.
-var AGENCY_NAME_L5 = "Thrive Digital Solutions";
+// The agency site, used ONLY by the "Use my signature" preset default (board-editor.src.js:65).
+// PR-A: the message body is previewed and sent EXACTLY as written. Nothing detects or removes
+// signature-like text from the body; the ONE signature is the separate data.sig field, appended by
+// lightHtml / toPlainText below. The old stripBakedSig body-mutation (and its AGENCY_NAME_L5 anchor,
+// whose only user it was) is removed; AGENCY_SITE_L5 stays because the editor preset still reads it.
 var AGENCY_SITE_L5 = "thriveiii.com";
-
-// ROOT fix for the double signature: the operator's outreach_text was authored VERBATIM by the old engine
-// (app.js:13172 "content used verbatim"), so many bodies END with a hand-written closing of the shape
-// name / AGENCY_NAME / AGENCY_SITE. sendCompile now appends the ONE identity signature (data.sig) itself,
-// so any such baked-in closing in the body is a duplicate. Strip exactly that trailing block (the two fixed
-// agency lines, plus an optional sign-off name line directly above them). Keyed on the fixed agency strings,
-// so it never touches normal body content.
-function stripBakedSig(body){
-  var s = String(body==null?"":body).replace(/\r\n/g, "\n");
-  var agN = AGENCY_NAME_L5.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  var agS = AGENCY_SITE_L5.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // trailing: (optional name line) AGENCY_NAME AGENCY_SITE, with flexible whitespace and blank lines
-  var reNamed = new RegExp("\\n+[ \\t]*[^\\n]+\\n[ \\t]*" + agN + "[ \\t]*\\n[ \\t]*" + agS + "[ \\t]*\\n*[ \\t]*$", "i");
-  var rePlain = new RegExp("\\n+[ \\t]*" + agN + "[ \\t]*\\n[ \\t]*" + agS + "[ \\t]*\\n*[ \\t]*$", "i");
-  s = s.replace(reNamed, "").replace(rePlain, "");
-  return s.replace(/\s+$/, "");
-}
 
 // Body paragraphs as light HTML: split on blank lines into <p>, single newlines become <br>. Black text,
 // one system font, normal size. No wrapper card, no colors, no tables.
@@ -188,10 +172,10 @@ function lightHtml(bodyPlain, sig, lang){
 
 // compile(recipient, content) for ONE recipient. Content is the opp RECORD's prepared message
 // (console_opps.data.outreach_subject / outreach_text / sig). LIGHT-HTML: the body is the operator's text
-// with any old baked-in closing stripped (stripBakedSig), so the ONE identity signature (data.sig) appears
-// EXACTLY ONCE, in smaller grey, above the grey footer. The plain-text arm mirrors it (body + blank line +
-// sig + footer). The tokenized opp-page link (channel 2) rides in both as a plain URL; the 1x1 open pixel
-// (channel 1) is the ONLY image, appended last.
+// VERBATIM (PR-A: no signature-like text is ever detected or removed from it). The ONE signature is the
+// separate data.sig field, appended EXACTLY ONCE in smaller grey above the grey footer. The plain-text arm
+// mirrors it (body + blank line + sig + footer). The tokenized opp-page link (channel 2) rides in both as a
+// plain URL; the 1x1 open pixel (channel 1) is the ONLY image, appended last.
 function sendCompile(slug, row, data, rcpt){
   data = data || {}; rcpt = rcpt || {};
   var full = String(rcpt.name==null?"":rcpt.name).trim();
@@ -199,7 +183,7 @@ function sendCompile(slug, row, data, rcpt){
   var lang = (rcpt.lang==="ar" || data.lang==="ar") ? "ar" : "en";
   var addr = bareAddress(rcpt.addr||"");
   var ctx = { business:(row&&row.business)||data.business||"", link:liveUrl(slug), month:data.month||"" };
-  var inner = stripBakedSig(mergeFieldsInto(data.outreach_text||"", name, ctx));   // ROOT: drop any old baked closing
+  var inner = mergeFieldsInto(data.outreach_text||"", name, ctx);   // PR-A: body sent verbatim, no signature strip
   var subject = mergeFieldsInto(data.outreach_subject||"", name, ctx).replace(/^\s+|\s+$/g, "");
   var sig = data.sig || "";
   var plan = planAttachments(data.attachments||[]);
