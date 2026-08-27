@@ -11,8 +11,9 @@ gate stays the live RLS policy + trigger; isOwner() only decides whether the sur
 Stateful mock of Supabase REST (never a real network call). Assertions:
   1. an owner sees a SEPARATE Admin header entry; opening it renders the roster in the admin panel, while
      the personal profile panel contains NO roster (the two surfaces are separated);
-  2. the roster lists every member with name / email / current title; a member with no display_name shows
-     by email and never crashes (all four live members render);
+  2. the roster lists every member with a human label / email / current title; the label preference is
+     display_name, then email, then "unnamed", and the raw uuid is NEVER shown (even when a member's
+     console_members.name literally holds the uid, the device bug this fixes); all four live members render;
   3. saving a title issues ONE PATCH to console_profiles keyed on the TARGET uid carrying only
      signature_title (never the admin's uid, never display_name / role);
   4. optimistic green on success; a forced (trigger-style 42501) failure reverts red with no phantom save;
@@ -41,7 +42,15 @@ DANA  = {"uid":"uid-dana-0004",  "email":"dana@example.test",  "name":"Dana Two"
 ALICE = {"uid":"uid-alice-0002", "email":"alice@example.test", "name":"Alice Member"}
 CAROL = {"uid":"uid-carol-0003", "email":"carol@example.test", "name":""}            # member, no display_name
 ROSTER = [OWNER, DANA, ALICE, CAROL]
-NAMES  = {m["uid"]:m["name"] for m in ROSTER}
+
+# The human name lives in console_profiles.display_name. OWNER/DANA/ALICE have one; CAROL has none.
+PROFILE_NAME = {OWNER["uid"]:"Owner One", DANA["uid"]:"Dana Two", ALICE["uid"]:"Alice Member", CAROL["uid"]:""}
+# console_members.name is the DEVICE BUG surface: for the two plain members it literally holds the raw uid
+# (that is why the roster showed b3b8534a... instead of a name). OWNER/DANA carry a real name there too, but
+# the fix never reads this field for the label, so a uid here must never reach the UI.
+MEMBER_NAME  = {OWNER["uid"]:"Owner One", DANA["uid"]:"Dana Two", ALICE["uid"]:ALICE["uid"], CAROL["uid"]:CAROL["uid"]}
+# The current-session own-row display_name (loadIdentity / openProfile) reads from console_profiles too.
+NAMES  = PROFILE_NAME
 TITLES = {OWNER["uid"]:"Director", DANA["uid"]:"Partner", ALICE["uid"]:"Project Manager", CAROL["uid"]:""}
 OWNER_UIDS = {OWNER["uid"], DANA["uid"]}   # role decides only whether the surface opens; never shown
 
@@ -77,8 +86,9 @@ def route_members(r):
     if "select=id,role" in url or "select=id%2Crole" in url:      # loadIdentity own-row role probe
         return J(r, [{"id":CUR["uid"], "role":CUR["role"]}])
     # roster read: id,name,email ONLY (never role). Owner-scoped in reality; here return the whole roster.
+    # name here is console_members.name, which for the two plain members literally IS the uid (device bug).
     ROSTER_READS.append(url)
-    return J(r, [{"id":m["uid"], "name":m["name"], "email":m["email"]} for m in ROSTER])
+    return J(r, [{"id":m["uid"], "name":MEMBER_NAME.get(m["uid"],""), "email":m["email"]} for m in ROSTER])
 def route_profiles(r):
     req = r.request; url = req.url
     if req.method == "PATCH":                                     # title write, keyed on ?uid=eq.<target>
@@ -100,7 +110,8 @@ def route_profiles(r):
     if "uid=eq." in url:                                          # own row (loadIdentity / openProfile)
         u = uid_of(url)
         return J(r, [{"uid":u, "display_name":NAMES.get(u,""), "prefs":{}, "signature_title":TITLES.get(u,"")}])
-    return J(r, [{"uid":m["uid"], "signature_title":TITLES.get(m["uid"],"")} for m in ROSTER])  # roster titles
+    # roster read for the admin surface: uid + display_name + signature_title (the fix reads display_name here)
+    return J(r, [{"uid":m["uid"], "display_name":PROFILE_NAME.get(m["uid"],""), "signature_title":TITLES.get(m["uid"],"")} for m in ROSTER])
 
 def wire(ctx, uid, email, lang=None):
     sess = json.dumps({"access_token":"T","refresh_token":"R","expires_at":9999999999,"email":email,"uid":uid})
@@ -172,10 +183,17 @@ with sync_playwright() as p:
     rows = pg.evaluate(ROSTER_DATA)
     by = { r["uid"]:r for r in rows }
     ck("2: all four live members render in the roster", len(rows)==4 and all(m["uid"] in by for m in ROSTER), rows)
-    ck("2: each member shows name and email",
-       by.get(ALICE["uid"],{}).get("name")==ALICE["name"] and ALICE["email"] in by.get(ALICE["uid"],{}).get("email",""), rows)
-    ck("2: a member with no display_name falls back to email and does not crash",
-       by.get(CAROL["uid"],{}).get("name")==CAROL["email"] and CAROL["email"] in by.get(CAROL["uid"],{}).get("email",""), rows)
+    # FALLBACK LADDER: display_name, then email, then never the raw uuid.
+    ck("2a: a member WITH a display_name shows the name (not the email, not the uid)",
+       by.get(ALICE["uid"],{}).get("name")=="Alice Member", by.get(ALICE["uid"]))
+    ck("2b: a member with NO display_name but an email shows the EMAIL (never the uid)",
+       by.get(CAROL["uid"],{}).get("name")==CAROL["email"], by.get(CAROL["uid"]))
+    ck("2: each member still shows its email in the id line",
+       ALICE["email"] in by.get(ALICE["uid"],{}).get("email","") and CAROL["email"] in by.get(CAROL["uid"],{}).get("email",""), rows)
+    # THE CORE GUARD: the raw uuid is NEVER the member label, for any row, even the members whose
+    # console_members.name literally holds the uid (the device bug). Check the rendered label text directly.
+    uid_shown = [ by.get(m["uid"],{}).get("name","") for m in ROSTER if by.get(m["uid"],{}).get("name","")==m["uid"] ]
+    ck("2c: the raw uuid is NEVER rendered as a member label", not uid_shown, uid_shown)
     ck("2: the roster shows each member's current title (blank when none)",
        by.get(ALICE["uid"],{}).get("title")=="Project Manager" and by.get(CAROL["uid"],{}).get("title")=="", rows)
 

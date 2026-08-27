@@ -712,10 +712,14 @@ function adminPanelHtml(){
       '<div id="admRoster">'+rosterInnerHtml()+'</div></div>';
 }
 function rosterInnerHtml(){
-  if(!__roster.length) return '<div class="muted" id="pfRosterEmpty">'+esc(t("pf_admin_loading"))+'</div>';
+  if(!__roster.length) return '<div class="muted" id="admRosterEmpty">'+esc(t("pf_admin_loading"))+'</div>';
   return __roster.map(function(m, i){
+    // The member LABEL preference: the human display_name (from console_profiles), then the email (already in
+    // the console_members roster read), then a short "unnamed" label. The raw uuid is NEVER shown as a name:
+    // a member with no display_name is a person, not a hex string, so we fall back to the address we already
+    // have rather than to m.uid. m.name here is console_profiles.display_name, never console_members.uid.
     return '<div class="pf-mem" data-uid="'+esc(m.uid)+'">'+
-      '<div class="pf-mem-id"><span class="pf-mem-name">'+esc(m.name || m.email || m.uid)+'</span>'+
+      '<div class="pf-mem-id"><span class="pf-mem-name">'+esc(m.name || m.email || t("unnamed"))+'</span>'+
         '<span class="pf-mem-email mono-iso" dir="ltr">'+esc(m.email||"")+'</span></div>'+
       '<input class="rec-in pf-title-in" id="pfT'+i+'" type="text" autocomplete="off" spellcheck="false" '+
         'value="'+esc(m.title||"")+'" placeholder="'+esc(t("pf_admin_ph"))+'" aria-label="'+esc(t("pf_admin_title"))+'">'+
@@ -731,20 +735,24 @@ function wireRoster(){
 function setTitleStatus(idx, msg, cls){ var el=document.getElementById("pfTS"+idx); if(el){ el.className="act-status pf-title-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
 
 // Load the roster (owner only). Members come from console_members (owner-scoped read via
-// console_members_read_owner); ONLY id/name/email are selected, never role. Current titles come from
-// console_profiles.signature_title; a member with no profile row, or a row the reader cannot see, shows a
-// BLANK title (never a crash). Both reads are bounded and best-effort (identGet over authFetchOnce).
+// console_members_read_owner); ONLY id/email are used, never role. The human NAME and the current title both
+// come from console_profiles (display_name + signature_title) in the SAME bounded read, so there is no new
+// fetch. A member with no display_name is labelled by their email, never their uid (console_members.name can
+// itself hold the raw uid, so it is deliberately not used as the label). A member with no profile row, or a
+// row the reader cannot see, shows a blank name (email/unnamed fallback covers it) and a blank title, never a
+// crash. Both reads are bounded and best-effort (identGet over authFetchOnce).
 function loadRoster(){
   if(!isOwner()) return Promise.resolve();
   return identGet("console_members?select=id,name,email&order=name.asc").then(function(mrows){
-    var members = (mrows||[]).map(function(r){ return { uid:(r&&r.id)||"", name:(r&&r.name)||"", email:(r&&r.email)||"" }; })
+    var members = (mrows||[]).map(function(r){ return { uid:(r&&r.id)||"", email:(r&&r.email)||"" }; })
                              .filter(function(m){ return m.uid; });
-    return identGet("console_profiles?select=uid,signature_title").then(function(prows){
-      var byUid = {}; (prows||[]).forEach(function(p){ if(p && p.uid) byUid[p.uid] = String(p.signature_title||""); });
-      __roster = members.map(function(m){ m.title = byUid[m.uid] || ""; return m; });
+    return identGet("console_profiles?select=uid,display_name,signature_title").then(function(prows){
+      var nameByUid = {}, titleByUid = {};
+      (prows||[]).forEach(function(p){ if(p && p.uid){ nameByUid[p.uid] = String(p.display_name||""); titleByUid[p.uid] = String(p.signature_title||""); } });
+      __roster = members.map(function(m){ m.name = nameByUid[m.uid] || ""; m.title = titleByUid[m.uid] || ""; return m; });
       var host=document.getElementById("admRoster"); if(host){ host.innerHTML = rosterInnerHtml(); wireRoster(); }
-    }, function(){                                             // titles unreadable: still render the roster, blank titles
-      __roster = members.map(function(m){ m.title=""; return m; });
+    }, function(){                                             // profiles unreadable: still render, blank name + title
+      __roster = members.map(function(m){ m.name=""; m.title=""; return m; });
       var host=document.getElementById("admRoster"); if(host){ host.innerHTML = rosterInnerHtml(); wireRoster(); }
     });
   }, function(){ /* roster read failed: leave the loading note, never crash */ });
