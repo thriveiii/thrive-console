@@ -143,10 +143,16 @@ with sync_playwright() as p:
     ck("3: the payload carries slug=alpha", pay.get("slug")=="alpha", pay.get("slug"))
     mid = (pay.get("headers") or {}).get("Message-ID","")
     ck("3: the payload carries a Message-ID (<c...@thriveiii.com>)", bool(re.match(r"^<c.+@thriveiii\.com>$", mid)), mid)
-    m = re.search(r"[?&]r=([^&\"'\s<]+)", pay.get("html",""))
+    # PLAIN-ONLY: the tokenized opp-page link (channel 2) rides in the TEXT as a plain URL, so a page VISIT
+    # is attributed to the recipient (beacon.js reads r). The HTML open pixel (channel 1) is REMOVED.
+    m = re.search(r"[?&]r=([^&\"'\s<]+)", pay.get("text",""))
     tok = m.group(1) if m else ""
-    ck("3: the html carries the open pixel token r=<token>", bool(tok) and "op=hit" in pay.get("html",""), pay.get("html","")[:200])
-    ck("3: the pixel token equals the console_mail row id (the attribution join)", bool(tok) and MAIL and MAIL[0].get("id")==tok, {"tok":tok, "id":(MAIL[0].get('id') if MAIL else None)})
+    ck("3: the text carries the tokenized opp-page link r=<token> (channel 2)", bool(tok), pay.get("text","")[:200])
+    ck("3: the page-link token equals the console_mail row id (the attribution join)", bool(tok) and MAIL and MAIL[0].get("id")==tok, {"tok":tok, "id":(MAIL[0].get('id') if MAIL else None)})
+    ck("3: PLAIN-ONLY: no HTML open pixel is sent (op=hit absent from html and text)",
+       "op=hit" not in pay.get("html","") and "op=hit" not in pay.get("text","") and "<img" not in pay.get("html",""), pay.get("html","")[:200])
+    ck("3: PLAIN-ONLY: the html is the minimal text-preserving form (pre-wrap), never heavy brandWrap",
+       "white-space:pre-wrap" in pay.get("html","") and "thrive-logo.png" not in pay.get("html",""), pay.get("html","")[:200])
     ck("3: the payload preserves the faithful contract keys", all(k in pay for k in ["v","from","to","subject","html","text","idempotencyKey","headers","slug"]), list(pay.keys()))
     ck("3: provider is the relay (never a direct client Resend call)", not any("api.resend.com" in json.dumps(c) for c in RELAY_CALLS))
 

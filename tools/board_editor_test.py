@@ -144,9 +144,9 @@ with sync_playwright() as p:
     ck("editor: subject + body fields render in the drawer", pg.evaluate("()=>!!(document.getElementById('edSubj')&&document.getElementById('edBody'))"))
     ck("editor: pre-fills the subject from the record", pg.evaluate("()=>document.getElementById('edSubj').value")=="Acme x Thrive")
 
-    # edit subject + body, insert the opp link, let the debounced save land
+    # edit subject + body (with a real paragraph break), insert the opp link, let the debounced save land
     pg.fill("#edSubj", "Acme partnership")
-    pg.fill("#edBody", "Hi there, a note.")
+    pg.fill("#edBody", "First paragraph.\n\nSecond paragraph.\n")
     pg.evaluate("()=>{ var b=document.getElementById('edLink'); if(b) b.click(); }")   # insert the {{LINK}} token
     body_after_insert = pg.evaluate("()=>document.getElementById('edBody').value")
     ck("3: Insert opp link adds the link token to the body", "{{LINK}}" in body_after_insert, body_after_insert)
@@ -157,17 +157,24 @@ with sync_playwright() as p:
     pb = [c for c in PATCH_CALLS if c["slug"]=="acme"]
     last = pb[-1]["body"]["data"] if pb else {}
     ck("1: subject + body saved to data.outreach_subject / data.outreach_text",
-       last.get("outreach_subject")=="Acme partnership" and "Hi there" in str(last.get("outreach_text","")), last)
+       last.get("outreach_subject")=="Acme partnership" and "First paragraph" in str(last.get("outreach_text","")), last)
     ck("2: the signature written to data.sig is exactly name + title", last.get("sig")==SIG, last.get("sig"))
 
-    # preview == send parity: the persisted-record compile (what runSend uses) carries the sig + tokenized link,
-    # and the preview iframe shows byte-identical html
+    # preview == send parity, PLAIN direction: the persisted-record compile (what runSend uses) is the plain
+    # message, and the preview iframe shows byte-identical html
     art = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('acme'); }")
-    ck("2: the compiled preview html carries the exact signature (preview == send)", SIG in art.get("html",""), art.get("html","")[:200])
-    ck("3: the {link} token tokenizes to the opp slug URL in the compiled html",
-       "console.thriveiii.com/opp/acme" in art.get("html",""), art.get("html","")[-300:])
-    ck("2: the preview iframe html EQUALS the send payload html (no false-success gap)",
-       pg.evaluate(SRCDOC)==art.get("html",""), {"srcdoc_len":len(pg.evaluate(SRCDOC) or ""), "art_len":len(art.get("html",""))})
+    txt, htm = art.get("text",""), art.get("html","")
+    ck("PLAIN: the sent TEXT preserves the paragraph break (newlines not collapsed)",
+       "First paragraph.\n\nSecond paragraph." in txt, txt[:300])
+    ck("PLAIN: the signature is separated from the body by a blank line in the text",
+       ("\n\n"+SIG) in txt, txt[-200:])
+    ck("2: the compiled preview carries the exact signature (preview == send)", SIG in htm and SIG in txt, htm[:200])
+    ck("3: the opp link is a plain tokenized URL in the text (channel 2, clickable in a plain email)",
+       "console.thriveiii.com/opp/acme" in txt and re.search(r"[?&]r=", txt) is not None, txt[-200:])
+    ck("PLAIN: the html is the minimal text-preserving form (pre-wrap), never heavy brandWrap or a pixel",
+       "white-space:pre-wrap" in htm and "<img" not in htm and "op=hit" not in htm and "thrive-logo.png" not in htm, htm[:200])
+    ck("2: the preview iframe html EQUALS the send payload html (no false-success gap, plain direction)",
+       pg.evaluate(SRCDOC)==htm, {"srcdoc_len":len(pg.evaluate(SRCDOC) or ""), "art_len":len(htm)})
 
     # 4: pre-send checklist + Send-disable gate
     ck("4: with subject + body present, Send is enabled", pg.evaluate(SEND_DISABLED)==False, pg.evaluate(SEND_DISABLED))

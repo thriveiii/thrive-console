@@ -133,9 +133,23 @@ function toPlainText(html, sig){                                                
   s = s.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim();
   return sig ? (s + "\n\n" + sig) : s;
 }
-// compile(recipient, content) for ONE recipient (app.js:1438). Content is the opp RECORD's prepared message
-// (console_opps.data.outreach_subject / outreach_text), so the body is byte-for-byte what the engine composes:
-// merged fields + branding + the ONE footer + the ONE open pixel and tokenized page link (channels 1 and 2).
+// PLAIN-ONLY law of the new console: a clean plain message lands in inbox, not spam (Thyab's standing
+// instruction). plainToHtml is the ONLY html the send carries now: a minimal, faithful mirror of the plain
+// text - the text escaped, with real line breaks preserved by white-space:pre-wrap. No brandWrap, no logo,
+// no inline color styling, no open pixel. Whichever part a client renders (html or text), it reads the SAME
+// clean plain message: no run-on, no jammed signature, no heavy HTML.
+function plainToHtml(t){
+  var font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif";
+  return '<div style="white-space:pre-wrap;font-family:' + font + ';font-size:15px;line-height:1.5;color:#111">'
+    + esc(String(t==null?"":t)) + '</div>';
+}
+
+// compile(recipient, content) for ONE recipient. Content is the opp RECORD's prepared message
+// (console_opps.data.outreach_subject / outreach_text / sig). PLAIN-ONLY: the deliverable is the plain-text
+// arm (toPlainText preserves newlines and separates the sig from the body by a blank line, then the POSTAL
+// footer); the html is plainToHtml of that exact same plain text. The tokenized opp-page link (channel 2)
+// stays in the text as a plain URL, so a recipient VISITING the page is recorded by beacon.js (a real
+// interest signal). Channel 1 (the HTML open pixel) is removed with the heavy HTML.
 function sendCompile(slug, row, data, rcpt){
   data = data || {}; rcpt = rcpt || {};
   var full = String(rcpt.name==null?"":rcpt.name).trim();
@@ -147,16 +161,15 @@ function sendCompile(slug, row, data, rcpt){
   var subject = mergeFieldsInto(data.outreach_subject||"", name, ctx).replace(/^\s+|\s+$/g, "");
   var sig = data.sig || "";
   var plan = planAttachments(data.attachments||[]);
-  if(plan.hosted.length) inner = inner + attachHostedBlockHtml(plan.hosted, lang);
-  var html = brandWrap(inner, !!data.branded, sig) + footerHtml(lang);
-  var rawText = toPlainText(inner, sig) + attachHostedBlockText(plan.hosted, lang);
-  var text = rawText + footerText(lang);
+  // The clean plain message: body (newlines intact) + blank line + signature + POSTAL footer. Hosted-image
+  // links (if any) ride as a text block, never an html block.
+  var text = toPlainText(inner, sig) + attachHostedBlockText(plan.hosted, lang) + footerText(lang);
   var token = recipientOpenToken(slug, addr, subject);       // == the console_mail row id (attribution join)
   if(token){
     var base = liveUrl(slug), tokd = base + (base.indexOf("?")<0?"?":"&") + "r=" + encodeURIComponent(token);
-    html = html.split(base).join(tokd); text = text.split(base).join(tokd);   // channel 2: the page link carries the token
-    html = html + openPixelHtml(slug, token, relayEp());                       // channel 1: one open pixel
+    text = text.split(base).join(tokd);                      // channel 2: the opp page link carries the token
   }
+  var html = plainToHtml(text);                              // minimal, faithful; identical content to the plain text
   return { to:addr, name:name, subject:subject, html:html, text:text, token:token, lang:lang, attachments:plan.attach };
 }
 
