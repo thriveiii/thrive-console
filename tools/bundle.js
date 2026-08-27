@@ -1389,8 +1389,11 @@ function buildBoard(){
     return Promise.all([
       restGet("console_opps?slug=eq."+enc(slug)+"&select=slug,data&limit=1"),
       restGet("console_mail?opp=eq."+enc(slug)+"&select=id,opp,ts,data&order=ts.asc"),
-      restGet("console_hits?slug=eq."+enc(slug)+"&select=id,slug,ts,data&order=ts.asc")
-    ]).then(function(a){ return { opp:(a[0]||[])[0]||null, mail:a[1]||[], hits:a[2]||[] }; }, function(){ return { opp:null, mail:[], hits:[] }; });
+      restGet("console_hits?slug=eq."+enc(slug)+"&select=id,slug,ts,data&order=ts.asc"),
+      // PR1: the page row carries the SINGLE liveness truth (live_verified_at). The drawer reads it here so
+      // "activated/live" is derived from the verified page, never from a flag on the opp's data. Read-only.
+      restGet("console_pages?slug=eq."+enc(slug)+"&select=slug,live_verified_at&limit=1")
+    ]).then(function(a){ return { opp:(a[0]||[])[0]||null, mail:a[1]||[], hits:a[2]||[], page:(a[3]||[])[0]||null }; }, function(){ return { opp:null, mail:[], hits:[], page:null }; });
   }
   // ---- L4 WRITE path (cloned from the engine's console_opps upsert; NEVER a rewrite of the read path). The
   //      engine wrote a WHOLE opp record via POST resolution=merge-duplicates because it held the full record.
