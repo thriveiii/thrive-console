@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="7eeb8854">
+<meta name="thrive-build" content="988b03e6">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -127,6 +127,25 @@
   .nm-head h2{font-size:17px;font-weight:650;color:#eef;margin:0}
   .nm-x{white-space:nowrap}
   .nm-body .dw-sec{margin-top:14px}
+  .up-hint{font-size:12.5px;color:#8a8a93;margin:2px 0 10px;line-height:1.5}
+  input.up-file{display:block;width:100%;font-size:13px;color:#cdd;margin-bottom:12px}
+  .up-count{font-size:13px;color:#a9d5b6;margin:6px 0 4px}
+  .up-orphans{font-size:12px;color:#d8b48a;margin:2px 0 8px}
+  .up-rows{display:flex;flex-direction:column;gap:10px;margin:6px 0}
+  .up-row{border:1px solid #22222e;border-radius:10px;padding:10px 12px;background:#0e0e14}
+  .up-row-warn{border-color:#4b3a27}
+  .up-row-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:4px}
+  .up-slug{font-size:12px;color:#8a8a93}
+  .up-title{font-size:14px;font-weight:600;color:#eef}
+  .up-warn{font-size:11px;color:#d8b48a;border:1px solid #4b3a27;border-radius:999px;padding:2px 8px}
+  .up-meta{font-size:12px;color:#9aa0aa;margin:2px 0 6px}
+  .up-k{color:#6f7480}
+  .up-frame{border:1px solid #22222e;border-radius:8px;background:#14141c;max-height:160px;overflow:auto;padding:8px 10px}
+  .up-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.5;color:#c7c7cf;font-family:inherit;unicode-bidi:plaintext}
+  .up-empty{font-size:12px;color:#6a6a74;font-style:italic}
+  .up-state{font-size:13px;padding:8px 11px;border-radius:8px;border:1px solid #22222e;background:#0e0e14;color:#cdd}
+  .up-state.ok{color:#a9d5b6;border-color:#274b34}
+  .up-state.bad{color:#d8b48a;border-color:#4b3a27}
   .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
   .pf-note{font-size:11.5px;color:#6a6a74;margin-top:6px}
   .pf-admin{border-top:1px solid #191921;padding-top:14px;margin-top:20px}
@@ -169,7 +188,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build 7eeb8854</span>
+    <span class="muted">build 988b03e6</span>
   </div>
   <div id="root"></div>
 </div>
@@ -177,11 +196,12 @@
 <div id="pfScrim" class="scrim" hidden><div id="pfPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="admScrim" class="scrim" hidden><div id="admPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="nmScrim" class="scrim" hidden><div id="nmPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
+<div id="upScrim" class="scrim" hidden><div id="upPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <script>
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "7eeb8854";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "988b03e6";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -235,6 +255,7 @@
           s_send:"Send email", s_sending:"Sending…", s_sent:"Sent.", s_confirming:"Email sent; confirming on the server…",
           s_failed:"Could not send. Nothing was sent.", s_no_recip:"No recipient email on this opportunity.",
           s_no_msg:"No prepared message on this opportunity.",
+          s_not_live:"Activate the page first. Nothing was sent.", s_dead_link:"The page link is not live. Nothing was sent.",
           r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
           r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
           r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email.",
@@ -244,7 +265,16 @@
           ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
           ed_ck_subj:"Subject", ed_ck_body:"Body", ed_ck_recip:"Recipient", ed_ck_link:"Opp link",
           nm_open:"New message", nm_h:"New message", nm_to:"To", nm_to_ph:"recipient@example.com",
-          nm_send:"Send message", nm_need_msg:"Add a subject and body first.", nm_need_to:"Add a recipient email first." },
+          nm_send:"Send message", nm_need_msg:"Add a subject and body first.", nm_need_to:"Add a recipient email first.",
+          up_open:"Upload campaign", up_h:"Upload a campaign zip", up_hint:"A zip of html pages plus message texts and recipient emails. Nothing is written until you approve.",
+          up_reading:"Reading the zip...", up_matched:"Pages matched:", up_approve:"Approve and create drafts", up_writing:"Creating drafts...",
+          up_done:"Drafts created:", up_read_failed:"Could not read the file.", up_not_zip:"That is not a zip file.", up_write_failed:"Could not write. Nothing was created.",
+          up_col_email:"To", up_col_subject:"Subject", up_no_text:"No message matched this page.",
+          up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Text with no page", up_warn_generic:"check this row",
+          up_page_h:"Hosted page", up_state_draft:"Draft. Activate the page before sending.", up_state_pending:"Activated. Confirming the live link.",
+          up_state_dead:"The page link is not live. Sending is blocked.",
+          up_state_live:"Live. The page link resolves.", up_activate:"Activate and verify live", up_verifying:"Verifying the live link...",
+          up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -282,6 +312,7 @@
           s_send:"إرسال بريد", s_sending:"جارٍ الإرسال…", s_sent:"تم الإرسال.", s_confirming:"أُرسل البريد؛ يجري التأكيد على الخادم…",
           s_failed:"تعذّر الإرسال. لم يُرسل شيء.", s_no_recip:"لا يوجد بريد مستلم لهذه الفرصة.",
           s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
+          s_not_live:"فعّل الصفحة أولًا. لم يُرسل شيء.", s_dead_link:"رابط الصفحة غير فعّال. لم يُرسل شيء.",
           r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
           r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
           r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا.",
@@ -291,7 +322,16 @@
           ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",
           ed_ck_subj:"الموضوع", ed_ck_body:"النص", ed_ck_recip:"المستلم", ed_ck_link:"رابط الفرصة",
           nm_open:"رسالة جديدة", nm_h:"رسالة جديدة", nm_to:"إلى", nm_to_ph:"recipient@example.com",
-          nm_send:"إرسال الرسالة", nm_need_msg:"أضف موضوعًا ونصًا أولًا.", nm_need_to:"أضف بريد المستلم أولًا." }
+          nm_send:"إرسال الرسالة", nm_need_msg:"أضف موضوعًا ونصًا أولًا.", nm_need_to:"أضف بريد المستلم أولًا.",
+          up_open:"رفع حملة", up_h:"ارفع ملف حملة مضغوط", up_hint:"ملف مضغوط يضم صفحات html ونصوص الرسائل وبريد المستلمين. لا يُكتب شيء حتى توافق.",
+          up_reading:"جارٍ قراءة الملف المضغوط...", up_matched:"الصفحات المطابَقة:", up_approve:"وافق وأنشئ المسودّات", up_writing:"جارٍ إنشاء المسودّات...",
+          up_done:"المسودّات المنشأة:", up_read_failed:"تعذّرت قراءة الملف.", up_not_zip:"هذا ليس ملفًا مضغوطًا.", up_write_failed:"تعذّرت الكتابة. لم يُنشأ شيء.",
+          up_col_email:"إلى", up_col_subject:"الموضوع", up_no_text:"لا رسالة مطابِقة لهذه الصفحة.",
+          up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"نص بلا صفحة", up_warn_generic:"راجع هذا الصف",
+          up_page_h:"الصفحة المستضافة", up_state_draft:"مسودّة. فعّل الصفحة قبل الإرسال.", up_state_pending:"مُفعّلة. جارٍ تأكيد الرابط الحيّ.",
+          up_state_dead:"رابط الصفحة غير فعّال. الإرسال متوقّف.",
+          up_state_live:"حيّة. رابط الصفحة يعمل.", up_activate:"فعّل وتحقّق من الحيّ", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
+          up_now_live:"الصفحة حيّة.", up_dead:"الرابط ميت. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1132,6 +1172,12 @@ function runSend(slug){
     var rcpt = firstRecipient(data);
     if(!rcpt) { var e0=new Error("no recipient"); e0.__kind="norecip"; throw e0; }
     if(!(data && (String(data.outreach_text||"").trim() || String(data.outreach_subject||"").trim()))){ var e1=new Error("no message"); e1.__kind="nomsg"; throw e1; }
+    // E2 ConTh-3: an uploaded-page opp must be proven LIVE - its page ACTIVATED and a real fetch of the live
+    // /opp/<slug> URL returning ok - before ANY send. A preview looking good is never the proof; the live
+    // fetch is (app.js:832-833 pageSendable). Non-upload opps pass straight through. The gate throws
+    // __kind="notlive"/"deadlink" so the catch below reverts the optimistic send with a clear reason.
+    var __liveGate = (typeof upSendLiveGate==="function") ? upSendLiveGate(slug, data) : Promise.resolve();
+    return __liveGate.then(function(){
     var art = sendCompile(slug, row, data, rcpt);
     var idem = sendIdem(slug, art.to, art.subject, art.html);          // app.js:7429 default idempotency key
     var msgid = newMessageId();                                        // app.js:7430 / :8824
@@ -1159,11 +1205,14 @@ function runSend(slug){
                                       function(){ __writing=false; __act[slug]={ msg:t("s_confirming"), cls:"" }; if(__drawerSlug===slug) refreshDrawer(slug); });
       });
     });
+    });
   }).catch(function(e){
     __writing = false;
     if(snap){ replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){} }   // revert the optimistic send (no phantom Sent)
     var kind = e && e.__kind;
-    var msg = (kind==="norecip") ? t("s_no_recip") : (kind==="nomsg") ? t("s_no_msg") : (e && e.authRequired) ? t("err") : t("s_failed");
+    var msg = (kind==="norecip") ? t("s_no_recip") : (kind==="nomsg") ? t("s_no_msg")
+      : (kind==="notlive") ? t("s_not_live") : (kind==="deadlink") ? t("s_dead_link")
+      : (e && e.authRequired) ? t("err") : t("s_failed");
     __act[slug] = { msg:msg, cls:"bad" };
     if(__drawerSlug===slug) refreshDrawer(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
   });
@@ -1730,6 +1779,369 @@ try{
   window.__thriveNewMessageOpen = function(){ return __nmOpen; };
 }catch(e){}
 
+// ===================================================================================================
+// E2 CAMPAIGN UPLOAD - upload a zip from the device (html pages + message texts + emails), match each page
+// to its message + recipient + slug, review a match table, and on APPROVAL open draft opp cards while storing
+// each page to console_pages. A ported subset of the old engine's proven ingest (library/intake.js), inlined
+// into library/board.html by tools/bundle.js AFTER the send + editor + new-message clones, so it reuses their
+// IIFE scope: esc, t, liveUrl, oppReadData, oppPatch, authFetchOnce, URL_BASE, ANON, bearer, session, refresh,
+// reloadBoardData, findRow, refreshDrawer, __drawerSlug, __writing, root; and oppUpsert (board-newmsg.src.js).
+//
+// GROUNDED IN E2_EVIDENCE.md, porting the cited old-engine logic (never rewritten):
+//   * zip read: intake.js:1052-1128 (readZip / readFiles, native DecompressionStream).
+//   * slug per html: intake.js:409/434 (slugify / pageSlug, folder-aware).
+//   * one token matcher: intake.js:454-468 (normTokens / rankTokens).
+//   * the mailto ConTh-3 fix: the old readSendTo set e.url = "mailto:"+em (intake.js:95); here the recipient
+//     is the BARE address, mailto stripped, never "mailto:foo@bar" (matches toRecord's bare `to`, intake.js:610/626).
+//   * nothing before approval: the report reads only (intake.js:1207); the write is the approve step
+//     (commitDraftsBatch, app.js:4649). Here upBuildPlan previews, upCommit writes - two separate steps.
+//   * no send until proven live: the real-fetch gate (pageIsGone/pageSendable, app.js:816/835). Here
+//     verifyLive does a real GET of liveUrl(slug); upSendLiveGate blocks runSend for an upload opp that is
+//     not activated or whose live URL does not resolve. A preview looking good is never the proof.
+// ===================================================================================================
+
+var __upPlan = null;       // the previewed plan, held until the operator approves (nothing written before then)
+var __upBusy = false;      // in-flight guard for the read/commit
+
+// ---- ported zip reader (intake.js:1052-1128), native DecompressionStream, no library --------------
+function upU16(v, p){ return v[p] | (v[p+1] << 8); }
+function upU32(v, p){ return (v[p] | (v[p+1] << 8) | (v[p+2] << 16) | (v[p+3] << 24)) >>> 0; }
+function upInflateRaw(bytes){                                                       // intake.js:1055
+  if(typeof DecompressionStream !== "function") return Promise.reject(new Error("no_inflate"));
+  var ds = new DecompressionStream("deflate-raw");
+  var stream = new Blob([bytes]).stream().pipeThrough(ds);
+  return new Response(stream).arrayBuffer().then(function(ab){ return new Uint8Array(ab); });
+}
+function upFindEOCD(v){                                                             // intake.js:1064
+  for(var i = v.length - 22; i >= 0 && i > v.length - 66000; i--){ if(upU32(v, i) === 0x06054b50) return i; }
+  return -1;
+}
+function upReadZip(arrayBuffer){                                                    // intake.js:1071
+  var v = new Uint8Array(arrayBuffer);
+  var eocd = upFindEOCD(v);
+  if(eocd < 0) return Promise.reject(new Error("not_a_zip"));
+  var count = upU16(v, eocd + 10), p = upU32(v, eocd + 16);
+  var out = [], dec = new TextDecoder("utf-8");
+  function step(i){
+    if(i >= count || p + 46 > v.length) return Promise.resolve(out);
+    if(upU32(v, p) !== 0x02014b50) return Promise.resolve(out);
+    var method = upU16(v, p + 10), csize = upU32(v, p + 20);
+    var nameLen = upU16(v, p + 28), extraLen = upU16(v, p + 30), commentLen = upU16(v, p + 32);
+    var local = upU32(v, p + 42);
+    var name = dec.decode(v.subarray(p + 46, p + 46 + nameLen));
+    p += 46 + nameLen + extraLen + commentLen;
+    var skip = (/\/$/.test(name)) || (name.replace(/^.*\//, "").charAt(0) === ".") ||
+               (!/\.(html?|md|txt|json)$/i.test(name)) || (upU32(v, local) !== 0x04034b50);
+    if(skip) return step(i + 1);
+    var dataAt = local + 30 + upU16(v, local + 26) + upU16(v, local + 28);
+    var raw = v.subarray(dataAt, dataAt + csize);
+    var bytesP = (method === 0) ? Promise.resolve(raw) : (method === 8) ? upInflateRaw(raw) : null;
+    if(!bytesP) return step(i + 1);
+    return bytesP.then(function(bytes){ out.push({ name:name, text:dec.decode(bytes) }); return step(i + 1); });
+  }
+  return step(0);
+}
+// One entry point (intake.js:1107): unpack any zip, classify html -> pages, md/txt/json -> texts.
+function upReadFiles(files){
+  var pages = [], texts = [], skipped = [];
+  var list = Array.prototype.slice.call(files || []);
+  function one(i){
+    if(i >= list.length) return Promise.resolve({ pages:pages, texts:texts, skipped:skipped });
+    var f = list[i], name = f.name || "";
+    if(/\.zip$/i.test(name)){
+      return f.arrayBuffer().then(upReadZip).then(function(inner){
+        inner.forEach(function(z){
+          if(/\.html?$/i.test(z.name)) pages.push({ name:z.name, html:z.text });
+          else if(/\.(md|txt|json)$/i.test(z.name)) texts.push({ name:z.name, text:z.text });
+          else skipped.push(z.name);
+        });
+        return one(i + 1);
+      });
+    }
+    if(/\.html?$/i.test(name)) return f.text().then(function(h){ pages.push({ name:name, html:h }); return one(i + 1); });
+    if(/\.(md|txt|json)$/i.test(name)) return f.text().then(function(x){ texts.push({ name:name, text:x }); return one(i + 1); });
+    skipped.push(name); return one(i + 1);
+  }
+  return one(0);
+}
+
+// ---- ported slug + matcher (intake.js:409/434/454/468) --------------------------------------------
+function upSlugify(s){                                                              // intake.js:409
+  return String(s || "").toLowerCase().replace(/['’]/g, "").replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+}
+function upBaseName(name){ return String(name || "").replace(/^.*\//, ""); }
+function upPageSlug(name){                                                          // intake.js:434
+  var parts = String(name || "").split("/").filter(Boolean);
+  var file = parts.length ? parts[parts.length - 1] : "";
+  var base = file.replace(/\.html?$/i, "");
+  if(parts.length >= 2 && /^(index|page|opp|opportunity|default|home)$/i.test(base)) return upSlugify(parts[parts.length - 2]);
+  return upSlugify(base);
+}
+function upFirstHeading(text){ var m = String(text || "").match(/^[ \t]*#{1,6}[ \t]*(.+?)[ \t]*$/m); return m ? m[1].trim() : ""; }
+function upNormTokens(s){ return upSlugify(s).split("-").filter(Boolean); }         // intake.js:454
+function upRankTokens(a, b){                                                        // intake.js:455
+  if(!a.length || !b.length) return { score:0, matched:0 };
+  if(a.join("-") === b.join("-")) return { score:3, matched:a.length };
+  var sh = a.length <= b.length ? a : b, lo = a.length <= b.length ? b : a;
+  if(sh.every(function(t, i){ return lo[i] === t; })) return { score:2, matched:sh.length };
+  var setA = {}, setB = {}; a.forEach(function(t){ setA[t] = 1; }); b.forEach(function(t){ setB[t] = 1; });
+  var subset = a.every(function(t){ return setB[t]; }) || b.every(function(t){ return setA[t]; });
+  if(subset) return { score:2, matched:Math.min(a.length, b.length) };
+  var inter = 0; Object.keys(setA).forEach(function(t){ if(setB[t]) inter++; });
+  var uni = Object.keys(setA).length + Object.keys(setB).length - inter;
+  var j = uni ? inter / uni : 0;
+  if(j >= 0.6) return { score:1, matched:inter };
+  return { score:0, matched:0 };
+}
+
+// The recipient email, ALWAYS bare. The old readSendTo also set e.url = "mailto:"+em (intake.js:95); here the
+// address a person reads and the console sends is the bare form, mailto stripped - the ConTh-3 mailto fix.
+var UP_EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+function upEmailFrom(text){
+  var s = String(text || "");
+  var m = s.match(/mailto:\s*([^\s"'<>]+)/i);              // a mailto: link, if present
+  var raw = m ? m[1] : ((s.match(UP_EMAIL_RE) || [])[0] || "");
+  return String(raw).replace(/^\s*mailto:/i, "").trim().toLowerCase();   // strip the scheme, always
+}
+// Subject + body + email from one message text. Subject is a "Subject:" line, else the first heading; the
+// body is the remainder with that subject line and any fenced ```json block removed. Nothing invented.
+function upExtract(text){
+  var s = String(text || "").replace(/\r\n/g, "\n");
+  var subj = "";
+  var sm = s.match(/^[ \t]*subject[ \t]*:[ \t]*(.+)$/im);
+  if(sm){ subj = sm[1].trim(); s = s.replace(sm[0], ""); }
+  else { subj = upFirstHeading(s); }
+  var body = s.replace(/```json[\s\S]*?```/gi, "").replace(/^[ \t]*#{1,6}[ \t]*.+$/m, function(h){ return (h.trim() === "# " + subj || upFirstHeading(h) === subj) ? "" : h; });
+  body = body.replace(/^\n+/, "").replace(/\s+$/, "");
+  return { subject:subj, body:body, email:upEmailFrom(text) };
+}
+function upPretty(slug){ return String(slug || "").split("-").filter(Boolean).map(function(w){ return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ") || slug; }
+
+// ---- upBuildPlan: the preview (read-only, nothing written) ---------------------------------------
+// For each html page: derive its slug, find the best-matching message text by the one token ranker, and
+// extract subject / body / bare email. Warnings by name: dup_slug (two pages one slug), no_message (a page
+// with no matched text), orphan_text (a text matched to no page). This only reads; it writes nothing.
+function upBuildPlan(files){
+  return upReadFiles(files).then(function(kinds){
+    var pages = kinds.pages, texts = kinds.texts, seen = {}, rows = [];
+    pages.forEach(function(pg){
+      var slug = upPageSlug(pg.name);
+      var dup = !!seen[slug]; seen[slug] = (seen[slug] || 0) + 1;
+      rows.push({ slug:slug, page:pg, title:"", subject:"", body:"", email:"", text_name:"", warnings: dup ? ["dup_slug"] : [] });
+    });
+    var usedText = {};
+    rows.forEach(function(r){
+      var best = null, bestScore = 0;
+      texts.forEach(function(tx, ti){
+        if(usedText[ti]) return;
+        var ts = upSlugify(upFirstHeading(tx.text) || upBaseName(tx.name).replace(/\.(md|txt|json)$/i, ""));
+        var rk = upRankTokens(upNormTokens(r.slug), upNormTokens(ts));
+        if(rk.score > bestScore){ bestScore = rk.score; best = { ti:ti, tx:tx }; }
+      });
+      if(best && bestScore >= 2){
+        usedText[best.ti] = 1;
+        var ex = upExtract(best.tx.text);
+        r.subject = ex.subject; r.body = ex.body; r.email = ex.email; r.text_name = best.tx.name;
+        r.title = ex.subject || upPretty(r.slug);
+      } else {
+        r.title = upPretty(r.slug);
+        if(r.warnings.indexOf("no_message") < 0) r.warnings.push("no_message");
+      }
+    });
+    var orphans = [];
+    texts.forEach(function(tx, ti){ if(!usedText[ti]) orphans.push(tx.name); });
+    return { rows:rows, orphanTexts:orphans, skipped:kinds.skipped || [] };
+  });
+}
+
+// ---- console_pages write (the uploaded-template store E3's Insert-link dropdown will read) ---------
+// The console_pages schema is (slug, html, up) - E2_EVIDENCE / supabase-stage1.sql:39. There is no title or
+// active column, so the title lives on console_opps.business and the active/live flags on the opp's data
+// (page_active / page_live); the dropdown reads console_pages joined to console_opps for the label. Bounded
+// upsert, same discipline as oppUpsert (merge-duplicates, one refresh-retry).
+function pageUpsert(slug, html, retried){
+  var url = URL_BASE + "/rest/v1/console_pages";
+  var row = { slug:slug, html:String(html == null ? "" : html), up:Date.now() };
+  return authFetchOnce(url, {
+    method:"POST",
+    headers:{ "apikey":ANON, "Authorization":"Bearer " + bearer(), "Content-Type":"application/json", "Prefer":"resolution=merge-duplicates,return=minimal" },
+    cache:"no-store", body: JSON.stringify([row])
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return pageUpsert(slug, html, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP " + r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    return true;
+  });
+}
+
+// ---- upCommit: the approve step (writes) ---------------------------------------------------------
+// Only on approval, and only then. Each page row becomes a DRAFT opp (console_opps: published nowhere, sent
+// to nobody, source "upload", page not yet active) AND its html a console_pages row. Deduped by slug (first
+// wins). Bounded confirm-or-revert per row; a per-row failure is counted, never a phantom success.
+function upCommit(plan){
+  var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0;
+  function one(i){
+    if(i >= rows.length) return Promise.resolve({ ok:ok, fail:fail });
+    var r = rows[i];
+    if(done[r.slug]) return one(i + 1);
+    done[r.slug] = 1;
+    var data = { source:"upload", page_active:false, page_live:false, page_title:r.title,
+      outreach_subject:r.subject || "", outreach_text:r.body || "",
+      recipients: r.email ? [{ addr:r.email, name:"", lang:"en" }] : [] };
+    return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now() })
+      .then(function(){ return pageUpsert(r.slug, r.page && r.page.html); })
+      .then(function(){ ok++; return one(i + 1); }, function(){ fail++; return one(i + 1); });
+  }
+  return one(0);
+}
+
+// ---- verify-live (the real fetch that is the ONLY proof) -----------------------------------------
+// A real GET of the live /opp/<slug> URL. 404/410 -> dead; ok -> live; anything else -> unknown (blocks).
+// This is the truth the send gate reads; a stored flag is never trusted as proof (app.js:832-833).
+function verifyLive(slug){
+  var url = liveUrl(slug);
+  return authFetchOnce(url, { method:"GET", cache:"no-store" }).then(function(r){
+    var st = r.res.status;
+    if(st === 404 || st === 410) return { ok:false, dead:true, status:st };
+    if(r.res.ok) return { ok:true, dead:false, status:st };
+    return { ok:false, dead:false, status:st };
+  }, function(){ return { ok:false, dead:false, status:0 }; });
+}
+// The send gate runSend consults. A non-upload opp passes straight through (behaviour unchanged). An upload
+// opp must be ACTIVATED and its live URL must resolve RIGHT NOW; otherwise the send is refused.
+function upSendLiveGate(slug, data){
+  data = data || {};
+  if(data.source !== "upload") return Promise.resolve();
+  if(!data.page_active){ var e=new Error("not activated"); e.__kind="notlive"; return Promise.reject(e); }
+  return verifyLive(slug).then(function(v){
+    if(v.ok) return true;
+    var e2=new Error("dead link"); e2.__kind="deadlink"; throw e2;
+  });
+}
+
+// ---- the upload overlay (its own scrim, mirroring the profile/new-message pattern) ----------------
+function upFrame(txt){ return '<div class="up-frame"><pre class="up-pre">' + esc(String(txt || "")) + '</pre></div>'; }
+function upWarnChips(ws){
+  return (ws || []).map(function(w){
+    var key = w === "dup_slug" ? "up_warn_dup" : w === "no_message" ? "up_warn_nomsg" : "up_warn_generic";
+    return '<span class="up-warn">' + esc(t(key)) + '</span>';
+  }).join("");
+}
+function upRowHtml(r){
+  return '<div class="up-row' + (r.warnings.length ? " up-row-warn" : "") + '">'+
+    '<div class="up-row-h"><span class="up-slug mono-iso">' + esc(r.slug) + '</span> ' +
+      '<span class="up-title">' + esc(r.title || "") + '</span>' + upWarnChips(r.warnings) + '</div>'+
+    '<div class="up-meta"><span class="up-k">' + esc(t("up_col_email")) + ':</span> ' +
+      '<bdi class="mono-iso">' + esc(r.email || t("none")) + '</bdi>' +
+      ' <span class="up-k">' + esc(t("up_col_subject")) + ':</span> ' + esc(r.subject || t("none")) + '</div>'+
+    // ConTh-3: the uploaded message text renders in a clean FRAMED area, never dumped raw off-screen.
+    (r.body ? upFrame(r.body) : '<div class="up-empty">' + esc(t("up_no_text")) + '</div>')+
+  '</div>';
+}
+function upResultHtml(plan){
+  var rows = (plan.rows || []).map(upRowHtml).join("");
+  var orphan = (plan.orphanTexts && plan.orphanTexts.length)
+    ? '<div class="up-orphans">' + esc(t("up_warn_orphan")) + ': <bdi>' + esc(plan.orphanTexts.join(", ")) + '</bdi></div>' : "";
+  var n = (plan.rows || []).length;
+  return '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>' + orphan +
+    '<div class="up-rows">' + rows + '</div>'+
+    '<div class="acts"><button class="act send" id="upApprove" type="button"' + (n ? "" : " disabled") + '>' + esc(t("up_approve")) + '</button></div>'+
+    '<div class="act-status" id="upStatus"></div>';
+}
+function upPanelHtml(){
+  return '<div class="nm-head"><h2>' + esc(t("up_h")) + '</h2>'+
+      '<button class="link nm-x" id="upClose" type="button">' + esc(t("pf_close")) + '</button></div>'+
+    '<div class="nm-body">'+
+      '<div class="up-hint">' + esc(t("up_hint")) + '</div>'+
+      '<input class="up-file" id="upFile" type="file" accept=".zip" aria-label="' + esc(t("up_h")) + '">'+
+      '<div id="upResult"></div>'+
+    '</div>';
+}
+function upSetStatus(msg, cls){ var el=document.getElementById("upStatus"); if(el){ el.className="act-status" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; } }
+
+function openUpload(){
+  var sc=document.getElementById("upScrim"), pn=document.getElementById("upPanel");
+  if(!sc || !pn) return;
+  __upPlan = null;
+  pn.innerHTML = upPanelHtml(); sc.hidden = false; pn.scrollTop = 0;
+  var fi=document.getElementById("upFile"); if(fi) fi.addEventListener("change", function(){ upOnFile(fi.files); });
+  var cl=document.getElementById("upClose"); if(cl) cl.addEventListener("click", function(){ closeUpload(); });
+}
+function closeUpload(){ var sc=document.getElementById("upScrim"); if(sc) sc.hidden = true; __upPlan = null; }
+
+function upOnFile(files){
+  if(!files || !files.length) return;
+  var res=document.getElementById("upResult"); if(res) res.innerHTML = '<div class="muted" style="padding:10px 2px">' + esc(t("up_reading")) + '</div>';
+  upBuildPlan(files).then(function(plan){
+    __upPlan = plan;                                         // held for review; NOTHING written yet
+    var r2=document.getElementById("upResult"); if(r2){ r2.innerHTML = upResultHtml(plan);
+      var ap=document.getElementById("upApprove"); if(ap) ap.addEventListener("click", function(){ upApprove(); }); }
+  }, function(e){
+    var r3=document.getElementById("upResult"); if(r3) r3.innerHTML = '<div class="act-status bad">' + esc((e && e.message==="not_a_zip") ? t("up_not_zip") : t("up_read_failed")) + '</div>';
+  });
+}
+function upApprove(){
+  if(__upBusy || !__upPlan) return; __upBusy = true;
+  upSetStatus(t("up_writing"), ""); var ap=document.getElementById("upApprove"); if(ap) ap.disabled = true;
+  upCommit(__upPlan).then(function(res){
+    return reloadBoardData().then(function(){ return res; }, function(){ return res; });
+  }).then(function(res){
+    __upBusy = false;
+    upSetStatus(t("up_done") + " " + (res.ok || 0), "ok");
+    setTimeout(function(){ closeUpload(); }, 600);
+  }).catch(function(e){
+    __upBusy = false; var a2=document.getElementById("upApprove"); if(a2) a2.disabled = false;
+    upSetStatus((e && e.authRequired) ? t("err") : t("up_write_failed"), "bad");
+  });
+}
+
+// ---- the Activate control on an upload opp's drawer (injected after the editor) --------------------
+// Renders only for an upload opp: the live/dead state and an Activate button. Activation marks the page
+// active AND verifies the live URL with a real fetch before claiming live; send stays blocked until the
+// fetch actually resolves (upSendLiveGate re-checks live at send time regardless of this flag).
+function uploadActivateHtml(slug, row, detail){
+  var data = (detail && detail.opp && detail.opp.data) || null;
+  if(!data || data.source !== "upload") return "";
+  var stateKey, stateCls;
+  if(data.page_live){ stateKey = "up_state_live"; stateCls = "ok"; }
+  else if(data.page_active && data.page_dead){ stateKey = "up_state_dead"; stateCls = "bad"; }   // verified dead
+  else if(data.page_active){ stateKey = "up_state_pending"; stateCls = ""; }
+  else { stateKey = "up_state_draft"; stateCls = "bad"; }
+  return '<div class="dw-sec up-act-sec"><h3>' + esc(t("up_page_h")) + '</h3>'+
+    '<div class="up-state ' + stateCls + '" id="upState">' + esc(t(stateKey)) + '</div>'+
+    '<div class="acts"><button class="act" id="upActBtn" type="button">' + esc(t("up_activate")) + '</button></div>'+
+    '<div class="act-status" id="upActStatus"></div></div>';
+}
+function upActStatus(msg, cls){ var el=document.getElementById("upActStatus"); if(el){ el.className="act-status" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; } }
+function upActivate(slug){
+  if(__writing || __upBusy) return; __upBusy = true;
+  upActStatus(t("up_verifying"), ""); var b=document.getElementById("upActBtn"); if(b) b.disabled = true;
+  oppReadData(slug).then(function(data){
+    var next = Object.assign({}, data, { source:"upload", page_active:true });
+    return oppPatch(slug, { data:next, up:Date.now() }).then(function(){ return verifyLive(slug); }).then(function(v){
+      var d2 = Object.assign({}, next, { page_live: !!v.ok, page_dead: !v.ok });
+      return oppPatch(slug, { data:d2, up:Date.now() }).then(function(){ return v; }, function(){ return v; });
+    });
+  }).then(function(v){
+    __upBusy = false;
+    if(v.ok){ upActStatus(t("up_now_live"), "ok"); }
+    else { upActStatus(v.dead ? t("up_dead") : t("up_unconfirmed"), "bad"); }
+    if(__drawerSlug === slug) refreshDrawer(slug);
+  }).catch(function(e){
+    __upBusy = false; var b2=document.getElementById("upActBtn"); if(b2) b2.disabled = false;
+    upActStatus((e && e.authRequired) ? t("err") : t("up_write_failed"), "bad");
+  });
+}
+function upWireActivate(slug){ var b=document.getElementById("upActBtn"); if(b) b.addEventListener("click", function(){ upActivate(slug); }); }
+
+// Read-only hooks for board_upload_test:
+try{
+  window.__thriveUploadPlan = function(){ return __upPlan; };
+  window.__thriveUploadVerify = function(slug){ return verifyLive(slug); };
+}catch(e){}
+
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
   // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
@@ -1819,6 +2231,8 @@ try{
         // E1: New message opens the editor as its own overlay (compose to any recipient, with or without an
         // opp link). Visible to every signed-in operator, beside Profile.
         '<button class="link" id="newMsgBtn" type="button">' + esc(t("nm_open")) + '</button>' +
+        // E2: upload a campaign zip from the device (html pages + message texts + emails).
+        '<button class="link" id="uploadBtn" type="button">' + esc(t("up_open")) + '</button>' +
         '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
         '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
         '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
@@ -1835,6 +2249,7 @@ try{
   function wireHeader(){
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
     var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ openNewMessage(); });   // E1
+    var up=document.getElementById("uploadBtn"); if(up) up.addEventListener("click", function(){ openUpload(); });   // E2
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
@@ -2005,7 +2420,7 @@ try{
     return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
       '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
       '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\u00d7</button></div>'+
-      numsHtml(row, slug)+factsHtml(row)+editorHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
+      numsHtml(row, slug)+factsHtml(row)+editorHtml(slug, row, detail)+uploadActivateHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
   }
   var __drawerSlug=null, __writing=false;
   function wireDrawer(){
@@ -2019,6 +2434,7 @@ try{
     var rs=document.getElementById("recSave");                          // L5.5 recipient save
     if(rs) rs.addEventListener("click", function(){ onSaveRecipient(slug); });
     try{ wireEditor(slug); }catch(e){}                                  // unified message editor (compose + reply)
+    try{ upWireActivate(slug); }catch(e){}                              // E2 upload-page Activate control
   }
   function openDrawer(slug){
     __drawerSlug=slug;
@@ -2215,7 +2631,9 @@ try{
     if(as) as.addEventListener("click", function(e){ if(e.target===as) closeAdmin(); });
     var ns=document.getElementById("nmScrim");                                            // E1 new-message overlay
     if(ns) ns.addEventListener("click", function(e){ if(e.target===ns) closeNewMessage(); });
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); } });
+    var us=document.getElementById("upScrim");                                            // E2 upload overlay
+    if(us) us.addEventListener("click", function(e){ if(e.target===us) closeUpload(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); } });
   }catch(e){} })();
   boot();
 })();

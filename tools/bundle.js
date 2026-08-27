@@ -902,6 +902,9 @@ function buildBoard(){
   // E1: New message as a standalone editor overlay, inlined after the editor so it reuses editorHtml /
   // edSignature / edInsertLink / sendCompile / runSend / oppPatch / parseAddrs from the same IIFE scope.
   const NEWMSG_SRC = read(path.join(ROOT, "tools/board-newmsg.src.js"));
+  // E2: campaign zip upload (ported ingest), inlined after new-message so it reuses oppUpsert / liveUrl /
+  // oppPatch / authFetchOnce from the same IIFE scope; its upSendLiveGate is consulted by runSend.
+  const UPLOAD_SRC = read(path.join(ROOT, "tools/board-upload.src.js"));
   // Step 1: the identity layer (actor resolver + profile/role load), inlined before the send clone so its
   // currentUid() is defined for the send actor write. Shares the IIFE scope + helpers.
   const IDENT_SRC = read(path.join(ROOT, "tools/board-identity.src.js"));
@@ -1035,6 +1038,25 @@ function buildBoard(){
   .nm-head h2{font-size:17px;font-weight:650;color:#eef;margin:0}
   .nm-x{white-space:nowrap}
   .nm-body .dw-sec{margin-top:14px}
+  .up-hint{font-size:12.5px;color:#8a8a93;margin:2px 0 10px;line-height:1.5}
+  input.up-file{display:block;width:100%;font-size:13px;color:#cdd;margin-bottom:12px}
+  .up-count{font-size:13px;color:#a9d5b6;margin:6px 0 4px}
+  .up-orphans{font-size:12px;color:#d8b48a;margin:2px 0 8px}
+  .up-rows{display:flex;flex-direction:column;gap:10px;margin:6px 0}
+  .up-row{border:1px solid #22222e;border-radius:10px;padding:10px 12px;background:#0e0e14}
+  .up-row-warn{border-color:#4b3a27}
+  .up-row-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:4px}
+  .up-slug{font-size:12px;color:#8a8a93}
+  .up-title{font-size:14px;font-weight:600;color:#eef}
+  .up-warn{font-size:11px;color:#d8b48a;border:1px solid #4b3a27;border-radius:999px;padding:2px 8px}
+  .up-meta{font-size:12px;color:#9aa0aa;margin:2px 0 6px}
+  .up-k{color:#6f7480}
+  .up-frame{border:1px solid #22222e;border-radius:8px;background:#14141c;max-height:160px;overflow:auto;padding:8px 10px}
+  .up-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.5;color:#c7c7cf;font-family:inherit;unicode-bidi:plaintext}
+  .up-empty{font-size:12px;color:#6a6a74;font-style:italic}
+  .up-state{font-size:13px;padding:8px 11px;border-radius:8px;border:1px solid #22222e;background:#0e0e14;color:#cdd}
+  .up-state.ok{color:#a9d5b6;border-color:#274b34}
+  .up-state.bad{color:#d8b48a;border-color:#4b3a27}
   .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
   .pf-note{font-size:11.5px;color:#6a6a74;margin-top:6px}
   .pf-admin{border-top:1px solid #191921;padding-top:14px;margin-top:20px}
@@ -1085,6 +1107,7 @@ function buildBoard(){
 <div id="pfScrim" class="scrim" hidden><div id="pfPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="admScrim" class="scrim" hidden><div id="admPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="nmScrim" class="scrim" hidden><div id="nmPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
+<div id="upScrim" class="scrim" hidden><div id="upPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <script>
 (function(){
   "use strict";
@@ -1143,6 +1166,7 @@ function buildBoard(){
           s_send:"Send email", s_sending:"Sending…", s_sent:"Sent.", s_confirming:"Email sent; confirming on the server…",
           s_failed:"Could not send. Nothing was sent.", s_no_recip:"No recipient email on this opportunity.",
           s_no_msg:"No prepared message on this opportunity.",
+          s_not_live:"Activate the page first. Nothing was sent.", s_dead_link:"The page link is not live. Nothing was sent.",
           r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
           r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
           r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email.",
@@ -1152,7 +1176,16 @@ function buildBoard(){
           ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
           ed_ck_subj:"Subject", ed_ck_body:"Body", ed_ck_recip:"Recipient", ed_ck_link:"Opp link",
           nm_open:"New message", nm_h:"New message", nm_to:"To", nm_to_ph:"recipient@example.com",
-          nm_send:"Send message", nm_need_msg:"Add a subject and body first.", nm_need_to:"Add a recipient email first." },
+          nm_send:"Send message", nm_need_msg:"Add a subject and body first.", nm_need_to:"Add a recipient email first.",
+          up_open:"Upload campaign", up_h:"Upload a campaign zip", up_hint:"A zip of html pages plus message texts and recipient emails. Nothing is written until you approve.",
+          up_reading:"Reading the zip...", up_matched:"Pages matched:", up_approve:"Approve and create drafts", up_writing:"Creating drafts...",
+          up_done:"Drafts created:", up_read_failed:"Could not read the file.", up_not_zip:"That is not a zip file.", up_write_failed:"Could not write. Nothing was created.",
+          up_col_email:"To", up_col_subject:"Subject", up_no_text:"No message matched this page.",
+          up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Text with no page", up_warn_generic:"check this row",
+          up_page_h:"Hosted page", up_state_draft:"Draft. Activate the page before sending.", up_state_pending:"Activated. Confirming the live link.",
+          up_state_dead:"The page link is not live. Sending is blocked.",
+          up_state_live:"Live. The page link resolves.", up_activate:"Activate and verify live", up_verifying:"Verifying the live link...",
+          up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
@@ -1190,6 +1223,7 @@ function buildBoard(){
           s_send:"إرسال بريد", s_sending:"جارٍ الإرسال…", s_sent:"تم الإرسال.", s_confirming:"أُرسل البريد؛ يجري التأكيد على الخادم…",
           s_failed:"تعذّر الإرسال. لم يُرسل شيء.", s_no_recip:"لا يوجد بريد مستلم لهذه الفرصة.",
           s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
+          s_not_live:"فعّل الصفحة أولًا. لم يُرسل شيء.", s_dead_link:"رابط الصفحة غير فعّال. لم يُرسل شيء.",
           r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
           r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
           r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا.",
@@ -1199,7 +1233,16 @@ function buildBoard(){
           ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",
           ed_ck_subj:"الموضوع", ed_ck_body:"النص", ed_ck_recip:"المستلم", ed_ck_link:"رابط الفرصة",
           nm_open:"رسالة جديدة", nm_h:"رسالة جديدة", nm_to:"إلى", nm_to_ph:"recipient@example.com",
-          nm_send:"إرسال الرسالة", nm_need_msg:"أضف موضوعًا ونصًا أولًا.", nm_need_to:"أضف بريد المستلم أولًا." }
+          nm_send:"إرسال الرسالة", nm_need_msg:"أضف موضوعًا ونصًا أولًا.", nm_need_to:"أضف بريد المستلم أولًا.",
+          up_open:"رفع حملة", up_h:"ارفع ملف حملة مضغوط", up_hint:"ملف مضغوط يضم صفحات html ونصوص الرسائل وبريد المستلمين. لا يُكتب شيء حتى توافق.",
+          up_reading:"جارٍ قراءة الملف المضغوط...", up_matched:"الصفحات المطابَقة:", up_approve:"وافق وأنشئ المسودّات", up_writing:"جارٍ إنشاء المسودّات...",
+          up_done:"المسودّات المنشأة:", up_read_failed:"تعذّرت قراءة الملف.", up_not_zip:"هذا ليس ملفًا مضغوطًا.", up_write_failed:"تعذّرت الكتابة. لم يُنشأ شيء.",
+          up_col_email:"إلى", up_col_subject:"الموضوع", up_no_text:"لا رسالة مطابِقة لهذه الصفحة.",
+          up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"نص بلا صفحة", up_warn_generic:"راجع هذا الصف",
+          up_page_h:"الصفحة المستضافة", up_state_draft:"مسودّة. فعّل الصفحة قبل الإرسال.", up_state_pending:"مُفعّلة. جارٍ تأكيد الرابط الحيّ.",
+          up_state_dead:"رابط الصفحة غير فعّال. الإرسال متوقّف.",
+          up_state_live:"حيّة. رابط الصفحة يعمل.", up_activate:"فعّل وتحقّق من الحيّ", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
+          up_now_live:"الصفحة حيّة.", up_dead:"الرابط ميت. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1402,6 +1445,7 @@ ${SEND_SRC}
 ${RECIP_SRC}
 ${EDITOR_SRC}
 ${NEWMSG_SRC}
+${UPLOAD_SRC}
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
   // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
@@ -1491,6 +1535,8 @@ ${NEWMSG_SRC}
         // E1: New message opens the editor as its own overlay (compose to any recipient, with or without an
         // opp link). Visible to every signed-in operator, beside Profile.
         '<button class="link" id="newMsgBtn" type="button">' + esc(t("nm_open")) + '</button>' +
+        // E2: upload a campaign zip from the device (html pages + message texts + emails).
+        '<button class="link" id="uploadBtn" type="button">' + esc(t("up_open")) + '</button>' +
         '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
         '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
         '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
@@ -1507,6 +1553,7 @@ ${NEWMSG_SRC}
   function wireHeader(){
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
     var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ openNewMessage(); });   // E1
+    var up=document.getElementById("uploadBtn"); if(up) up.addEventListener("click", function(){ openUpload(); });   // E2
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
@@ -1677,7 +1724,7 @@ ${NEWMSG_SRC}
     return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
       '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
       '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\\u00d7</button></div>'+
-      numsHtml(row, slug)+factsHtml(row)+editorHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
+      numsHtml(row, slug)+factsHtml(row)+editorHtml(slug, row, detail)+uploadActivateHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
   }
   var __drawerSlug=null, __writing=false;
   function wireDrawer(){
@@ -1691,6 +1738,7 @@ ${NEWMSG_SRC}
     var rs=document.getElementById("recSave");                          // L5.5 recipient save
     if(rs) rs.addEventListener("click", function(){ onSaveRecipient(slug); });
     try{ wireEditor(slug); }catch(e){}                                  // unified message editor (compose + reply)
+    try{ upWireActivate(slug); }catch(e){}                              // E2 upload-page Activate control
   }
   function openDrawer(slug){
     __drawerSlug=slug;
@@ -1887,7 +1935,9 @@ ${NEWMSG_SRC}
     if(as) as.addEventListener("click", function(e){ if(e.target===as) closeAdmin(); });
     var ns=document.getElementById("nmScrim");                                            // E1 new-message overlay
     if(ns) ns.addEventListener("click", function(e){ if(e.target===ns) closeNewMessage(); });
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); } });
+    var us=document.getElementById("upScrim");                                            // E2 upload overlay
+    if(us) us.addEventListener("click", function(e){ if(e.target===us) closeUpload(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); } });
   }catch(e){} })();
   boot();
 })();
