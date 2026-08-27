@@ -52,9 +52,10 @@ OPPS = {
   "reply": opp("reply","Reply Co","Re: your note","Thanks, answering now.","buyer.reply@example.test"),
   "failw": opp("failw","Failw Co","Failw x Thrive","Body here.","buyer.failw@example.test"),      # forced PATCH 500
 }
-# ROOT duplicate-signature fixture: the stored body ENDS with an old baked agency closing
+# PR-A verbatim fixture: the stored body ENDS with an old hand-typed agency closing
 # (sign-off name / Thrive Digital Solutions / thriveiii.com) AND the record already carries data.sig.
-# stripBakedSig must remove the baked closing at compile so the ONE identity signature is the only closing.
+# The body is now compiled and sent EXACTLY as written - that closing is NOT detected or removed;
+# the separate data.sig is still appended once. (No content in the body is ever treated as a signature.)
 OPPS["baked"] = {"slug":"baked", "business":"Baked Co", "archived":False,
   "data":{"recipients":[{"addr":"buyer.baked@example.test","name":""}],
           "channels":[{"type":"email","value":"buyer.baked@example.test","primary":True}],
@@ -237,14 +238,15 @@ with sync_playwright() as p:
     ck("E0: the preset renders as three lines with <br> between name / title / site",
        (DISPLAY_NAME+"<br>"+TITLE+"<br>thriveiii.com") in htmP, htmP[-300:])
 
-    # ===== ROOT duplicate-signature fix: a body with a baked agency closing has it stripped at compile =====
+    # ===== PR-A: the body is compiled and sent VERBATIM - no signature-like text is ever removed =====
     bart = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('baked'); }")
     btx, bhm = bart.get("text",""), bart.get("html","")
-    ck("ROOT: the baked agency closing is stripped (the old sign-off name is gone from text + html)",
-       "Old Signoff Name" not in btx and "Old Signoff Name" not in bhm, {"text":btx[-260:], "html":bhm[-260:]})
-    ck("ROOT: with the baked closing stripped, the identity signature appears EXACTLY ONCE",
+    ck("PR-A: the body is sent VERBATIM - the old agency closing is NOT stripped (it remains in text + html)",
+       "Old Signoff Name" in btx and "Old Signoff Name" in bhm and "Thrive Digital Solutions" in btx and "Thrive Digital Solutions" in bhm,
+       {"text":btx[-260:], "html":bhm[-260:]})
+    ck("PR-A: the appended identity signature (the separate data.sig field) still appears EXACTLY ONCE",
        btx.count(SIG)==1 and bhm.count(SIG)==1, {"text":btx.count(SIG), "html":bhm.count(SIG)})
-    ck("ROOT: the real body content survives the strip (not over-eager)",
+    ck("PR-A: the real body content is intact",
        "Looking forward to your reply." in btx and "Looking forward to your reply." in bhm, btx[:200])
 
     # 4: pre-send checklist + Send-disable gate
