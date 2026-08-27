@@ -1,0 +1,34 @@
+{
+  "surface": "capability-orbit",
+  "isolated": true,
+  "routes": [
+    {
+      "id": "th1",
+      "host": "th1.thriveiii.com",
+      "source": "sources/vesper-atlas.html",
+      "target": "th1/index.html",
+      "edition": "EN-US"
+    },
+    {
+      "id": "th2",
+      "host": "th2.thriveiii.com",
+      "source": "sources/qamar-lexicon.html",
+      "target": "th2/index.html",
+      "edition": "AR-INTL"
+    },
+    {
+      "id": "th3",
+      "host": "th3.thriveiii.com",
+      "source": "sources/sidra-meridian.html",
+      "target": "th3/index.html",
+      "edition": "EN-KSA"
+    },
+    {
+      "id": "th4",
+      "host": "th4.thriveiii.com",
+      "source": "sources/nujum-cedar.html",
+      "target": "th4/index.html",
+      "edition": "AR-KSA"
+    }
+  ]
+}
