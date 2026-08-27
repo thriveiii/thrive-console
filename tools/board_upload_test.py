@@ -59,6 +59,36 @@ def build_dup_zip():
     with open(DUP_ZIP, "wb") as f: f.write(buf.getvalue())
 build_dup_zip()
 
+# A third zip mirroring the device-proven BATCH13 shape: SIX pages at opp/<slug>/index.html and ONE
+# CONSOLIDATED messages file holding every message + email + subject as per-opportunity sections. Plus a
+# market-assessment md and a README that are NOT per-page messages (must stay informational, not errors), and
+# a seventh section that matches no page (must be reported "message with no page" by name). One section uses a
+# mailto: form so the strip is exercised; every body carries the [LINK] token, which must be preserved.
+BATCH_ZIP = os.path.join(SCRATCH, "e2_batch13.zip")
+BATCH_SLUGS = ["drip-docx", "river-sea-chocolates", "manna-pottery", "hypergoat-coffee", "godet-furniture", "clear-spring-acupuncture"]
+def _sec(n, name, sendto, subject, greet):
+    return ("## %d) %s — Somewhere, VA\n"
+            "- **Send to:** %s · **Subject:** %s\n\n"
+            "```\n%s\n\nHere is a page made for you: [LINK]\n\nThyab\nThrive Digital Solutions\nthriveiii.com\n```\n\n") % (n, name, sendto, subject, greet)
+def build_batch_zip():
+    buf = io.BytesIO(); z = zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED)
+    for s in BATCH_SLUGS:
+        z.writestr("opp/%s/index.html" % s, "<!doctype html><title>%s</title><h1>%s</h1>" % (s, s))
+    md  = "# BATCH13 research and messages\n\nInternal notes follow.\n\n"
+    md += _sec(1, "Drip Docx", "hello.dripdocx@example.test", "A cleaner intake for Drip Docx", "Hi Drip Docx team,")
+    md += _sec(2, "River Sea Chocolates", "hello.riversea@example.test", "A page for River Sea", "Hi River Sea Chocolates,")
+    md += _sec(3, "Manna Pottery", "mailto:studio.manna@example.test", "Your studio, online", "Hi Manna Pottery,")   # mailto: strip
+    md += _sec(4, "Hypergoat Coffee Roasters", "contact.hypergoat@example.test", "The Del Ray opening, louder", "Hi Hypergoat crew,")
+    md += _sec(5, "Godet Furniture", "hello.godet@example.test", "Godet, on the web", "Hi Godet Furniture,")
+    md += _sec(6, "Clear Spring Acupuncture", "front.clearspring@example.test", "Clear Spring, easier to book", "Hi Clear Spring team,")
+    md += _sec(7, "Nobody Bakery", "owner.nobody@example.test", "A page with no landing page", "Hi Nobody Bakery,")     # matches no page
+    z.writestr("BATCH13_research_and_messages.md", md)
+    z.writestr("MARKET_ASSESSMENT_DMV_and_EastCoast.md", "# Market assessment\n\nThe DMV and East Coast markets. No recipient here, this is background reading.\n")
+    z.writestr("README.md", "# Batch 13\n\nHow this batch was assembled. No email addresses here.\n")
+    z.close()
+    with open(BATCH_ZIP, "wb") as f: f.write(buf.getvalue())
+build_batch_zip()
+
 # ---- stateful server model (ALL addresses synthetic *.example.test) ------------------------------
 OPPS = {}; PAGES = {}; MAIL = []; RELAY_CALLS = []; OPP_POSTS = []; PAGE_POSTS = []
 LIVE = {}   # slug -> "ok" | "dead" ; the live /opp/<slug> fetch outcome
@@ -275,6 +305,49 @@ with sync_playwright() as p:
     ck("7: AR flips the upload overlay to RTL", d["dir"]=="rtl", d)
     ck("7: the upload surface renders under AR", d["has"] and d["open"], d)
     pg3.close(); ctx3.close()
+
+    # ===== 8: CONSOLIDATED messages file (the BATCH13 fix) - match ALL, not some =====
+    ctx4 = b.new_context(); wire(ctx4); pg4 = ctx4.new_page()
+    pg4.goto(f"{base}/library/board.html", wait_until="load"); pg4.wait_for_timeout(500); wait_ident(pg4)
+    open_upload(pg4); pg4.set_input_files("#upFile", BATCH_ZIP)
+    opp_before = len(OPP_POSTS); page_before = len(PAGE_POSTS)
+    pg4.wait_for_timeout(1500)
+    plan4 = pg4.evaluate("()=>window.__thriveUploadPlan()")
+    rows4 = plan4.get("rows", []) if plan4 else []
+    byslug = {r["slug"]: r for r in rows4}
+    ck("8: all six pages appear in the match table", sorted(byslug.keys())==sorted(BATCH_SLUGS), sorted(byslug.keys()))
+    resolved = [s for s in BATCH_SLUGS if byslug.get(s) and byslug[s].get("email") and byslug[s].get("subject") and byslug[s].get("body")]
+    ck("8: EVERY page resolves email + subject + body from the ONE consolidated file", sorted(resolved)==sorted(BATCH_SLUGS),
+       {s: {"email":bool(byslug.get(s,{}).get("email")), "subject":bool(byslug.get(s,{}).get("subject")), "body":bool(byslug.get(s,{}).get("body"))} for s in BATCH_SLUGS})
+    ck("8: no page is left 'no message' when a section exists", not any("no_message" in (r.get("warnings") or []) for r in rows4),
+       [(r["slug"], r.get("warnings")) for r in rows4])
+    ck("8: a specific section resolved to its slug by name (Hypergoat -> hypergoat-coffee)",
+       byslug.get("hypergoat-coffee",{}).get("subject")=="The Del Ray opening, louder", byslug.get("hypergoat-coffee",{}).get("subject"))
+    ck("8: mailto is stripped from a consolidated Send-to (manna-pottery)",
+       byslug.get("manna-pottery",{}).get("email")=="studio.manna@example.test" and "mailto" not in byslug.get("manna-pottery",{}).get("email",""),
+       byslug.get("manna-pottery",{}).get("email"))
+    ck("8: the [LINK] token is preserved in the extracted body", "[LINK]" in (byslug.get("drip-docx",{}).get("body") or ""), byslug.get("drip-docx",{}).get("body"))
+    ck("8: a section with no page is surfaced BY NAME (message with no page)",
+       "Nobody Bakery" in " ".join(plan4.get("orphanTexts",[])), plan4.get("orphanTexts"))
+    info4 = " ".join(plan4.get("informational",[]))
+    ck("8: a market assessment and a README are INFORMATIONAL, not errors",
+       "MARKET_ASSESSMENT_DMV_and_EastCoast.md" in info4 and "README.md" in info4, plan4.get("informational"))
+    ck("8: informational files are NOT reported as orphaned messages",
+       "MARKET_ASSESSMENT" not in " ".join(plan4.get("orphanTexts",[])) and "README" not in " ".join(plan4.get("orphanTexts",[])), plan4.get("orphanTexts"))
+    ck("8: NOTHING was written before Approve (consolidated path too)",
+       len(OPP_POSTS)==opp_before and len(PAGE_POSTS)==page_before, {"opps_delta":len(OPP_POSTS)-opp_before, "pages_delta":len(PAGE_POSTS)-page_before})
+    # Approve: each of the six pages becomes a draft opp + a console_pages row, [LINK] carried into outreach_text
+    pg4.evaluate("()=>{var b=document.getElementById('upApprove'); if(b) b.click();}")
+    pg4.wait_for_timeout(1800)
+    ck("8: Approve created a draft opp for all six pages", all(s in OPPS for s in BATCH_SLUGS), [s for s in BATCH_SLUGS if s not in OPPS])
+    ck("8: Approve stored a console_pages row for all six pages", all(s in PAGES for s in BATCH_SLUGS), [s for s in BATCH_SLUGS if s not in PAGES])
+    ck("8: the drafts are upload-sourced and carry the recipient + [LINK] body",
+       OPPS["hypergoat-coffee"]["data"].get("source")=="upload"
+       and (OPPS["hypergoat-coffee"]["data"].get("recipients") or [{}])[0].get("addr")=="contact.hypergoat@example.test"
+       and "[LINK]" in OPPS["hypergoat-coffee"]["data"].get("outreach_text",""),
+       OPPS["hypergoat-coffee"]["data"])
+    ck("8: the section with no page did NOT create an opp", "nobody-bakery" not in OPPS, [k for k in OPPS if "nobody" in k])
+    pg4.close(); ctx4.close()
 
     # ===== privacy + no error =====
     blob = json.dumps(OPP_POSTS) + json.dumps(PAGE_POSTS) + json.dumps(RELAY_CALLS) + json.dumps(MAIL)

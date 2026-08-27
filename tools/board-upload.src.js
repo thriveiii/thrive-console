@@ -137,10 +137,68 @@ function upExtract(text){
 }
 function upPretty(slug){ return String(slug || "").split("-").filter(Boolean).map(function(w){ return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ") || slug; }
 
+// ---- consolidated messages file: MANY messages in ONE file -----------------------------------------
+// The device-proven BATCH13 zip carries every message + email + subject in ONE file (e.g.
+// BATCH13_research_and_messages.md), not one text file per page. Each per-opportunity SECTION is a heading
+// ("## 2) Hypergoat Coffee Roasters - Alexandria (Del Ray), VA"), a metadata line
+// ("- **Send to:** contact@hyper-goat.com · **Subject:** The Del Ray opening, louder"), and the email
+// body inside a fenced code block ("```" ... "Hi ...," ... signature ... "```"). upParseSections reads that
+// structure; upBuildPlan below supports BOTH it AND the original one-file-per-page mode, auto-detecting which
+// a zip uses. Robust matching: a section maps to a page slug by normalized-name similarity (the same token
+// ranker), so "Hypergoat Coffee Roasters" resolves to the page slug "hypergoat-coffee".
+function upSectionName(heading){
+  var h = String(heading || "").replace(/^[ \t]*#{1,6}[ \t]*/, "");   // drop the leading hashes
+  h = h.replace(/^\s*\d+[\).:]\s*/, "");                              // drop a leading "n)" / "n." number
+  // the business name is the head of the line, before a location dash / middot / pipe / parenthesis / comma.
+  // The dash class uses \u2014 (long dash) and \u2013 (mid dash) escapes so no literal long dash sits in source.
+  var cut = h.split(/\s+[\u2014\u2013-]\s+|\s+\u00b7\s+|\s+\|\s+|\s*\(|,/)[0];
+  return cut.replace(/[*_`]+/g, "").trim();
+}
+function upFenceBody(chunk){
+  // the first fenced code block; drop an optional language token on the opening fence line; verbatim otherwise.
+  // The [LINK] token inside the body is preserved untouched so it survives into the opp's outreach text.
+  var m = String(chunk || "").match(/```[^\n]*\n([\s\S]*?)```/);
+  if(!m) return "";
+  return m[1].replace(/\s+$/, "");
+}
+function upParseSections(text){
+  var s = String(text || "").replace(/\r\n/g, "\n");
+  var lines = s.split("\n"), heads = [];
+  lines.forEach(function(ln, i){
+    var m = ln.match(/^[ \t]*(#{1,6})[ \t]+(.+?)[ \t]*$/);
+    if(m) heads.push({ i:i, level:m[1].length, text:ln, numbered: /^[ \t]*#{1,6}[ \t]*\d+[\).:]/.test(ln) });
+  });
+  if(!heads.length) return [];
+  // numbered opportunity headers ("## 2) Name") are the strongest boundary; else the shallowest heading level.
+  var numbered = heads.filter(function(h){ return h.numbered; });
+  var bounds = numbered.length ? numbered : heads.filter(function(h){ return h.level === heads[0].level; });
+  if(!bounds.length) return [];
+  var out = [];
+  bounds.forEach(function(h, k){
+    var end = (k + 1 < bounds.length) ? bounds[k + 1].i : lines.length;
+    var chunk = lines.slice(h.i, end).join("\n");
+    var fenceAt = chunk.indexOf("```");
+    var meta = fenceAt >= 0 ? chunk.slice(0, fenceAt) : chunk;      // metadata lives before the fenced body
+    var sendM = meta.match(/send[ \t]*to[^\n]*/i);
+    var email = sendM ? upEmailFrom(sendM[0]) : "";
+    var subjM = meta.match(/subject[ \t]*:?[ \t*]*([^\n]+)/i);
+    var subject = subjM ? subjM[1].replace(/[*`]+/g, "").replace(/\s*·.*$/, "").trim() : "";
+    var body = upFenceBody(chunk);
+    var isMessage = !!(email || (body && sendM));
+    out.push({ name:upSectionName(h.text), email:email, subject:subject, body:body, isMessage:isMessage });
+  });
+  return out;
+}
+
 // ---- upBuildPlan: the preview (read-only, nothing written) ---------------------------------------
-// For each html page: derive its slug, find the best-matching message text by the one token ranker, and
-// extract subject / body / bare email. Warnings by name: dup_slug (two pages one slug), no_message (a page
-// with no matched text), orphan_text (a text matched to no page). This only reads; it writes nothing.
+// For each html page derive its slug. Build ONE pool of message UNITS from every text file, supporting BOTH
+// structures: a consolidated file yields one unit per per-opportunity section; a plain per-page file (with a
+// recipient email) is a single whole-file unit (the original mode). A text that is neither a section message
+// nor an email-bearing message (a README or a market assessment) is INFORMATIONAL - surfaced by name, never
+// an error. Match each page to its best unit by the token ranker, extract subject / body / bare email.
+// Warnings by name in BOTH directions, so nothing is silently dropped: dup_slug (two pages one slug),
+// no_message (a page that resolved no message), orphanTexts (a message that matched no page, by name),
+// informational (a file that is not a per-page message). This only reads; it writes nothing.
 function upBuildPlan(files){
   return upReadFiles(files).then(function(kinds){
     var pages = kinds.pages, texts = kinds.texts, seen = {}, rows = [];
@@ -149,28 +207,44 @@ function upBuildPlan(files){
       var dup = !!seen[slug]; seen[slug] = (seen[slug] || 0) + 1;
       rows.push({ slug:slug, page:pg, title:"", subject:"", body:"", email:"", text_name:"", warnings: dup ? ["dup_slug"] : [] });
     });
-    var usedText = {};
+    var units = [], informational = [];
+    texts.forEach(function(tx){
+      var msgs = upParseSections(tx.text).filter(function(sec){ return sec.isMessage; });
+      if(msgs.length){                                              // a consolidated file: one unit per section
+        msgs.forEach(function(sec){
+          units.push({ file:tx.name, name:sec.name || upBaseName(tx.name), slug:upSlugify(sec.name),
+            subject:sec.subject, body:sec.body, email:sec.email, whole:false });
+        });
+        return;
+      }
+      var ex = upExtract(tx.text);                                  // else the original whole-file mode
+      var nm = upFirstHeading(tx.text) || upBaseName(tx.name).replace(/\.(md|txt|json)$/i, "");
+      if(ex.email){                                                 // a real message carries a recipient email
+        units.push({ file:tx.name, name:nm, slug:upSlugify(nm), subject:ex.subject, body:ex.body, email:ex.email, whole:true });
+      } else {
+        informational.push(tx.name);                               // README / market assessment: not a message
+      }
+    });
+    var usedUnit = {};
     rows.forEach(function(r){
-      var best = null, bestScore = 0;
-      texts.forEach(function(tx, ti){
-        if(usedText[ti]) return;
-        var ts = upSlugify(upFirstHeading(tx.text) || upBaseName(tx.name).replace(/\.(md|txt|json)$/i, ""));
-        var rk = upRankTokens(upNormTokens(r.slug), upNormTokens(ts));
-        if(rk.score > bestScore){ bestScore = rk.score; best = { ti:ti, tx:tx }; }
+      var best = null, bestScore = 0, bi = -1;
+      units.forEach(function(u, ui){
+        if(usedUnit[ui]) return;
+        var rk = upRankTokens(upNormTokens(r.slug), upNormTokens(u.slug || u.name));
+        if(rk.score > bestScore){ bestScore = rk.score; best = u; bi = ui; }
       });
       if(best && bestScore >= 2){
-        usedText[best.ti] = 1;
-        var ex = upExtract(best.tx.text);
-        r.subject = ex.subject; r.body = ex.body; r.email = ex.email; r.text_name = best.tx.name;
-        r.title = ex.subject || upPretty(r.slug);
+        usedUnit[bi] = 1;
+        r.subject = best.subject; r.body = best.body; r.email = best.email; r.text_name = best.file;
+        r.title = best.subject || upPretty(r.slug);
       } else {
         r.title = upPretty(r.slug);
         if(r.warnings.indexOf("no_message") < 0) r.warnings.push("no_message");
       }
     });
-    var orphans = [];
-    texts.forEach(function(tx, ti){ if(!usedText[ti]) orphans.push(tx.name); });
-    return { rows:rows, orphanTexts:orphans, skipped:kinds.skipped || [] };
+    var orphans = [];                                               // a message with no page, reported by name
+    units.forEach(function(u, ui){ if(!usedUnit[ui]) orphans.push(u.whole ? u.file : (u.name || u.file)); });
+    return { rows:rows, orphanTexts:orphans, informational:informational, skipped:kinds.skipped || [] };
   });
 }
 
@@ -263,8 +337,11 @@ function upResultHtml(plan){
   var rows = (plan.rows || []).map(upRowHtml).join("");
   var orphan = (plan.orphanTexts && plan.orphanTexts.length)
     ? '<div class="up-orphans">' + esc(t("up_warn_orphan")) + ': <bdi>' + esc(plan.orphanTexts.join(", ")) + '</bdi></div>' : "";
+  // Files that are not per-page messages (a README, a market assessment) are informational, never an error.
+  var info = (plan.informational && plan.informational.length)
+    ? '<div class="up-info">' + esc(t("up_info")) + ': <bdi>' + esc(plan.informational.join(", ")) + '</bdi></div>' : "";
   var n = (plan.rows || []).length;
-  return '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>' + orphan +
+  return '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>' + orphan + info +
     '<div class="up-rows">' + rows + '</div>'+
     '<div class="acts"><button class="act send" id="upApprove" type="button"' + (n ? "" : " disabled") + '>' + esc(t("up_approve")) + '</button></div>'+
     '<div class="act-status" id="upStatus"></div>';
@@ -359,4 +436,5 @@ function upWireActivate(slug){ var b=document.getElementById("upActBtn"); if(b) 
 try{
   window.__thriveUploadPlan = function(){ return __upPlan; };
   window.__thriveUploadVerify = function(slug){ return verifyLive(slug); };
+  window.__thriveParseSections = function(text){ return upParseSections(text); };
 }catch(e){}

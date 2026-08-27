@@ -1042,6 +1042,7 @@ function buildBoard(){
   input.up-file{display:block;width:100%;font-size:13px;color:#cdd;margin-bottom:12px}
   .up-count{font-size:13px;color:#a9d5b6;margin:6px 0 4px}
   .up-orphans{font-size:12px;color:#d8b48a;margin:2px 0 8px}
+  .up-info{font-size:12px;color:#8a93a6;margin:2px 0 8px}
   .up-rows{display:flex;flex-direction:column;gap:10px;margin:6px 0}
   .up-row{border:1px solid #22222e;border-radius:10px;padding:10px 12px;background:#0e0e14}
   .up-row-warn{border-color:#4b3a27}
@@ -1181,7 +1182,8 @@ function buildBoard(){
           up_reading:"Reading the zip...", up_matched:"Pages matched:", up_approve:"Approve and create drafts", up_writing:"Creating drafts...",
           up_done:"Drafts created:", up_read_failed:"Could not read the file.", up_not_zip:"That is not a zip file.", up_write_failed:"Could not write. Nothing was created.",
           up_col_email:"To", up_col_subject:"Subject", up_no_text:"No message matched this page.",
-          up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Text with no page", up_warn_generic:"check this row",
+          up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Message with no page", up_warn_generic:"check this row",
+          up_info:"Informational (not a per-page message)",
           up_page_h:"Hosted page", up_state_draft:"Draft. Activate the page before sending.", up_state_pending:"Activated. Confirming the live link.",
           up_state_dead:"The page link is not live. Sending is blocked.",
           up_state_live:"Live. The page link resolves.", up_activate:"Activate and verify live", up_verifying:"Verifying the live link...",
@@ -1238,7 +1240,8 @@ function buildBoard(){
           up_reading:"جارٍ قراءة الملف المضغوط...", up_matched:"الصفحات المطابَقة:", up_approve:"وافق وأنشئ المسودّات", up_writing:"جارٍ إنشاء المسودّات...",
           up_done:"المسودّات المنشأة:", up_read_failed:"تعذّرت قراءة الملف.", up_not_zip:"هذا ليس ملفًا مضغوطًا.", up_write_failed:"تعذّرت الكتابة. لم يُنشأ شيء.",
           up_col_email:"إلى", up_col_subject:"الموضوع", up_no_text:"لا رسالة مطابِقة لهذه الصفحة.",
-          up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"نص بلا صفحة", up_warn_generic:"راجع هذا الصف",
+          up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"رسالة بلا صفحة", up_warn_generic:"راجع هذا الصف",
+          up_info:"للمعلومة (ليست رسالة لصفحة)",
           up_page_h:"الصفحة المستضافة", up_state_draft:"مسودّة. فعّل الصفحة قبل الإرسال.", up_state_pending:"مُفعّلة. جارٍ تأكيد الرابط الحيّ.",
           up_state_dead:"رابط الصفحة غير فعّال. الإرسال متوقّف.",
           up_state_live:"حيّة. رابط الصفحة يعمل.", up_activate:"فعّل وتحقّق من الحيّ", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
