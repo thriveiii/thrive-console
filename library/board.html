@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="1cf56acb">
+<meta name="thrive-build" content="a125fa7e">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -189,7 +189,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build 1cf56acb</span>
+    <span class="muted">build a125fa7e</span>
   </div>
   <div id="root"></div>
 </div>
@@ -202,7 +202,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "1cf56acb";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "a125fa7e";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -273,9 +273,12 @@
           up_col_email:"To", up_col_subject:"Subject", up_no_text:"No message matched this page.",
           up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Message with no page", up_warn_generic:"check this row",
           up_info:"Informational (not a per-page message)",
-          up_page_h:"Hosted page", up_state_draft:"Draft. Activate the page before sending.", up_state_pending:"Activated. Confirming the live link.",
+          up_page_h:"Hosted page", up_state_draft:"Not activated. Activate the page before sending.", up_state_pending:"Activated. Confirming the live link.",
           up_state_dead:"The page link is not live. Sending is blocked.",
-          up_state_live:"Live. The page link resolves.", up_activate:"Activate and verify live", up_verifying:"Verifying the live link...",
+          up_state_publishing:"Activated. The page is publishing.",
+          up_state_live:"Activated and live. The page link resolves.", up_activate:"Activate the page", up_verifying:"Verifying the live link...",
+          up_committing:"Publishing the page...", up_commit_failed:"Could not publish the page. Nothing is live.", up_no_html:"No uploaded page found to publish.",
+          up_publishing:"Published. The page is going live (this can take a moment).",
           up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
@@ -331,10 +334,13 @@
           up_col_email:"إلى", up_col_subject:"الموضوع", up_no_text:"لا رسالة مطابِقة لهذه الصفحة.",
           up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"رسالة بلا صفحة", up_warn_generic:"راجع هذا الصف",
           up_info:"للمعلومة (ليست رسالة لصفحة)",
-          up_page_h:"الصفحة المستضافة", up_state_draft:"مسودّة. فعّل الصفحة قبل الإرسال.", up_state_pending:"مُفعّلة. جارٍ تأكيد الرابط الحيّ.",
-          up_state_dead:"رابط الصفحة غير فعّال. الإرسال متوقّف.",
-          up_state_live:"حيّة. رابط الصفحة يعمل.", up_activate:"فعّل وتحقّق من الحيّ", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
-          up_now_live:"الصفحة حيّة.", up_dead:"الرابط ميت. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ." }
+          up_page_h:"الصفحة المستضافة", up_state_draft:"غير مُنشّطة. نشّط الصفحة قبل الإرسال.", up_state_pending:"مُنشّطة. جارٍ تأكيد الرابط الحيّ.",
+          up_state_dead:"غير مُنشّطة. رابط الصفحة لا يعمل. الإرسال متوقّف.",
+          up_state_publishing:"مُنشّطة. جارٍ نشر الصفحة.",
+          up_state_live:"مُنشّطة وحيّة. رابط الصفحة يعمل.", up_activate:"تنشيط الصفحة", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
+          up_committing:"جارٍ نشر الصفحة...", up_commit_failed:"تعذّر نشر الصفحة. لا شيء حيّ.", up_no_html:"لا توجد صفحة مرفوعة للنشر.",
+          up_publishing:"نُشرت. الصفحة في طريقها إلى العمل (قد يستغرق لحظة).",
+          up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -2074,6 +2080,60 @@ function upCommit(plan){
   return one(0);
 }
 
+// ---- F2 static activation: commit opp/<slug>/index.html via the relay (the token lives on the relay) -------
+// The live host is GitHub Pages, which serves committed static files; a page in console_pages is not served
+// until it is committed as opp/<slug>/index.html (exactly how the old engine published, app.js:3530). board.html
+// is a static client and must NOT hold a repo-write token, so activation POSTs the html to the relay (the same
+// endpoint the send uses) and the RELAY commits it with a server-held GH_TOKEN. The client never sees the token.
+var BEACON_TAG_UP = '<script src="/beacon.js" defer></' + 'script>';   // byte-identical to app.js:3493 withBeacon
+function withBeaconClient(html){                                        // mirror app.js:3494-3502 (idempotent)
+  var h = String(html || "");
+  if(!h.trim()) return h;
+  if(/beacon\.js/.test(h)) return h;
+  if(/<\/body\s*>/i.test(h)) return h.replace(/<\/body\s*>/i, BEACON_TAG_UP + "\n</body>");
+  if(/<\/html\s*>/i.test(h)) return h.replace(/<\/html\s*>/i, BEACON_TAG_UP + "\n</html>");
+  return h + "\n" + BEACON_TAG_UP;
+}
+// Read the uploaded page html back from console_pages (the column E2's pageUpsert wrote). F2 only READS it.
+function pageReadHtml(slug, retried){
+  var url = URL_BASE + "/rest/v1/console_pages?slug=eq." + encodeURIComponent(slug) + "&select=html&limit=1";
+  return authFetchOnce(url, { method:"GET", headers:{ "apikey":ANON, "Authorization":"Bearer " + bearer() }, cache:"no-store" }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return pageReadHtml(slug, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ var e2=new Error("HTTP " + r.res.status); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    var row = (r.data && r.data[0]) || null;
+    return row ? String(row.html == null ? "" : row.html) : "";
+  });
+}
+// POST the page to the relay to commit it as a static file. The client sends only { op, slug, html } - no token.
+function pagePublishRelay(slug, html){
+  return relayPost({ op:"page_publish", slug:slug, html:html }).then(function(r){
+    if(!r.res.ok){ var e=new Error("relay " + r.res.status); throw e; }
+    var d = r.data || {};
+    if(d.ok === false){ var e2=new Error(d.error || "publish failed"); throw e2; }
+    return d;
+  });
+}
+// A bounded wait (never a hang): a real setTimeout wrapped in a promise, used only to space verify-live polls.
+function upDelay(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
+// Verify-live with a bounded poll for the GitHub Pages publish delay. Pages takes a moment to serve a fresh
+// commit, so a 404 right after activation is "still publishing", not dead. Poll up to `tries` with `gap`, then
+// settle: ok -> live; otherwise -> publishing (honest, never a false success). This runs AFTER a successful
+// commit, so the file exists in the repo; a persistent 404 means Pages has not published it yet, not that it
+// is dead. The send gate re-checks live at send time regardless, so nothing sends before a real ok.
+function verifyLivePoll(slug, tries, gap){
+  tries = tries || 3; gap = gap || 3000;
+  function attempt(n){
+    return verifyLive(slug).then(function(v){
+      if(v.ok) return { ok:true, publishing:false };
+      if(n >= tries) return { ok:false, publishing:true };     // committed but not yet served -> publishing
+      return upDelay(gap).then(function(){ return attempt(n + 1); });
+    });
+  }
+  return attempt(1);
+}
+
 // ---- verify-live (the real fetch that is the ONLY proof) -----------------------------------------
 // A real GET of the live /opp/<slug> URL. 404/410 -> dead; ok -> live; anything else -> unknown (blocks).
 // This is the truth the send gate reads; a stored flag is never trusted as proof (app.js:832-833).
@@ -2187,6 +2247,7 @@ function uploadActivateHtml(slug, row, detail){
   var stateKey, stateCls;
   if(data.page_live){ stateKey = "up_state_live"; stateCls = "ok"; }
   else if(data.page_active && data.page_dead){ stateKey = "up_state_dead"; stateCls = "bad"; }   // verified dead
+  else if(data.page_active && data.page_publishing){ stateKey = "up_state_publishing"; stateCls = ""; }  // committed, Pages building
   else if(data.page_active){ stateKey = "up_state_pending"; stateCls = ""; }
   else { stateKey = "up_state_draft"; stateCls = "bad"; }
   return '<div class="dw-sec up-act-sec"><h3>' + esc(t("up_page_h")) + '</h3>'+
@@ -2195,23 +2256,38 @@ function uploadActivateHtml(slug, row, detail){
     '<div class="act-status" id="upActStatus"></div></div>';
 }
 function upActStatus(msg, cls){ var el=document.getElementById("upActStatus"); if(el){ el.className="act-status" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; } }
+// Activation, the GitHub-Pages sacred order (mirror app.js:3586 activateAndConfirm): COMMIT the static file
+// via the relay, then CONFIRM live with a real bounded poll, then FLIP the state. The client never holds the
+// token (the relay commits). A commit failure leaves the page NOT activated. After a successful commit, a page
+// that is not yet served is PUBLISHING (honest), not dead or a false success; the send gate re-verifies live.
 function upActivate(slug){
   if(__writing || __upBusy) return; __upBusy = true;
-  upActStatus(t("up_verifying"), ""); var b=document.getElementById("upActBtn"); if(b) b.disabled = true;
+  upActStatus(t("up_committing"), ""); var b=document.getElementById("upActBtn"); if(b) b.disabled = true;
+  var baseData = null;
   oppReadData(slug).then(function(data){
-    var next = Object.assign({}, data, { source:"upload", page_active:true });
-    return oppPatch(slug, { data:next, up:Date.now() }).then(function(){ return verifyLive(slug); }).then(function(v){
-      var d2 = Object.assign({}, next, { page_live: !!v.ok, page_dead: !v.ok });
-      return oppPatch(slug, { data:d2, up:Date.now() }).then(function(){ return v; }, function(){ return v; });
+    baseData = data || {};
+    return pageReadHtml(slug);                                          // read the uploaded html (E2's write)
+  }).then(function(html){
+    if(!String(html || "").trim()){ var e0=new Error("no page html"); e0.__kind="nohtml"; throw e0; }
+    return pagePublishRelay(slug, withBeaconClient(html));              // relay commits opp/<slug>/index.html
+  }).then(function(){
+    var active = Object.assign({}, baseData, { source:"upload", page_active:true, page_dead:false, page_publishing:true, page_live:false });
+    return oppPatch(slug, { data:active, up:Date.now() }).then(function(){
+      upActStatus(t("up_verifying"), "");
+      return verifyLivePoll(slug).then(function(v){                     // bounded poll for the Pages build delay
+        var d2 = Object.assign({}, active, { page_live: !!v.ok, page_publishing: !v.ok, page_dead:false });
+        return oppPatch(slug, { data:d2, up:Date.now() }).then(function(){ return v; }, function(){ return v; });
+      });
     });
   }).then(function(v){
     __upBusy = false;
     if(v.ok){ upActStatus(t("up_now_live"), "ok"); }
-    else { upActStatus(v.dead ? t("up_dead") : t("up_unconfirmed"), "bad"); }
+    else { upActStatus(t("up_publishing"), ""); }                       // committed, still publishing (honest)
     if(__drawerSlug === slug) refreshDrawer(slug);
   }).catch(function(e){
     __upBusy = false; var b2=document.getElementById("upActBtn"); if(b2) b2.disabled = false;
-    upActStatus((e && e.authRequired) ? t("err") : t("up_write_failed"), "bad");
+    var kind = e && e.__kind;
+    upActStatus((e && e.authRequired) ? t("err") : (kind==="nohtml") ? t("up_no_html") : t("up_commit_failed"), "bad");
   });
 }
 function upWireActivate(slug){ var b=document.getElementById("upActBtn"); if(b) b.addEventListener("click", function(){ upActivate(slug); }); }

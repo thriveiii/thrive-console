@@ -160,7 +160,8 @@ def route_pages(r):
         for row in (rows if isinstance(rows, list) else [rows]):
             if isinstance(row, dict) and row.get("slug"): PAGE_POSTS.append(row); PAGES[row["slug"]] = row.get("html","")
         return r.fulfill(status=204, body="")
-    return J(r, [])
+    slug = slug_of(req.url)                                   # F2: activation reads console_pages.html back by slug
+    return J(r, [{"html":PAGES[slug]}] if slug in PAGES else [])
 def route_mail(r):
     req = r.request
     if req.method == "POST":
@@ -254,30 +255,28 @@ with sync_playwright() as p:
     ck("4: the recipient persisted bare on the draft opp",
        (OPPS["acme-co"]["data"].get("recipients") or [{}])[0].get("addr")=="buyer.acme@example.test", OPPS["acme-co"]["data"].get("recipients"))
 
-    # ===== 5: send BLOCKED until activated AND verifyLive ok =====
+    # ===== 5: send BLOCKED until activated (F2: activation commits via the relay, then verify-live) =====
+    # The dead-link and still-publishing nuances live in board_activate_test.py; here the E2-scoped check is
+    # that a not-activated upload page cannot send, and that an activated + live page can. (F2 changed activate
+    # to a relay commit + verify-live poll, so this exercises the whole path with a fast live poll.)
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(600); wait_ident(pg)
-    # 5a: not activated -> send refused (the drawer Send exists but runSend blocks with notlive)
-    LIVE["acme-co"] = "dead"
+    # 5a: NOT activated -> send refused (the gate blocks before any activation)
     pg.evaluate(OPEN, "A quick note for Acme Co")   # business == subject/title
     pg.wait_for_timeout(400)
-    # activate against a DEAD link -> stays not-live, send blocked
-    pg.evaluate("()=>{var b=document.getElementById('upActBtn'); if(b) b.click();}")
-    pg.wait_for_timeout(900)
-    st = pg.evaluate("()=>{var e=document.getElementById('upState'); return e?e.className+'|'+e.textContent:'';}")
-    ck("5: activating against a DEAD link shows a clear dead state (no false success)", "bad" in st and "not live" in st.lower(), st)
-    ck("5: a dead activation did NOT flip the page to live", OPPS["acme-co"]["data"].get("page_live")==False, OPPS["acme-co"]["data"])
     n_mail_before = sent_count("acme-co")
     pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
     pg.wait_for_timeout(900)
-    ck("5: send is BLOCKED for a not-live upload page (no console_mail, no relay call)",
-       sent_count("acme-co")==n_mail_before and not any(c.get("slug")=="acme-co" for c in RELAY_CALLS), {"mail":sent_count("acme-co")})
+    ck("5: send is BLOCKED for a not-activated upload page (no console_mail, no relay send)",
+       sent_count("acme-co")==n_mail_before and not any((c.get("op") is None and c.get("slug")=="acme-co") for c in RELAY_CALLS), {"mail":sent_count("acme-co")})
     stA = pg.evaluate("()=>{var e=document.getElementById('actStatus'); return e?{txt:e.textContent,cls:e.className}:{};}")
     ck("5: the blocked send shows a RED reason (not a phantom success)", "bad" in (stA.get("cls") or ""), stA)
 
-    # 5b: now the link is live -> activate verifies live -> send goes through
+    # 5b: activate against a LIVE link -> the relay commits, the poll confirms live, then the send goes through
     LIVE["acme-co"] = "ok"
     pg.evaluate("()=>{var b=document.getElementById('upActBtn'); if(b) b.click();}")
-    pg.wait_for_timeout(1000)
+    pg.wait_for_timeout(1600)
+    ck("5: activation committed the page via the relay (op=page_publish)",
+       any(c.get("op")=="page_publish" and c.get("slug")=="acme-co" for c in RELAY_CALLS), RELAY_CALLS)
     ck("5: activating a LIVE link flips to a live state", OPPS["acme-co"]["data"].get("page_live")==True, OPPS["acme-co"]["data"])
     pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
     pg.wait_for_timeout(1200)
