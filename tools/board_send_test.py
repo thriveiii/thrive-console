@@ -143,16 +143,24 @@ with sync_playwright() as p:
     ck("3: the payload carries slug=alpha", pay.get("slug")=="alpha", pay.get("slug"))
     mid = (pay.get("headers") or {}).get("Message-ID","")
     ck("3: the payload carries a Message-ID (<c...@thriveiii.com>)", bool(re.match(r"^<c.+@thriveiii\.com>$", mid)), mid)
-    # PLAIN-ONLY: the tokenized opp-page link (channel 2) rides in the TEXT as a plain URL, so a page VISIT
-    # is attributed to the recipient (beacon.js reads r). The HTML open pixel (channel 1) is REMOVED.
+    # LIGHT-HTML: the tokenized opp-page link (channel 2) rides in the TEXT as a plain URL, so a page VISIT
+    # is attributed to the recipient (beacon.js reads r); the 1x1 open pixel (channel 1) rides in the HTML.
     m = re.search(r"[?&]r=([^&\"'\s<]+)", pay.get("text",""))
     tok = m.group(1) if m else ""
     ck("3: the text carries the tokenized opp-page link r=<token> (channel 2)", bool(tok), pay.get("text","")[:200])
     ck("3: the page-link token equals the console_mail row id (the attribution join)", bool(tok) and MAIL and MAIL[0].get("id")==tok, {"tok":tok, "id":(MAIL[0].get('id') if MAIL else None)})
-    ck("3: PLAIN-ONLY: no HTML open pixel is sent (op=hit absent from html and text)",
-       "op=hit" not in pay.get("html","") and "op=hit" not in pay.get("text","") and "<img" not in pay.get("html",""), pay.get("html","")[:200])
-    ck("3: PLAIN-ONLY: the html is the minimal text-preserving form (pre-wrap), never heavy brandWrap",
-       "white-space:pre-wrap" in pay.get("html","") and "thrive-logo.png" not in pay.get("html",""), pay.get("html","")[:200])
+    html = pay.get("html","")
+    pm = re.search(r"op=hit[^\"'<>]*?r=([^&;\"'\s<]+)", html)
+    ptok = pm.group(1) if pm else ""
+    ck("3: LIGHT-HTML: the one open pixel is present in the html (op=hit, r=<token>)", bool(ptok), html[-300:])
+    ck("3: LIGHT-HTML: the open-pixel token equals the console_mail row id", bool(ptok) and MAIL and MAIL[0].get("id")==ptok, {"ptok":ptok, "id":(MAIL[0].get('id') if MAIL else None)})
+    ck("3: LIGHT-HTML: the pixel is the ONLY image (exactly one <img, and it is the 1x1 open pixel)",
+       html.count("<img")==1 and 'width="1" height="1"' in html, {"imgs":html.count("<img")})
+    ck("3: LIGHT-HTML: light formatting - a grey smaller closing/footer, no logo/table/background/second image",
+       ("#888888" in html or "#9aa0aa" in html) and "thrive-logo.png" not in html and "<table" not in html
+       and "background" not in html and html.count("<img")==1, html[:220])
+    ck("3: LIGHT-HTML: real paragraph breaks (a <p> body paragraph), never a run-on block",
+       "<p " in html or "<p>" in html, html[:220])
     ck("3: the payload preserves the faithful contract keys", all(k in pay for k in ["v","from","to","subject","html","text","idempotencyKey","headers","slug"]), list(pay.keys()))
     ck("3: provider is the relay (never a direct client Resend call)", not any("api.resend.com" in json.dumps(c) for c in RELAY_CALLS))
 

@@ -46,6 +46,15 @@ OPPS = {
   "reply": opp("reply","Reply Co","Re: your note","Thanks, answering now.","buyer.reply@example.test"),
   "failw": opp("failw","Failw Co","Failw x Thrive","Body here.","buyer.failw@example.test"),      # forced PATCH 500
 }
+# ROOT duplicate-signature fixture: the stored body ENDS with an old baked agency closing
+# (sign-off name / Thrive Digital Solutions / thriveiii.com) AND the record already carries data.sig.
+# stripBakedSig must remove the baked closing at compile so the ONE identity signature is the only closing.
+OPPS["baked"] = {"slug":"baked", "business":"Baked Co", "archived":False,
+  "data":{"recipients":[{"addr":"buyer.baked@example.test","name":""}],
+          "channels":[{"type":"email","value":"buyer.baked@example.test","primary":True}],
+          "outreach_subject":"Baked x Thrive",
+          "outreach_text":"Hello there, a quick note.\n\nLooking forward to your reply.\n\nOld Signoff Name\nThrive Digital Solutions\nthriveiii.com",
+          "sig":SIG, "branded":False}}
 PATCH_CALLS = []          # captured console_opps PATCH bodies
 OPP_FAULT = {}            # slug -> "500" to force a write failure
 
@@ -160,21 +169,38 @@ with sync_playwright() as p:
        last.get("outreach_subject")=="Acme partnership" and "First paragraph" in str(last.get("outreach_text","")), last)
     ck("2: the signature written to data.sig is exactly name + title", last.get("sig")==SIG, last.get("sig"))
 
-    # preview == send parity, PLAIN direction: the persisted-record compile (what runSend uses) is the plain
-    # message, and the preview iframe shows byte-identical html
+    # preview == send parity, LIGHT-HTML direction: the persisted-record compile (what runSend uses) is the
+    # light-HTML message, and the preview iframe shows byte-identical html
     art = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('acme'); }")
     txt, htm = art.get("text",""), art.get("html","")
-    ck("PLAIN: the sent TEXT preserves the paragraph break (newlines not collapsed)",
+    ck("LIGHT: the sent TEXT preserves the paragraph break (newlines not collapsed)",
        "First paragraph.\n\nSecond paragraph." in txt, txt[:300])
-    ck("PLAIN: the signature is separated from the body by a blank line in the text",
+    ck("LIGHT: the signature is separated from the body by a blank line in the text",
        ("\n\n"+SIG) in txt, txt[-200:])
     ck("2: the compiled preview carries the exact signature (preview == send)", SIG in htm and SIG in txt, htm[:200])
+    ck("2: the signature appears EXACTLY ONCE in the html and once in the text (no duplicate sig block)",
+       htm.count(SIG)==1 and txt.count(SIG)==1, {"html":htm.count(SIG), "text":txt.count(SIG)})
     ck("3: the opp link is a plain tokenized URL in the text (channel 2, clickable in a plain email)",
        "console.thriveiii.com/opp/acme" in txt and re.search(r"[?&]r=", txt) is not None, txt[-200:])
-    ck("PLAIN: the html is the minimal text-preserving form (pre-wrap), never heavy brandWrap or a pixel",
-       "white-space:pre-wrap" in htm and "<img" not in htm and "op=hit" not in htm and "thrive-logo.png" not in htm, htm[:200])
-    ck("2: the preview iframe html EQUALS the send payload html (no false-success gap, plain direction)",
+    ck("LIGHT: real paragraph breaks in the html (<p> body paragraphs), never a run-on block",
+       ("<p " in htm or "<p>" in htm), htm[:200])
+    ck("LIGHT: light formatting - a grey smaller closing/footer, the pixel is the ONLY image, no logo/table/background",
+       ("#888888" in htm or "#9aa0aa" in htm) and htm.count("<img")==1 and 'width="1" height="1"' in htm
+       and "thrive-logo.png" not in htm and "<table" not in htm and "background" not in htm, htm[:220])
+    ck("LIGHT: the one open pixel carries op=hit and r=<token> in the html",
+       re.search(r"op=hit[^\"'<>]*?r=[^&;\"'\s<]+", htm) is not None, htm[-260:])
+    ck("2: the preview iframe html EQUALS the send payload html (no false-success gap, light direction)",
        pg.evaluate(SRCDOC)==htm, {"srcdoc_len":len(pg.evaluate(SRCDOC) or ""), "art_len":len(htm)})
+
+    # ===== ROOT duplicate-signature fix: a body with a baked agency closing has it stripped at compile =====
+    bart = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('baked'); }")
+    btx, bhm = bart.get("text",""), bart.get("html","")
+    ck("ROOT: the baked agency closing is stripped (the old sign-off name is gone from text + html)",
+       "Old Signoff Name" not in btx and "Old Signoff Name" not in bhm, {"text":btx[-260:], "html":bhm[-260:]})
+    ck("ROOT: with the baked closing stripped, the identity signature appears EXACTLY ONCE",
+       btx.count(SIG)==1 and bhm.count(SIG)==1, {"text":btx.count(SIG), "html":bhm.count(SIG)})
+    ck("ROOT: the real body content survives the strip (not over-eager)",
+       "Looking forward to your reply." in btx and "Looking forward to your reply." in bhm, btx[:200])
 
     # 4: pre-send checklist + Send-disable gate
     ck("4: with subject + body present, Send is enabled", pg.evaluate(SEND_DISABLED)==False, pg.evaluate(SEND_DISABLED))

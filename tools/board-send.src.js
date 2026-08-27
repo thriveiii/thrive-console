@@ -133,23 +133,62 @@ function toPlainText(html, sig){                                                
   s = s.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim();
   return sig ? (s + "\n\n" + sig) : s;
 }
-// PLAIN-ONLY law of the new console: a clean plain message lands in inbox, not spam (Thyab's standing
-// instruction). plainToHtml is the ONLY html the send carries now: a minimal, faithful mirror of the plain
-// text - the text escaped, with real line breaks preserved by white-space:pre-wrap. No brandWrap, no logo,
-// no inline color styling, no open pixel. Whichever part a client renders (html or text), it reads the SAME
-// clean plain message: no run-on, no jammed signature, no heavy HTML.
-function plainToHtml(t){
+// LIGHT-HTML law of the new console: outreach sends light, clean HTML - not heavy branded HTML, not
+// plain-only. Allowed: black body text in one system font, a smaller grey closing/signature and grey
+// footer, real paragraph breaks, the plain opp link, and the one 1x1 open pixel. Forbidden: logo, tables,
+// background colors, multi-color styling, any image other than the tracking pixel, inline-styled cards.
+
+// The two fixed agency strings of the OLD engine's signature (renderSignature = name + AGENCY_NAME +
+// AGENCY_SITE, app.js:6285-6290). They only ever appear in a signature, so they are a reliable anchor for
+// stripping an old baked-in closing out of a body.
+var AGENCY_NAME_L5 = "Thrive Digital Solutions";
+var AGENCY_SITE_L5 = "thriveiii.com";
+
+// ROOT fix for the double signature: the operator's outreach_text was authored VERBATIM by the old engine
+// (app.js:13172 "content used verbatim"), so many bodies END with a hand-written closing of the shape
+// name / AGENCY_NAME / AGENCY_SITE. sendCompile now appends the ONE identity signature (data.sig) itself,
+// so any such baked-in closing in the body is a duplicate. Strip exactly that trailing block (the two fixed
+// agency lines, plus an optional sign-off name line directly above them). Keyed on the fixed agency strings,
+// so it never touches normal body content.
+function stripBakedSig(body){
+  var s = String(body==null?"":body).replace(/\r\n/g, "\n");
+  var agN = AGENCY_NAME_L5.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  var agS = AGENCY_SITE_L5.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // trailing: (optional name line) AGENCY_NAME AGENCY_SITE, with flexible whitespace and blank lines
+  var reNamed = new RegExp("\\n+[ \\t]*[^\\n]+\\n[ \\t]*" + agN + "[ \\t]*\\n[ \\t]*" + agS + "[ \\t]*\\n*[ \\t]*$", "i");
+  var rePlain = new RegExp("\\n+[ \\t]*" + agN + "[ \\t]*\\n[ \\t]*" + agS + "[ \\t]*\\n*[ \\t]*$", "i");
+  s = s.replace(reNamed, "").replace(rePlain, "");
+  return s.replace(/\s+$/, "");
+}
+
+// Body paragraphs as light HTML: split on blank lines into <p>, single newlines become <br>. Black text,
+// one system font, normal size. No wrapper card, no colors, no tables.
+function bodyParasHtml(bodyPlain){
+  var s = String(bodyPlain==null?"":bodyPlain).replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+  if(!s) return "";
+  return s.split(/\n{2,}/).map(function(b){
+    b = b.replace(/^\n+|\n+$/g, "");
+    return b ? '<p style="margin:0 0 14px 0">' + esc(b).split("\n").join("<br>") + '</p>' : "";
+  }).filter(Boolean).join("");
+}
+
+// The one light-HTML document: body (black), then the identity signature in smaller grey, then the grey
+// POSTAL/STOP footer. The open pixel is appended by the caller so it is the LAST and ONLY image.
+function lightHtml(bodyPlain, sig, lang){
   var font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif";
-  return '<div style="white-space:pre-wrap;font-family:' + font + ';font-size:15px;line-height:1.5;color:#111">'
-    + esc(String(t==null?"":t)) + '</div>';
+  var sigHtml = (sig && sig.trim())
+    ? '<div style="margin-top:18px;font-size:13px;color:#888888">' + esc(String(sig)).split("\n").join("<br>") + '</div>'
+    : "";
+  return '<div style="font-family:' + font + ';font-size:15px;line-height:1.6;color:#111111">'
+    + bodyParasHtml(bodyPlain) + sigHtml + '</div>' + footerHtml(lang);
 }
 
 // compile(recipient, content) for ONE recipient. Content is the opp RECORD's prepared message
-// (console_opps.data.outreach_subject / outreach_text / sig). PLAIN-ONLY: the deliverable is the plain-text
-// arm (toPlainText preserves newlines and separates the sig from the body by a blank line, then the POSTAL
-// footer); the html is plainToHtml of that exact same plain text. The tokenized opp-page link (channel 2)
-// stays in the text as a plain URL, so a recipient VISITING the page is recorded by beacon.js (a real
-// interest signal). Channel 1 (the HTML open pixel) is removed with the heavy HTML.
+// (console_opps.data.outreach_subject / outreach_text / sig). LIGHT-HTML: the body is the operator's text
+// with any old baked-in closing stripped (stripBakedSig), so the ONE identity signature (data.sig) appears
+// EXACTLY ONCE, in smaller grey, above the grey footer. The plain-text arm mirrors it (body + blank line +
+// sig + footer). The tokenized opp-page link (channel 2) rides in both as a plain URL; the 1x1 open pixel
+// (channel 1) is the ONLY image, appended last.
 function sendCompile(slug, row, data, rcpt){
   data = data || {}; rcpt = rcpt || {};
   var full = String(rcpt.name==null?"":rcpt.name).trim();
@@ -157,19 +196,19 @@ function sendCompile(slug, row, data, rcpt){
   var lang = (rcpt.lang==="ar" || data.lang==="ar") ? "ar" : "en";
   var addr = bareAddress(rcpt.addr||"");
   var ctx = { business:(row&&row.business)||data.business||"", link:liveUrl(slug), month:data.month||"" };
-  var inner = mergeFieldsInto(data.outreach_text||"", name, ctx);
+  var inner = stripBakedSig(mergeFieldsInto(data.outreach_text||"", name, ctx));   // ROOT: drop any old baked closing
   var subject = mergeFieldsInto(data.outreach_subject||"", name, ctx).replace(/^\s+|\s+$/g, "");
   var sig = data.sig || "";
   var plan = planAttachments(data.attachments||[]);
-  // The clean plain message: body (newlines intact) + blank line + signature + POSTAL footer. Hosted-image
-  // links (if any) ride as a text block, never an html block.
-  var text = toPlainText(inner, sig) + attachHostedBlockText(plan.hosted, lang) + footerText(lang);
+  var bodyPlain = inner + attachHostedBlockText(plan.hosted, lang);   // hosted-image links ride as text lines
   var token = recipientOpenToken(slug, addr, subject);       // == the console_mail row id (attribution join)
   if(token){
     var base = liveUrl(slug), tokd = base + (base.indexOf("?")<0?"?":"&") + "r=" + encodeURIComponent(token);
-    text = text.split(base).join(tokd);                      // channel 2: the opp page link carries the token
+    bodyPlain = bodyPlain.split(base).join(tokd);            // channel 2: the opp page link carries the token
   }
-  var html = plainToHtml(text);                              // minimal, faithful; identical content to the plain text
+  var text = toPlainText(bodyPlain, sig) + footerText(lang);            // plain-text alternative part
+  var html = lightHtml(bodyPlain, sig, lang);                          // light-HTML primary part
+  if(token) html = html + openPixelHtml(slug, token, relayEp());       // channel 1: the one open pixel (last, only image)
   return { to:addr, name:name, subject:subject, html:html, text:text, token:token, lang:lang, attachments:plan.attach };
 }
 
