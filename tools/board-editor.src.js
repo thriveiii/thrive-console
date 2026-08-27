@@ -78,15 +78,6 @@ function edHasLink(slug, body){
   try{ if(b.indexOf(liveUrl(slug)) >= 0) return true; }catch(e){}
   return false;
 }
-// The Send-disable gate covers ONLY what the editor exclusively owns and what makes an opp sendable at all:
-// a non-empty subject AND body. The link and the recipient are shown in the checklist as pass states, but
-// they are NOT part of the disable gate: the recipient has its own field and runSend's red refusal is the
-// tested backstop, and a prepared message may legitimately carry the page link in an already-tokenized form.
-// Gating only on subject+body keeps the pre-flight light (never a wall) and never disables Send for an opp
-// that already has a message, so the existing send-gate paths stay clickable.
-function edMessageReady(slug){
-  return !!(edVal("edSubj").trim() && edVal("edBody").trim());
-}
 
 // Build the data jsonb the preview/send compiles from: the captured base overlaid with the LIVE subject,
 // body, and the operator's signature FIELD value (empty allowed). edCompileFrom then runs the SAME sendCompile
@@ -153,10 +144,10 @@ function edRefreshChecks(slug){
 }
 // Grey the Send button while the MESSAGE is incomplete (subject/body/link). Recipient stays enforced by
 // runSend, so the no-recipient refusal remains a live, clickable path.
-function edApplyGate(slug){
-  var b=document.querySelector('#drawer .act[data-act="send"]');
-  if(b) b.disabled = !edMessageReady(slug);
-}
+// UNIFY: the editor delegates its Send-disable gate to the one shared gate (sendApplyGate -> sendReady =
+// subject AND body AND a valid recipient), so the drawer's board Send and the overlay's Send obey the same
+// rule. The link stays optional; the gate is never keyed on the stored has_email flag.
+function edApplyGate(slug){ if(typeof sendApplyGate==="function") sendApplyGate(slug); }
 // Recompile the preview from the LIVE values, through the send path's own sendCompile, and show it. The
 // srcdoc html is byte-identical to what runSend would POST for the same record (proven by edCompileFrom
 // reusing sendCompile). Best-effort: a compile hiccup never throws into the editor.
@@ -242,15 +233,9 @@ function edSaveNow(slug){
 function wireEditor(slug){
   var subjEl=document.getElementById("edSubj"), bodyEl=document.getElementById("edBody");
   if(!subjEl && !bodyEl) return;
-  // E1 seam: edTick's gate targets the drawer's Send (#drawer .act[data-act="send"]), which does not exist in
-  // the standalone New Message overlay. When that overlay owns this slug, also re-run its own gate (nmApplyGate
-  // -> nmReady = subject AND body AND recipient) so completing subject/body LAST re-enables #nmSend. Mirrors the
-  // edScheduleSave -> nmScheduleSave redirect above; adds no link term.
-  var onInput=function(){
-    edTick(slug);
-    if(typeof nmActive==="function" && nmActive(slug) && typeof nmApplyGate==="function") nmApplyGate(slug);
-    edScheduleSave(slug, 700);
-  };
+  // edTick runs edApplyGate -> sendApplyGate, which toggles BOTH the overlay's #nmSend and the drawer's board
+  // Send. So completing subject/body (or recipient) LAST re-enables Send in either surface. No link term.
+  var onInput=function(){ edTick(slug); edScheduleSave(slug, 700); };
   if(subjEl) subjEl.addEventListener("input", onInput);
   if(bodyEl) bodyEl.addEventListener("input", onInput);
   var sigEl=document.getElementById("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven

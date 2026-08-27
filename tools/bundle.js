@@ -1701,7 +1701,7 @@ ${UPLOAD_SRC}
     if(inTray){
       btns.push(actBtn("reopen","a_reopen",""));                        // the only sensible write on a closed card
     } else {
-      if(sendEligible(row)) btns.push(actBtn("send","s_send","send")); // L5: the opp has a prepared message (has_email) and is not closed
+      if(editorEligible(row) && relayEp()) btns.push(actBtn("send","s_send","send")); // UNIFY: Send renders wherever the compose editor does (endpoint set); it is DISABLED (sendApplyGate) until subject+body+recipient, never gated on the stored has_email flag
       if(st==="draft") btns.push(actBtn("promote","a_promote","win")); // the one declarable forward step
       else if(st==="live") btns.push(actBtn("revert","a_revert",""));
       btns.push(actBtn("won","a_won","win"));
@@ -1749,6 +1749,8 @@ ${UPLOAD_SRC}
     if(na) na.addEventListener("click", function(){ onAddNote(slug); });
     var rs=document.getElementById("recSave");                          // L5.5 recipient save
     if(rs) rs.addEventListener("click", function(){ onSaveRecipient(slug); });
+    var ri=document.getElementById("recIn");                            // UNIFY: typing a recipient re-runs the shared Send gate
+    if(ri) ri.addEventListener("input", function(){ try{ if(typeof sendApplyGate==="function") sendApplyGate(slug); }catch(e){} });
     try{ wireEditor(slug); }catch(e){}                                  // unified message editor (compose + reply)
     try{ upWireActivate(slug); }catch(e){}                              // E2 upload-page Activate control
   }
@@ -1801,7 +1803,7 @@ ${UPLOAD_SRC}
   }
   function onAction(slug, act){
     var m=Date.now(), row=findRow(slug); if(!row) return; var st=row.stage||"";
-    if(act==="send")    return runSend(slug);                             // L5 single-recipient send
+    if(act==="send")    return unifiedSend(slug);                         // UNIFY: persist live message+recipients, then the shared L5 runSend
     if(act==="promote") return runOppWrite(slug, function(r){ r.stage="live"; }, { stage:"live", up:m });
     if(act==="revert")  return runOppWrite(slug, function(r){ r.stage="draft"; }, { stage:"draft", up:m });
     if(act==="won")     return runOppWrite(slug, function(r){ r.stage="won"; }, { stage:"won", up:m });

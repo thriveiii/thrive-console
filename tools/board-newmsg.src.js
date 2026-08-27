@@ -60,10 +60,9 @@ function oppUpsert(slug, fields, retried){
   });
 }
 
-// ---- the recipient input (its own, not the drawer's sendEligible-gated field) ------------------------
-function nmRecipRaw(){ var el=document.getElementById("nmRecip"); return el ? String(el.value||"") : ""; }
-function nmRecipList(){ return parseAddrs(nmRecipRaw()).filter(isEmail).map(function(a){ return { addr:a, name:"", lang:"" }; }); }
-function nmHasRecip(){ return nmRecipList().length > 0; }
+// ---- the recipient input ---------------------------------------------------------------------------
+// UNIFY: the overlay no longer has its own recipient field. It mounts the SAME #recIn (recipientHtml) the
+// drawer uses, read through the one shared parser sendToList() (board-recipient.src.js). One field, one parser.
 // A short board-card label for the standalone opp: the subject, or the localized "New message" when empty.
 function nmBusiness(subj){ var s=String(subj==null?"":subj).trim(); return s ? s.slice(0,140) : t("nm_h"); }
 
@@ -74,26 +73,29 @@ function nmBusiness(subj){ var s=String(subj==null?"":subj).trim(); return s ? s
 function nmPanelHtml(slug, data){
   data = data || {};
   var row = { slug:slug, business:nmBusiness(data.outreach_subject), stage:"draft", archived:false };
-  var recip = recipientPrefill(data);
   return '<div class="nm-head"><h2>'+esc(t("nm_h"))+'</h2>'+
       '<button class="link nm-x" id="nmClose" type="button">'+esc(t("pf_close"))+'</button></div>'+
     '<div class="nm-body">'+
       editorHtml(slug, row, { opp:{ data:data } })+
-      '<div class="dw-sec"><h3>'+esc(t("nm_to"))+'</h3>'+
-        '<textarea class="rec-in mono-iso" id="nmRecip" rows="1" dir="ltr" autocomplete="off" spellcheck="false" '+
-          'placeholder="'+esc(t("nm_to_ph"))+'" aria-label="'+esc(t("nm_to"))+'">'+esc(recip)+'</textarea></div>'+
+      recipientHtml(slug, row, { opp:{ data:data } })+                      // UNIFY: the SAME #recIn field the drawer mounts
       '<div class="acts"><button class="act send" id="nmSend" type="button">'+esc(t("nm_send"))+'</button></div>'+
       '<div class="act-status" id="nmStatus"></div>'+
     '</div>';
 }
 
 function nmSetStatus(msg, cls){ var el=document.getElementById("nmStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
-// The Send button is greyed until subject + body + a valid recipient are present (a linkless message is
-// allowed; runSend is still the tested backstop for the recipient).
-function nmReady(slug){ return !!(edVal("edSubj").trim() && edVal("edBody").trim() && nmHasRecip()); }
-function nmApplyGate(slug){ var b=document.getElementById("nmSend"); if(b) b.disabled = !nmReady(slug); }
-// Refresh the editor's preview + checklist, then the New Message Send gate. Called on every field input.
-function nmTick(slug){ try{ edTick(slug); }catch(e){} nmApplyGate(slug); }
+// UNIFY: ONE Send gate for BOTH surfaces. Send is enabled only when subject + body + a valid recipient are
+// present (a linkless message is allowed; the opp link stays optional). Never gated on the stored has_email
+// flag. sendApplyGate toggles whichever Send control is mounted: the overlay's #nmSend and/or the drawer's
+// board Send action (#drawer .act[data-act="send"]).
+function sendReady(slug){ return !!(edVal("edSubj").trim() && edVal("edBody").trim() && sendHasRecip()); }
+function sendApplyGate(slug){
+  var ok = sendReady(slug);
+  var nb = document.getElementById("nmSend"); if(nb) nb.disabled = !ok;
+  var db = document.querySelector('#drawer .act[data-act="send"]'); if(db) db.disabled = !ok;
+}
+// Refresh the editor's preview + checklist, then the unified Send gate. Called on every field input.
+function nmTick(slug){ try{ edTick(slug); }catch(e){} sendApplyGate(slug); }
 
 function nmScheduleSave(slug, delay){
   if(__nmT[slug]) clearTimeout(__nmT[slug]);
@@ -109,7 +111,7 @@ function nmSaveNow(slug){
   if(!subjEl || !bodyEl) return;
   if(__writing || __nmSaving){ nmScheduleSave(slug, 500); return; }
   __nmSaving = true;
-  var subj=String(subjEl.value||""), body=String(bodyEl.value||""), sig=edSignature(), recips=nmRecipList();
+  var subj=String(subjEl.value||""), body=String(bodyEl.value||""), sig=edSignature(), recips=sendToList();
   nmSetStatus(t("a_saving"), "");
   oppReadData(slug).then(function(data){
     var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips });
@@ -130,9 +132,9 @@ function nmSaveNow(slug){
 // via the edScheduleSave seam); the recipient input, close, and Send are wired here.
 function nmWire(slug){
   try{ wireEditor(slug); }catch(e){}
-  var rc=document.getElementById("nmRecip"); if(rc) rc.addEventListener("input", function(){ nmTick(slug); nmScheduleSave(slug, 700); });
+  var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ nmTick(slug); nmScheduleSave(slug, 700); });
   var cl=document.getElementById("nmClose"); if(cl) cl.addEventListener("click", function(){ closeNewMessage(); });
-  var sd=document.getElementById("nmSend"); if(sd) sd.addEventListener("click", function(){ nmSend(slug); });
+  var sd=document.getElementById("nmSend"); if(sd) sd.addEventListener("click", function(){ unifiedSend(slug); });
   nmTick(slug);
 }
 
@@ -156,32 +158,46 @@ function openNewMessage(){
     }, function(){ /* read failed: keep the empty surface, first save still upserts */ });
   }
 }
-// Close the overlay. The draft stays in console_opps and the guarded pointer stays set, so the next open
-// resumes it - nothing is lost on an accidental close.
-function closeNewMessage(){ __nmOpen=false; var sc=document.getElementById("nmScrim"); if(sc) sc.hidden=true; }
+// Close the overlay. FLUSH FIRST: if a debounced save is pending, cancel the timer and write NOW (synchronously
+// captured from the live fields), so a recipient or message typed within the debounce window is never lost on
+// an accidental close. The draft stays in console_opps and the guarded pointer stays set, so the next open
+// resumes it - nothing is lost.
+function closeNewMessage(){
+  var slug = __nmSlug;
+  if(slug && __nmT[slug]){ clearTimeout(__nmT[slug]); __nmT[slug]=null; try{ nmSaveNow(slug); }catch(e){} }
+  __nmOpen=false; var sc=document.getElementById("nmScrim"); if(sc) sc.hidden=true;
+}
 
-// Send the standalone message through the UNCHANGED L5 path. Flush the live fields to the opp (upsert), reload
-// the board so runSend's findRow(slug) resolves, clear the draft pointer, close the overlay, then hand off to
-// runSend - which optimistically shows the card sending, POSTs the light-HTML message, and writes console_mail
-// only on Resend acceptance (a failure reverts the card with no phantom, and the draft remains a board opp).
-function nmSend(slug){
-  if(__writing || __nmSaving){ nmSetStatus(t("a_saving"), ""); nmScheduleSave(slug, 300); return; }
-  var subj=edVal("edSubj"), body=edVal("edBody"), sig=edSignature(), recips=nmRecipList();
-  if(!(subj.trim() && body.trim())){ nmSetStatus(t("nm_need_msg"), "bad"); return; }
-  if(!recips.length){ nmSetStatus(t("nm_need_to"), "bad"); return; }
-  nmSetStatus(t("s_sending"), "");
-  var sd=document.getElementById("nmSend"); if(sd) sd.disabled=true;
+// Where a send-time status goes: the overlay's #nmStatus when it owns the slug, else the drawer card status.
+function sendFail(slug, msg){
+  if(typeof nmActive==="function" && nmActive(slug)){ nmSetStatus(msg, "bad"); }
+  else { __act[slug] = { msg:msg, cls:"bad" }; if(__drawerSlug===slug) refreshDrawer(slug); }
+}
+// UNIFY: the ONE send path for BOTH surfaces. Persist the live subject/body/signature/recipients to the opp,
+// reload the board so runSend's findRow(slug) resolves, then hand off to the UNCHANGED L5 runSend (which does
+// the optimistic paint, the relay POST, and writes console_mail only on Resend acceptance). When the overlay
+// owns the slug, the draft graduates: clear the pointer and close the overlay first. Gated on subject+body+
+// recipient (the send controls are disabled otherwise); the opp link stays optional; upSendLiveGate (the live
+// -page check for source==="upload") still runs inside runSend, unchanged.
+function unifiedSend(slug){
+  if(__writing || __nmSaving){ if(typeof nmActive==="function" && nmActive(slug)){ nmSetStatus(t("a_saving"), ""); nmScheduleSave(slug, 300); } return; }
+  var subj=edVal("edSubj"), body=edVal("edBody"), sig=edSignature(), recips=sendToList();
+  if(!(subj.trim() && body.trim())){ sendFail(slug, t("nm_need_msg")); return; }
+  if(!recips.length){ sendFail(slug, t("nm_need_to")); return; }
+  var over = (typeof nmActive==="function" && nmActive(slug));
+  if(over){ nmSetStatus(t("s_sending"), ""); var sd=document.getElementById("nmSend"); if(sd) sd.disabled=true; }
+  var row = findRow(slug) || { slug:slug };
   oppReadData(slug).then(function(data){
     var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips });
-    return oppUpsert(slug, { business:nmBusiness(subj), data:next, up:Date.now() });
+    return oppUpsert(slug, { business:(row.business || nmBusiness(subj)), data:next, up:Date.now() });
   }).then(function(){
-    return reloadBoardData();                          // so the lightweight opp is a board row runSend can find
+    return reloadBoardData();                          // so the opp is a board row runSend can find
   }).then(function(){
-    nmClearStore(); closeNewMessage();                 // the draft graduates to the board; the card shows the send
-    try{ runSend(slug); }catch(e){}                    // UNCHANGED L5 single-recipient send
+    if(over){ nmClearStore(); closeNewMessage(); }      // the draft graduates to the board; the card shows the send
+    try{ runSend(slug); }catch(e){}                     // UNCHANGED L5 single-recipient send
   }).catch(function(e){
     var b2=document.getElementById("nmSend"); if(b2) b2.disabled=false;
-    nmSetStatus((e && e.authRequired) ? t("err") : t("a_failed"), "bad");
+    sendFail(slug, (e && e.authRequired) ? t("err") : t("a_failed"));
   });
 }
 

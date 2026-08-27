@@ -44,11 +44,19 @@ function recipientPrefill(data){
 function parseAddrs(text){
   return String(text||"").split(/[\n,;]+/).map(function(s){ return bareAddress(s).toLowerCase(); }).filter(Boolean);
 }
+// UNIFY: ONE recipient reader/parser for BOTH the overlay and the drawer. Both mount the same field (#recIn),
+// so this is the single source the send gate and the send writer read. Valid emails only, {addr,name,lang} shape.
+function sendToRaw(){ var el=document.getElementById("recIn"); return el ? String(el.value||"") : ""; }
+function sendToList(){ return parseAddrs(sendToRaw()).filter(isEmail).map(function(a){ return { addr:a, name:"", lang:"" }; }); }
+function sendHasRecip(){ return sendToList().length > 0; }
 
 var __recSaved = {};   // per-slug transient "Saved." status, rendered on each drawer paint (survives the enrichment re-render)
 
 function recipientHtml(slug, row, detail){
-  if(!sendEligible(row)) return "";                    // only where Send is offered (has_email, not closed, endpoint set)
+  // UNIFY: the recipient field renders wherever the compose editor renders (editorEligible), NOT gated on
+  // has_email. So a card whose message did not persist still shows a recipient field, and the overlay and the
+  // drawer mount the SAME field (#recIn). Send stays gated on subject+body+recipient (sendReady), never has_email.
+  if(!editorEligible(row)) return "";
   var data = (detail && detail.opp && detail.opp.data) || null;
   var val = data ? recipientPrefill(data) : "";
   var st = __recSaved[slug] || {};

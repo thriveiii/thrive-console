@@ -198,13 +198,13 @@ with sync_playwright() as p:
     pg.evaluate("()=>{var e=new KeyboardEvent('keydown',{key:'Escape'});document.dispatchEvent(e);}"); pg.wait_for_timeout(150)
     ck("4c: Delta reverted to the Live lane", "Live" in pg.evaluate(LANE_OF, "Delta Ltd"))
 
-    # ===== gate: no sighted recipient -> red, no relay call, no row =====
+    # ===== gate: no sighted recipient -> Send is DISABLED (the unified gate blocks it up front), no relay, no row =====
     relay_before = len(ORDER)
     pg.evaluate(OPEN, "NoRecipient Co"); pg.wait_for_timeout(400)
-    pg.evaluate(CLICK_ACT, "send"); pg.wait_for_timeout(700)
-    st4 = pg.evaluate(ACT_STATUS)
-    ck("gate: an opp with no sighted recipient email refuses with red, no relay call, no row",
-       ("bad" in st4["cls"]) and sent_count("norec")==0 and len(ORDER)==relay_before, {"st":st4, "order":ORDER[relay_before:]})
+    sd4 = pg.evaluate("()=>{ var b=document.querySelector('#drawer .act[data-act=\"send\"]'); return b? !!b.disabled : null; }")
+    pg.evaluate(CLICK_ACT, "send"); pg.wait_for_timeout(700)                # a disabled Send does nothing
+    ck("gate: an opp with no sighted recipient cannot send - Send is DISABLED, no relay call, no row",
+       sd4==True and sent_count("norec")==0 and len(ORDER)==relay_before, {"disabled":sd4, "order":ORDER[relay_before:]})
     pg.evaluate("()=>{var e=new KeyboardEvent('keydown',{key:'Escape'});document.dispatchEvent(e);}"); pg.wait_for_timeout(150)
 
     # ===== 5: AR RTL + localized Send =====

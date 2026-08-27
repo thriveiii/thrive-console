@@ -177,7 +177,7 @@ with sync_playwright() as p:
        "First line." in htm0 and "Growth Lead" not in htm0, htm0[:200])
 
     # ===== 3: close + reopen restores the draft (add a recipient first) =====
-    pg.fill("#nmRecip", "buyer.new@example.test")
+    pg.fill("#recIn", "buyer.new@example.test")
     pg.wait_for_timeout(1200)
     pg.evaluate("()=>{var e=new KeyboardEvent('keydown',{key:'Escape'});document.dispatchEvent(e);}"); pg.wait_for_timeout(200)
     ck("3: Escape closes the overlay", pg.evaluate(NM_HIDDEN)==True and pg.evaluate("()=>window.__thriveNewMessageOpen()")==False)
@@ -185,7 +185,7 @@ with sync_playwright() as p:
     ck("3: reopening restores the same draft slug", pg.evaluate("()=>window.__thriveNewMessageSlug()")==nmslug)
     ck("3: the subject is restored", pg.evaluate(VAL, "edSubj")=="Hello there")
     ck("3: the body is restored (nothing lost on close)", "First line." in (pg.evaluate(VAL, "edBody") or ""))
-    ck("3: the recipient is restored", "buyer.new@example.test" in (pg.evaluate(VAL, "nmRecip") or ""))
+    ck("3: the recipient is restored", "buyer.new@example.test" in (pg.evaluate(VAL, "recIn") or ""))
 
     # ===== 4: a LINKLESS message sends through the unchanged L5 path and becomes a Sent opp =====
     body_now = pg.evaluate(VAL, "edBody") or ""
@@ -209,7 +209,7 @@ with sync_playwright() as p:
     ck("5: a fresh draft opens after the previous send (pointer was cleared)", failslug and failslug!=nmslug, {"fail":failslug, "prev":nmslug})
     pg.fill("#edSubj", "Second note")
     pg.fill("#edBody", "Body of the second note.")
-    pg.fill("#nmRecip", "buyer.two@example.test")
+    pg.fill("#recIn", "buyer.two@example.test")
     pg.wait_for_timeout(1200)
     pg.evaluate("()=>{ var b=document.getElementById('nmSend'); if(b) b.click(); }"); pg.wait_for_timeout(1400)
     ck("5: a forced relay failure writes NO console_mail row (no phantom Sent)", sent_count(failslug)==0, MAIL)
@@ -222,7 +222,7 @@ with sync_playwright() as p:
     # Only the recipient field and the initial open re-run nmApplyGate. So completing subject/body LAST must still
     # re-enable #nmSend (nmReady = subject AND body AND recipient). Revert the wireEditor fix and this goes red.
     open_nm(pg)
-    pg.fill("#nmRecip", "buyer.order@example.test")          # recipient FIRST
+    pg.fill("#recIn", "buyer.order@example.test")          # recipient FIRST
     pg.wait_for_timeout(200)
     ck("5b: with only a recipient (no subject/body yet), Send stays disabled",
        pg.evaluate(NM_SEND_DISABLED)==True, pg.evaluate(NM_SEND_DISABLED))
@@ -235,6 +235,35 @@ with sync_playwright() as p:
     ck("5b: completing subject/body LAST re-enables #nmSend (gate desync fixed)",
        pg.evaluate(NM_SEND_DISABLED)==False, pg.evaluate(NM_SEND_DISABLED))
     pg.close(); ctx.close()
+
+    # ===== 7: FLUSH ON CLOSE - type recipient+subject+body, immediately close, reopen the CARD, nothing lost =====
+    # The unified flush-on-close must persist the message + recipient even when the overlay closes within the
+    # ~700ms debounce (no explicit save). Reverting closeNewMessage's flush turns this red.
+    ctxf = b.new_context(); wire(ctxf); pgf = ctxf.new_page()
+    pgf.goto(f"{base}/library/board.html", wait_until="load"); pgf.wait_for_timeout(500); wait_ident(pgf)
+    open_nm(pgf)
+    pgf.fill("#edSubj", "Flush Co note")
+    pgf.fill("#edBody", "This body must survive an immediate close.")
+    pgf.fill("#recIn", "buyer.flush@example.test")
+    pgf.evaluate("()=>{ var b=document.getElementById('nmClose'); if(b) b.click(); }")   # close IMMEDIATELY, within the debounce
+    pgf.wait_for_timeout(1400)                                                            # the flushed upsert settles
+    pgf.goto(f"{base}/library/board.html", wait_until="load"); pgf.wait_for_timeout(600); wait_ident(pgf)
+    CLICK_CARD = """()=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf('Flush Co note')>=0) t=c; }); if(t){ t.click(); return true; } return false; }"""
+    opened = False
+    for _ in range(20):                                                                  # poll: the reloaded board renders the card
+        if pgf.evaluate(CLICK_CARD): opened = True; break
+        pgf.wait_for_timeout(200)
+    body = ""
+    for _ in range(25):                                                                  # poll: the drawer enriches (fetchDetail prefills the editor)
+        body = pgf.evaluate(VAL, "edBody") or ""
+        if "must survive" in body: break
+        pgf.wait_for_timeout(200)
+    ck("7: FLUSH - the immediately-closed draft persisted as a board card (nothing lost)", opened==True)
+    ck("7: FLUSH - the body survived the immediate close", "must survive" in body, body)
+    ck("7: FLUSH - the recipient survived the immediate close (data.recipients persisted)", "buyer.flush@example.test" in (pgf.evaluate(VAL, "recIn") or ""), pgf.evaluate(VAL, "recIn"))
+    sdf = pgf.evaluate("()=>{ var b=document.querySelector('#drawer .act[data-act=\"send\"]'); return b? !!b.disabled : null; }")
+    ck("7: FLUSH - Send is ENABLED on the reopened card (subject+body+recipient all persisted)", sdf==False, {"disabled":sdf})
+    pgf.close(); ctxf.close()
 
     # ===== 6: AR RTL =====
     ctx2 = b.new_context(); wire(ctx2, lang="ar"); pg2 = ctx2.new_page()
