@@ -249,10 +249,12 @@ function upBuildPlan(files){
 }
 
 // ---- console_pages write (the uploaded-template store E3's Insert-link dropdown will read) ---------
-// The console_pages schema is (slug, html, up) - E2_EVIDENCE / supabase-stage1.sql:39. There is no title or
-// active column, so the title lives on console_opps.business and the active/live flags on the opp's data
-// (page_active / page_live); the dropdown reads console_pages joined to console_opps for the label. Bounded
-// upsert, same discipline as oppUpsert (merge-duplicates, one refresh-retry).
+// The console_pages schema is (slug, html, up, updated_at, live_verified_at). There is no title or active
+// column, so the title lives on console_opps.business; liveness lives on console_pages.live_verified_at (PR1,
+// stamped by pageStampLive only after a real verify-live ok), NOT on any flag in the opp's data. The dropdown
+// reads console_pages joined to console_opps for the label. Bounded upsert, same discipline as oppUpsert
+// (merge-duplicates, one refresh-retry). This insert leaves live_verified_at null - a stored page is a DRAFT
+// until it is committed and verified live.
 function pageUpsert(slug, html, retried){
   var url = URL_BASE + "/rest/v1/console_pages";
   var row = { slug:slug, html:String(html == null ? "" : html), up:Date.now() };
@@ -269,10 +271,34 @@ function pageUpsert(slug, html, retried){
   });
 }
 
+// ---- pageStampLive: the SINGLE write that makes a page "live" (PR1) -------------------------------
+// Called ONLY after verifyLive did a real GET /opp/<slug> and returned ok. It stamps
+// console_pages.live_verified_at = now() by slug. The console_board view and the drawer derive
+// "activated / live" SOLELY from this column; console_opps.published and bare row-existence are no longer the
+// live signal. The relay commits the static file; the board writes this truth after it CONFIRMS the file
+// actually serves - never optimistically. One refresh-retry, same discipline as pageUpsert; a failure is
+// surfaced (settle-always: the caller shows red and does not claim live).
+function pageStampLive(slug, retried){
+  var url = URL_BASE + "/rest/v1/console_pages?slug=eq." + encodeURIComponent(slug);
+  var patch = { live_verified_at: new Date().toISOString(), up: Date.now() };
+  return authFetchOnce(url, {
+    method:"PATCH",
+    headers:{ "apikey":ANON, "Authorization":"Bearer " + bearer(), "Content-Type":"application/json", "Prefer":"return=minimal" },
+    cache:"no-store", body: JSON.stringify(patch)
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return pageStampLive(slug, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP " + r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    return true;
+  });
+}
+
 // ---- upCommit: the approve step (writes) ---------------------------------------------------------
 // Only on approval, and only then. Each page row becomes a DRAFT opp (console_opps: published nowhere, sent
-// to nobody, source "upload", page not yet active) AND its html a console_pages row. Deduped by slug (first
-// wins). Bounded confirm-or-revert per row; a per-row failure is counted, never a phantom success.
+// to nobody, source "upload") AND its html a console_pages row (live_verified_at null, so a draft page).
+// Deduped by slug (first wins). Bounded confirm-or-revert per row; a per-row failure is counted, never a
+// phantom success.
 function upCommit(plan){
   var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0;
   function one(i){
@@ -280,7 +306,7 @@ function upCommit(plan){
     var r = rows[i];
     if(done[r.slug]) return one(i + 1);
     done[r.slug] = 1;
-    var data = { source:"upload", page_active:false, page_live:false, page_title:r.title,
+    var data = { source:"upload", page_title:r.title,
       outreach_subject:r.subject || "", outreach_text:r.body || "",
       recipients: r.email ? [{ addr:r.email, name:"", lang:"en" }] : [] };
     return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now() })
@@ -357,11 +383,12 @@ function verifyLive(slug){
   }, function(){ return { ok:false, dead:false, status:0 }; });
 }
 // The send gate runSend consults. A non-upload opp passes straight through (behaviour unchanged). An upload
-// opp must be ACTIVATED and its live URL must resolve RIGHT NOW; otherwise the send is refused.
+// opp's live URL must resolve RIGHT NOW; otherwise the send is refused. PR1: the gate trusts ONLY the real
+// fetch - it no longer pre-checks a stored page_active flag (that flag is retired). A page that is not live
+// fails the fetch and is refused, which is the same outcome the flag used to guard, minus the stale signal.
 function upSendLiveGate(slug, data){
   data = data || {};
   if(data.source !== "upload") return Promise.resolve();
-  if(!data.page_active){ var e=new Error("not activated"); e.__kind="notlive"; return Promise.reject(e); }
   return verifyLive(slug).then(function(v){
     if(v.ok) return true;
     var e2=new Error("dead link"); e2.__kind="deadlink"; throw e2;
@@ -447,19 +474,18 @@ function upApprove(){
   });
 }
 
-// ---- the Activate control on an upload opp's drawer (injected after the editor) --------------------
-// Renders only for an upload opp: the live/dead state and an Activate button. Activation marks the page
-// active AND verifies the live URL with a real fetch before claiming live; send stays blocked until the
-// fetch actually resolves (upSendLiveGate re-checks live at send time regardless of this flag).
+// ---- the Activate control on the drawer (injected after the editor) --------------------------------
+// PR1: renders for any opp that HAS a page row (detail.page), not only upload-source opps. The state is the
+// verified truth and nothing else: activated / live iff the console_pages row has live_verified_at set (by
+// slug), otherwise a draft. Activation commits the static file via the relay then verifies the live URL with
+// a real fetch and, ONLY on ok, stamps live_verified_at; send stays blocked until the fetch resolves live
+// (upSendLiveGate re-verifies at send time regardless).
 function uploadActivateHtml(slug, row, detail){
-  var data = (detail && detail.opp && detail.opp.data) || null;
-  if(!data || data.source !== "upload") return "";
-  var stateKey, stateCls;
-  if(data.page_live){ stateKey = "up_state_live"; stateCls = "ok"; }
-  else if(data.page_active && data.page_dead){ stateKey = "up_state_dead"; stateCls = "bad"; }   // verified dead
-  else if(data.page_active && data.page_publishing){ stateKey = "up_state_publishing"; stateCls = ""; }  // committed, Pages building
-  else if(data.page_active){ stateKey = "up_state_pending"; stateCls = ""; }
-  else { stateKey = "up_state_draft"; stateCls = "bad"; }
+  var page = (detail && detail.page) || null;
+  if(!page) return "";                                           // no console_pages row -> nothing to activate
+  var live = !!page.live_verified_at;                            // the SINGLE liveness truth
+  var stateKey = live ? "up_state_live" : "up_state_draft";
+  var stateCls = live ? "ok" : "bad";
   return '<div class="dw-sec up-act-sec"><h3>' + esc(t("up_page_h")) + '</h3>'+
     '<div class="up-state ' + stateCls + '" id="upState">' + esc(t(stateKey)) + '</div>'+
     '<div class="acts"><button class="act" id="upActBtn" type="button">' + esc(t("up_activate")) + '</button></div>'+
@@ -467,37 +493,36 @@ function uploadActivateHtml(slug, row, detail){
 }
 function upActStatus(msg, cls){ var el=document.getElementById("upActStatus"); if(el){ el.className="act-status" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; } }
 // Activation, the GitHub-Pages sacred order (mirror app.js:3586 activateAndConfirm): COMMIT the static file
-// via the relay, then CONFIRM live with a real bounded poll, then FLIP the state. The client never holds the
-// token (the relay commits). A commit failure leaves the page NOT activated. After a successful commit, a page
-// that is not yet served is PUBLISHING (honest), not dead or a false success; the send gate re-verifies live.
+// via the relay, then CONFIRM live with a real bounded poll, then and ONLY then STAMP the truth. The client
+// never holds the token (the relay commits). PR1 settle-always: green (up_now_live) ONLY after the stamp write
+// returns ok; red on a verify fail OR a stamp-write fail; there is no optimistic success and no liveness flag
+// written to the opp's data. On any failure the page is left NOT stamped, so it stays a draft everywhere.
 function upActivate(slug){
   if(__writing || __upBusy) return; __upBusy = true;
   upActStatus(t("up_committing"), ""); var b=document.getElementById("upActBtn"); if(b) b.disabled = true;
-  var baseData = null;
-  oppReadData(slug).then(function(data){
-    baseData = data || {};
-    return pageReadHtml(slug);                                          // read the uploaded html (E2's write)
-  }).then(function(html){
+  pageReadHtml(slug).then(function(html){
     if(!String(html || "").trim()){ var e0=new Error("no page html"); e0.__kind="nohtml"; throw e0; }
     return pagePublishRelay(slug, withBeaconClient(html));              // relay commits opp/<slug>/index.html
   }).then(function(){
-    var active = Object.assign({}, baseData, { source:"upload", page_active:true, page_dead:false, page_publishing:true, page_live:false });
-    return oppPatch(slug, { data:active, up:Date.now() }).then(function(){
-      upActStatus(t("up_verifying"), "");
-      return verifyLivePoll(slug).then(function(v){                     // bounded poll for the Pages build delay
-        var d2 = Object.assign({}, active, { page_live: !!v.ok, page_publishing: !v.ok, page_dead:false });
-        return oppPatch(slug, { data:d2, up:Date.now() }).then(function(){ return v; }, function(){ return v; });
-      });
-    });
+    upActStatus(t("up_verifying"), "");
+    return verifyLivePoll(slug);                                        // bounded poll for the Pages build delay
   }).then(function(v){
+    if(!v.ok){ var e1=new Error("not live"); e1.__kind="notlive"; throw e1; }   // committed, not yet served
+    return pageStampLive(slug);                                         // the ONLY liveness write, after a real ok
+  }).then(function(){
     __upBusy = false;
-    if(v.ok){ upActStatus(t("up_now_live"), "ok"); }
-    else { upActStatus(t("up_publishing"), ""); }                       // committed, still publishing (honest)
+    upActStatus(t("up_now_live"), "ok");                                // green ONLY after the stamp write returned ok
+    return reloadBoardData().then(function(){}, function(){});          // the card stage (view) now reads live
+  }).then(function(){
     if(__drawerSlug === slug) refreshDrawer(slug);
   }).catch(function(e){
     __upBusy = false; var b2=document.getElementById("upActBtn"); if(b2) b2.disabled = false;
     var kind = e && e.__kind;
-    upActStatus((e && e.authRequired) ? t("err") : (kind==="nohtml") ? t("up_no_html") : t("up_commit_failed"), "bad");
+    var msg = (e && e.authRequired) ? t("err")
+      : (kind === "nohtml") ? t("up_no_html")
+      : (kind === "notlive") ? t("up_publishing")                      // committed but not served yet (honest, red)
+      : t("up_commit_failed");                                         // relay/commit OR stamp-write failure
+    upActStatus(msg, "bad");
   });
 }
 function upWireActivate(slug){ var b=document.getElementById("upActBtn"); if(b) b.addEventListener("click", function(){ upActivate(slug); }); }
