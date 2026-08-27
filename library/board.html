@@ -1562,7 +1562,15 @@ function edSaveNow(slug){
 function wireEditor(slug){
   var subjEl=document.getElementById("edSubj"), bodyEl=document.getElementById("edBody");
   if(!subjEl && !bodyEl) return;
-  var onInput=function(){ edTick(slug); edScheduleSave(slug, 700); };
+  // E1 seam: edTick's gate targets the drawer's Send (#drawer .act[data-act="send"]), which does not exist in
+  // the standalone New Message overlay. When that overlay owns this slug, also re-run its own gate (nmApplyGate
+  // -> nmReady = subject AND body AND recipient) so completing subject/body LAST re-enables #nmSend. Mirrors the
+  // edScheduleSave -> nmScheduleSave redirect above; adds no link term.
+  var onInput=function(){
+    edTick(slug);
+    if(typeof nmActive==="function" && nmActive(slug) && typeof nmApplyGate==="function") nmApplyGate(slug);
+    edScheduleSave(slug, 700);
+  };
   if(subjEl) subjEl.addEventListener("input", onInput);
   if(bodyEl) bodyEl.addEventListener("input", onInput);
   var sigEl=document.getElementById("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven

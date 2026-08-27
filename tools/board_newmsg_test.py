@@ -216,6 +216,24 @@ with sync_playwright() as p:
     ck("5: the draft opp is NOT lost (still a console_opps row, not sent)",
        failslug in OPPS and sent_count(failslug)==0, {"in_opps":failslug in OPPS})
     RELAY_FAULT.clear()
+
+    # ===== 5b: gate desync - recipient FIRST, subject/body LAST, #nmSend must ENABLE (fails-when-broken) =====
+    # The editor's subject/body inputs run edTick, whose gate targets the drawer's Send (absent in this overlay).
+    # Only the recipient field and the initial open re-run nmApplyGate. So completing subject/body LAST must still
+    # re-enable #nmSend (nmReady = subject AND body AND recipient). Revert the wireEditor fix and this goes red.
+    open_nm(pg)
+    pg.fill("#nmRecip", "buyer.order@example.test")          # recipient FIRST
+    pg.wait_for_timeout(200)
+    ck("5b: with only a recipient (no subject/body yet), Send stays disabled",
+       pg.evaluate(NM_SEND_DISABLED)==True, pg.evaluate(NM_SEND_DISABLED))
+    pg.fill("#edSubj", "Order note")                         # then subject
+    pg.wait_for_timeout(150)
+    ck("5b: with recipient + subject but no body, Send stays disabled",
+       pg.evaluate(NM_SEND_DISABLED)==True, pg.evaluate(NM_SEND_DISABLED))
+    pg.fill("#edBody", "Body typed LAST.")                   # body LAST - the desync trigger
+    pg.wait_for_timeout(250)
+    ck("5b: completing subject/body LAST re-enables #nmSend (gate desync fixed)",
+       pg.evaluate(NM_SEND_DISABLED)==False, pg.evaluate(NM_SEND_DISABLED))
     pg.close(); ctx.close()
 
     # ===== 6: AR RTL =====
