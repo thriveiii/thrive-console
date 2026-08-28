@@ -1192,7 +1192,7 @@ function buildBoard(){
           up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live.",
           lib_open:"Library", lib_h:"Add templates to the Library", lib_hint:"A zip of html pages. Each page is published and gets a live link. No message, no recipient, no card.",
           lib_doc_only:"Documentation template (no message).", lib_activate:"Publish to Library", lib_activating:"Publishing templates...", lib_done:"Published to Library:",
-          lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_failed:"Not published" },
+          lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -1257,7 +1257,7 @@ function buildBoard(){
           up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ.",
           lib_open:"المكتبة", lib_h:"أضف قوالب إلى المكتبة", lib_hint:"ملف مضغوط يضم صفحات html. تُنشر كل صفحة وتحصل على رابط حيّ. لا رسالة ولا مستلم ولا بطاقة.",
           lib_doc_only:"قالب توثيقي (بلا رسالة).", lib_activate:"انشر في المكتبة", lib_activating:"جارٍ نشر القوالب...", lib_done:"نُشر في المكتبة:",
-          lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_failed:"لم تُنشر" }
+          lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1297,9 +1297,13 @@ function buildBoard(){
   // Bounded fetch: an independent setTimeout race, not the AbortController, guarantees the promise settles
   // (WebKit's AbortController+fetch is unreliable). Body read via arrayBuffer + TextDecoder, BOM stripped.
   function timeoutError(ms){ var e=new Error("request timed out after "+ms+"ms"); e.kind="timeout"; return e; }
-  function authFetchOnce(url, opts){
+  // PR-L0: an optional per-call timeout override. Sign-in and every board read stay on the snappy 6s default
+  // (#266); only a slow op (a GitHub commit via the relay's page_publish, which does two GitHub round-trips)
+  // passes a longer bound so a commit that takes >6s is not aborted by the client. Default unchanged.
+  function authFetchOnce(url, opts, timeoutMs){
+    var ms = timeoutMs || FETCH_TIMEOUT_MS;
     var to={};
-    var race=new Promise(function(_,rej){ to.timer=setTimeout(function(){ to.fired=true; rej(timeoutError(FETCH_TIMEOUT_MS)); }, FETCH_TIMEOUT_MS); });
+    var race=new Promise(function(_,rej){ to.timer=setTimeout(function(){ to.fired=true; rej(timeoutError(ms)); }, ms); });
     var run=(async function(){
       var res=await fetch(url, opts);
       var text=(typeof res.arrayBuffer==="function") ? new TextDecoder("utf-8").decode(await res.arrayBuffer()) : await res.text();

@@ -252,10 +252,10 @@ function confirmMail(row, retried){
 }
 // The relay POST, faithful to app.js:7452: text/plain body, the app.js:7446 payload shape. The response body is
 // read INSIDE authFetchOnce's timeout race (the fix), so it settles even on a wedged body stream.
-function relayPost(payload){
+function relayPost(payload, timeoutMs){
   return authFetchOnce(relayEp(), {
     method:"POST", headers:{ "Content-Type":"text/plain;charset=UTF-8" }, cache:"no-store", body: JSON.stringify(payload)
-  });
+  }, timeoutMs);   // PR-L0: an optional longer bound for slow relay ops (page_publish commits to GitHub)
 }
 
 // ---- runSend: optimistic confirm-or-revert, faithful ordering (app.js:7440-7481) --------------------
