@@ -107,7 +107,7 @@ function nmScheduleSave(slug, delay){
 // so an accidental close resumes. Never fights the shared send lock: reschedules if one is in flight.
 function nmSaveNow(slug){
   if(!nmActive(slug)) return;
-  var subjEl=document.getElementById("edSubj"), bodyEl=document.getElementById("edBody");
+  var subjEl=edEl("edSubj"), bodyEl=edEl("edBody");                     // scoped to the active surface (COMPOSE_SURFACE_EVIDENCE A1)
   if(!subjEl || !bodyEl) return;
   if(__writing || __nmSaving){ nmScheduleSave(slug, 500); return; }
   __nmSaving = true;
@@ -145,6 +145,12 @@ function openNewMessage(){
   if(__nmOpen) return;
   var sc=document.getElementById("nmScrim"), pn=document.getElementById("nmPanel");
   if(!sc || !pn) return;
+  // ONE compose surface at a time (COMPOSE_SURFACE_EVIDENCE A1): close any open card drawer and clear its
+  // DOM before mounting the overlay, so the drawer's #edSubj/#edBody/#edPreview cannot linger as a duplicate
+  // set of ids ahead of the overlay's in the document. closeDrawer clears __drawerSlug and hides the scrim;
+  // openDrawer rebuilds #drawer innerHTML on its next open, so emptying it here is safe.
+  try{ if(typeof closeDrawer==="function") closeDrawer(); }catch(e){}
+  var dz=document.getElementById("drawer"); if(dz) dz.innerHTML="";
   var stored = nmStoredSlug();
   var slug = stored || nmNewSlug();
   __nmSlug = slug; __nmOpen = true;
