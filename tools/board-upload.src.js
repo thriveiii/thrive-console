@@ -21,6 +21,10 @@
 
 var __upPlan = null;       // the previewed plan, held until the operator approves (nothing written before then)
 var __upBusy = false;      // in-flight guard for the read/commit
+// PR-L0: a page_publish commits to GitHub (GET sha + PUT, relay:pagePublish_ two round-trips) which routinely
+// takes longer than the 6s sign-in fetch timeout. This op gets its own longer client bound so a slow-but-
+// successful commit is not aborted by the client and falsely reported "could not publish".
+var PAGE_PUBLISH_TIMEOUT_MS = 30000;
 
 // ---- ported zip reader (intake.js:1052-1128), native DecompressionStream, no library --------------
 function upU16(v, p){ return v[p] | (v[p+1] << 8); }
@@ -344,10 +348,10 @@ function pageReadHtml(slug, retried){
 }
 // POST the page to the relay to commit it as a static file. The client sends only { op, slug, html } - no token.
 function pagePublishRelay(slug, html){
-  return relayPost({ op:"page_publish", slug:slug, html:html }).then(function(r){
-    if(!r.res.ok){ var e=new Error("relay " + r.res.status); throw e; }
+  return relayPost({ op:"page_publish", slug:slug, html:html }, PAGE_PUBLISH_TIMEOUT_MS).then(function(r){
+    if(!r.res.ok){ var e=new Error("relay " + r.res.status); e.__kind="relayhttp"; throw e; }    // a real HTTP error
     var d = r.data || {};
-    if(d.ok === false){ var e2=new Error(d.error || "publish failed"); throw e2; }
+    if(d.ok === false){ var e2=new Error(d.error || "publish failed"); e2.__kind="relayreject"; throw e2; }  // the relay ran and refused
     return d;
   });
 }
@@ -587,6 +591,12 @@ function libOnFile(files){
 // PAGE-ONLY COMMIT + activation, per file. Writes ONLY console_pages (pageUpsert), then the activation chain
 // (pagePublishRelay -> verifyLivePoll -> pageStampLive). NEVER oppUpsert. Per-file settle: a file that cannot
 // publish records its own failure and the batch continues - never a dropped batch, never a phantom success.
+// PR-L0 COMMIT != VERIFY: a page is PUBLISHED the moment the relay commit returns {ok:true}. Liveness (a real
+// GET of the live URL) is a NON-BLOCKING follow-up (libVerifyBackground): a GitHub Pages rebuild takes far
+// longer than any client bound, so the batch must never wait on it and never report a committed page as failed.
+// A CLIENT TIMEOUT is NOT a failure either: pagePublish_ is idempotent by path+sha, so the commit very likely
+// landed; the row reports "confirming" and next-open / the send gate reconciles. ONLY a real relay error (an
+// HTTP error or {ok:false}) is a true publish failure.
 function upCommitLibrary(plan){
   var rows = (plan && plan.rows) || [], done = {}, results = [];
   function one(i){
@@ -594,32 +604,58 @@ function upCommitLibrary(plan){
     var r = rows[i];
     if(done[r.slug]){ return one(i + 1); }
     done[r.slug] = 1;
-    var html = (r.page && r.page.html) || "";
-    if(!String(html).trim()){ results.push({ slug:r.slug, title:r.title || upPretty(r.slug), ok:false, kind:"nohtml" }); return one(i + 1); }
+    var html = (r.page && r.page.html) || "", title = r.title || upPretty(r.slug);
+    if(!String(html).trim()){ results.push({ slug:r.slug, title:title, ok:false, kind:"nohtml" }); return one(i + 1); }
     return pageUpsert(r.slug, html)                                                 // console_pages row ONLY - no oppUpsert
       .then(function(){ return pagePublishRelay(r.slug, withBeaconClient(html)); }) // relay commits the static file
-      .then(function(){ return verifyLivePoll(r.slug); })                          // bounded live poll (Pages delay)
-      .then(function(v){ if(!v.ok){ var e=new Error("not live"); e.__kind="notlive"; throw e; } return pageStampLive(r.slug); })  // stamp ONLY on a real ok
-      .then(function(){ results.push({ slug:r.slug, title:r.title || upPretty(r.slug), ok:true, link:liveUrl(r.slug) }); return one(i + 1); },
-            function(e){ results.push({ slug:r.slug, title:r.title || upPretty(r.slug), ok:false, kind:(e && e.__kind) || "fail" }); return one(i + 1); });
+      .then(function(){
+        results.push({ slug:r.slug, title:title, ok:true, published:true, live:false, link:liveUrl(r.slug) });  // committed = published
+        return one(i + 1);
+      }, function(e){
+        if(e && e.kind === "timeout"){                                             // idempotent commit, likely landed -> confirming
+          results.push({ slug:r.slug, title:title, ok:true, published:true, confirming:true, live:false, link:liveUrl(r.slug) });
+        } else {                                                                    // a real relay error is the only true failure
+          results.push({ slug:r.slug, title:title, ok:false, kind:(e && e.__kind) || "fail" });
+        }
+        return one(i + 1);
+      });
   }
   return one(0);
 }
-// Done panel: each template with its live link + Copy/Open, or its own failure. No card, no send.
+// Non-blocking follow-up: for each committed row, confirm live (a real fetch) and, only on ok, stamp
+// live_verified_at and upgrade the row from "confirming" to "live". A verify failure NEVER downgrades a
+// published row - build-lag is not a publish failure.
+function libVerifyBackground(results){
+  (results || []).forEach(function(x){
+    if(!x || !x.ok || x.live) return;
+    verifyLivePoll(x.slug).then(function(v){
+      if(v && v.ok){ pageStampLive(x.slug).catch(function(){}); libUpgradeRow(x.slug); }
+    }).catch(function(){});
+  });
+}
+function libUpgradeRow(slug){
+  var row = document.querySelector('#upResult [data-lib-slug="' + slug + '"]');   // slug is sanitized [a-z0-9-]
+  if(!row) return;
+  var chip = row.querySelector(".lib-state");
+  if(chip){ chip.className = "up-warn lib-state ok"; chip.textContent = t("lib_row_live"); }
+}
+// Done panel: each committed template with its live link + Copy/Open (live, or "confirming" while Pages builds),
+// or a real publish failure. No card, no send.
 function libDoneRowHtml(x){
   if(x.ok){
-    return '<div class="up-row lib-live">'+
+    var live = !!x.live;
+    return '<div class="up-row lib-live" data-lib-slug="' + esc(x.slug) + '">'+
       '<div class="up-row-h"><span class="up-slug mono-iso">' + esc(x.slug) + '</span> '+
         '<span class="up-title">' + esc(x.title || "") + '</span>'+
-        '<span class="up-warn ok">' + esc(t("lib_row_live")) + '</span></div>'+
+        '<span class="up-warn lib-state' + (live ? " ok" : "") + '">' + esc(t(live ? "lib_row_live" : "lib_row_confirming")) + '</span></div>'+
       '<div class="up-meta"><span class="up-k">' + esc(t("lib_link")) + ':</span> '+
         '<bdi class="mono-iso lib-url">' + esc(liveUrl(x.slug)) + '</bdi></div>'+
       '<div class="acts"><button class="act" type="button" data-lib-copy="' + esc(x.slug) + '">' + esc(t("lib_copy")) + '</button>'+
         '<button class="act" type="button" data-lib-open="' + esc(x.slug) + '">' + esc(t("lib_open_page")) + '</button></div>'+
     '</div>';
   }
-  var reason = (x.kind === "notlive") ? t("up_publishing") : (x.kind === "nohtml") ? t("up_no_html") : t("up_commit_failed");
-  return '<div class="up-row up-row-warn">'+
+  var reason = (x.kind === "nohtml") ? t("up_no_html") : t("up_commit_failed");   // a committed page is never here
+  return '<div class="up-row up-row-warn" data-lib-slug="' + esc(x.slug) + '">'+
     '<div class="up-row-h"><span class="up-slug mono-iso">' + esc(x.slug) + '</span> '+
       '<span class="up-title">' + esc(x.title || "") + '</span>'+
       '<span class="up-warn">' + esc(t("lib_row_failed")) + '</span></div>'+
@@ -652,6 +688,7 @@ function libApprove(){
   upCommitLibrary(__upPlan).then(function(results){
     __upBusy = false;
     var r=document.getElementById("upResult"); if(r){ r.innerHTML = libDoneHtml(results); libWireDone(); }
+    libVerifyBackground(results);          // PR-L0: verify-live is a NON-BLOCKING follow-up (confirming -> live), never a failure
   }).catch(function(e){
     __upBusy = false; var a2=document.getElementById("libApprove"); if(a2) a2.disabled = false;
     upSetStatus((e && e.authRequired) ? t("err") : t("up_write_failed"), "bad");

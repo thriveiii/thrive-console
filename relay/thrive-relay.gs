@@ -865,13 +865,21 @@ function pagePublish_(d) {
   var path = 'opp/' + slug + '/index.html';
   var api = 'https://api.github.com/repos/' + owner + '/' + repo + '/contents/' + path;
   var ghHeaders = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
-  var sha = '';
-  var g = UrlFetchApp.fetch(api + '?ref=' + encodeURIComponent(branch), { method: 'get', muteHttpExceptions: true, headers: ghHeaders });
-  if (g.getResponseCode() === 200) { try { sha = (JSON.parse(g.getContentText()) || {}).sha || ''; } catch (e1) {} }
-  var body = { message: 'Publish opp/' + slug, content: Utilities.base64Encode(Utilities.newBlob(html).getBytes()), branch: branch };
-  if (sha) body.sha = sha;                                    // update in place if it exists (never duplicates)
-  var p = UrlFetchApp.fetch(api, { method: 'put', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(body), headers: ghHeaders });
+  var content = Utilities.base64Encode(Utilities.newBlob(html).getBytes());
+  // GET the current sha then PUT. Wrapped so a 409 (the branch ref advanced under a concurrent commit, between
+  // our GET-sha and PUT) can re-GET the now-current sha and PUT once more. Idempotent by path+sha, so a
+  // self-heal never duplicates and never overwrites a different file. PR-L0 latent-concurrency safety.
+  function attempt_() {
+    var sha = '';
+    var g = UrlFetchApp.fetch(api + '?ref=' + encodeURIComponent(branch), { method: 'get', muteHttpExceptions: true, headers: ghHeaders });
+    if (g.getResponseCode() === 200) { try { sha = (JSON.parse(g.getContentText()) || {}).sha || ''; } catch (e1) {} }
+    var body = { message: 'Publish opp/' + slug, content: content, branch: branch };
+    if (sha) body.sha = sha;                                  // update in place if it exists (never duplicates)
+    return UrlFetchApp.fetch(api, { method: 'put', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(body), headers: ghHeaders });
+  }
+  var p = attempt_();
   var code = p.getResponseCode();
+  if (code === 409) { p = attempt_(); code = p.getResponseCode(); }   // one retry on a ref-advance conflict
   if (code !== 200 && code !== 201) return { ok: false, error: 'github ' + code + ': ' + String(p.getContentText() || '').slice(0, 140) };
   var out = {}; try { out = JSON.parse(p.getContentText()); } catch (e2) {}
   return { ok: true, slug: slug, path: path, url: 'https://console.thriveiii.com/opp/' + slug,
