@@ -70,7 +70,19 @@ function edSignaturePreset(){
   return lines.join("\n");
 }
 
-function edVal(id){ var el=document.getElementById(id); return el ? String(el.value||"") : ""; }
+// SURFACE SCOPING (COMPOSE_SURFACE_EVIDENCE A1): the editor markup (#edSubj/#edBody/#edSig/#edPreview/
+// #edLink/#edStatus and the checklist items) is mounted by BOTH the drawer (#drawer) and the standalone
+// New-message overlay (#nmPanel). When both exist, document.getElementById returns the FIRST in DOM order
+// (the drawer, which sits before #nmPanel), so overlay reads/writes would bind to the drawer's fields.
+// edRoot() returns the ACTIVE compose surface - the overlay while it is open, otherwise the drawer - and
+// edEl() scopes every compose lookup to it, so a read never resolves to a hidden second copy.
+function edRoot(){
+  if(typeof __nmOpen!=="undefined" && __nmOpen){ var p=document.getElementById("nmPanel"); if(p) return p; }
+  var d=document.getElementById("drawer"); if(d) return d;
+  return document;
+}
+function edEl(id){ try{ var r=edRoot(); return r ? r.querySelector("#"+id) : null; }catch(e){ return document.getElementById(id); } }
+function edVal(id){ var el=edEl(id); return el ? String(el.value||"") : ""; }
 // The link is present when the body carries the merge token OR an already-tokenized/literal opp URL.
 function edHasLink(slug, body){
   var b = String(body||"");
@@ -132,12 +144,12 @@ function editorHtml(slug, row, detail){
 
 function edSetStatus(slug, msg, cls){
   __edStat[slug] = { msg:msg||"", cls:cls||"" };
-  var el=document.getElementById("edStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; }
+  var el=edEl("edStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; }
 }
 // Re-mark the four check items from the LIVE values (no value reset, so undo is untouched). Recipient is not
 // re-derived on keystroke (it changes only via the recipient field, which reloads the drawer).
 function edRefreshChecks(slug){
-  var set=function(id, ok){ var el=document.getElementById(id); if(el) el.className="ed-ck "+(ok?"ck-ok":"ck-no"); };
+  var set=function(id, ok){ var el=edEl(id); if(el) el.className="ed-ck "+(ok?"ck-ok":"ck-no"); };
   set("ckSubj", !!edVal("edSubj").trim());
   set("ckBody", !!edVal("edBody").trim());
   set("ckLink", edHasLink(slug, edVal("edBody")));
@@ -154,7 +166,7 @@ function edApplyGate(slug){ if(typeof sendApplyGate==="function") sendApplyGate(
 function edRenderPreview(slug){
   try{
     var art = edCompileFrom(slug, edLiveData(slug));
-    var f=document.getElementById("edPreview"); if(f) f.setAttribute("srcdoc", art.html);
+    var f=edEl("edPreview"); if(f) f.setAttribute("srcdoc", art.html);
   }catch(e){}
 }
 function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); }
@@ -162,7 +174,7 @@ function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview
 // Insert the opp-link token at the cursor via execCommand, which PRESERVES the native undo stack (ConTh 4).
 // Falls back to a splice + manual input event if execCommand is unavailable.
 function edInsertLink(slug){
-  var el=document.getElementById("edBody"); if(!el) return;
+  var el=edEl("edBody"); if(!el) return;
   el.focus();
   var token=MF_LINK, ok=false;
   try{ ok=document.execCommand("insertText", false, token); }catch(e){ ok=false; }
@@ -179,7 +191,7 @@ function edInsertLink(slug){
 // each on its own line). It is never automatic - the operator taps it, then may edit or clear the field. After
 // filling, refresh the preview and debounce a save so the chosen signature persists like any typed one.
 function edFillSignature(slug){
-  var el=document.getElementById("edSig"); if(!el) return;
+  var el=edEl("edSig"); if(!el) return;
   el.value = edSignaturePreset();
   try{ el.dispatchEvent(new Event("input", { bubbles:true })); }catch(_){}
   try{ el.focus(); }catch(_){}
@@ -201,7 +213,7 @@ function edScheduleSave(slug, delay){
 // the board once so the L5 gate flips and Send appears; ongoing edits do not reload (undo preserved).
 function edSaveNow(slug){
   if(__drawerSlug!==slug) return;
-  var subjEl=document.getElementById("edSubj"), bodyEl=document.getElementById("edBody");
+  var subjEl=edEl("edSubj"), bodyEl=edEl("edBody");
   if(!subjEl || !bodyEl) return;
   if(__writing || __edSaving){ edScheduleSave(slug, 500); return; }
   __edSaving = true;
@@ -231,16 +243,16 @@ function edSaveNow(slug){
 // Wire the editor after each drawer paint (called from wireDrawer). Input listeners update the checklist,
 // the Send gate, and the live preview, then debounce a save. No value is ever reset here, so undo is intact.
 function wireEditor(slug){
-  var subjEl=document.getElementById("edSubj"), bodyEl=document.getElementById("edBody");
+  var subjEl=edEl("edSubj"), bodyEl=edEl("edBody");
   if(!subjEl && !bodyEl) return;
   // edTick runs edApplyGate -> sendApplyGate, which toggles BOTH the overlay's #nmSend and the drawer's board
   // Send. So completing subject/body (or recipient) LAST re-enables Send in either surface. No link term.
   var onInput=function(){ edTick(slug); edScheduleSave(slug, 700); };
   if(subjEl) subjEl.addEventListener("input", onInput);
   if(bodyEl) bodyEl.addEventListener("input", onInput);
-  var sigEl=document.getElementById("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven
-  var lk=document.getElementById("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
-  var sf=document.getElementById("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
+  var sigEl=edEl("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven
+  var lk=edEl("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
+  var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
   edTick(slug);                                                // initial checklist + gate + preview
 }
 
