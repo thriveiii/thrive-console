@@ -216,10 +216,13 @@ with sync_playwright() as p:
        pg.evaluate(SRCDOC)==htmF, {"srcdoc_len":len(pg.evaluate(SRCDOC) or ""), "art_len":len(htmF)})
     ck("3: the opp link is a plain tokenized URL in the text (channel 2, clickable in a plain email)",
        "console.thriveiii.com/opp/acme" in txtF and re.search(r"[?&]r=", txtF) is not None, txtF[-200:])
-    ck("LIGHT: the one open pixel carries op=hit and r=<token> in the html",
-       re.search(r"op=hit[^\"'<>]*?r=[^&;\"'\s<]+", htmF) is not None, htmF[-260:])
-    ck("LIGHT: the pixel is the only image, no logo/table/background",
-       htmF.count("<img")==1 and 'width="1" height="1"' in htmF and "thrive-logo.png" not in htmF
+    # PERSONAL MODE (DELIVERABILITY_EVIDENCE): Acme is a standalone 1:1 opp (no data.source==="upload"), so it
+    # compiles personal-shaped - NO 1x1 open pixel and NO "Reply STOP"/postal footer. (Campaign shape is proven
+    # by personal_mode_test.) The channel-2 tokenized page link above is mode-independent and stays.
+    ck("PERSONAL: a 1:1 compose carries NO open pixel (no op=hit, zero <img>)",
+       "op=hit" not in htmF and htmF.count("<img")==0, htmF[-260:])
+    ck("PERSONAL: a 1:1 compose has NO 'Reply STOP'/postal footer, no logo/table/background",
+       "Reply STOP" not in htmF and "Reply STOP" not in txtF and "thrive-logo.png" not in htmF
        and "<table" not in htmF and "background" not in htmF, htmF[:220])
 
     # E0: "Use my signature" FILLS the field with the 3-line preset, and it stays editable

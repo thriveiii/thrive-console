@@ -10,7 +10,9 @@ This drives a STATEFUL mock of BOTH the relay (script.google.com /exec) and Supa
 the relay is intercepted and answered by the mock. Assertions:
   1. a send writes console_mail and the SENT lane reflects it across a full reload;
   2. pending-then-confirm ordering: the console_mail write happens AFTER the relay POST, never before acceptance;
-  3. the payload carries slug, a Message-ID, and the pixel token r=<token> (== the console_mail row id);
+  3. the payload carries slug, a Message-ID, and the channel-2 page-link token r=<token> (== console_mail id);
+     PERSONAL MODE: a standalone 1:1 opp (no data.source==="upload") sends personal-shaped - NO open pixel, NO
+     "Reply STOP"/postal footer, NO List-Unsubscribe header - while the text/plain part and Reply-To remain;
   4. forced relay 500, forced Resend reject, and an aborted body-read all revert the card with red and write NO row;
   5. AR RTL; privacy: every address is a synthetic *.example.test placeholder.
 """
@@ -144,23 +146,28 @@ with sync_playwright() as p:
     mid = (pay.get("headers") or {}).get("Message-ID","")
     ck("3: the payload carries a Message-ID (<c...@thriveiii.com>)", bool(re.match(r"^<c.+@thriveiii\.com>$", mid)), mid)
     # LIGHT-HTML: the tokenized opp-page link (channel 2) rides in the TEXT as a plain URL, so a page VISIT
-    # is attributed to the recipient (beacon.js reads r); the 1x1 open pixel (channel 1) rides in the HTML.
+    # is attributed to the recipient (beacon.js reads r). This channel is mode-independent (kept in personal too).
     m = re.search(r"[?&]r=([^&\"'\s<]+)", pay.get("text",""))
     tok = m.group(1) if m else ""
     ck("3: the text carries the tokenized opp-page link r=<token> (channel 2)", bool(tok), pay.get("text","")[:200])
     ck("3: the page-link token equals the console_mail row id (the attribution join)", bool(tok) and MAIL and MAIL[0].get("id")==tok, {"tok":tok, "id":(MAIL[0].get('id') if MAIL else None)})
-    html = pay.get("html","")
-    pm = re.search(r"op=hit[^\"'<>]*?r=([^&;\"'\s<]+)", html)
-    ptok = pm.group(1) if pm else ""
-    ck("3: LIGHT-HTML: the one open pixel is present in the html (op=hit, r=<token>)", bool(ptok), html[-300:])
-    ck("3: LIGHT-HTML: the open-pixel token equals the console_mail row id", bool(ptok) and MAIL and MAIL[0].get("id")==ptok, {"ptok":ptok, "id":(MAIL[0].get('id') if MAIL else None)})
-    ck("3: LIGHT-HTML: the pixel is the ONLY image (exactly one <img, and it is the 1x1 open pixel)",
-       html.count("<img")==1 and 'width="1" height="1"' in html, {"imgs":html.count("<img")})
-    ck("3: LIGHT-HTML: light formatting - a grey smaller closing/footer, no logo/table/background/second image",
-       ("#888888" in html or "#9aa0aa" in html) and "thrive-logo.png" not in html and "<table" not in html
-       and "background" not in html and html.count("<img")==1, html[:220])
+    html = pay.get("html",""); text = pay.get("text",""); hdrs = pay.get("headers") or {}
+    # PERSONAL MODE: Alpha is a standalone 1:1 opp (no data.source==="upload"), so the send drops all three
+    # Promotions markers. The open pixel (channel 1) does NOT ride in a personal html; no bulk footer; no list header.
+    ck("3 PERSONAL: NO open-tracking pixel in a 1:1 send (no op=hit, zero <img>)",
+       "op=hit" not in html and html.count("<img")==0, html[-300:])
+    ck("3 PERSONAL: NO 'Reply STOP' / postal footer in the html OR the text",
+       "Reply STOP" not in html and "Reply STOP" not in text and "Not interested" not in html, {"html":html[-200:], "text":text[-200:]})
+    ck("3 PERSONAL: NO List-Unsubscribe / List-Unsubscribe-Post header on a 1:1 send",
+       "List-Unsubscribe" not in hdrs and "List-Unsubscribe-Post" not in hdrs, list(hdrs.keys()))
+    ck("3 PERSONAL: the reply path still routes to the opp slug (Reply-To hi+alpha@thriveiii.com)",
+       hdrs.get("Reply-To")=="hi+alpha@thriveiii.com", hdrs.get("Reply-To"))
+    ck("3 PERSONAL: the text/plain alternative part is still present (multipart/alternative)",
+       bool(text.strip()), text[:120])
     ck("3: LIGHT-HTML: real paragraph breaks (a <p> body paragraph), never a run-on block",
        "<p " in html or "<p>" in html, html[:220])
+    ck("3: LIGHT-HTML: no logo / table / background (a clean light body)",
+       "thrive-logo.png" not in html and "<table" not in html and "background" not in html, html[:220])
     ck("3: the payload preserves the faithful contract keys", all(k in pay for k in ["v","from","to","subject","html","text","idempotencyKey","headers","slug"]), list(pay.keys()))
     ck("3: provider is the relay (never a direct client Resend call)", not any("api.resend.com" in json.dumps(c) for c in RELAY_CALLS))
 

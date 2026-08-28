@@ -47,14 +47,18 @@ function openPixelHtml(slug, token, ep){                                        
   var u = ep + (ep.indexOf("?")<0?"?":"&") + "op=hit&type=open&slug=" + encodeURIComponent(slug||"") + "&r=" + encodeURIComponent(token);
   return '<img src="' + esc(u) + '" width="1" height="1" alt="" style="width:1px;height:1px;border:0;margin:0;padding:0" referrerpolicy="no-referrer">';
 }
-function outboundHeaders(slug){                                                              // store.js:182-190
+function outboundHeaders(slug, mode){                                                        // store.js:182-190
   var d = "thriveiii.com";
   var tag = slug ? ("hi+" + slug + "@" + d) : ("hi@" + d);
-  return {
-    "List-Unsubscribe": "<mailto:unsubscribe@" + d + "?subject=unsubscribe>, <https://" + d + "/unsubscribe>",
-    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-    "Reply-To": tag                                                                         // the relay re-derives reply_to from payload.slug (relay:583); this agrees
-  };
+  var h = { "Reply-To": tag };                                                              // the relay re-derives reply_to from payload.slug (relay:583); this agrees
+  // List-Unsubscribe/-Post are bulk (list-mail) markers: emit them only for a campaign send. A personal 1:1
+  // message omits them entirely (they are the single strongest Promotions signal on a 1:1 note). A caller that
+  // passes no mode gets the campaign-shaped headers (safe default: no caller silently loses list headers).
+  if(mode !== "personal"){
+    h["List-Unsubscribe"] = "<mailto:unsubscribe@" + d + "?subject=unsubscribe>, <https://" + d + "/unsubscribe>";
+    h["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+  }
+  return h;
 }
 var POSTAL_L5 = "Thrive Digital Solutions, VA, USA";                                         // store.js:197
 function footerHtml(lang){                                                                   // store.js:198
@@ -158,7 +162,7 @@ function bodyParasHtml(bodyPlain){
 
 // The one light-HTML document: body (black), then the identity signature in smaller grey, then the grey
 // POSTAL/STOP footer. The open pixel is appended by the caller so it is the LAST and ONLY image.
-function lightHtml(bodyPlain, sig, lang){
+function lightHtml(bodyPlain, sig, lang, bulk){
   var font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif";
   // E0: the signature block is a clear grey (not the near-transparent #888888), small, its own block, its
   // multi-line value (name / title / site) rendered with real <br> line breaks, separated from the body by
@@ -166,8 +170,9 @@ function lightHtml(bodyPlain, sig, lang){
   var sigHtml = (sig && sig.trim())
     ? '<div style="margin-top:18px;font-size:13px;line-height:1.5;color:#595959">' + esc(String(sig)).split("\n").join("<br>") + '</div>'
     : "";
+  // The POSTAL/STOP footer is a bulk (campaign) marker only; a personal 1:1 message omits it (bulk===false).
   return '<div style="font-family:' + font + ';font-size:15px;line-height:1.6;color:#111111">'
-    + bodyParasHtml(bodyPlain) + sigHtml + '</div>' + footerHtml(lang);
+    + bodyParasHtml(bodyPlain) + sigHtml + '</div>' + (bulk ? footerHtml(lang) : "");
 }
 
 // compile(recipient, content) for ONE recipient. Content is the opp RECORD's prepared message
@@ -176,8 +181,17 @@ function lightHtml(bodyPlain, sig, lang){
 // separate data.sig field, appended EXACTLY ONCE in smaller grey above the grey footer. The plain-text arm
 // mirrors it (body + blank line + sig + footer). The tokenized opp-page link (channel 2) rides in both as a
 // plain URL; the 1x1 open pixel (channel 1) is the ONLY image, appended last.
-function sendCompile(slug, row, data, rcpt){
+// SEND MODE (DELIVERABILITY_EVIDENCE): a 1:1 personal message must look personal, not bulk. The mode is
+// data-driven so preview and send always agree: an uploaded-page opp (data.source==="upload",
+// board-upload.src.js:309/:391) is a "campaign" and keeps the bulk shape (open pixel + STOP/postal footer +
+// List-Unsubscribe); every other opp - the standalone New message, imports - is "personal" and drops all
+// three. The multipart/alternative text part stays in both modes (it helps deliverability).
+function sendMode(data){ return (data && data.source === "upload") ? "campaign" : "personal"; }
+
+function sendCompile(slug, row, data, rcpt, mode){
   data = data || {}; rcpt = rcpt || {};
+  mode = mode || sendMode(data);
+  var bulk = (mode === "campaign");                 // personal omits pixel + footer; campaign keeps them
   var full = String(rcpt.name==null?"":rcpt.name).trim();
   var name = (data.firstName && full) ? full.split(/\s+/)[0] : full;
   var lang = (rcpt.lang==="ar" || data.lang==="ar") ? "ar" : "en";
@@ -193,10 +207,10 @@ function sendCompile(slug, row, data, rcpt){
     var base = liveUrl(slug), tokd = base + (base.indexOf("?")<0?"?":"&") + "r=" + encodeURIComponent(token);
     bodyPlain = bodyPlain.split(base).join(tokd);            // channel 2: the opp page link carries the token
   }
-  var text = toPlainText(bodyPlain, sig) + footerText(lang);            // plain-text alternative part
-  var html = lightHtml(bodyPlain, sig, lang);                          // light-HTML primary part
-  if(token) html = html + openPixelHtml(slug, token, relayEp());       // channel 1: the one open pixel (last, only image)
-  return { to:addr, name:name, subject:subject, html:html, text:text, token:token, lang:lang, attachments:plan.attach };
+  var text = toPlainText(bodyPlain, sig) + (bulk ? footerText(lang) : "");   // plain-text alternative part; footer only for campaigns
+  var html = lightHtml(bodyPlain, sig, lang, bulk);                          // light-HTML primary part; footer only for campaigns
+  if(token && bulk) html = html + openPixelHtml(slug, token, relayEp());     // channel 1: the open pixel - campaign only (never on a personal 1:1)
+  return { to:addr, name:name, subject:subject, html:html, text:text, token:token, lang:lang, mode:mode, attachments:plan.attach };
 }
 
 // ---- eligibility + recipient (the engine's own gate) ------------------------------------------------
@@ -268,10 +282,11 @@ function runSend(slug){
     // __kind="notlive"/"deadlink" so the catch below reverts the optimistic send with a clear reason.
     var __liveGate = (typeof upSendLiveGate==="function") ? upSendLiveGate(slug, data) : Promise.resolve();
     return __liveGate.then(function(){
-    var art = sendCompile(slug, row, data, rcpt);
+    var mode = sendMode(data);                                        // personal (1:1) vs campaign (uploaded page)
+    var art = sendCompile(slug, row, data, rcpt, mode);
     var idem = sendIdem(slug, art.to, art.subject, art.html);          // app.js:7429 default idempotency key
     var msgid = newMessageId();                                        // app.js:7430 / :8824
-    var headers = Object.assign({}, outboundHeaders(slug), { "Message-ID": msgid });   // app.js:7445
+    var headers = Object.assign({}, outboundHeaders(slug, mode), { "Message-ID": msgid });   // app.js:7445; personal omits List-Unsubscribe
     var payload = { v:REQUIRED_RELAY_L5, from:FROM_EMAIL_L5, fromName:fromName(), to:art.to, subject:art.subject,
       html:art.html, text:art.text, idempotencyKey:idem, headers:headers, slug:slug };  // app.js:7446-7447
     if(art.attachments && art.attachments.length) payload.attachments = art.attachments; // app.js:7450

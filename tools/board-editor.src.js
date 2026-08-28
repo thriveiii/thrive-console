@@ -263,6 +263,9 @@ function wireEditor(slug){
 try{
   window.__thriveComposeArtifact = function(slug){ return oppReadData(slug).then(function(data){ return edCompileFrom(slug, data); }); };
   window.__thriveReplyTo = function(slug){ try{ return outboundHeaders(slug)["Reply-To"]; }catch(e){ return ""; } };
+  //   __thriveSendHeaders(slug): the exact header set the send stamps for a slug's own mode (personal 1:1 vs
+  //     campaign), proving a personal send carries NO List-Unsubscribe. Derives mode from the persisted record.
+  window.__thriveSendHeaders = function(slug){ return oppReadData(slug).then(function(data){ return outboundHeaders(slug, sendMode(data)); }); };
   window.__thriveEditorSignature = function(){ return edSignature(); };     // the LIVE field value (empty allowed)
   window.__thriveSignaturePreset = function(){ return edSignaturePreset(); }; // the "Use my signature" fill (name/title/site)
 }catch(e){}
