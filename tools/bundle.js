@@ -1189,7 +1189,10 @@ function buildBoard(){
           up_state_live:"Activated and live. The page link resolves.", up_activate:"Activate the page", up_verifying:"Verifying the live link...",
           up_committing:"Publishing the page...", up_commit_failed:"Could not publish the page. Nothing is live.", up_no_html:"No uploaded page found to publish.",
           up_publishing:"Published. The page is going live (this can take a moment).",
-          up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live." },
+          up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live.",
+          lib_open:"Library", lib_h:"Add templates to the Library", lib_hint:"A zip of html pages. Each page is published and gets a live link. No message, no recipient, no card.",
+          lib_doc_only:"Documentation template (no message).", lib_activate:"Publish to Library", lib_activating:"Publishing templates...", lib_done:"Published to Library:",
+          lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_failed:"Not published" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -1251,7 +1254,10 @@ function buildBoard(){
           up_state_live:"مُنشّطة وحيّة. رابط الصفحة يعمل.", up_activate:"تنشيط الصفحة", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
           up_committing:"جارٍ نشر الصفحة...", up_commit_failed:"تعذّر نشر الصفحة. لا شيء حيّ.", up_no_html:"لا توجد صفحة مرفوعة للنشر.",
           up_publishing:"نُشرت. الصفحة في طريقها إلى العمل (قد يستغرق لحظة).",
-          up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ." }
+          up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ.",
+          lib_open:"المكتبة", lib_h:"أضف قوالب إلى المكتبة", lib_hint:"ملف مضغوط يضم صفحات html. تُنشر كل صفحة وتحصل على رابط حيّ. لا رسالة ولا مستلم ولا بطاقة.",
+          lib_doc_only:"قالب توثيقي (بلا رسالة).", lib_activate:"انشر في المكتبة", lib_activating:"جارٍ نشر القوالب...", lib_done:"نُشر في المكتبة:",
+          lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_failed:"لم تُنشر" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1567,6 +1573,8 @@ ${UPLOAD_SRC}
         '<button class="link" id="newMsgBtn" type="button">' + esc(t("nm_open")) + '</button>' +
         // E2: upload a campaign zip from the device (html pages + message texts + emails).
         '<button class="link" id="uploadBtn" type="button">' + esc(t("up_open")) + '</button>' +
+        // PR1 Library: upload html templates for documentation + activation only (no message, no recipient, no card).
+        '<button class="link" id="libBtn" type="button">' + esc(t("lib_open")) + '</button>' +
         '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
         '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
         '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
@@ -1584,6 +1592,7 @@ ${UPLOAD_SRC}
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
     var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ openNewMessage(); });   // E1
     var up=document.getElementById("uploadBtn"); if(up) up.addEventListener("click", function(){ openUpload(); });   // E2
+    var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibrary(); });   // PR1 Library upload
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
