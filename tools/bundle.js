@@ -1054,6 +1054,49 @@ function buildBoard(){
   .up-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.5;color:#c7c7cf;font-family:inherit;unicode-bidi:plaintext}
   .up-empty{font-size:12px;color:#6a6a74;font-style:italic}
   .up-state{font-size:13px;padding:8px 11px;border-radius:8px;border:1px solid #22222e;background:#0e0e14;color:#cdd}
+  /* PR-L1: editable upload rows (slug / title / task, set before publish) */
+  .lib-edit{display:flex;flex-direction:column;gap:8px}
+  .lib-fields{display:flex;flex-direction:column;gap:8px}
+  .lib-f{display:flex;flex-direction:column;gap:3px}
+  .lib-fl{font-size:11px;color:#8a8a93}
+  .lib-in{width:100%;box-sizing:border-box;background:#0b0b11;border:1px solid #262632;border-radius:8px;padding:8px 10px;color:#eef;font-size:14px;font-family:inherit}
+  .lib-in:focus{outline:none;border-color:#3a5;box-shadow:0 0 0 2px rgba(51,170,85,.18)}
+  .lib-in.bad{border-color:#7a3838;box-shadow:0 0 0 2px rgba(150,60,60,.16)}
+  .lib-rowerr{font-size:11.5px;color:#9aa0aa;min-height:0}
+  .lib-rowerr.bad{color:#e0a3a3}
+  /* PR-L1: the standalone Library surface */
+  .scrim.libview{justify-content:center;align-items:flex-start}
+  html[dir="rtl"] .scrim.libview{justify-content:center}
+  .lvpanel{width:min(1000px,100%);height:100%;background:#0b0b11;border-inline-start:1px solid #1c1c26;border-inline-end:1px solid #1c1c26;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 22px 56px}
+  .lv-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin:2px 0 12px}
+  .lv-title{font-size:20px;font-weight:680;color:#eef;margin:0}
+  .lv-head-acts{display:flex;align-items:center;gap:12px}
+  .btnp{background:#1a5;background:linear-gradient(180deg,#2b7,#1a5);border:0;border-radius:9px;padding:8px 14px;color:#05130b;font-weight:650;font-size:13px;cursor:pointer}
+  .btnp:hover{filter:brightness(1.06)}
+  .lv-search{margin:0 0 16px}
+  .lv-q{width:100%;box-sizing:border-box;background:#0e0e14;border:1px solid #262632;border-radius:10px;padding:10px 13px;color:#eef;font-size:15px;font-family:inherit}
+  .lv-q:focus{outline:none;border-color:#3a5}
+  .lv-body{display:flex;flex-direction:column;gap:22px}
+  .lv-sec{display:flex;flex-direction:column;gap:11px}
+  .lv-task{font-size:13px;font-weight:600;color:#cdd;margin:0;display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid #1c1c26}
+  .lv-task-k{font-size:11px;color:#8a8a93}
+  .lv-n{font-size:11px;color:#8a8a93;background:#14141c;border:1px solid #22222e;border-radius:999px;padding:1px 8px}
+  .lv-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+  .lv-card{border:1px solid #22222e;border-radius:12px;background:#0e0e14;padding:14px 15px;display:flex;flex-direction:column;gap:8px;min-width:0}
+  .lv-card-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .lv-card-t{font-size:15px;font-weight:620;color:#eef;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .lv-state{flex:0 0 auto;font-size:11px;color:#d8b48a;border:1px solid #4b3a27;border-radius:999px;padding:2px 9px}
+  .lv-state.ok{color:#8fd6a6;border-color:#2f5a3d}
+  .lv-slug{font-size:12px;color:#8a8a93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lv-link{font-size:12px;color:#9aa0aa;overflow:hidden}
+  .lv-link .lv-k{color:#7a7a84}
+  .lv-url{color:#9fb6d8;word-break:break-all}
+  .lv-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+  .lv-acts .act{font-size:12.5px;padding:6px 11px}
+  .lv-acts .act.on{border-color:#3a5;color:#bfe6cd}
+  .lv-prev{margin-top:6px}
+  .lv-frame{width:100%;height:260px;border:1px solid #22222e;border-radius:9px;background:#fff}
+  .lv-empty{font-size:14px;color:#8a8a93;padding:24px 4px;text-align:center}
   .up-state.ok{color:#a9d5b6;border-color:#274b34}
   .up-state.bad{color:#d8b48a;border-color:#4b3a27}
   .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
@@ -1107,6 +1150,7 @@ function buildBoard(){
 <div id="admScrim" class="scrim" hidden><div id="admPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="nmScrim" class="scrim" hidden><div id="nmPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="upScrim" class="scrim" hidden><div id="upPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
+<div id="libViewScrim" class="scrim libview" hidden><div id="libViewPanel" class="lvpanel" role="dialog" aria-modal="true"></div></div>
 <script>
 (function(){
   "use strict";
@@ -1192,7 +1236,9 @@ function buildBoard(){
           up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live.",
           lib_open:"Library", lib_h:"Add templates to the Library", lib_hint:"A zip of html pages. Each page is published and gets a live link. No message, no recipient, no card.",
           lib_doc_only:"Documentation template (no message).", lib_activate:"Publish to Library", lib_activating:"Publishing templates...", lib_done:"Published to Library:",
-          lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published" },
+          lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published",
+          lib_f_title:"Title", lib_f_slug:"Link name", lib_f_task:"Task", lib_task_ph:"Choose or type a task", lib_err_slug:"Use lowercase letters, numbers and dashes only.", lib_err_dup:"This link name is repeated in this batch.", lib_err_exists:"This link name is already taken.", lib_err_fix:"Fix the highlighted link names first.",
+          lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -1257,7 +1303,9 @@ function buildBoard(){
           up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ.",
           lib_open:"المكتبة", lib_h:"أضف قوالب إلى المكتبة", lib_hint:"ملف مضغوط يضم صفحات html. تُنشر كل صفحة وتحصل على رابط حيّ. لا رسالة ولا مستلم ولا بطاقة.",
           lib_doc_only:"قالب توثيقي (بلا رسالة).", lib_activate:"انشر في المكتبة", lib_activating:"جارٍ نشر القوالب...", lib_done:"نُشر في المكتبة:",
-          lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر" }
+          lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر",
+          lib_f_title:"العنوان", lib_f_slug:"اسم الرابط", lib_f_task:"المهمة", lib_task_ph:"اختر مهمة أو اكتب واحدة", lib_err_slug:"استخدم حروفًا صغيرة وأرقامًا وشرطات فقط.", lib_err_dup:"اسم الرابط مكرّر في هذه الدفعة.", lib_err_exists:"اسم الرابط مستخدم من قبل.", lib_err_fix:"صحّح أسماء الروابط المميّزة أولًا.",
+          lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1596,7 +1644,7 @@ ${UPLOAD_SRC}
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
     var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ openNewMessage(); });   // E1
     var up=document.getElementById("uploadBtn"); if(up) up.addEventListener("click", function(){ openUpload(); });   // E2
-    var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibrary(); });   // PR1 Library upload
+    var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibraryView(); });   // PR-L1: the Library surface (Add templates inside opens the upload)
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
@@ -1983,7 +2031,9 @@ ${UPLOAD_SRC}
     if(ns) ns.addEventListener("click", function(e){ if(e.target===ns) closeNewMessage(); });
     var us=document.getElementById("upScrim");                                            // E2 upload overlay
     if(us) us.addEventListener("click", function(e){ if(e.target===us) closeUpload(); });
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); } });
+    var lvs=document.getElementById("libViewScrim");                                      // PR-L1 Library surface
+    if(lvs) lvs.addEventListener("click", function(e){ if(e.target===lvs) closeLibraryView(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); } });
   }catch(e){} })();
   boot();
 })();

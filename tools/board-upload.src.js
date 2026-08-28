@@ -21,6 +21,9 @@
 
 var __upPlan = null;       // the previewed plan, held until the operator approves (nothing written before then)
 var __upBusy = false;      // in-flight guard for the read/commit
+var __libExisting = {};    // PR-L1: the set of console_pages slugs already taken (for upload uniqueness check)
+var __libPages = null;     // PR-L1: the last console_pages rows fetched for the Library surface (+ tests)
+var __libQuery = "";       // PR-L1: the live Library search query
 // PR-L0: a page_publish commits to GitHub (GET sha + PUT, relay:pagePublish_ two round-trips) which routinely
 // takes longer than the 6s sign-in fetch timeout. This op gets its own longer client bound so a slow-but-
 // successful commit is not aborted by the client and falsely reported "could not publish".
@@ -259,16 +262,24 @@ function upBuildPlan(files){
 // reads console_pages joined to console_opps for the label. Bounded upsert, same discipline as oppUpsert
 // (merge-duplicates, one refresh-retry). This insert leaves live_verified_at null - a stored page is a DRAFT
 // until it is committed and verified live.
-function pageUpsert(slug, html, retried){
+// PR-L1: an optional `meta` ({title, task}) is written alongside the html so a page-only Library template
+// carries its own human title + task classification (console_pages gained title/task/tags columns, applied in
+// Supabase). Campaign callers pass no meta, so those columns stay null (their title lives on console_opps).
+// Only defined keys are sent, so an unknown column never breaks the upsert.
+function pageUpsert(slug, html, meta, retried){
   var url = URL_BASE + "/rest/v1/console_pages";
   var row = { slug:slug, html:String(html == null ? "" : html), up:Date.now() };
+  if(meta && typeof meta === "object"){
+    if(meta.title != null) row.title = String(meta.title);
+    if(meta.task  != null) row.task  = String(meta.task);
+  }
   return authFetchOnce(url, {
     method:"POST",
     headers:{ "apikey":ANON, "Authorization":"Bearer " + bearer(), "Content-Type":"application/json", "Prefer":"resolution=merge-duplicates,return=minimal" },
     cache:"no-store", body: JSON.stringify([row])
   }).then(function(r){
     if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
-      return refresh().then(function(ok){ if(ok) return pageUpsert(slug, html, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+      return refresh().then(function(ok){ if(ok) return pageUpsert(slug, html, meta, true); var e=new Error("auth"); e.authRequired=true; throw e; });
     }
     if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP " + r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
     return true;
@@ -559,31 +570,74 @@ function openLibrary(){
   var fi=document.getElementById("upFile"); if(fi) fi.addEventListener("change", function(){ libOnFile(fi.files); });
   var cl=document.getElementById("upClose"); if(cl) cl.addEventListener("click", function(){ closeUpload(); });
 }
-// Library preview rows: the SAME plan the campaign upload builds, rendered as documentation (no message meta,
-// no message warnings). A page that resolved no message is NORMAL here (a template needs none), never an error.
-function libRowHtml(r){
-  return '<div class="up-row">'+
-    '<div class="up-row-h"><span class="up-slug mono-iso">' + esc(r.slug) + '</span> '+
-      '<span class="up-title">' + esc(r.title || upPretty(r.slug)) + '</span></div>'+
-    '<div class="up-meta">' + esc(t("lib_doc_only")) + '</div>'+
-    (r.page && r.page.html ? upFrame(String(r.page.html).slice(0, 400)) : '<div class="up-empty">' + esc(t("up_no_text")) + '</div>')+
+// PR-L1: the review row lets the operator set a clean SLUG, TITLE, and TASK per file BEFORE publish, so the
+// live link is right the first time and no rename is ever needed (the relay has no delete op). Defaults: slug
+// from upPageSlug (the plan), title from the plan title (or a prettified slug), task blank. The task input
+// offers the existing tasks via a shared datalist and also accepts a brand-new one typed in.
+var LIB_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,59}$/;
+function libRowHtml(r, i){
+  var slug = r.slug || "", title = r.title || upPretty(r.slug), task = r.task || "";
+  return '<div class="up-row lib-edit" data-lib-idx="' + i + '">'+
+    '<div class="lib-fields">'+
+      '<label class="lib-f"><span class="lib-fl">' + esc(t("lib_f_title")) + '</span>'+
+        '<input class="lib-in" id="libTitle-' + i + '" type="text" value="' + esc(title) + '" autocomplete="off"></label>'+
+      '<label class="lib-f"><span class="lib-fl">' + esc(t("lib_f_slug")) + '</span>'+
+        '<input class="lib-in mono-iso" id="libSlug-' + i + '" type="text" dir="ltr" value="' + esc(slug) + '" autocomplete="off" spellcheck="false"></label>'+
+      '<label class="lib-f"><span class="lib-fl">' + esc(t("lib_f_task")) + '</span>'+
+        '<input class="lib-in" id="libTask-' + i + '" type="text" list="libTasks" value="' + esc(task) + '" autocomplete="off" placeholder="' + esc(t("lib_task_ph")) + '"></label>'+
+    '</div>'+
+    '<div class="lib-rowerr" id="libErr-' + i + '"></div>'+
+    (r.page && r.page.html ? upFrame(String(r.page.html).slice(0, 320)) : '<div class="up-empty">' + esc(t("up_no_text")) + '</div>')+
   '</div>';
 }
-function libResultHtml(plan){
-  var rows = (plan.rows || []).map(libRowHtml).join("");
+function libTasksDatalist(tasks){
+  return '<datalist id="libTasks">' + (tasks || []).map(function(tk){ var v = esc(tk); return '<option value="' + v + '">' + v + '</option>'; }).join("") + '</datalist>';
+}
+function libResultHtml(plan, tasks){
+  var rows = (plan.rows || []).map(function(r, i){ return libRowHtml(r, i); }).join("");
   var n = (plan.rows || []).length;
-  return '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>'+
+  return libTasksDatalist(tasks)+
+    '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>'+
     '<div class="up-rows">' + rows + '</div>'+
     '<div class="acts"><button class="act send" id="libApprove" type="button"' + (n ? "" : " disabled") + '>' + esc(t("lib_activate")) + '</button></div>'+
     '<div class="act-status" id="upStatus"></div>';
 }
+// Read the edited slug/title/task back into the plan rows and validate: slug format + uniqueness against the
+// existing console_pages slugs (__libExisting) and against the other rows in this batch. Marks each row's inline
+// error and returns { ok, firstBad }.
+function libCollectRows(){
+  var plan = __upPlan; if(!plan || !plan.rows) return { ok:false, firstBad:-1 };
+  var seen = {}, ok = true, firstBad = -1;
+  plan.rows.forEach(function(r, i){
+    var si = document.getElementById("libSlug-" + i), ti = document.getElementById("libTitle-" + i), ki = document.getElementById("libTask-" + i);
+    var slug = si ? String(si.value||"").trim().toLowerCase() : (r.slug||"");
+    r.slug = slug;
+    r.title = ti ? String(ti.value||"").trim() : (r.title||"");
+    r.task  = ki ? String(ki.value||"").trim() : (r.task||"");
+    var msg = "";
+    if(!LIB_SLUG_RE.test(slug)) msg = t("lib_err_slug");
+    else if(seen[slug]) msg = t("lib_err_dup");
+    else if(__libExisting && __libExisting[slug]) msg = t("lib_err_exists");
+    seen[slug] = 1;
+    var err = document.getElementById("libErr-" + i);
+    if(err){ err.textContent = msg; err.className = "lib-rowerr" + (msg ? " bad" : ""); }
+    if(si){ si.className = "lib-in mono-iso" + (msg ? " bad" : ""); }
+    if(msg){ ok = false; if(firstBad < 0) firstBad = i; }
+  });
+  return { ok:ok, firstBad:firstBad };
+}
 function libOnFile(files){
   if(!files || !files.length) return;
   var res=document.getElementById("upResult"); if(res) res.innerHTML = '<div class="muted" style="padding:10px 2px">' + esc(t("up_reading")) + '</div>';
-  upBuildPlan(files).then(function(plan){                    // the SAME parser as the campaign path (never forked)
+  Promise.all([ upBuildPlan(files), libFetchPages() ]).then(function(a){   // the SAME parser (never forked) + existing slugs/tasks
+    var plan = a[0], pages = a[1] || [];
     __upPlan = plan;                                         // held for review; NOTHING written yet
-    var r2=document.getElementById("upResult"); if(r2){ r2.innerHTML = libResultHtml(plan);
-      var ap=document.getElementById("libApprove"); if(ap) ap.addEventListener("click", function(){ libApprove(); }); }
+    __libExisting = {}; pages.forEach(function(p){ if(p && p.slug) __libExisting[p.slug] = 1; });
+    var r2=document.getElementById("upResult"); if(r2){ r2.innerHTML = libResultHtml(plan, libDistinctTasks(pages));
+      var ap=document.getElementById("libApprove"); if(ap) ap.addEventListener("click", function(){ libApprove(); });
+      libCollectRows();                                     // initial validation paint
+      (plan.rows||[]).forEach(function(r, i){ var si=document.getElementById("libSlug-"+i); if(si) si.addEventListener("input", function(){ libCollectRows(); }); });
+    }
   }, function(e){
     var r3=document.getElementById("upResult"); if(r3) r3.innerHTML = '<div class="act-status bad">' + esc((e && e.message==="not_a_zip") ? t("up_not_zip") : t("up_read_failed")) + '</div>';
   });
@@ -604,9 +658,9 @@ function upCommitLibrary(plan){
     var r = rows[i];
     if(done[r.slug]){ return one(i + 1); }
     done[r.slug] = 1;
-    var html = (r.page && r.page.html) || "", title = r.title || upPretty(r.slug);
-    if(!String(html).trim()){ results.push({ slug:r.slug, title:title, ok:false, kind:"nohtml" }); return one(i + 1); }
-    return pageUpsert(r.slug, html)                                                 // console_pages row ONLY - no oppUpsert
+    var html = (r.page && r.page.html) || "", title = r.title || upPretty(r.slug), task = r.task || "";
+    if(!String(html).trim()){ results.push({ slug:r.slug, title:title, task:task, ok:false, kind:"nohtml" }); return one(i + 1); }
+    return pageUpsert(r.slug, html, { title:title, task:task })                     // console_pages row ONLY (title+task) - no oppUpsert
       .then(function(){ return pagePublishRelay(r.slug, withBeaconClient(html)); }) // relay commits the static file
       .then(function(){
         results.push({ slug:r.slug, title:title, ok:true, published:true, live:false, link:liveUrl(r.slug) });  // committed = published
@@ -683,7 +737,10 @@ function libWireDone(){
   var c2=document.getElementById("upClose2"); if(c2) c2.addEventListener("click", function(){ closeUpload(); });
 }
 function libApprove(){
-  if(__upBusy || !__upPlan) return; __upBusy = true;
+  if(__upBusy || !__upPlan) return;
+  var chk = libCollectRows();                              // read the edited slug/title/task + validate
+  if(!chk.ok){ upSetStatus(t("lib_err_fix"), "bad"); var bad=document.getElementById("libSlug-"+chk.firstBad); if(bad){ try{ bad.focus(); }catch(e){} } return; }
+  __upBusy = true;
   upSetStatus(t("lib_activating"), ""); var ap=document.getElementById("libApprove"); if(ap) ap.disabled = true;
   upCommitLibrary(__upPlan).then(function(results){
     __upBusy = false;
@@ -695,11 +752,108 @@ function libApprove(){
   });
 }
 
+// ===================================================================================================
+// LIBRARY SURFACE (PR-L1) - a standalone, task-classified, searchable view of every published template.
+// Reads ALL console_pages via restGet (page-only, independent of console_opps), groups by TASK, and shows per
+// template: title (fallback slug), slug, live state, the live link with Copy/Open, and an on-demand preview.
+// This is a READ + link + preview surface; promote-to-Operations, contacts, and archive are later PRs.
+// ===================================================================================================
+function libFetchPages(){
+  return restGet("console_pages?select=slug,title,task,live_verified_at,up,updated_at&order=up.desc")
+    .then(function(a){ return Array.isArray(a) ? a : []; }, function(){ return []; });
+}
+function libDistinctTasks(pages){
+  var seen = {}, out = [];
+  (pages||[]).forEach(function(p){ var tk = p && p.task ? String(p.task).trim() : ""; if(tk && !seen[tk]){ seen[tk]=1; out.push(tk); } });
+  return out.sort();
+}
+function openLibraryView(){
+  var sc=document.getElementById("libViewScrim"), pn=document.getElementById("libViewPanel");
+  if(!sc || !pn) return;
+  __libQuery = "";
+  pn.innerHTML = libViewHtml();
+  sc.hidden = false; pn.scrollTop = 0;
+  libViewWireShell();
+  libViewLoad();
+}
+function closeLibraryView(){ var sc=document.getElementById("libViewScrim"); if(sc) sc.hidden = true; }
+function libViewHtml(){
+  return '<div class="lv-head">'+
+      '<h2 class="lv-title">' + esc(t("lib_view_h")) + '</h2>'+
+      '<div class="lv-head-acts">'+
+        '<button class="btnp" id="lvAdd" type="button">' + esc(t("lib_add")) + '</button>'+
+        '<button class="link" id="lvClose" type="button">' + esc(t("pf_close")) + '</button>'+
+      '</div>'+
+    '</div>'+
+    '<div class="lv-search"><input class="lv-q" id="lvQ" type="search" dir="auto" placeholder="' + esc(t("lib_search_ph")) + '" autocomplete="off" aria-label="' + esc(t("lib_search_ph")) + '"></div>'+
+    '<div class="lv-body" id="lvBody"><div class="muted" style="padding:14px 2px">' + esc(t("up_reading")) + '</div></div>';
+}
+function libViewLoad(){
+  libFetchPages().then(function(pages){ __libPages = pages; libRenderList(); });
+}
+function libViewWireShell(){
+  var c=document.getElementById("lvClose"); if(c) c.addEventListener("click", function(){ closeLibraryView(); });
+  var a=document.getElementById("lvAdd"); if(a) a.addEventListener("click", function(){ closeLibraryView(); openLibrary(); });   // add templates -> the upload overlay
+  var q=document.getElementById("lvQ"); if(q) q.addEventListener("input", function(){ __libQuery = String(q.value||"").trim().toLowerCase(); libRenderList(); });
+}
+function libMatches(p, q){
+  if(!q) return true;
+  var hay = ((p.title||"") + " " + (p.slug||"") + " " + (p.task||"")).toLowerCase();
+  return hay.indexOf(q) >= 0;
+}
+// Group the (filtered) pages under their TASK heading; untasked go under a single "غير مصنّف" section, sorted last.
+function libRenderList(){
+  var body = document.getElementById("lvBody"); if(!body) return;
+  var pages = (__libPages||[]).filter(function(p){ return libMatches(p, __libQuery); });
+  if(!pages.length){ body.innerHTML = '<div class="lv-empty">' + esc(__libQuery ? t("lib_no_match") : t("lib_empty")) + '</div>'; return; }
+  var groups = {}, order = [], UNTASK = t("lib_untasked");
+  pages.forEach(function(p){ var tk = (p.task && String(p.task).trim()) || UNTASK; if(!groups[tk]){ groups[tk]=[]; order.push(tk); } groups[tk].push(p); });
+  order.sort(function(a,b){ if(a===UNTASK) return 1; if(b===UNTASK) return -1; return a<b?-1:(a>b?1:0); });
+  body.innerHTML = order.map(function(tk){
+    var cards = groups[tk].map(libCardHtml).join("");
+    return '<section class="lv-sec"><h3 class="lv-task"><span class="lv-task-k">' + esc(t("lib_task_k")) + '</span> <bdi>' + esc(tk) + '</bdi> <span class="lv-n">' + groups[tk].length + '</span></h3>'+
+      '<div class="lv-cards">' + cards + '</div></section>';
+  }).join("");
+  libViewWireCards();
+}
+function libCardHtml(p){
+  var live = !!p.live_verified_at, title = (p.title && String(p.title).trim()) || upPretty(p.slug);
+  return '<div class="lv-card" data-lib-slug="' + esc(p.slug) + '">'+
+    '<div class="lv-card-h"><span class="lv-card-t">' + esc(title) + '</span>'+
+      '<span class="lv-state' + (live ? " ok" : "") + '">' + esc(t(live ? "lib_row_live" : "lib_row_confirming")) + '</span></div>'+
+    '<div class="lv-slug mono-iso" dir="ltr">' + esc(p.slug) + '</div>'+
+    '<div class="lv-link"><span class="lv-k">' + esc(t("lib_link")) + ':</span> <bdi class="mono-iso lv-url" dir="ltr">' + esc(liveUrl(p.slug)) + '</bdi></div>'+
+    '<div class="lv-acts">'+
+      '<button class="act" type="button" data-lv-copy="' + esc(p.slug) + '">' + esc(t("lib_copy")) + '</button>'+
+      '<button class="act" type="button" data-lv-open="' + esc(p.slug) + '">' + esc(t("lib_open_page")) + '</button>'+
+      '<button class="act" type="button" data-lv-prev="' + esc(p.slug) + '">' + esc(t("lib_preview")) + '</button>'+
+    '</div>'+
+    '<div class="lv-prev" id="lvPrev-' + esc(p.slug) + '" hidden></div>'+
+  '</div>';
+}
+function libViewWireCards(){
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-copy]"), function(b){ b.addEventListener("click", function(){ libCopyLink(b.getAttribute("data-lv-copy")); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lv-open")); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-prev]"), function(b){ b.addEventListener("click", function(){ libPreviewToggle(b.getAttribute("data-lv-prev"), b); }); });
+}
+// On-demand preview: read the committed html back from console_pages (pageReadHtml) into a sandboxed iframe,
+// the same isolation the editor preview uses. Toggling again closes it (and frees the frame).
+function libPreviewToggle(slug, btn){
+  var box = document.getElementById("lvPrev-" + slug); if(!box) return;
+  if(!box.hidden){ box.hidden = true; box.innerHTML = ""; if(btn) btn.classList.remove("on"); return; }
+  box.hidden = false; if(btn) btn.classList.add("on");
+  box.innerHTML = '<div class="muted" style="padding:8px 2px">' + esc(t("up_reading")) + '</div>';
+  pageReadHtml(slug).then(function(html){
+    box.innerHTML = '<iframe class="lv-frame" title="' + esc(t("lib_preview")) + '" sandbox="" referrerpolicy="no-referrer" srcdoc="' + esc(String(html||"")) + '"></iframe>';
+  }, function(){ box.innerHTML = '<div class="act-status bad">' + esc(t("up_read_failed")) + '</div>'; });
+}
+
 // Read-only hooks for board_upload_test:
 try{
   window.__thriveUploadPlan = function(){ return __upPlan; };
   window.__thriveUploadVerify = function(slug){ return verifyLive(slug); };
   window.__thriveLibraryCommit = function(plan){ return upCommitLibrary(plan); };   // PR1: page-only commit + activate
   window.__thriveLibraryDoneHtml = function(results){ return libDoneHtml(results); };
+  window.__thriveLibraryPages = function(){ return __libPages; };                   // PR-L1: the surface's fetched rows
   window.__thriveParseSections = function(text){ return upParseSections(text); };
 }catch(e){}
