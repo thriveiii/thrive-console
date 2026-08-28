@@ -176,37 +176,44 @@ with sync_playwright() as p:
     ck("E0: the body renders verbatim (no auto-signature fused in)",
        "First line." in htm0 and "Growth Lead" not in htm0, htm0[:200])
 
-    # ===== 3: close + reopen restores the draft (add a recipient first) =====
+    # ===== 3: IDENTITY (NEWMSG_AUDIT) - New message ALWAYS starts FRESH; a draft is recovered via its CARD =====
     pg.fill("#recIn", "buyer.new@example.test")
-    pg.wait_for_timeout(1200)
+    pg.wait_for_timeout(1200)                                   # persist draft-A (subject + body + recipient)
+    ck("3: the draft persisted on the server (recoverable via its own board card, not the button)",
+       OPPS.get(nmslug,{}).get("data",{}).get("outreach_subject")=="Hello there", OPPS.get(nmslug,{}).get("data",{}))
     pg.evaluate("()=>{var e=new KeyboardEvent('keydown',{key:'Escape'});document.dispatchEvent(e);}"); pg.wait_for_timeout(200)
     ck("3: Escape closes the overlay", pg.evaluate(NM_HIDDEN)==True and pg.evaluate("()=>window.__thriveNewMessageOpen()")==False)
     open_nm(pg)
-    ck("3: reopening restores the same draft slug", pg.evaluate("()=>window.__thriveNewMessageSlug()")==nmslug)
-    ck("3: the subject is restored", pg.evaluate(VAL, "edSubj")=="Hello there")
-    ck("3: the body is restored (nothing lost on close)", "First line." in (pg.evaluate(VAL, "edBody") or ""))
-    ck("3: the recipient is restored", "buyer.new@example.test" in (pg.evaluate(VAL, "recIn") or ""))
+    slug2 = pg.evaluate("()=>window.__thriveNewMessageSlug()")
+    ck("3: reopening New message starts a FRESH compose (a NEW slug, never the prior draft)",
+       bool(slug2) and slug2.startswith("msg-") and slug2!=nmslug, {"new":slug2, "prev":nmslug})
+    ck("3: the fresh compose is EMPTY (no subject/body/recipient carried from the prior draft)",
+       (pg.evaluate(VAL,"edSubj") or "")=="" and (pg.evaluate(VAL,"edBody") or "")=="" and (pg.evaluate(VAL,"recIn") or "")=="")
 
-    # ===== 4: a LINKLESS message sends through the unchanged L5 path and becomes a Sent opp =====
+    # ===== 4: the FRESH compose sends via the unchanged L5 path -> a DISTINCT Sent opp (same subject != one card) =====
+    pg.fill("#edSubj", "Hello there")                          # SAME subject as draft-A: must STILL be a distinct opp
+    pg.fill("#edBody", "Fresh body, second compose.")
+    pg.fill("#recIn", "buyer.new@example.test")
+    pg.wait_for_timeout(1200)
     body_now = pg.evaluate(VAL, "edBody") or ""
     ck("4: the composed body has NO opp link token (linkless)", "{{LINK}}" not in body_now and "/opp/" not in body_now, body_now[:120])
     ck("4: Send is enabled with subject + body + recipient (no link required)", pg.evaluate(NM_SEND_DISABLED)==False, pg.evaluate(NM_SEND_DISABLED))
     pg.evaluate("()=>{ var b=document.getElementById('nmSend'); if(b) b.click(); }"); pg.wait_for_timeout(1400)
     ck("4: the overlay closed after handing off to the send", pg.evaluate(NM_HIDDEN)==True)
-    pay = [c for c in RELAY_CALLS if c.get("slug")==nmslug]
-    ck("4: the relay was called for the standalone slug", len(pay)==1, {"calls":len(pay)})
+    pay = [c for c in RELAY_CALLS if c.get("slug")==slug2]
+    ck("4: the relay was called for the FRESH slug (not the prior draft)", len(pay)==1, {"calls":len(pay)})
     p0 = pay[0] if pay else {}
     ck("4: the payload carries the recipient", p0.get("to")=="buyer.new@example.test", p0.get("to"))
-    ck("4: LINKLESS: the payload text carries no opp-page link", "/opp/"+nmslug not in p0.get("text",""), p0.get("text","")[-160:])
-    ck("4: exactly one console_mail row was written for the standalone opp (through L5 runSend)", sent_count(nmslug)==1, MAIL)
-    ck("4: the draft became a Sent opp on the board (server truth)", "sent" == [rw for rw in board_rows() if rw["slug"]==nmslug][0]["stage"])
+    ck("4: two same-subject composes are TWO distinct opps (draft-A untouched, fresh opp sent)",
+       slug2!=nmslug and sent_count(nmslug)==0 and sent_count(slug2)==1, {"prev_sent":sent_count(nmslug), "new_sent":sent_count(slug2)})
+    ck("4: the fresh draft became a Sent opp on the board (server truth)", "sent" == [rw for rw in board_rows() if rw["slug"]==slug2][0]["stage"])
     ck("4: the draft pointer was cleared on send", pg.evaluate("()=>{try{return localStorage.getItem('thrive_nm_draft');}catch(e){return 'ERR';}}") in (None, "null", None))
 
     # ===== 5: forced relay failure -> revert, NO phantom console_mail, the draft opp is not lost =====
     RELAY_FAULT["*"] = "500"
     open_nm(pg)
     failslug = pg.evaluate("()=>window.__thriveNewMessageSlug()")
-    ck("5: a fresh draft opens after the previous send (pointer was cleared)", failslug and failslug!=nmslug, {"fail":failslug, "prev":nmslug})
+    ck("5: a fresh draft opens after the previous send (pointer was cleared)", failslug and failslug not in (nmslug, slug2), {"fail":failslug, "prev":nmslug, "sent":slug2})
     pg.fill("#edSubj", "Second note")
     pg.fill("#edBody", "Body of the second note.")
     pg.fill("#recIn", "buyer.two@example.test")
