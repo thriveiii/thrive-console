@@ -18,7 +18,7 @@
 var SITE_L5 = "console.thriveiii.com";              // app.js:2 (SITE) - live host for opp pages
 var OPP_PATH_L5 = "/opp/";                          // app.js:3 (OPP_PATH)
 var FROM_EMAIL_L5 = "hi@thriveiii.com";             // app.js:6052 (FROM_EMAIL)
-var FROM_NAME_DEFAULT_L5 = "Thrive";                // app.js:6056 (getFromName default)
+var FROM_NAME_DEFAULT_L5 = "Thrive Digital Solutions"; // app.js:6056 (getFromName default); the relay builds "Name <addr>" from it (thrive-relay.gs fromHeader_)
 var REQUIRED_RELAY_L5 = 5;                          // app.js:8919 (REQUIRED_RELAY) - the payload contract version
 // P23 attachment partition limits (app.js:1388-1391); attachments here are pre-uploaded Storage URLs only.
 var ATTACH_INLINE_MAX_L5 = 5 * 1024 * 1024, ATTACH_MAX_L5 = 25 * 1024 * 1024, ATTACH_TOTAL_MAX_L5 = 40 * 1024 * 1024, ATTACH_COUNT_MAX_L5 = 10;
