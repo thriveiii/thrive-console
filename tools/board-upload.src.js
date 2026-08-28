@@ -527,9 +527,142 @@ function upActivate(slug){
 }
 function upWireActivate(slug){ var b=document.getElementById("upActBtn"); if(b) b.addEventListener("click", function(){ upActivate(slug); }); }
 
+// ===================================================================================================
+// LIBRARY UPLOAD (PR1) - document + activate templates with NO message, NO recipient, NO card.
+// The Library path reuses the SAME read/parse/preview the campaign upload uses (upReadFiles/upBuildPlan,
+// never forked) but on approval it commits ONLY the console_pages row and runs the activation chain per file.
+// It NEVER calls oppUpsert, so no console_opps card is created; the board view is anchored on console_opps
+// (docs/supabase-board-view.sql:242), so a page with no opp never appears on the Operations board. It never
+// opens the compose surface and never sends (runSend / sendMode / upSendLiveGate are untouched). Result: each
+// template is a live console_pages row (live_verified_at stamped) with its own live link liveUrl(slug).
+// Shares __upPlan / __upBusy with the campaign path (only one upload overlay is ever open).
+// ===================================================================================================
+function libPanelHtml(){
+  return '<div class="nm-head"><h2>' + esc(t("lib_h")) + '</h2>'+
+      '<button class="link nm-x" id="upClose" type="button">' + esc(t("pf_close")) + '</button></div>'+
+    '<div class="nm-body">'+
+      '<div class="up-hint">' + esc(t("lib_hint")) + '</div>'+
+      '<input class="up-file" id="upFile" type="file" accept=".zip" aria-label="' + esc(t("lib_h")) + '">'+
+      '<div id="upResult"></div>'+
+    '</div>';
+}
+// Open the SAME upload overlay in Library (page-only) mode. Mirrors openUpload; only the copy + handlers differ.
+function openLibrary(){
+  var sc=document.getElementById("upScrim"), pn=document.getElementById("upPanel");
+  if(!sc || !pn) return;
+  __upPlan = null;
+  pn.innerHTML = libPanelHtml(); sc.hidden = false; pn.scrollTop = 0;
+  var fi=document.getElementById("upFile"); if(fi) fi.addEventListener("change", function(){ libOnFile(fi.files); });
+  var cl=document.getElementById("upClose"); if(cl) cl.addEventListener("click", function(){ closeUpload(); });
+}
+// Library preview rows: the SAME plan the campaign upload builds, rendered as documentation (no message meta,
+// no message warnings). A page that resolved no message is NORMAL here (a template needs none), never an error.
+function libRowHtml(r){
+  return '<div class="up-row">'+
+    '<div class="up-row-h"><span class="up-slug mono-iso">' + esc(r.slug) + '</span> '+
+      '<span class="up-title">' + esc(r.title || upPretty(r.slug)) + '</span></div>'+
+    '<div class="up-meta">' + esc(t("lib_doc_only")) + '</div>'+
+    (r.page && r.page.html ? upFrame(String(r.page.html).slice(0, 400)) : '<div class="up-empty">' + esc(t("up_no_text")) + '</div>')+
+  '</div>';
+}
+function libResultHtml(plan){
+  var rows = (plan.rows || []).map(libRowHtml).join("");
+  var n = (plan.rows || []).length;
+  return '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>'+
+    '<div class="up-rows">' + rows + '</div>'+
+    '<div class="acts"><button class="act send" id="libApprove" type="button"' + (n ? "" : " disabled") + '>' + esc(t("lib_activate")) + '</button></div>'+
+    '<div class="act-status" id="upStatus"></div>';
+}
+function libOnFile(files){
+  if(!files || !files.length) return;
+  var res=document.getElementById("upResult"); if(res) res.innerHTML = '<div class="muted" style="padding:10px 2px">' + esc(t("up_reading")) + '</div>';
+  upBuildPlan(files).then(function(plan){                    // the SAME parser as the campaign path (never forked)
+    __upPlan = plan;                                         // held for review; NOTHING written yet
+    var r2=document.getElementById("upResult"); if(r2){ r2.innerHTML = libResultHtml(plan);
+      var ap=document.getElementById("libApprove"); if(ap) ap.addEventListener("click", function(){ libApprove(); }); }
+  }, function(e){
+    var r3=document.getElementById("upResult"); if(r3) r3.innerHTML = '<div class="act-status bad">' + esc((e && e.message==="not_a_zip") ? t("up_not_zip") : t("up_read_failed")) + '</div>';
+  });
+}
+// PAGE-ONLY COMMIT + activation, per file. Writes ONLY console_pages (pageUpsert), then the activation chain
+// (pagePublishRelay -> verifyLivePoll -> pageStampLive). NEVER oppUpsert. Per-file settle: a file that cannot
+// publish records its own failure and the batch continues - never a dropped batch, never a phantom success.
+function upCommitLibrary(plan){
+  var rows = (plan && plan.rows) || [], done = {}, results = [];
+  function one(i){
+    if(i >= rows.length) return Promise.resolve(results);
+    var r = rows[i];
+    if(done[r.slug]){ return one(i + 1); }
+    done[r.slug] = 1;
+    var html = (r.page && r.page.html) || "";
+    if(!String(html).trim()){ results.push({ slug:r.slug, title:r.title || upPretty(r.slug), ok:false, kind:"nohtml" }); return one(i + 1); }
+    return pageUpsert(r.slug, html)                                                 // console_pages row ONLY - no oppUpsert
+      .then(function(){ return pagePublishRelay(r.slug, withBeaconClient(html)); }) // relay commits the static file
+      .then(function(){ return verifyLivePoll(r.slug); })                          // bounded live poll (Pages delay)
+      .then(function(v){ if(!v.ok){ var e=new Error("not live"); e.__kind="notlive"; throw e; } return pageStampLive(r.slug); })  // stamp ONLY on a real ok
+      .then(function(){ results.push({ slug:r.slug, title:r.title || upPretty(r.slug), ok:true, link:liveUrl(r.slug) }); return one(i + 1); },
+            function(e){ results.push({ slug:r.slug, title:r.title || upPretty(r.slug), ok:false, kind:(e && e.__kind) || "fail" }); return one(i + 1); });
+  }
+  return one(0);
+}
+// Done panel: each template with its live link + Copy/Open, or its own failure. No card, no send.
+function libDoneRowHtml(x){
+  if(x.ok){
+    return '<div class="up-row lib-live">'+
+      '<div class="up-row-h"><span class="up-slug mono-iso">' + esc(x.slug) + '</span> '+
+        '<span class="up-title">' + esc(x.title || "") + '</span>'+
+        '<span class="up-warn ok">' + esc(t("lib_row_live")) + '</span></div>'+
+      '<div class="up-meta"><span class="up-k">' + esc(t("lib_link")) + ':</span> '+
+        '<bdi class="mono-iso lib-url">' + esc(liveUrl(x.slug)) + '</bdi></div>'+
+      '<div class="acts"><button class="act" type="button" data-lib-copy="' + esc(x.slug) + '">' + esc(t("lib_copy")) + '</button>'+
+        '<button class="act" type="button" data-lib-open="' + esc(x.slug) + '">' + esc(t("lib_open_page")) + '</button></div>'+
+    '</div>';
+  }
+  var reason = (x.kind === "notlive") ? t("up_publishing") : (x.kind === "nohtml") ? t("up_no_html") : t("up_commit_failed");
+  return '<div class="up-row up-row-warn">'+
+    '<div class="up-row-h"><span class="up-slug mono-iso">' + esc(x.slug) + '</span> '+
+      '<span class="up-title">' + esc(x.title || "") + '</span>'+
+      '<span class="up-warn">' + esc(t("lib_row_failed")) + '</span></div>'+
+    '<div class="up-meta">' + esc(reason) + '</div>'+
+  '</div>';
+}
+function libDoneHtml(results){
+  var okN = (results || []).filter(function(x){ return x.ok; }).length;
+  var rows = (results || []).map(libDoneRowHtml).join("");
+  return '<div class="up-count">' + esc(t("lib_done")) + ' ' + okN + '</div>'+
+    '<div class="up-rows">' + rows + '</div>'+
+    '<div class="acts"><button class="act" id="upClose2" type="button">' + esc(t("pf_close")) + '</button></div>';
+}
+// Link controls (ported from the old-engine modalOpen/modalCopy, app.js). Copy uses the async clipboard when
+// present and falls back to showing the URL so it can always be copied by hand; Open opens the live page.
+function libCopyLink(slug){
+  var url = liveUrl(slug);
+  try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(url); upSetStatus(t("lib_copied"), "ok"); return; } }catch(e){}
+  upSetStatus(url, "");
+}
+function libOpenPage(slug){ try{ window.open(liveUrl(slug), "_blank", "noopener"); }catch(e){} }
+function libWireDone(){
+  [].forEach.call(document.querySelectorAll("#upResult [data-lib-copy]"), function(b){ b.addEventListener("click", function(){ libCopyLink(b.getAttribute("data-lib-copy")); }); });
+  [].forEach.call(document.querySelectorAll("#upResult [data-lib-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lib-open")); }); });
+  var c2=document.getElementById("upClose2"); if(c2) c2.addEventListener("click", function(){ closeUpload(); });
+}
+function libApprove(){
+  if(__upBusy || !__upPlan) return; __upBusy = true;
+  upSetStatus(t("lib_activating"), ""); var ap=document.getElementById("libApprove"); if(ap) ap.disabled = true;
+  upCommitLibrary(__upPlan).then(function(results){
+    __upBusy = false;
+    var r=document.getElementById("upResult"); if(r){ r.innerHTML = libDoneHtml(results); libWireDone(); }
+  }).catch(function(e){
+    __upBusy = false; var a2=document.getElementById("libApprove"); if(a2) a2.disabled = false;
+    upSetStatus((e && e.authRequired) ? t("err") : t("up_write_failed"), "bad");
+  });
+}
+
 // Read-only hooks for board_upload_test:
 try{
   window.__thriveUploadPlan = function(){ return __upPlan; };
   window.__thriveUploadVerify = function(slug){ return verifyLive(slug); };
+  window.__thriveLibraryCommit = function(plan){ return upCommitLibrary(plan); };   // PR1: page-only commit + activate
+  window.__thriveLibraryDoneHtml = function(results){ return libDoneHtml(results); };
   window.__thriveParseSections = function(text){ return upParseSections(text); };
 }catch(e){}
