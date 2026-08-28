@@ -1735,9 +1735,12 @@ function nmWire(slug){
   nmTick(slug);
 }
 
-// Open the standalone editor overlay. Resumes the saved draft (from the guarded pointer, re-read from the
-// server) or mints a fresh slug. The fresh slug is not created until the first save (an open-then-close with
-// nothing typed leaves no opp behind); the pointer is stored only once a save confirms.
+// Open the standalone editor overlay. IDENTITY (NEWMSG_AUDIT): the "New message" action ALWAYS starts a
+// FRESH compose - it mints a brand-new msg-<ts>-<rand> slug and never resumes the stored draft pointer.
+// This is the fix for the resume-loop: a blocked or unsent draft used to leave thrive_nm_draft set, so the
+// next New message reopened the SAME opp pre-filled with the prior subject/body, collapsing separate
+// messages onto one card (sent_count is per slug). A durable draft is not lost - it persists as its own
+// console_opps row / board card and is reopened by tapping THAT card (openDrawer), not by this button.
 function openNewMessage(){
   if(__nmOpen) return;
   var sc=document.getElementById("nmScrim"), pn=document.getElementById("nmPanel");
@@ -1748,26 +1751,22 @@ function openNewMessage(){
   // openDrawer rebuilds #drawer innerHTML on its next open, so emptying it here is safe.
   try{ if(typeof closeDrawer==="function") closeDrawer(); }catch(e){}
   var dz=document.getElementById("drawer"); if(dz) dz.innerHTML="";
-  var stored = nmStoredSlug();
-  var slug = stored || nmNewSlug();
+  var slug = nmNewSlug();               // ALWAYS fresh: never resume nmStoredSlug() onto the generic button
+  nmClearStore();                       // drop any stale pointer so it cannot hijack this or a later compose
   __nmSlug = slug; __nmOpen = true;
-  __edBase[slug] = __edBase[slug] || {};
-  pn.innerHTML = nmPanelHtml(slug, {}); sc.hidden=false; pn.scrollTop=0; nmWire(slug);   // instant empty surface
-  if(stored){
-    oppReadData(slug).then(function(data){                                                // resume: prefill from server
-      if(!__nmOpen || __nmSlug!==slug) return;
-      __edBase[slug] = data || {};
-      pn.innerHTML = nmPanelHtml(slug, data||{}); pn.scrollTop=0; nmWire(slug);
-    }, function(){ /* read failed: keep the empty surface, first save still upserts */ });
-  }
+  __edBase[slug] = {};
+  pn.innerHTML = nmPanelHtml(slug, {}); sc.hidden=false; pn.scrollTop=0; nmWire(slug);   // an empty compose, every time
 }
-// Close the overlay. FLUSH FIRST: if a debounced save is pending, cancel the timer and write NOW (synchronously
-// captured from the live fields), so a recipient or message typed within the debounce window is never lost on
-// an accidental close. The draft stays in console_opps and the guarded pointer stays set, so the next open
-// resumes it - nothing is lost.
+// Close the overlay. FLUSH FIRST for a NON-empty compose: if a debounced save is pending, cancel the timer
+// and write NOW (from the live fields), so a recipient or message typed within the debounce window is never
+// lost - the draft stays as its own console_opps row / board card and is reopened by tapping that card.
+// IDENTITY (NEWMSG_AUDIT): an EMPTY, never-typed compose leaves nothing behind - skip the flush (no junk
+// "New message" opp) and clear the draft pointer, so a blocked send cannot leave a sticky pointer.
 function closeNewMessage(){
   var slug = __nmSlug;
-  if(slug && __nmT[slug]){ clearTimeout(__nmT[slug]); __nmT[slug]=null; try{ nmSaveNow(slug); }catch(e){} }
+  var empty = !((edVal("edSubj")||"").trim() || (edVal("edBody")||"").trim());
+  if(slug && __nmT[slug]){ clearTimeout(__nmT[slug]); __nmT[slug]=null; if(!empty){ try{ nmSaveNow(slug); }catch(e){} } }
+  if(empty) nmClearStore();
   __nmOpen=false; var sc=document.getElementById("nmScrim"); if(sc) sc.hidden=true;
 }
 
