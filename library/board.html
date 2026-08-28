@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="c0b1549c">
+<meta name="thrive-build" content="e29fee81">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -143,6 +143,49 @@
   .up-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.5;color:#c7c7cf;font-family:inherit;unicode-bidi:plaintext}
   .up-empty{font-size:12px;color:#6a6a74;font-style:italic}
   .up-state{font-size:13px;padding:8px 11px;border-radius:8px;border:1px solid #22222e;background:#0e0e14;color:#cdd}
+  /* PR-L1: editable upload rows (slug / title / task, set before publish) */
+  .lib-edit{display:flex;flex-direction:column;gap:8px}
+  .lib-fields{display:flex;flex-direction:column;gap:8px}
+  .lib-f{display:flex;flex-direction:column;gap:3px}
+  .lib-fl{font-size:11px;color:#8a8a93}
+  .lib-in{width:100%;box-sizing:border-box;background:#0b0b11;border:1px solid #262632;border-radius:8px;padding:8px 10px;color:#eef;font-size:14px;font-family:inherit}
+  .lib-in:focus{outline:none;border-color:#3a5;box-shadow:0 0 0 2px rgba(51,170,85,.18)}
+  .lib-in.bad{border-color:#7a3838;box-shadow:0 0 0 2px rgba(150,60,60,.16)}
+  .lib-rowerr{font-size:11.5px;color:#9aa0aa;min-height:0}
+  .lib-rowerr.bad{color:#e0a3a3}
+  /* PR-L1: the standalone Library surface */
+  .scrim.libview{justify-content:center;align-items:flex-start}
+  html[dir="rtl"] .scrim.libview{justify-content:center}
+  .lvpanel{width:min(1000px,100%);height:100%;background:#0b0b11;border-inline-start:1px solid #1c1c26;border-inline-end:1px solid #1c1c26;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 22px 56px}
+  .lv-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin:2px 0 12px}
+  .lv-title{font-size:20px;font-weight:680;color:#eef;margin:0}
+  .lv-head-acts{display:flex;align-items:center;gap:12px}
+  .btnp{background:#1a5;background:linear-gradient(180deg,#2b7,#1a5);border:0;border-radius:9px;padding:8px 14px;color:#05130b;font-weight:650;font-size:13px;cursor:pointer}
+  .btnp:hover{filter:brightness(1.06)}
+  .lv-search{margin:0 0 16px}
+  .lv-q{width:100%;box-sizing:border-box;background:#0e0e14;border:1px solid #262632;border-radius:10px;padding:10px 13px;color:#eef;font-size:15px;font-family:inherit}
+  .lv-q:focus{outline:none;border-color:#3a5}
+  .lv-body{display:flex;flex-direction:column;gap:22px}
+  .lv-sec{display:flex;flex-direction:column;gap:11px}
+  .lv-task{font-size:13px;font-weight:600;color:#cdd;margin:0;display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid #1c1c26}
+  .lv-task-k{font-size:11px;color:#8a8a93}
+  .lv-n{font-size:11px;color:#8a8a93;background:#14141c;border:1px solid #22222e;border-radius:999px;padding:1px 8px}
+  .lv-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+  .lv-card{border:1px solid #22222e;border-radius:12px;background:#0e0e14;padding:14px 15px;display:flex;flex-direction:column;gap:8px;min-width:0}
+  .lv-card-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .lv-card-t{font-size:15px;font-weight:620;color:#eef;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .lv-state{flex:0 0 auto;font-size:11px;color:#d8b48a;border:1px solid #4b3a27;border-radius:999px;padding:2px 9px}
+  .lv-state.ok{color:#8fd6a6;border-color:#2f5a3d}
+  .lv-slug{font-size:12px;color:#8a8a93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lv-link{font-size:12px;color:#9aa0aa;overflow:hidden}
+  .lv-link .lv-k{color:#7a7a84}
+  .lv-url{color:#9fb6d8;word-break:break-all}
+  .lv-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+  .lv-acts .act{font-size:12.5px;padding:6px 11px}
+  .lv-acts .act.on{border-color:#3a5;color:#bfe6cd}
+  .lv-prev{margin-top:6px}
+  .lv-frame{width:100%;height:260px;border:1px solid #22222e;border-radius:9px;background:#fff}
+  .lv-empty{font-size:14px;color:#8a8a93;padding:24px 4px;text-align:center}
   .up-state.ok{color:#a9d5b6;border-color:#274b34}
   .up-state.bad{color:#d8b48a;border-color:#4b3a27}
   .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
@@ -187,7 +230,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build c0b1549c</span>
+    <span class="muted">build e29fee81</span>
   </div>
   <div id="root"></div>
 </div>
@@ -196,11 +239,12 @@
 <div id="admScrim" class="scrim" hidden><div id="admPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="nmScrim" class="scrim" hidden><div id="nmPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="upScrim" class="scrim" hidden><div id="upPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
+<div id="libViewScrim" class="scrim libview" hidden><div id="libViewPanel" class="lvpanel" role="dialog" aria-modal="true"></div></div>
 <script>
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "c0b1549c";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "e29fee81";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -281,7 +325,9 @@
           up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live.",
           lib_open:"Library", lib_h:"Add templates to the Library", lib_hint:"A zip of html pages. Each page is published and gets a live link. No message, no recipient, no card.",
           lib_doc_only:"Documentation template (no message).", lib_activate:"Publish to Library", lib_activating:"Publishing templates...", lib_done:"Published to Library:",
-          lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published" },
+          lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published",
+          lib_f_title:"Title", lib_f_slug:"Link name", lib_f_task:"Task", lib_task_ph:"Choose or type a task", lib_err_slug:"Use lowercase letters, numbers and dashes only.", lib_err_dup:"This link name is repeated in this batch.", lib_err_exists:"This link name is already taken.", lib_err_fix:"Fix the highlighted link names first.",
+          lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -346,7 +392,9 @@
           up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ.",
           lib_open:"المكتبة", lib_h:"أضف قوالب إلى المكتبة", lib_hint:"ملف مضغوط يضم صفحات html. تُنشر كل صفحة وتحصل على رابط حيّ. لا رسالة ولا مستلم ولا بطاقة.",
           lib_doc_only:"قالب توثيقي (بلا رسالة).", lib_activate:"انشر في المكتبة", lib_activating:"جارٍ نشر القوالب...", lib_done:"نُشر في المكتبة:",
-          lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر" }
+          lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر",
+          lib_f_title:"العنوان", lib_f_slug:"اسم الرابط", lib_f_task:"المهمة", lib_task_ph:"اختر مهمة أو اكتب واحدة", lib_err_slug:"استخدم حروفًا صغيرة وأرقامًا وشرطات فقط.", lib_err_dup:"اسم الرابط مكرّر في هذه الدفعة.", lib_err_exists:"اسم الرابط مستخدم من قبل.", lib_err_fix:"صحّح أسماء الروابط المميّزة أولًا.",
+          lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1860,6 +1908,9 @@ try{
 
 var __upPlan = null;       // the previewed plan, held until the operator approves (nothing written before then)
 var __upBusy = false;      // in-flight guard for the read/commit
+var __libExisting = {};    // PR-L1: the set of console_pages slugs already taken (for upload uniqueness check)
+var __libPages = null;     // PR-L1: the last console_pages rows fetched for the Library surface (+ tests)
+var __libQuery = "";       // PR-L1: the live Library search query
 // PR-L0: a page_publish commits to GitHub (GET sha + PUT, relay:pagePublish_ two round-trips) which routinely
 // takes longer than the 6s sign-in fetch timeout. This op gets its own longer client bound so a slow-but-
 // successful commit is not aborted by the client and falsely reported "could not publish".
@@ -2098,16 +2149,24 @@ function upBuildPlan(files){
 // reads console_pages joined to console_opps for the label. Bounded upsert, same discipline as oppUpsert
 // (merge-duplicates, one refresh-retry). This insert leaves live_verified_at null - a stored page is a DRAFT
 // until it is committed and verified live.
-function pageUpsert(slug, html, retried){
+// PR-L1: an optional `meta` ({title, task}) is written alongside the html so a page-only Library template
+// carries its own human title + task classification (console_pages gained title/task/tags columns, applied in
+// Supabase). Campaign callers pass no meta, so those columns stay null (their title lives on console_opps).
+// Only defined keys are sent, so an unknown column never breaks the upsert.
+function pageUpsert(slug, html, meta, retried){
   var url = URL_BASE + "/rest/v1/console_pages";
   var row = { slug:slug, html:String(html == null ? "" : html), up:Date.now() };
+  if(meta && typeof meta === "object"){
+    if(meta.title != null) row.title = String(meta.title);
+    if(meta.task  != null) row.task  = String(meta.task);
+  }
   return authFetchOnce(url, {
     method:"POST",
     headers:{ "apikey":ANON, "Authorization":"Bearer " + bearer(), "Content-Type":"application/json", "Prefer":"resolution=merge-duplicates,return=minimal" },
     cache:"no-store", body: JSON.stringify([row])
   }).then(function(r){
     if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
-      return refresh().then(function(ok){ if(ok) return pageUpsert(slug, html, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+      return refresh().then(function(ok){ if(ok) return pageUpsert(slug, html, meta, true); var e=new Error("auth"); e.authRequired=true; throw e; });
     }
     if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP " + r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
     return true;
@@ -2398,31 +2457,74 @@ function openLibrary(){
   var fi=document.getElementById("upFile"); if(fi) fi.addEventListener("change", function(){ libOnFile(fi.files); });
   var cl=document.getElementById("upClose"); if(cl) cl.addEventListener("click", function(){ closeUpload(); });
 }
-// Library preview rows: the SAME plan the campaign upload builds, rendered as documentation (no message meta,
-// no message warnings). A page that resolved no message is NORMAL here (a template needs none), never an error.
-function libRowHtml(r){
-  return '<div class="up-row">'+
-    '<div class="up-row-h"><span class="up-slug mono-iso">' + esc(r.slug) + '</span> '+
-      '<span class="up-title">' + esc(r.title || upPretty(r.slug)) + '</span></div>'+
-    '<div class="up-meta">' + esc(t("lib_doc_only")) + '</div>'+
-    (r.page && r.page.html ? upFrame(String(r.page.html).slice(0, 400)) : '<div class="up-empty">' + esc(t("up_no_text")) + '</div>')+
+// PR-L1: the review row lets the operator set a clean SLUG, TITLE, and TASK per file BEFORE publish, so the
+// live link is right the first time and no rename is ever needed (the relay has no delete op). Defaults: slug
+// from upPageSlug (the plan), title from the plan title (or a prettified slug), task blank. The task input
+// offers the existing tasks via a shared datalist and also accepts a brand-new one typed in.
+var LIB_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,59}$/;
+function libRowHtml(r, i){
+  var slug = r.slug || "", title = r.title || upPretty(r.slug), task = r.task || "";
+  return '<div class="up-row lib-edit" data-lib-idx="' + i + '">'+
+    '<div class="lib-fields">'+
+      '<label class="lib-f"><span class="lib-fl">' + esc(t("lib_f_title")) + '</span>'+
+        '<input class="lib-in" id="libTitle-' + i + '" type="text" value="' + esc(title) + '" autocomplete="off"></label>'+
+      '<label class="lib-f"><span class="lib-fl">' + esc(t("lib_f_slug")) + '</span>'+
+        '<input class="lib-in mono-iso" id="libSlug-' + i + '" type="text" dir="ltr" value="' + esc(slug) + '" autocomplete="off" spellcheck="false"></label>'+
+      '<label class="lib-f"><span class="lib-fl">' + esc(t("lib_f_task")) + '</span>'+
+        '<input class="lib-in" id="libTask-' + i + '" type="text" list="libTasks" value="' + esc(task) + '" autocomplete="off" placeholder="' + esc(t("lib_task_ph")) + '"></label>'+
+    '</div>'+
+    '<div class="lib-rowerr" id="libErr-' + i + '"></div>'+
+    (r.page && r.page.html ? upFrame(String(r.page.html).slice(0, 320)) : '<div class="up-empty">' + esc(t("up_no_text")) + '</div>')+
   '</div>';
 }
-function libResultHtml(plan){
-  var rows = (plan.rows || []).map(libRowHtml).join("");
+function libTasksDatalist(tasks){
+  return '<datalist id="libTasks">' + (tasks || []).map(function(tk){ var v = esc(tk); return '<option value="' + v + '">' + v + '</option>'; }).join("") + '</datalist>';
+}
+function libResultHtml(plan, tasks){
+  var rows = (plan.rows || []).map(function(r, i){ return libRowHtml(r, i); }).join("");
   var n = (plan.rows || []).length;
-  return '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>'+
+  return libTasksDatalist(tasks)+
+    '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>'+
     '<div class="up-rows">' + rows + '</div>'+
     '<div class="acts"><button class="act send" id="libApprove" type="button"' + (n ? "" : " disabled") + '>' + esc(t("lib_activate")) + '</button></div>'+
     '<div class="act-status" id="upStatus"></div>';
 }
+// Read the edited slug/title/task back into the plan rows and validate: slug format + uniqueness against the
+// existing console_pages slugs (__libExisting) and against the other rows in this batch. Marks each row's inline
+// error and returns { ok, firstBad }.
+function libCollectRows(){
+  var plan = __upPlan; if(!plan || !plan.rows) return { ok:false, firstBad:-1 };
+  var seen = {}, ok = true, firstBad = -1;
+  plan.rows.forEach(function(r, i){
+    var si = document.getElementById("libSlug-" + i), ti = document.getElementById("libTitle-" + i), ki = document.getElementById("libTask-" + i);
+    var slug = si ? String(si.value||"").trim().toLowerCase() : (r.slug||"");
+    r.slug = slug;
+    r.title = ti ? String(ti.value||"").trim() : (r.title||"");
+    r.task  = ki ? String(ki.value||"").trim() : (r.task||"");
+    var msg = "";
+    if(!LIB_SLUG_RE.test(slug)) msg = t("lib_err_slug");
+    else if(seen[slug]) msg = t("lib_err_dup");
+    else if(__libExisting && __libExisting[slug]) msg = t("lib_err_exists");
+    seen[slug] = 1;
+    var err = document.getElementById("libErr-" + i);
+    if(err){ err.textContent = msg; err.className = "lib-rowerr" + (msg ? " bad" : ""); }
+    if(si){ si.className = "lib-in mono-iso" + (msg ? " bad" : ""); }
+    if(msg){ ok = false; if(firstBad < 0) firstBad = i; }
+  });
+  return { ok:ok, firstBad:firstBad };
+}
 function libOnFile(files){
   if(!files || !files.length) return;
   var res=document.getElementById("upResult"); if(res) res.innerHTML = '<div class="muted" style="padding:10px 2px">' + esc(t("up_reading")) + '</div>';
-  upBuildPlan(files).then(function(plan){                    // the SAME parser as the campaign path (never forked)
+  Promise.all([ upBuildPlan(files), libFetchPages() ]).then(function(a){   // the SAME parser (never forked) + existing slugs/tasks
+    var plan = a[0], pages = a[1] || [];
     __upPlan = plan;                                         // held for review; NOTHING written yet
-    var r2=document.getElementById("upResult"); if(r2){ r2.innerHTML = libResultHtml(plan);
-      var ap=document.getElementById("libApprove"); if(ap) ap.addEventListener("click", function(){ libApprove(); }); }
+    __libExisting = {}; pages.forEach(function(p){ if(p && p.slug) __libExisting[p.slug] = 1; });
+    var r2=document.getElementById("upResult"); if(r2){ r2.innerHTML = libResultHtml(plan, libDistinctTasks(pages));
+      var ap=document.getElementById("libApprove"); if(ap) ap.addEventListener("click", function(){ libApprove(); });
+      libCollectRows();                                     // initial validation paint
+      (plan.rows||[]).forEach(function(r, i){ var si=document.getElementById("libSlug-"+i); if(si) si.addEventListener("input", function(){ libCollectRows(); }); });
+    }
   }, function(e){
     var r3=document.getElementById("upResult"); if(r3) r3.innerHTML = '<div class="act-status bad">' + esc((e && e.message==="not_a_zip") ? t("up_not_zip") : t("up_read_failed")) + '</div>';
   });
@@ -2443,9 +2545,9 @@ function upCommitLibrary(plan){
     var r = rows[i];
     if(done[r.slug]){ return one(i + 1); }
     done[r.slug] = 1;
-    var html = (r.page && r.page.html) || "", title = r.title || upPretty(r.slug);
-    if(!String(html).trim()){ results.push({ slug:r.slug, title:title, ok:false, kind:"nohtml" }); return one(i + 1); }
-    return pageUpsert(r.slug, html)                                                 // console_pages row ONLY - no oppUpsert
+    var html = (r.page && r.page.html) || "", title = r.title || upPretty(r.slug), task = r.task || "";
+    if(!String(html).trim()){ results.push({ slug:r.slug, title:title, task:task, ok:false, kind:"nohtml" }); return one(i + 1); }
+    return pageUpsert(r.slug, html, { title:title, task:task })                     // console_pages row ONLY (title+task) - no oppUpsert
       .then(function(){ return pagePublishRelay(r.slug, withBeaconClient(html)); }) // relay commits the static file
       .then(function(){
         results.push({ slug:r.slug, title:title, ok:true, published:true, live:false, link:liveUrl(r.slug) });  // committed = published
@@ -2522,7 +2624,10 @@ function libWireDone(){
   var c2=document.getElementById("upClose2"); if(c2) c2.addEventListener("click", function(){ closeUpload(); });
 }
 function libApprove(){
-  if(__upBusy || !__upPlan) return; __upBusy = true;
+  if(__upBusy || !__upPlan) return;
+  var chk = libCollectRows();                              // read the edited slug/title/task + validate
+  if(!chk.ok){ upSetStatus(t("lib_err_fix"), "bad"); var bad=document.getElementById("libSlug-"+chk.firstBad); if(bad){ try{ bad.focus(); }catch(e){} } return; }
+  __upBusy = true;
   upSetStatus(t("lib_activating"), ""); var ap=document.getElementById("libApprove"); if(ap) ap.disabled = true;
   upCommitLibrary(__upPlan).then(function(results){
     __upBusy = false;
@@ -2534,12 +2639,109 @@ function libApprove(){
   });
 }
 
+// ===================================================================================================
+// LIBRARY SURFACE (PR-L1) - a standalone, task-classified, searchable view of every published template.
+// Reads ALL console_pages via restGet (page-only, independent of console_opps), groups by TASK, and shows per
+// template: title (fallback slug), slug, live state, the live link with Copy/Open, and an on-demand preview.
+// This is a READ + link + preview surface; promote-to-Operations, contacts, and archive are later PRs.
+// ===================================================================================================
+function libFetchPages(){
+  return restGet("console_pages?select=slug,title,task,live_verified_at,up,updated_at&order=up.desc")
+    .then(function(a){ return Array.isArray(a) ? a : []; }, function(){ return []; });
+}
+function libDistinctTasks(pages){
+  var seen = {}, out = [];
+  (pages||[]).forEach(function(p){ var tk = p && p.task ? String(p.task).trim() : ""; if(tk && !seen[tk]){ seen[tk]=1; out.push(tk); } });
+  return out.sort();
+}
+function openLibraryView(){
+  var sc=document.getElementById("libViewScrim"), pn=document.getElementById("libViewPanel");
+  if(!sc || !pn) return;
+  __libQuery = "";
+  pn.innerHTML = libViewHtml();
+  sc.hidden = false; pn.scrollTop = 0;
+  libViewWireShell();
+  libViewLoad();
+}
+function closeLibraryView(){ var sc=document.getElementById("libViewScrim"); if(sc) sc.hidden = true; }
+function libViewHtml(){
+  return '<div class="lv-head">'+
+      '<h2 class="lv-title">' + esc(t("lib_view_h")) + '</h2>'+
+      '<div class="lv-head-acts">'+
+        '<button class="btnp" id="lvAdd" type="button">' + esc(t("lib_add")) + '</button>'+
+        '<button class="link" id="lvClose" type="button">' + esc(t("pf_close")) + '</button>'+
+      '</div>'+
+    '</div>'+
+    '<div class="lv-search"><input class="lv-q" id="lvQ" type="search" dir="auto" placeholder="' + esc(t("lib_search_ph")) + '" autocomplete="off" aria-label="' + esc(t("lib_search_ph")) + '"></div>'+
+    '<div class="lv-body" id="lvBody"><div class="muted" style="padding:14px 2px">' + esc(t("up_reading")) + '</div></div>';
+}
+function libViewLoad(){
+  libFetchPages().then(function(pages){ __libPages = pages; libRenderList(); });
+}
+function libViewWireShell(){
+  var c=document.getElementById("lvClose"); if(c) c.addEventListener("click", function(){ closeLibraryView(); });
+  var a=document.getElementById("lvAdd"); if(a) a.addEventListener("click", function(){ closeLibraryView(); openLibrary(); });   // add templates -> the upload overlay
+  var q=document.getElementById("lvQ"); if(q) q.addEventListener("input", function(){ __libQuery = String(q.value||"").trim().toLowerCase(); libRenderList(); });
+}
+function libMatches(p, q){
+  if(!q) return true;
+  var hay = ((p.title||"") + " " + (p.slug||"") + " " + (p.task||"")).toLowerCase();
+  return hay.indexOf(q) >= 0;
+}
+// Group the (filtered) pages under their TASK heading; untasked go under a single "غير مصنّف" section, sorted last.
+function libRenderList(){
+  var body = document.getElementById("lvBody"); if(!body) return;
+  var pages = (__libPages||[]).filter(function(p){ return libMatches(p, __libQuery); });
+  if(!pages.length){ body.innerHTML = '<div class="lv-empty">' + esc(__libQuery ? t("lib_no_match") : t("lib_empty")) + '</div>'; return; }
+  var groups = {}, order = [], UNTASK = t("lib_untasked");
+  pages.forEach(function(p){ var tk = (p.task && String(p.task).trim()) || UNTASK; if(!groups[tk]){ groups[tk]=[]; order.push(tk); } groups[tk].push(p); });
+  order.sort(function(a,b){ if(a===UNTASK) return 1; if(b===UNTASK) return -1; return a<b?-1:(a>b?1:0); });
+  body.innerHTML = order.map(function(tk){
+    var cards = groups[tk].map(libCardHtml).join("");
+    return '<section class="lv-sec"><h3 class="lv-task"><span class="lv-task-k">' + esc(t("lib_task_k")) + '</span> <bdi>' + esc(tk) + '</bdi> <span class="lv-n">' + groups[tk].length + '</span></h3>'+
+      '<div class="lv-cards">' + cards + '</div></section>';
+  }).join("");
+  libViewWireCards();
+}
+function libCardHtml(p){
+  var live = !!p.live_verified_at, title = (p.title && String(p.title).trim()) || upPretty(p.slug);
+  return '<div class="lv-card" data-lib-slug="' + esc(p.slug) + '">'+
+    '<div class="lv-card-h"><span class="lv-card-t">' + esc(title) + '</span>'+
+      '<span class="lv-state' + (live ? " ok" : "") + '">' + esc(t(live ? "lib_row_live" : "lib_row_confirming")) + '</span></div>'+
+    '<div class="lv-slug mono-iso" dir="ltr">' + esc(p.slug) + '</div>'+
+    '<div class="lv-link"><span class="lv-k">' + esc(t("lib_link")) + ':</span> <bdi class="mono-iso lv-url" dir="ltr">' + esc(liveUrl(p.slug)) + '</bdi></div>'+
+    '<div class="lv-acts">'+
+      '<button class="act" type="button" data-lv-copy="' + esc(p.slug) + '">' + esc(t("lib_copy")) + '</button>'+
+      '<button class="act" type="button" data-lv-open="' + esc(p.slug) + '">' + esc(t("lib_open_page")) + '</button>'+
+      '<button class="act" type="button" data-lv-prev="' + esc(p.slug) + '">' + esc(t("lib_preview")) + '</button>'+
+    '</div>'+
+    '<div class="lv-prev" id="lvPrev-' + esc(p.slug) + '" hidden></div>'+
+  '</div>';
+}
+function libViewWireCards(){
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-copy]"), function(b){ b.addEventListener("click", function(){ libCopyLink(b.getAttribute("data-lv-copy")); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lv-open")); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-prev]"), function(b){ b.addEventListener("click", function(){ libPreviewToggle(b.getAttribute("data-lv-prev"), b); }); });
+}
+// On-demand preview: read the committed html back from console_pages (pageReadHtml) into a sandboxed iframe,
+// the same isolation the editor preview uses. Toggling again closes it (and frees the frame).
+function libPreviewToggle(slug, btn){
+  var box = document.getElementById("lvPrev-" + slug); if(!box) return;
+  if(!box.hidden){ box.hidden = true; box.innerHTML = ""; if(btn) btn.classList.remove("on"); return; }
+  box.hidden = false; if(btn) btn.classList.add("on");
+  box.innerHTML = '<div class="muted" style="padding:8px 2px">' + esc(t("up_reading")) + '</div>';
+  pageReadHtml(slug).then(function(html){
+    box.innerHTML = '<iframe class="lv-frame" title="' + esc(t("lib_preview")) + '" sandbox="" referrerpolicy="no-referrer" srcdoc="' + esc(String(html||"")) + '"></iframe>';
+  }, function(){ box.innerHTML = '<div class="act-status bad">' + esc(t("up_read_failed")) + '</div>'; });
+}
+
 // Read-only hooks for board_upload_test:
 try{
   window.__thriveUploadPlan = function(){ return __upPlan; };
   window.__thriveUploadVerify = function(slug){ return verifyLive(slug); };
   window.__thriveLibraryCommit = function(plan){ return upCommitLibrary(plan); };   // PR1: page-only commit + activate
   window.__thriveLibraryDoneHtml = function(results){ return libDoneHtml(results); };
+  window.__thriveLibraryPages = function(){ return __libPages; };                   // PR-L1: the surface's fetched rows
   window.__thriveParseSections = function(text){ return upParseSections(text); };
 }catch(e){}
 
@@ -2671,7 +2873,7 @@ try{
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
     var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ openNewMessage(); });   // E1
     var up=document.getElementById("uploadBtn"); if(up) up.addEventListener("click", function(){ openUpload(); });   // E2
-    var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibrary(); });   // PR1 Library upload
+    var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibraryView(); });   // PR-L1: the Library surface (Add templates inside opens the upload)
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
@@ -3058,7 +3260,9 @@ try{
     if(ns) ns.addEventListener("click", function(e){ if(e.target===ns) closeNewMessage(); });
     var us=document.getElementById("upScrim");                                            // E2 upload overlay
     if(us) us.addEventListener("click", function(e){ if(e.target===us) closeUpload(); });
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); } });
+    var lvs=document.getElementById("libViewScrim");                                      // PR-L1 Library surface
+    if(lvs) lvs.addEventListener("click", function(e){ if(e.target===lvs) closeLibraryView(); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); } });
   }catch(e){} })();
   boot();
 })();

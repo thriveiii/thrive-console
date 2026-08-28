@@ -150,8 +150,9 @@ with sync_playwright() as p:
 
     # ===== the Library surface opens (its own header entry, distinct from campaign Upload) =====
     ck("the header carries a Library button", pg.evaluate("()=>!!document.getElementById('libBtn')"))
-    pg.evaluate("()=>{var b=document.getElementById('libBtn'); if(b) b.click();}"); pg.wait_for_timeout(300)
-    ck("Library opens the overlay (#upScrim) with the file input", pg.evaluate("()=>{var s=document.getElementById('upScrim'); return !!s && !s.hidden && !!document.getElementById('upFile');}"))
+    pg.evaluate("()=>{var b=document.getElementById('libBtn'); if(b) b.click();}"); pg.wait_for_timeout(300)   # PR-L1: opens the Library surface
+    pg.evaluate("()=>{var b=document.getElementById('lvAdd'); if(b) b.click();}"); pg.wait_for_timeout(300)     # Add templates -> the upload overlay
+    ck("Add templates opens the upload overlay (#upScrim) with the file input", pg.evaluate("()=>{var s=document.getElementById('upScrim'); return !!s && !s.hidden && !!document.getElementById('upFile');}"))
 
     # ===== (a)+(c): upload 2 html files (NO message), publish page-only, activate each =====
     LIVE["doc-alpha"] = "ok"; LIVE["doc-beta"] = "ok"
@@ -198,7 +199,8 @@ with sync_playwright() as p:
     # ===== (d) AR RTL on the Library overlay =====
     ctx2 = b.new_context(); wire(ctx2, lang="ar"); pg2 = ctx2.new_page()
     pg2.goto(f"{base}/library/board.html", wait_until="load"); pg2.wait_for_timeout(500); wait_ident(pg2)
-    pg2.evaluate("()=>{var b=document.getElementById('libBtn'); if(b) b.click();}"); pg2.wait_for_timeout(300)
+    pg2.evaluate("()=>{var b=document.getElementById('libBtn'); if(b) b.click();}"); pg2.wait_for_timeout(300)   # surface
+    pg2.evaluate("()=>{var b=document.getElementById('lvAdd'); if(b) b.click();}"); pg2.wait_for_timeout(300)     # -> upload overlay
     d = pg2.evaluate("()=>{var pn=document.getElementById('upPanel'); return {dir:getComputedStyle(pn).direction, has:!!document.getElementById('upFile'), open:!document.getElementById('upScrim').hidden, h:(pn.textContent||'')};}")
     ck("(d) AR flips the Library overlay to RTL", d["dir"]=="rtl", d)
     ck("(d) the Library surface renders under AR with the localized heading", d["has"] and d["open"] and ("المكتبة" in d["h"]), d)
