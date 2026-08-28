@@ -947,7 +947,7 @@ function buildBoard(){
   .card{background:#111119;border:1px solid #20202a;border-radius:10px;padding:10px 11px;margin:0 0 8px}
   .card .b{font-weight:700;font-size:14px;word-break:break-word}
   .card .s{color:#8a8a93;font-size:12px;margin-top:4px;word-break:break-word}
-  .badge{display:inline-block;font-size:11px;color:#8a8a93;border:1px solid #26262f;border-radius:999px;padding:1px 7px;margin:6px 6px 0 0}
+  .badge{display:inline-block;font-size:11px;color:#8a8a93;border:1px solid #26262f;border-radius:999px;padding:1px 7px;margin-block-start:6px;margin-inline-end:6px}
   .empty{color:#5a5a64;font-size:12px;padding:8px 4px}
   /* RTL: Arabic is chrome-language only. A system Arabic stack keeps the page self-contained (no webfont);
      no letter-spacing and no uppercase on Arabic. Lane column order follows the base direction of .lanes,
@@ -1144,7 +1144,7 @@ function buildBoard(){
           refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
           none:"none", unnamed:"(unnamed)",
           l_draft:"Draft", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
-          b_send:"send", b_sends:"sends", b_open:"open", b_opens:"opens", b_replied:"replied", b_idle:"d idle",
+          b_send:"send", b_sends:"sends", b_open:"open", b_opens:"opens", b_replied:"replied", b_idle:"days idle",
           bg_page:"page", bg_email:"email", bg_archived:"archived",
           l_bounced:"Bounced", l_failed:"Failed", tray:"Closed",
           v_replied:"replied", v_awaiting:"awaiting reply", v_ready:"ready to send", v_draft:"in draft",
@@ -1205,7 +1205,7 @@ function buildBoard(){
           refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
           none:"لا شيء", unnamed:"(بدون اسم)",
           l_draft:"مسودة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
-          b_send:"إرسال", b_sends:"إرسال", b_open:"فتح", b_opens:"فتح", b_replied:"ردّ", b_idle:" يوم خمول",
+          b_send:"إرسال", b_sends:"إرسال", b_open:"فتح", b_opens:"فتح", b_replied:"ردّ", b_idle:"يوم خمول",
           bg_page:"صفحة", bg_email:"رسالة", bg_archived:"مؤرشفة",
           l_bounced:"مرتدة", l_failed:"فشلت", tray:"مغلقة",
           v_replied:"ردود", v_awaiting:"بانتظار الرد", v_ready:"جاهزة للإرسال", v_draft:"مسودات",
@@ -1598,7 +1598,7 @@ ${UPLOAD_SRC}
     var sc = Number(row.sent_count||0), oc = Number(row.open_count||0);
     if(sc) bits.push(sc + " " + t(sc===1 ? "b_send" : "b_sends"));
     if(oc) bits.push(oc + " " + t(oc===1 ? "b_open" : "b_opens"));
-    if(row.idle_days!=null && row.idle_days!=="") bits.push(row.idle_days + t("b_idle"));
+    if(row.idle_days!=null && row.idle_days!=="") bits.push(row.idle_days + " " + t("b_idle"));
     var badges = "";
     if(row.has_page)  badges += '<span class="badge">' + esc(t("bg_page")) + '</span>';
     if(row.has_email) badges += '<span class="badge">' + esc(t("bg_email")) + '</span>';
@@ -1615,7 +1615,7 @@ ${UPLOAD_SRC}
     }
     return '<div class="card" data-slug="' + esc(slug) + '" role="button" tabindex="0">' + dot +
            '<div class="b">' + biz + nb + '</div>' +
-           (bits.length ? ('<div class="s">' + esc(bits.join("  \\u00b7  ")) + '</div>') : '') +
+           (bits.length ? ('<div class="s">' + bits.map(function(bt){ return '<bdi>' + esc(bt) + '</bdi>'; }).join("  \\u00b7  ") + '</div>') : '') +
            (badges || sendmark ? ('<div>' + sendmark + badges + '</div>') : '') +
            reps +
            '</div>';

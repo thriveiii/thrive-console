@@ -572,6 +572,22 @@ function sendStats_() {
  * attribution rule 1 and the reason it is exact. Gmail delivers plus-addressed
  * mail to the same inbox and no client rewrites an address.
  */
+/* FROM header composer. The console sends a bare address in d.from ("hi@thriveiii.com") and the display
+   name separately in d.fromName ("Thrive Digital Solutions"). Build one RFC 5322 name-addr, "Name <addr>",
+   so the provider shows the chosen name instead of deriving it from the local-part ("hi"). Sanitize: strip
+   CR/LF so a name can never inject a header, and quote the display name when it carries a comma or another
+   special. A d.from that already contains "<...>" is treated as a full header and used verbatim; an empty
+   name falls back to the bare address, and an empty address returns "" so the caller's default applies. */
+function fromHeader_(addr, name) {
+  var a = String(addr == null ? '' : addr).replace(/[\r\n]/g, '').trim();
+  var n = String(name == null ? '' : name).replace(/[\r\n]/g, '').trim();
+  if (!a) return '';
+  if (a.indexOf('<') !== -1) return a;
+  if (!n) return a;
+  if (/[",;:<>@()\[\]\\]/.test(n)) n = '"' + n.replace(/(["\\])/g, '\\$1') + '"';
+  return n + ' <' + a + '>';
+}
+
 function sendMail_(d) {
   var key = props_().getProperty('RESEND_KEY');
   if (!key) throw new Error('RESEND_KEY not set');
@@ -585,7 +601,7 @@ function sendMail_(d) {
      already correct). Everything the recipient reads comes in through d.html and d.text. */
   var replyTo = d.slug ? (TAG_LOCAL + '+' + d.slug + '@' + TAG_DOMAIN) : (TAG_LOCAL + '@' + TAG_DOMAIN);
   var payload = {
-    from: d.from || ('Thrive <' + TAG_LOCAL + '@' + TAG_DOMAIN + '>'),
+    from: fromHeader_(d.from, d.fromName) || ('Thrive <' + TAG_LOCAL + '@' + TAG_DOMAIN + '>'),
     to: [d.to],
     subject: d.subject || '',
     html: d.html || '',       // sent verbatim, footer included by the console
