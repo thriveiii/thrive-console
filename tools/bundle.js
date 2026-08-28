@@ -916,9 +916,7 @@ function buildBoard(){
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="thrive-build" content="${BUILD}">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
 (function(){try{var d=document.documentElement,l=localStorage.getItem("thrive_lang");d.setAttribute("lang",l==="ar"?"ar":"en");d.setAttribute("dir",l==="ar"?"rtl":"ltr");}catch(e){}})();</script>
@@ -1125,13 +1123,14 @@ function buildBoard(){
   var TRAY_STAGES = ["won","lost","dropped"];
   var SEEN_KEY = "thrive_board_seen";
   var __seen = {}, __reps = { count:{}, list:{}, waiting:0 };
-  var LANG_KEY = "thrive_lang", SESSION_KEY = "console_sb_session", FETCH_TIMEOUT_MS = 15000;
+  var LANG_KEY = "thrive_lang", SESSION_KEY = "console_sb_session", FETCH_TIMEOUT_MS = 6000;
 
   // ---- i18n (a compact clone of i18n.js t/setLang/applyLang, EN + AR). CHROME language (ui_lang) only; the
   //      standalone reader has no document content, so doc_lang is never touched. Western numerals stay. ----
   var STR = {
     en: { title:"Thrive Board", sub:"Sign in to view the board.", email:"Operator email", pass:"Password",
           go:"Sign in", busy:"Signing in", err:"Could not sign in.",
+          connecting:"Connecting.", retry:"Retry",
           net:"Could not reach the service. Try again.", fill:"Enter email and password.",
           pf_open:"Profile", pf_title:"Your profile", pf_email:"Email", pf_name:"Display name",
           pf_name_ph:"How your name shows on notes and sends", pf_save:"Save name", pf_saving:"Saving\\u2026",
@@ -1193,6 +1192,7 @@ function buildBoard(){
           up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
+          connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
           net:"تعذّر الوصول إلى الخدمة. حاول مجددًا.", fill:"أدخل البريد وكلمة المرور.",
           pf_open:"الملف", pf_title:"ملفك", pf_email:"البريد", pf_name:"الاسم المعروض",
           pf_name_ph:"كيف يظهر اسمك على الملاحظات والإرسال", pf_save:"حفظ الاسم", pf_saving:"جارٍ الحفظ\\u2026",
@@ -1504,6 +1504,16 @@ ${UPLOAD_SRC}
   function langBtn(){ return '<button class="link" id="langBtn" type="button">' + esc(langLabel()) + '</button>'; }
   function rerender(){ if(VIEW==="board" && __data){ renderBoard(__data); } else if(VIEW==="board"){ loadBoard(); } else { signinView(); } }
 
+  // Synchronous "connecting" card: painted before any network call so a warm boot (an expired token that
+  // needs one refresh) never shows a blank/black screen while the auth request is in flight.
+  function connectingView(){
+    VIEW="connecting"; applyLang();
+    root.innerHTML =
+      '<div class="signin">' +
+      '<h1>' + esc(t("title")) + '</h1>' +
+      '<p class="muted">' + esc(t("connecting")) + '</p>' +
+      '</div>';
+  }
   function signinView(){
     VIEW="signin"; applyLang();
     root.innerHTML =
@@ -1524,11 +1534,19 @@ ${UPLOAD_SRC}
       var e=(em.value||"").trim(), p=pw.value||"";
       if(!e || !p){ redInto(er, "sign-in", new Error(t("fill"))); return; }
       go.disabled=true; go.textContent=t("busy");
+      er.innerHTML = '<div class="muted" id="siConn">' + esc(t("connecting")) + '</div>';   // connecting state, painted at once (no blank wait)
       signIn(e, p).then(function(){ loadBoard(); })
         .catch(function(ex){
           go.disabled=false; go.textContent=t("go"); er.innerHTML="";
           var kind=(ex&&ex.kind)||"auth";
-          redInto(er, "sign-in", new Error((kind==="timeout"||kind==="network"||kind==="unavailable") ? t("net") : t("err")));
+          var offline=(kind==="timeout"||kind==="network"||kind==="unavailable");
+          redInto(er, "sign-in", new Error(offline ? t("net") : t("err")));
+          if(offline){                                                                       // one-tap retry, only for a connection failure (not a credential error)
+            var rb=document.createElement("button"); rb.type="button"; rb.className="link"; rb.id="siRetry";
+            rb.style.marginTop="8px"; rb.textContent=t("retry");
+            rb.addEventListener("click", submit);
+            er.appendChild(rb);
+          }
         });
     }
     go.addEventListener("click", submit);
@@ -1936,6 +1954,7 @@ ${UPLOAD_SRC}
       if(!signedIn()){ signinView(); return; }
       var s=session();
       if(!expired(s)){ loadBoard(); return; }
+      connectingView();   // paint at once so the warm-boot refresh never shows a blank screen while it is in flight
       refresh().then(function(ok){ ok ? loadBoard() : signinView(); }).catch(function(){ signinView(); });
     }catch(e){ redFull("boot", e); }
   }
@@ -2317,5 +2336,11 @@ function copyToPublish(rel) {
 ["library", "assets", "opp", "templates"].forEach(copyToPublish);
 // The no-stale-HTML header. HTML is served with max-age=0 + must-revalidate (never immutable); the ?v=BUILD
 // pins keep the revalidation cheap. This lives at the publish root, where Netlify reads it.
-fs.writeFileSync(path.join(PUB, "_headers"), "/*\n  Cache-Control: public, max-age=0, must-revalidate\n");
+// board.html is a direct-URL entry re-opened every visit. Serve it revalidate-always (no-cache +
+// ETag): an unchanged build answers a ~300-byte 304 from the browser cache instead of re-downloading
+// the ~200 KB shell, and a changed build gets the new content. This is the explicit, documented rule;
+// the blanket /* below already revalidates, this makes the board contract legible and regress-proof.
+fs.writeFileSync(path.join(PUB, "_headers"),
+  "/library/board.html\n  Cache-Control: public, no-cache, must-revalidate\n\n" +
+  "/*\n  Cache-Control: public, max-age=0, must-revalidate\n");
 console.log("wrote publish/  (Netlify tree; HTML revalidates via _headers, assets keep ?v=BUILD)");
