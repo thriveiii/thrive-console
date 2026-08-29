@@ -874,12 +874,14 @@ function libPromoteTitle(slug){
   var p = libPageBySlug(slug) || {};
   return (p.title && String(p.title).trim()) || upPretty(slug);
 }
-// Idempotency check: does a console_opps row already exist for this slug (already promoted)? A page-only
-// template has NO console_opps row (upCommitLibrary writes console_pages only), so a hit means a prior promote
-// or a campaign upload already anchored it - do not clobber it.
-function libOppExists(slug){
-  return restGet("console_opps?slug=eq." + enc(slug) + "&select=slug&limit=1")
-    .then(function(a){ return Array.isArray(a) && a.length > 0; }, function(){ return false; });
+// Idempotency check REMOVED (PR-A0): promote no longer keys the opp on the template slug, so there is nothing to
+// collide with. A template is a reusable asset - each promote mints its OWN unique opp slug (libShortId below),
+// so one template fans out to many recipients as many independent cards. (libOppExists had only this one caller.)
+// A short, url-safe id for a per-promote opp slug - mirrors nmNewSlug's Date.now()/Math.random() base36 recipe.
+function libShortId(){
+  var tp=""; try{ tp=Date.now().toString(36).slice(-4); }catch(e){ tp="0"; }
+  var rr=""; try{ rr=Math.random().toString(36).slice(2,6); }catch(e){ rr="x"; }
+  return tp + rr;
 }
 function libPromStatus(slug, msg, cls){
   var el = document.getElementById("lvPromSt-" + slug);
@@ -904,9 +906,14 @@ function libPromoteToggle(slug, btn){
   var inp = document.getElementById("lvPromIn-" + slug);
   if(inp){ try{ inp.focus(); }catch(e){} }
 }
-// Confirm: parse recipient(s), guard idempotency, then mint the opp (business = title, NO source) and attach
-// the recipients, then reload the board so the promoted card is live. Optimistic confirm-or-revert: green on a
-// confirmed write, red on failure. Returns the promise so a test hook can await it.
+// Confirm: parse recipient(s), then mint a UNIQUE opp for THIS promote (PR-A0) and attach the recipients, then
+// reload the board so the promoted card is live. The `slug` argument is the TEMPLATE slug (the surface card id +
+// the shared page); the opp minted is `<templateSlug>-<shortId>`, so a template promotes to many recipients as
+// many independent cards. published:true makes the card stage 'live' via the view (has_page = published OR page
+// row, board-view.sql:208) WITHOUT minting a new console_pages row; data.page_slug points every card at the ONE
+// shared template page (liveUrl(data.page_slug||slug), board-send.src.js). NO data.source -> clean personal
+// shape. Optimistic confirm-or-revert: green on a confirmed write, red on failure. Returns the promise so a test
+// hook can await it (it resolves to the minted opp slug, or false on a no-op/failure).
 function libPromoteConfirm(slug){
   var inp = document.getElementById("lvPromIn-" + slug);
   var raw = inp ? String(inp.value || "") : "";
@@ -917,17 +924,16 @@ function libPromoteConfirm(slug){
   var go = document.querySelector('[data-lv-prom-go="' + slug + '"]'); if(go) go.disabled = true;
   libPromStatus(slug, t("lib_prom_saving"), "");
   var title = libPromoteTitle(slug);
-  return libOppExists(slug).then(function(exists){
-    if(exists){ __libPromoting = false; if(go) go.disabled = false; libPromStatus(slug, t("lib_prom_already"), "ok"); return false; }
-    return oppUpsert(slug, { business: title, up: Date.now(), data: { recipients: [] } })   // NO data.source -> personal shape
-      .then(function(){ return saveRecipients(slug, list); })                                // attach recipient(s), read-back confirmed
-      .then(function(){ return reloadBoardData(); })                                         // the promoted card is now a board row
-      .then(function(){ __libPromoting = false; if(go) go.disabled = false; libPromStatus(slug, t("lib_prom_done"), "ok"); return true; });
-  }).catch(function(e){
-    __libPromoting = false; if(go) go.disabled = false;
-    libPromStatus(slug, (e && e.authRequired) ? t("err") : t("lib_prom_failed"), "bad");
-    return false;
-  });
+  var oppSlug = slug + "-" + libShortId();                                                   // this promote's OWN card identity
+  return oppUpsert(oppSlug, { business: title, published: true, up: Date.now(), data: { recipients: [], page_slug: slug } })
+    .then(function(){ return saveRecipients(oppSlug, list); })                               // attach recipient(s), read-back confirmed
+    .then(function(){ return reloadBoardData(); })                                           // the promoted card is now a board row
+    .then(function(){ __libPromoting = false; if(go) go.disabled = false; libPromStatus(slug, t("lib_prom_done"), "ok"); return oppSlug; })
+    .catch(function(e){
+      __libPromoting = false; if(go) go.disabled = false;
+      libPromStatus(slug, (e && e.authRequired) ? t("err") : t("lib_prom_failed"), "bad");
+      return false;
+    });
 }
 
 // Read-only hooks for board_upload_test:

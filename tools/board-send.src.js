@@ -196,7 +196,8 @@ function sendCompile(slug, row, data, rcpt, mode){
   var name = (data.firstName && full) ? full.split(/\s+/)[0] : full;
   var lang = (rcpt.lang==="ar" || data.lang==="ar") ? "ar" : "en";
   var addr = bareAddress(rcpt.addr||"");
-  var ctx = { business:(row&&row.business)||data.business||"", link:liveUrl(slug), month:data.month||"" };
+  var pageSlug = (data && data.page_slug) || slug;   // PR-A0: a promoted card carries its own slug but points at the SHARED template page
+  var ctx = { business:(row&&row.business)||data.business||"", link:liveUrl(pageSlug), month:data.month||"" };
   var inner = mergeFieldsInto(data.outreach_text||"", name, ctx);   // PR-A: body sent verbatim, no signature strip
   var subject = mergeFieldsInto(data.outreach_subject||"", name, ctx).replace(/^\s+|\s+$/g, "");
   var sig = data.sig || "";
@@ -204,8 +205,8 @@ function sendCompile(slug, row, data, rcpt, mode){
   var bodyPlain = inner + attachHostedBlockText(plan.hosted, lang);   // hosted-image links ride as text lines
   var token = recipientOpenToken(slug, addr, subject);       // == the console_mail row id (attribution join)
   if(token){
-    var base = liveUrl(slug), tokd = base + (base.indexOf("?")<0?"?":"&") + "r=" + encodeURIComponent(token);
-    bodyPlain = bodyPlain.split(base).join(tokd);            // channel 2: the opp page link carries the token
+    var base = liveUrl(pageSlug), tokd = base + (base.indexOf("?")<0?"?":"&") + "r=" + encodeURIComponent(token);
+    bodyPlain = bodyPlain.split(base).join(tokd);            // channel 2: the SHARED page link carries the token (PR-A0: page_slug-aware)
   }
   var text = toPlainText(bodyPlain, sig) + (bulk ? footerText(lang) : "");   // plain-text alternative part; footer only for campaigns
   var html = lightHtml(bodyPlain, sig, lang, bulk);                          // light-HTML primary part; footer only for campaigns
