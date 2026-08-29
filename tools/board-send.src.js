@@ -223,6 +223,43 @@ function firstRecipient(data){
   for(var i=0;i<rs.length;i++){ var r = rs[i]||{}; var a = bareAddress(r.addr||""); if(isEmail(a)) return { addr:a.toLowerCase(), name:r.name||"", lang:r.lang||"" }; }
   return null;
 }
+// SEND-HEALTH: EVERY valid recipient on the record (not just the first). A group send emails one message per
+// entry - runSend loops this, so a card with N recipients reaches all N, never silently just the first.
+function allRecipients(data){
+  var rs = (data && Array.isArray(data.recipients)) ? data.recipients : [];
+  var out = [], seen = {};
+  for(var i=0;i<rs.length;i++){
+    var r = rs[i]||{}; var a = bareAddress(r.addr||"").toLowerCase();
+    if(isEmail(a) && !seen[a]){ seen[a]=1; out.push({ addr:a, name:r.name||"", lang:r.lang||"" }); }   // dedupe, so one address is emailed once
+  }
+  return out;
+}
+// SEND-HEALTH: the free-tier provider (Resend) caps 100/day and 1000/month. The counts are SERVER TRUTH from the
+// console_mail ledger (one row per accepted send), so they never drift across devices or a reload.
+var SEND_CAP_DAY = 100, SEND_CAP_MONTH = 1000;
+var SEND_GAP_MS = 1100;   // space each relay call so a group send stays under the ~1 req/sec relay and the 6s per-call bound
+function startOfTodayISO(){ var d=new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString(); }
+function startOfMonthISO(){ var d=new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString(); }
+// Count accepted sends today / this month from console_mail (status=sent, ts within the window). Best-effort:
+// a failed read falls back to a full budget so the counter never wrongly BLOCKS a legitimate send.
+function sendBudget(){
+  return Promise.all([
+    restGet("console_mail?status=eq.sent&ts=gte." + enc(startOfTodayISO()) + "&select=id"),
+    restGet("console_mail?status=eq.sent&ts=gte." + enc(startOfMonthISO()) + "&select=id")
+  ]).then(function(a){
+    var day = (a[0]||[]).length, month = (a[1]||[]).length;
+    return { dayUsed:day, monthUsed:month, dayLeft:Math.max(0, SEND_CAP_DAY - day), monthLeft:Math.max(0, SEND_CAP_MONTH - month) };
+  }, function(){ return { dayUsed:0, monthUsed:0, dayLeft:SEND_CAP_DAY, monthLeft:SEND_CAP_MONTH }; });
+}
+// The live header counter: "X / 100 today - Y / 1000 month", amber at 90% of either cap. Read-only.
+function refreshSendCap(){
+  var el = document.getElementById("sendCap"); if(!el) return;
+  sendBudget().then(function(b){
+    el.textContent = b.dayUsed + " / " + SEND_CAP_DAY + " " + t("cap_today") + " · " + b.monthUsed + " / " + SEND_CAP_MONTH + " " + t("cap_month");
+    var warn = (b.dayUsed >= SEND_CAP_DAY * 0.9) || (b.monthUsed >= SEND_CAP_MONTH * 0.9);
+    el.className = "send-cap" + (warn ? " warn" : "");
+  }, function(){});
+}
 // The engine allows a send when the opp has a prepared outreach message (has_email = console_board view line 210,
 // docs/supabase-board-view.sql) and is not a closed/archived card, and a relay endpoint is configured (relaySend
 // refuses with no endpoint, app.js:7426). The sighted-recipient requirement is checked at send time from the record.
@@ -266,6 +303,33 @@ function relayPost(payload, timeoutMs){
 // unsent local-only path, app.js:7458/7460/7479). A post-acceptance confirm-write failure is the engine's
 // 'sending' limbo (app.js:7473): the email went out, so it is NOT reverted to unsent; the board reflects server
 // truth (no phantom) and an amber 'confirming' note shows.
+// Compile + relay + confirm ONE recipient. Resolves { ok:true } on a relay-accepted send (a console_mail row is
+// written, or, if only the confirm-write failed, the email still went out so it counts as sent), or { ok:false }
+// with the address on a relay error / Resend reject / aborted body. NEVER throws - one bad recipient must not
+// abort the batch. mode/compile/idempotency/Message-ID/token are all per-recipient (unique) already.
+function sendOne(slug, row, data, rcpt, mode){
+  var art = sendCompile(slug, row, data, rcpt, mode);
+  var idem = sendIdem(slug, art.to, art.subject, art.html);
+  var msgid = newMessageId();
+  var headers = Object.assign({}, outboundHeaders(slug, mode), { "Message-ID": msgid });
+  var payload = { v:REQUIRED_RELAY_L5, from:FROM_EMAIL_L5, fromName:fromName(), to:art.to, subject:art.subject,
+    html:art.html, text:art.text, idempotencyKey:idem, headers:headers, slug:slug };
+  if(art.attachments && art.attachments.length) payload.attachments = art.attachments;
+  return relayPost(payload).then(function(r){
+    if(!r.res.ok) return { ok:false, addr:art.to };
+    var d = r.data;
+    if(d && d.ok===false) return { ok:false, addr:art.to };
+    var mailRow = { id:art.token, opp:slug, status:"sent", to_addr:art.to, subject:art.subject, ts:isoNow(),
+      actor:currentUid(), up:Date.now(),
+      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:(d && d.id) || "", provider:"endpoint", direction:"out" } };
+    return confirmMail(mailRow).then(function(){ return { ok:true, addr:art.to }; },
+                                     function(){ return { ok:true, addr:art.to, confirming:true }; });  // email out; the confirm-write is the 'sending' limbo, still a send
+  }, function(){ return { ok:false, addr:art.to }; });
+}
+// runSend: REAL group send. Loops EVERY recipient (allRecipients), one throttled relay call each, settling per
+// recipient so one failure never aborts the rest, and gated by the daily/monthly send cap (server truth from
+// console_mail). A card with N recipients reaches all N (up to the remaining budget), never silently just the
+// first. Single-recipient behaviour is preserved (one relay, one row, revert-on-failure, no phantom Sent).
 function runSend(slug){
   if(__writing) return; __writing = true;
   var row = findRow(slug);
@@ -274,52 +338,62 @@ function runSend(slug){
   drawerActsDisabled(true);
   var snap = null;
   oppReadData(slug).then(function(data){
-    var rcpt = firstRecipient(data);
-    if(!rcpt) { var e0=new Error("no recipient"); e0.__kind="norecip"; throw e0; }
+    var recips = allRecipients(data);
+    if(!recips.length) { var e0=new Error("no recipient"); e0.__kind="norecip"; throw e0; }
     if(!(data && (String(data.outreach_text||"").trim() || String(data.outreach_subject||"").trim()))){ var e1=new Error("no message"); e1.__kind="nomsg"; throw e1; }
-    // E2 ConTh-3: an uploaded-page opp must be proven LIVE - its page ACTIVATED and a real fetch of the live
-    // /opp/<slug> URL returning ok - before ANY send. A preview looking good is never the proof; the live
-    // fetch is (app.js:832-833 pageSendable). Non-upload opps pass straight through. The gate throws
-    // __kind="notlive"/"deadlink" so the catch below reverts the optimistic send with a clear reason.
+    // E2 ConTh-3: an uploaded-page opp must be proven LIVE before ANY send (upSendLiveGate, unchanged). The gate
+    // throws __kind="notlive"/"deadlink" so the catch reverts with a clear reason. Non-upload opps pass through.
     var __liveGate = (typeof upSendLiveGate==="function") ? upSendLiveGate(slug, data) : Promise.resolve();
     return __liveGate.then(function(){
-    var mode = sendMode(data);                                        // personal (1:1) vs campaign (uploaded page)
-    var art = sendCompile(slug, row, data, rcpt, mode);
-    var idem = sendIdem(slug, art.to, art.subject, art.html);          // app.js:7429 default idempotency key
-    var msgid = newMessageId();                                        // app.js:7430 / :8824
-    var headers = Object.assign({}, outboundHeaders(slug, mode), { "Message-ID": msgid });   // app.js:7445; personal omits List-Unsubscribe
-    var payload = { v:REQUIRED_RELAY_L5, from:FROM_EMAIL_L5, fromName:fromName(), to:art.to, subject:art.subject,
-      html:art.html, text:art.text, idempotencyKey:idem, headers:headers, slug:slug };  // app.js:7446-7447
-    if(art.attachments && art.attachments.length) payload.attachments = art.attachments; // app.js:7450
-    // optimistic paint: the card shows sending at once (snapshot for a clean revert)
-    snap = JSON.parse(JSON.stringify(row));
-    row.stage = "sent"; row.sent_count = Number(row.sent_count||0) + 1; row.__sending = true;
-    try{ renderBoard(__data); }catch(e){}
-    return relayPost(payload).then(function(r){
-      if(!r.res.ok){ var e2=new Error("relay " + r.res.status); e2.__kind="relay"; throw e2; }
-      var d = r.data;
-      if(d && d.ok===false){ var e3=new Error(d.error||"send failed"); e3.__kind="reject"; throw e3; }
-      // Resend accepted. Write the server row ONLY now. id = the open token (== console_hits.data.r join target).
-      var mailRow = { id:art.token, opp:slug, status:"sent", to_addr:art.to, subject:art.subject, ts:isoNow(),
-        actor:currentUid(), up:Date.now(),   // Step 1: actor is the uid (currentActor()=authUid() parity), not the email
-        data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:(d && d.id) || "", provider:"endpoint", direction:"out" } };
-      return confirmMail(mailRow).then(function(){
-        return reloadBoardData().then(function(){ __writing=false; __act[slug]={ msg:t("s_sent"), cls:"ok" }; if(__drawerSlug===slug) refreshDrawer(slug); });
-      }, function(){
-        // email out, server write failed: the engine's 'sending' state. Reflect server truth (no phantom), amber note.
-        return reloadBoardData().then(function(){ __writing=false; __act[slug]={ msg:t("s_confirming"), cls:"" }; if(__drawerSlug===slug) refreshDrawer(slug); },
-                                      function(){ __writing=false; __act[slug]={ msg:t("s_confirming"), cls:"" }; if(__drawerSlug===slug) refreshDrawer(slug); });
+      return sendBudget();
+    }).then(function(budget){
+      // CAP: the send never exceeds the remaining daily/monthly budget. If a group is larger than what fits, send
+      // ONLY what fits and REPORT the rest as blocked by the cap - never silently drop them.
+      var room = Math.max(0, Math.min(budget.dayLeft, budget.monthLeft));
+      if(room <= 0){ var ec=new Error("cap"); ec.__kind="cap"; throw ec; }
+      var toSend = recips.slice(0, room), capped = recips.length - toSend.length;
+      var mode = sendMode(data);
+      snap = JSON.parse(JSON.stringify(row));
+      row.stage = "sent"; row.sent_count = Number(row.sent_count||0) + toSend.length; row.__sending = true;
+      try{ renderBoard(__data); }catch(e){}
+      var sent = [], failed = [];
+      function one(i){
+        if(i >= toSend.length) return Promise.resolve();
+        return sendOne(slug, row, data, toSend[i], mode).then(function(res){
+          if(res && res.ok) sent.push(res.addr); else failed.push((res && res.addr) || toSend[i].addr);
+          if(i + 1 < toSend.length) return upDelay(SEND_GAP_MS).then(function(){ return one(i + 1); });   // THROTTLE between recipients
+          return one(i + 1);
+        });
+      }
+      return one(0).then(function(){
+        return reloadBoardData().then(function(){}, function(){}).then(function(){
+          __writing = false;
+          if(sent.length === 0 && snap){ replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){} }   // nothing went out: revert (no phantom Sent)
+          var msg, cls;
+          if(!failed.length && !capped){ msg = (sent.length > 1) ? sendCountMsg(sent.length, sent.length) : t("s_sent"); cls = "ok"; }
+          else {
+            msg = sendCountMsg(sent.length, recips.length);
+            if(failed.length) msg += " " + t("s_failed_n").replace("{f}", String(failed.length)) + " " + failed.join(", ");
+            if(capped) msg += " " + t("s_capped_n").replace("{c}", String(capped));
+            cls = (sent.length === 0) ? "bad" : "";
+          }
+          __act[slug] = { msg:msg, cls:cls };
+          if(__drawerSlug===slug) refreshDrawer(slug);
+          try{ refreshSendCap(); }catch(e){}                                // the header counter reflects the new sends
+        });
       });
-    });
     });
   }).catch(function(e){
     __writing = false;
     if(snap){ replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){} }   // revert the optimistic send (no phantom Sent)
     var kind = e && e.__kind;
     var msg = (kind==="norecip") ? t("s_no_recip") : (kind==="nomsg") ? t("s_no_msg")
+      : (kind==="cap") ? t("s_cap")
       : (kind==="notlive") ? t("s_not_live") : (kind==="deadlink") ? t("s_dead_link")
       : (e && e.authRequired) ? t("err") : t("s_failed");
     __act[slug] = { msg:msg, cls:"bad" };
     if(__drawerSlug===slug) refreshDrawer(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
   });
 }
+// "Sent k of n." with Western numerals, isolated for RTL by the .act-status container.
+function sendCountMsg(k, n){ return t("s_sent_n").replace("{k}", String(k)).replace("{n}", String(n)); }
