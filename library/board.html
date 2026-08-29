@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="e29fee81">
+<meta name="thrive-build" content="8aa4cb7f">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -184,6 +184,12 @@
   .lv-acts .act{font-size:12.5px;padding:6px 11px}
   .lv-acts .act.on{border-color:#3a5;color:#bfe6cd}
   .lv-prev{margin-top:6px}
+  .lv-prom-b.on{border-color:#3a5;color:#bfe6cd}
+  .lv-prom{margin-top:8px;display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid #262632;border-radius:10px;background:#0b0b10}
+  .lv-prom-in{width:100%;box-sizing:border-box;resize:vertical;min-height:38px;border:1px solid #262632;border-radius:8px;background:#0e0e14;color:#dfe3ea;padding:9px 10px;font-size:13px}
+  .lv-prom-in:focus{outline:none;border-color:#3d5a7a}
+  .lv-prom-acts{display:flex;justify-content:flex-start}
+  .lv-prom-st{margin:0}
   .lv-frame{width:100%;height:260px;border:1px solid #22222e;border-radius:9px;background:#fff}
   .lv-empty{font-size:14px;color:#8a8a93;padding:24px 4px;text-align:center}
   .up-state.ok{color:#a9d5b6;border-color:#274b34}
@@ -230,7 +236,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build e29fee81</span>
+    <span class="muted">build 8aa4cb7f</span>
   </div>
   <div id="root"></div>
 </div>
@@ -244,7 +250,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "e29fee81";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "8aa4cb7f";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -327,7 +333,8 @@
           lib_doc_only:"Documentation template (no message).", lib_activate:"Publish to Library", lib_activating:"Publishing templates...", lib_done:"Published to Library:",
           lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published",
           lib_f_title:"Title", lib_f_slug:"Link name", lib_f_task:"Task", lib_task_ph:"Choose or type a task", lib_err_slug:"Use lowercase letters, numbers and dashes only.", lib_err_dup:"This link name is repeated in this batch.", lib_err_exists:"This link name is already taken.", lib_err_fix:"Fix the highlighted link names first.",
-          lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview" },
+          lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview",
+          lib_promote:"Promote", lib_prom_ph:"Recipient email (or several, comma separated)", lib_prom_go:"Add to Operations", lib_prom_need:"Enter at least one valid email.", lib_prom_saving:"Adding to Operations...", lib_prom_done:"Added to Operations. Write the message there.", lib_prom_already:"Already in Operations.", lib_prom_failed:"Could not add to Operations." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -394,7 +401,8 @@
           lib_doc_only:"قالب توثيقي (بلا رسالة).", lib_activate:"انشر في المكتبة", lib_activating:"جارٍ نشر القوالب...", lib_done:"نُشر في المكتبة:",
           lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر",
           lib_f_title:"العنوان", lib_f_slug:"اسم الرابط", lib_f_task:"المهمة", lib_task_ph:"اختر مهمة أو اكتب واحدة", lib_err_slug:"استخدم حروفًا صغيرة وأرقامًا وشرطات فقط.", lib_err_dup:"اسم الرابط مكرّر في هذه الدفعة.", lib_err_exists:"اسم الرابط مستخدم من قبل.", lib_err_fix:"صحّح أسماء الروابط المميّزة أولًا.",
-          lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة" }
+          lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة",
+          lib_promote:"أضف مستلماً", lib_prom_ph:"بريد المستلم (أو عدة، مفصولة بفواصل)", lib_prom_go:"أضف إلى العمليات", lib_prom_need:"أدخل بريداً صحيحاً واحداً على الأقل.", lib_prom_saving:"جارٍ الإضافة إلى العمليات...", lib_prom_done:"أُضيف إلى العمليات. اكتب الرسالة هناك.", lib_prom_already:"موجود في العمليات مسبقاً.", lib_prom_failed:"تعذّرت الإضافة إلى العمليات." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1911,6 +1919,7 @@ var __upBusy = false;      // in-flight guard for the read/commit
 var __libExisting = {};    // PR-L1: the set of console_pages slugs already taken (for upload uniqueness check)
 var __libPages = null;     // PR-L1: the last console_pages rows fetched for the Library surface (+ tests)
 var __libQuery = "";       // PR-L1: the live Library search query
+var __libPromoting = false;// PR-L6: in-flight guard for promote-to-Operations (one at a time)
 // PR-L0: a page_publish commits to GitHub (GET sha + PUT, relay:pagePublish_ two round-trips) which routinely
 // takes longer than the 6s sign-in fetch timeout. This op gets its own longer client bound so a slow-but-
 // successful commit is not aborted by the client and falsely reported "could not publish".
@@ -2714,14 +2723,17 @@ function libCardHtml(p){
       '<button class="act" type="button" data-lv-copy="' + esc(p.slug) + '">' + esc(t("lib_copy")) + '</button>'+
       '<button class="act" type="button" data-lv-open="' + esc(p.slug) + '">' + esc(t("lib_open_page")) + '</button>'+
       '<button class="act" type="button" data-lv-prev="' + esc(p.slug) + '">' + esc(t("lib_preview")) + '</button>'+
+      '<button class="act lv-prom-b" type="button" data-lv-promote="' + esc(p.slug) + '">' + esc(t("lib_promote")) + '</button>'+
     '</div>'+
     '<div class="lv-prev" id="lvPrev-' + esc(p.slug) + '" hidden></div>'+
+    '<div class="lv-prom" id="lvProm-' + esc(p.slug) + '" hidden></div>'+
   '</div>';
 }
 function libViewWireCards(){
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-copy]"), function(b){ b.addEventListener("click", function(){ libCopyLink(b.getAttribute("data-lv-copy")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lv-open")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-prev]"), function(b){ b.addEventListener("click", function(){ libPreviewToggle(b.getAttribute("data-lv-prev"), b); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-promote]"), function(b){ b.addEventListener("click", function(){ libPromoteToggle(b.getAttribute("data-lv-promote"), b); }); });
 }
 // On-demand preview: read the committed html back from console_pages (pageReadHtml) into a sandboxed iframe,
 // the same isolation the editor preview uses. Toggling again closes it (and frees the frame).
@@ -2735,6 +2747,84 @@ function libPreviewToggle(slug, btn){
   }, function(){ box.innerHTML = '<div class="act-status bad">' + esc(t("up_read_failed")) + '</div>'; });
 }
 
+// ===================================================================================================
+// PROMOTE TO OPERATIONS (PR-L6) - from a live Library template, attach a recipient (individual or group) to
+// mint a live Operations card. The template's page is already live (console_pages row), so promote is exactly
+// the act of minting the console_opps anchor with the SAME slug: the board view is anchored from console_opps
+// and left-joined to console_pages by slug (docs/supabase-board-view.sql:242,203,247), so a page with no opp
+// is not a card until promoted. With a page row present and zero sends the card is born stage 'live'
+// (docs/supabase-board-view.sql:208,232-236) and the drawer opens the compose surface (editorHtml) for the
+// message to be written and then sent. CRITICAL: promote NEVER sets data.source, so sendMode stays 'personal'
+// (board-send.src.js:189) - a promoted 1:1 sends in the clean personal shape, never the campaign/bulk shape.
+// This is a promote surface only; runSend / sendMode / upSendLiveGate are untouched.
+// ===================================================================================================
+function libPageBySlug(slug){
+  var ps = __libPages || [];
+  for(var i=0;i<ps.length;i++){ if(ps[i] && ps[i].slug === slug) return ps[i]; }
+  return null;
+}
+// The template's card label: the title (from #272) if present, else a prettified slug - the exact rule
+// libCardHtml uses, so the Operations card business matches the Library title the operator sees.
+function libPromoteTitle(slug){
+  var p = libPageBySlug(slug) || {};
+  return (p.title && String(p.title).trim()) || upPretty(slug);
+}
+// Idempotency check: does a console_opps row already exist for this slug (already promoted)? A page-only
+// template has NO console_opps row (upCommitLibrary writes console_pages only), so a hit means a prior promote
+// or a campaign upload already anchored it - do not clobber it.
+function libOppExists(slug){
+  return restGet("console_opps?slug=eq." + enc(slug) + "&select=slug&limit=1")
+    .then(function(a){ return Array.isArray(a) && a.length > 0; }, function(){ return false; });
+}
+function libPromStatus(slug, msg, cls){
+  var el = document.getElementById("lvPromSt-" + slug);
+  if(el){ el.className = "act-status lv-prom-st" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; }
+}
+// The inline promote form: one recipient field (single email, or several comma / newline separated for a
+// group), a confirm button, and a status line. Reuses the SAME parser the compose recipient field uses.
+function libPromoteFormHtml(slug){
+  return '<textarea class="lv-prom-in mono-iso" id="lvPromIn-' + esc(slug) + '" rows="1" dir="ltr" '+
+      'autocomplete="off" spellcheck="false" placeholder="' + esc(t("lib_prom_ph")) + '" '+
+      'aria-label="' + esc(t("lib_prom_ph")) + '"></textarea>'+
+    '<div class="lv-prom-acts"><button class="act send" type="button" data-lv-prom-go="' + esc(slug) + '">' + esc(t("lib_prom_go")) + '</button></div>'+
+    '<div class="act-status lv-prom-st" id="lvPromSt-' + esc(slug) + '"></div>';
+}
+function libPromoteToggle(slug, btn){
+  var box = document.getElementById("lvProm-" + slug); if(!box) return;
+  if(!box.hidden){ box.hidden = true; box.innerHTML = ""; if(btn) btn.classList.remove("on"); return; }
+  box.hidden = false; if(btn) btn.classList.add("on");
+  box.innerHTML = libPromoteFormHtml(slug);
+  var go = box.querySelector('[data-lv-prom-go]');
+  if(go) go.addEventListener("click", function(){ libPromoteConfirm(slug); });
+  var inp = document.getElementById("lvPromIn-" + slug);
+  if(inp){ try{ inp.focus(); }catch(e){} }
+}
+// Confirm: parse recipient(s), guard idempotency, then mint the opp (business = title, NO source) and attach
+// the recipients, then reload the board so the promoted card is live. Optimistic confirm-or-revert: green on a
+// confirmed write, red on failure. Returns the promise so a test hook can await it.
+function libPromoteConfirm(slug){
+  var inp = document.getElementById("lvPromIn-" + slug);
+  var raw = inp ? String(inp.value || "") : "";
+  var list = parseAddrs(raw).filter(isEmail).map(function(a){ return { addr:a, name:"", lang:"" }; });   // one = individual, many = group
+  if(!list.length){ libPromStatus(slug, t("lib_prom_need"), "bad"); return Promise.resolve(false); }
+  if(__libPromoting) return Promise.resolve(false);
+  __libPromoting = true;
+  var go = document.querySelector('[data-lv-prom-go="' + slug + '"]'); if(go) go.disabled = true;
+  libPromStatus(slug, t("lib_prom_saving"), "");
+  var title = libPromoteTitle(slug);
+  return libOppExists(slug).then(function(exists){
+    if(exists){ __libPromoting = false; if(go) go.disabled = false; libPromStatus(slug, t("lib_prom_already"), "ok"); return false; }
+    return oppUpsert(slug, { business: title, up: Date.now(), data: { recipients: [] } })   // NO data.source -> personal shape
+      .then(function(){ return saveRecipients(slug, list); })                                // attach recipient(s), read-back confirmed
+      .then(function(){ return reloadBoardData(); })                                         // the promoted card is now a board row
+      .then(function(){ __libPromoting = false; if(go) go.disabled = false; libPromStatus(slug, t("lib_prom_done"), "ok"); return true; });
+  }).catch(function(e){
+    __libPromoting = false; if(go) go.disabled = false;
+    libPromStatus(slug, (e && e.authRequired) ? t("err") : t("lib_prom_failed"), "bad");
+    return false;
+  });
+}
+
 // Read-only hooks for board_upload_test:
 try{
   window.__thriveUploadPlan = function(){ return __upPlan; };
@@ -2742,6 +2832,7 @@ try{
   window.__thriveLibraryCommit = function(plan){ return upCommitLibrary(plan); };   // PR1: page-only commit + activate
   window.__thriveLibraryDoneHtml = function(results){ return libDoneHtml(results); };
   window.__thriveLibraryPages = function(){ return __libPages; };                   // PR-L1: the surface's fetched rows
+  window.__thriveLibraryPromote = function(slug){ return libPromoteConfirm(slug); };// PR-L6: await the promote (reads #lvPromIn-<slug>)
   window.__thriveParseSections = function(text){ return upParseSections(text); };
 }catch(e){}
 

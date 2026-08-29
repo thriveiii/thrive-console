@@ -24,6 +24,7 @@ var __upBusy = false;      // in-flight guard for the read/commit
 var __libExisting = {};    // PR-L1: the set of console_pages slugs already taken (for upload uniqueness check)
 var __libPages = null;     // PR-L1: the last console_pages rows fetched for the Library surface (+ tests)
 var __libQuery = "";       // PR-L1: the live Library search query
+var __libPromoting = false;// PR-L6: in-flight guard for promote-to-Operations (one at a time)
 // PR-L0: a page_publish commits to GitHub (GET sha + PUT, relay:pagePublish_ two round-trips) which routinely
 // takes longer than the 6s sign-in fetch timeout. This op gets its own longer client bound so a slow-but-
 // successful commit is not aborted by the client and falsely reported "could not publish".
@@ -827,14 +828,17 @@ function libCardHtml(p){
       '<button class="act" type="button" data-lv-copy="' + esc(p.slug) + '">' + esc(t("lib_copy")) + '</button>'+
       '<button class="act" type="button" data-lv-open="' + esc(p.slug) + '">' + esc(t("lib_open_page")) + '</button>'+
       '<button class="act" type="button" data-lv-prev="' + esc(p.slug) + '">' + esc(t("lib_preview")) + '</button>'+
+      '<button class="act lv-prom-b" type="button" data-lv-promote="' + esc(p.slug) + '">' + esc(t("lib_promote")) + '</button>'+
     '</div>'+
     '<div class="lv-prev" id="lvPrev-' + esc(p.slug) + '" hidden></div>'+
+    '<div class="lv-prom" id="lvProm-' + esc(p.slug) + '" hidden></div>'+
   '</div>';
 }
 function libViewWireCards(){
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-copy]"), function(b){ b.addEventListener("click", function(){ libCopyLink(b.getAttribute("data-lv-copy")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lv-open")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-prev]"), function(b){ b.addEventListener("click", function(){ libPreviewToggle(b.getAttribute("data-lv-prev"), b); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-promote]"), function(b){ b.addEventListener("click", function(){ libPromoteToggle(b.getAttribute("data-lv-promote"), b); }); });
 }
 // On-demand preview: read the committed html back from console_pages (pageReadHtml) into a sandboxed iframe,
 // the same isolation the editor preview uses. Toggling again closes it (and frees the frame).
@@ -848,6 +852,84 @@ function libPreviewToggle(slug, btn){
   }, function(){ box.innerHTML = '<div class="act-status bad">' + esc(t("up_read_failed")) + '</div>'; });
 }
 
+// ===================================================================================================
+// PROMOTE TO OPERATIONS (PR-L6) - from a live Library template, attach a recipient (individual or group) to
+// mint a live Operations card. The template's page is already live (console_pages row), so promote is exactly
+// the act of minting the console_opps anchor with the SAME slug: the board view is anchored from console_opps
+// and left-joined to console_pages by slug (docs/supabase-board-view.sql:242,203,247), so a page with no opp
+// is not a card until promoted. With a page row present and zero sends the card is born stage 'live'
+// (docs/supabase-board-view.sql:208,232-236) and the drawer opens the compose surface (editorHtml) for the
+// message to be written and then sent. CRITICAL: promote NEVER sets data.source, so sendMode stays 'personal'
+// (board-send.src.js:189) - a promoted 1:1 sends in the clean personal shape, never the campaign/bulk shape.
+// This is a promote surface only; runSend / sendMode / upSendLiveGate are untouched.
+// ===================================================================================================
+function libPageBySlug(slug){
+  var ps = __libPages || [];
+  for(var i=0;i<ps.length;i++){ if(ps[i] && ps[i].slug === slug) return ps[i]; }
+  return null;
+}
+// The template's card label: the title (from #272) if present, else a prettified slug - the exact rule
+// libCardHtml uses, so the Operations card business matches the Library title the operator sees.
+function libPromoteTitle(slug){
+  var p = libPageBySlug(slug) || {};
+  return (p.title && String(p.title).trim()) || upPretty(slug);
+}
+// Idempotency check: does a console_opps row already exist for this slug (already promoted)? A page-only
+// template has NO console_opps row (upCommitLibrary writes console_pages only), so a hit means a prior promote
+// or a campaign upload already anchored it - do not clobber it.
+function libOppExists(slug){
+  return restGet("console_opps?slug=eq." + enc(slug) + "&select=slug&limit=1")
+    .then(function(a){ return Array.isArray(a) && a.length > 0; }, function(){ return false; });
+}
+function libPromStatus(slug, msg, cls){
+  var el = document.getElementById("lvPromSt-" + slug);
+  if(el){ el.className = "act-status lv-prom-st" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; }
+}
+// The inline promote form: one recipient field (single email, or several comma / newline separated for a
+// group), a confirm button, and a status line. Reuses the SAME parser the compose recipient field uses.
+function libPromoteFormHtml(slug){
+  return '<textarea class="lv-prom-in mono-iso" id="lvPromIn-' + esc(slug) + '" rows="1" dir="ltr" '+
+      'autocomplete="off" spellcheck="false" placeholder="' + esc(t("lib_prom_ph")) + '" '+
+      'aria-label="' + esc(t("lib_prom_ph")) + '"></textarea>'+
+    '<div class="lv-prom-acts"><button class="act send" type="button" data-lv-prom-go="' + esc(slug) + '">' + esc(t("lib_prom_go")) + '</button></div>'+
+    '<div class="act-status lv-prom-st" id="lvPromSt-' + esc(slug) + '"></div>';
+}
+function libPromoteToggle(slug, btn){
+  var box = document.getElementById("lvProm-" + slug); if(!box) return;
+  if(!box.hidden){ box.hidden = true; box.innerHTML = ""; if(btn) btn.classList.remove("on"); return; }
+  box.hidden = false; if(btn) btn.classList.add("on");
+  box.innerHTML = libPromoteFormHtml(slug);
+  var go = box.querySelector('[data-lv-prom-go]');
+  if(go) go.addEventListener("click", function(){ libPromoteConfirm(slug); });
+  var inp = document.getElementById("lvPromIn-" + slug);
+  if(inp){ try{ inp.focus(); }catch(e){} }
+}
+// Confirm: parse recipient(s), guard idempotency, then mint the opp (business = title, NO source) and attach
+// the recipients, then reload the board so the promoted card is live. Optimistic confirm-or-revert: green on a
+// confirmed write, red on failure. Returns the promise so a test hook can await it.
+function libPromoteConfirm(slug){
+  var inp = document.getElementById("lvPromIn-" + slug);
+  var raw = inp ? String(inp.value || "") : "";
+  var list = parseAddrs(raw).filter(isEmail).map(function(a){ return { addr:a, name:"", lang:"" }; });   // one = individual, many = group
+  if(!list.length){ libPromStatus(slug, t("lib_prom_need"), "bad"); return Promise.resolve(false); }
+  if(__libPromoting) return Promise.resolve(false);
+  __libPromoting = true;
+  var go = document.querySelector('[data-lv-prom-go="' + slug + '"]'); if(go) go.disabled = true;
+  libPromStatus(slug, t("lib_prom_saving"), "");
+  var title = libPromoteTitle(slug);
+  return libOppExists(slug).then(function(exists){
+    if(exists){ __libPromoting = false; if(go) go.disabled = false; libPromStatus(slug, t("lib_prom_already"), "ok"); return false; }
+    return oppUpsert(slug, { business: title, up: Date.now(), data: { recipients: [] } })   // NO data.source -> personal shape
+      .then(function(){ return saveRecipients(slug, list); })                                // attach recipient(s), read-back confirmed
+      .then(function(){ return reloadBoardData(); })                                         // the promoted card is now a board row
+      .then(function(){ __libPromoting = false; if(go) go.disabled = false; libPromStatus(slug, t("lib_prom_done"), "ok"); return true; });
+  }).catch(function(e){
+    __libPromoting = false; if(go) go.disabled = false;
+    libPromStatus(slug, (e && e.authRequired) ? t("err") : t("lib_prom_failed"), "bad");
+    return false;
+  });
+}
+
 // Read-only hooks for board_upload_test:
 try{
   window.__thriveUploadPlan = function(){ return __upPlan; };
@@ -855,5 +937,6 @@ try{
   window.__thriveLibraryCommit = function(plan){ return upCommitLibrary(plan); };   // PR1: page-only commit + activate
   window.__thriveLibraryDoneHtml = function(results){ return libDoneHtml(results); };
   window.__thriveLibraryPages = function(){ return __libPages; };                   // PR-L1: the surface's fetched rows
+  window.__thriveLibraryPromote = function(slug){ return libPromoteConfirm(slug); };// PR-L6: await the promote (reads #lvPromIn-<slug>)
   window.__thriveParseSections = function(text){ return upParseSections(text); };
 }catch(e){}
