@@ -319,9 +319,9 @@ function pageStampLive(slug, retried){
 // Deduped by slug (first wins). Bounded confirm-or-revert per row; a per-row failure is counted, never a
 // phantom success.
 function upCommit(plan){
-  var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0;
+  var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0, failed = [];
   function one(i){
-    if(i >= rows.length) return Promise.resolve({ ok:ok, fail:fail });
+    if(i >= rows.length) return Promise.resolve({ ok:ok, fail:fail, failed:failed });
     var r = rows[i];
     if(done[r.slug]) return one(i + 1);
     done[r.slug] = 1;
@@ -330,7 +330,8 @@ function upCommit(plan){
       recipients: r.email ? [{ addr:r.email, name:"", lang:"en" }] : [] };
     return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now() })
       .then(function(){ return pageUpsert(r.slug, r.page && r.page.html); })
-      .then(function(){ ok++; return one(i + 1); }, function(){ fail++; return one(i + 1); });
+      .then(function(){ ok++; return one(i + 1); },
+            function(){ fail++; failed.push(r.title || r.slug); return one(i + 1); });   // FEEDBACK: name the file that failed, never silently
   }
   return one(0);
 }
@@ -444,7 +445,7 @@ function upResultHtml(plan){
   return '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>' + orphan + info +
     '<div class="up-rows">' + rows + '</div>'+
     '<div class="acts"><button class="act send" id="upApprove" type="button"' + (n ? "" : " disabled") + '>' + esc(t("up_approve")) + '</button></div>'+
-    '<div class="act-status" id="upStatus"></div>';
+    '<div class="act-status" id="upStatus" role="status" aria-live="polite"></div>';
 }
 function upPanelHtml(){
   return '<div class="nm-head"><h2>' + esc(t("up_h")) + '</h2>'+
@@ -485,8 +486,16 @@ function upApprove(){
     return reloadBoardData().then(function(){ return res; }, function(){ return res; });
   }).then(function(res){
     __upBusy = false;
-    upSetStatus(t("up_done") + " " + (res.ok || 0), "ok");
-    setTimeout(function(){ closeUpload(); }, 600);
+    if(res.fail){
+      // FEEDBACK: a file that failed to commit is named with the count, as a warning (amber if some landed, red
+      // if none), and the overlay stays OPEN so the operator reads which files failed - never a silent success.
+      var names = (res.failed || []).join(", ");
+      upSetStatus(t("up_done_partial").replace("{k}", String(res.ok || 0)).replace("{n}", String((res.ok || 0) + res.fail)) + " " + names, (res.ok ? "warn" : "bad"));
+      var ap2=document.getElementById("upApprove"); if(ap2) ap2.disabled = false;   // allow a retry
+    } else {
+      upSetStatus(t("up_done") + " " + (res.ok || 0), "ok");
+      setTimeout(function(){ closeUpload(); }, 600);
+    }
   }).catch(function(e){
     __upBusy = false; var a2=document.getElementById("upApprove"); if(a2) a2.disabled = false;
     upSetStatus((e && e.authRequired) ? t("err") : t("up_write_failed"), "bad");
@@ -612,7 +621,7 @@ function libResultHtml(plan, tasks){
     '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>'+
     '<div class="up-rows">' + rows + '</div>'+
     '<div class="acts"><button class="act send" id="libApprove" type="button"' + (n ? "" : " disabled") + '>' + esc(t("lib_activate")) + '</button></div>'+
-    '<div class="act-status" id="upStatus"></div>';
+    '<div class="act-status" id="upStatus" role="status" aria-live="polite"></div>';
 }
 // Read the edited slug/title/task back into the plan rows and validate: slug format + uniqueness against the
 // existing console_pages slugs (__libExisting) and against the other rows in this batch. Marks each row's inline

@@ -79,7 +79,7 @@ function nmPanelHtml(slug, data){
       editorHtml(slug, row, { opp:{ data:data } })+
       recipientHtml(slug, row, { opp:{ data:data } })+                      // UNIFY: the SAME #recIn field the drawer mounts
       '<div class="acts"><button class="act send" id="nmSend" type="button">'+esc(t("nm_send"))+'</button></div>'+
-      '<div class="act-status" id="nmStatus"></div>'+
+      '<div class="act-status" id="nmStatus" role="status" aria-live="polite"></div>'+
     '</div>';
 }
 
@@ -198,8 +198,16 @@ function unifiedSend(slug){
   }).then(function(){
     return reloadBoardData();                          // so the opp is a board row runSend can find
   }).then(function(){
-    if(over){ nmClearStore(); closeNewMessage(); }      // the draft graduates to the board; the card shows the send
-    try{ runSend(slug); }catch(e){}                     // UNCHANGED L5 single-recipient send
+    // FEEDBACK: do NOT close the overlay before the send settles - otherwise a standalone send shows its result
+    // NOWHERE. Run the send, then surface the SAME result string (Sent K of N / failed / capped) in the overlay.
+    if(over) nmClearStore();                            // the draft has graduated to a board card; do not resume it
+    return Promise.resolve(runSend(slug)).then(function(result){   // runSend resolves with { msg, cls, ... }
+      if(over && result){
+        nmSetStatus(result.msg, result.cls);            // green on full success, amber on partial, red on failure
+        if(result.cls !== "ok"){ var sd2=document.getElementById("nmSend"); if(sd2) sd2.disabled=false; }   // let the operator retry a failed/partial send
+      }
+      // a drawer-originated send (over===false) shows its result via runSend's own __act[slug] + refreshDrawer
+    });
   }).catch(function(e){
     var b2=document.getElementById("nmSend"); if(b2) b2.disabled=false;
     sendFail(slug, (e && e.authRequired) ? t("err") : t("a_failed"));

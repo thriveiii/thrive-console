@@ -1032,6 +1032,7 @@ function buildBoard(){
   @media (prefers-reduced-motion:reduce){.sendmark{animation:none}}
   .act-status{font-size:12px;margin-top:8px;color:#8a8a93;min-height:16px;unicode-bidi:isolate}
   .act-status.ok{color:#7fd18b}
+  .act-status.warn{color:#e6b34a}
   .act-status.bad{color:#ff8a8a}
   .del-confirm{margin-top:10px;padding:10px 12px;border:1px solid #3a1d24;border-radius:10px;background:#140b0e}
   .del-confirm .del-q{display:block;font-size:12.5px;color:#e6b3b8;margin-bottom:8px}
@@ -1250,7 +1251,7 @@ function buildBoard(){
           nm_send:"Send message", nm_need_msg:"Add a subject and body first.", nm_need_to:"Add a recipient email first.",
           up_open:"Upload campaign", up_h:"Upload a campaign zip", up_hint:"A zip of html pages plus message texts and recipient emails. Nothing is written until you approve.",
           up_reading:"Reading the zip...", up_matched:"Pages matched:", up_approve:"Approve and create drafts", up_writing:"Creating drafts...",
-          up_done:"Drafts created:", up_read_failed:"Could not read the file.", up_not_zip:"That is not a zip file.", up_write_failed:"Could not write. Nothing was created.",
+          up_done:"Drafts created:", up_done_partial:"Created {k} of {n}. Failed:", up_read_failed:"Could not read the file.", up_not_zip:"That is not a zip file.", up_write_failed:"Could not write. Nothing was created.",
           up_col_email:"To", up_col_subject:"Subject", up_no_text:"No message matched this page.",
           up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Message with no page", up_warn_generic:"check this row",
           up_info:"Informational (not a per-page message)",
@@ -1324,7 +1325,7 @@ function buildBoard(){
           nm_send:"إرسال الرسالة", nm_need_msg:"أضف موضوعًا ونصًا أولًا.", nm_need_to:"أضف بريد المستلم أولًا.",
           up_open:"رفع حملة", up_h:"ارفع ملف حملة مضغوط", up_hint:"ملف مضغوط يضم صفحات html ونصوص الرسائل وبريد المستلمين. لا يُكتب شيء حتى توافق.",
           up_reading:"جارٍ قراءة الملف المضغوط...", up_matched:"الصفحات المطابَقة:", up_approve:"وافق وأنشئ المسودّات", up_writing:"جارٍ إنشاء المسودّات...",
-          up_done:"المسودّات المنشأة:", up_read_failed:"تعذّرت قراءة الملف.", up_not_zip:"هذا ليس ملفًا مضغوطًا.", up_write_failed:"تعذّرت الكتابة. لم يُنشأ شيء.",
+          up_done:"المسودّات المنشأة:", up_done_partial:"أُنشئت {k} من {n}. أخفقت:", up_read_failed:"تعذّرت قراءة الملف.", up_not_zip:"هذا ليس ملفًا مضغوطًا.", up_write_failed:"تعذّرت الكتابة. لم يُنشأ شيء.",
           up_col_email:"إلى", up_col_subject:"الموضوع", up_no_text:"لا رسالة مطابِقة لهذه الصفحة.",
           up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"رسالة بلا صفحة", up_warn_generic:"راجع هذا الصف",
           up_info:"للمعلومة (ليست رسالة لصفحة)",
@@ -1838,7 +1839,7 @@ ${UPLOAD_SRC}
           '<div class="acts">'+actBtn("delete_go","a_del_yes","danger")+actBtn("delete_cancel","a_del_no","")+'</div></div>'
       : '';
     return '<div class="dw-sec"><h3>'+esc(t("a_actions"))+'</h3><div class="acts">'+btns.join("")+'</div>'+confirmRow+
-      '<div class="act-status'+(a.cls?(" "+a.cls):"")+'" id="actStatus">'+esc(a.msg||"")+'</div></div>';
+      '<div class="act-status'+(a.cls?(" "+a.cls):"")+'" id="actStatus" role="status" aria-live="polite">'+esc(a.msg||"")+'</div></div>';
   }
   function noteItemHtml(n){
     n=n||{}; var meta=[fmtWhen(n.ts), (n.by ? (t("a_note_by")+" "+actorName(n.by)) : "")].filter(Boolean).join("  \\u00b7  ");
