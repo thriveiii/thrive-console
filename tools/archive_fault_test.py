@@ -171,7 +171,9 @@ with sync_playwright() as p:
     open_archive_tab(pg2)
     pg2.evaluate("()=>{var b=document.querySelector('.lv-arch[data-arch-slug=\"newmsg\"] [data-lv-restore]'); if(b) b.click();}")
     try:
-        pg2.wait_for_function("()=>!document.querySelector('.lv-arch[data-arch-slug=\"newmsg\"]')", timeout=8000)
+        # wait for the archive list to REPAINT empty (libRestore -> oppPatch -> reloadBoardData -> libArchLoad GET),
+        # which both removes the card AND renders the empty state - avoids racing the async re-render
+        pg2.wait_for_function("()=>{var b=document.getElementById('lvBody'); return b && !b.querySelector('.lv-arch[data-arch-slug=\"newmsg\"]') && !!b.querySelector('.lv-empty');}", timeout=8000)
     except Exception:
         pass   # let the ck assertions below report the exact state cleanly rather than crashing
     restored = [pp for pp in OPP_PATCHES if pp["slug"]=="newmsg" and pp["body"].get("archived") is False]

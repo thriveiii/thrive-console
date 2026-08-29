@@ -26,17 +26,17 @@ a{color:#71BFCC}
 .diag{position:fixed;left:0;right:0;bottom:72px;display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:center;padding:0 16px}
 .diag a,.diag button{color:#cbd5e1;font:13.5px/1 -apple-system,Segoe UI,Roboto,sans-serif;text-decoration:none;border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:9px 14px;background:#14141a;cursor:pointer}
 #idxProbeOut{position:fixed;left:12px;right:12px;top:12px;bottom:130px;z-index:12;margin:0;padding:12px 14px;background:#0a0b0f;border:1px solid rgba(255,255,255,.18);border-radius:12px;color:#cbd5e1;font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;direction:ltr;text-align:start;overflow:auto}</style></head>
-<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span id="idxMsg">Opening the <a href="./library/console.html?v=fb4db761">Thrive Opportunity Library</a>…</span></div>
+<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span id="idxMsg">Opening the <a href="./library/console.html?v=8e551f03">Thrive Opportunity Library</a>…</span></div>
 <div class="esc" id="idxEsc" role="group" aria-label="Enter">
-<a id="idxGate" class="primary" href="gate.html?v=fb4db761">Sign-in page</a>
-<a id="idxCon" href="./library/console.html?v=fb4db761">Open the console</a>
+<a id="idxGate" class="primary" href="gate.html?v=8e551f03">Sign-in page</a>
+<a id="idxCon" href="./library/console.html?v=8e551f03">Open the console</a>
 <a id="idxMenu" href="./?stay=1">Menu</a>
 </div>
 <!-- CONSOLE_ENTRY_DIAG Part 4: two static, clearly labelled links. No JS, no redirect: a plain tap, so a
      hung router or a suspended document cannot take them away. -->
 <div class="diag" id="idxDiag">
-<a id="idxNormal" href="./library/console.html?v=fb4db761">Normal console</a>
-<a id="idxSafe" href="./library/console.html?v=fb4db761&amp;paint=safe">Paint-Safe console</a>
+<a id="idxNormal" href="./library/console.html?v=8e551f03">Normal console</a>
+<a id="idxSafe" href="./library/console.html?v=8e551f03&amp;paint=safe">Paint-Safe console</a>
 <button id="idxProbe" type="button">Test console file</button>
 </div>
 <pre id="idxProbeOut" hidden></pre>
@@ -48,7 +48,7 @@ a{color:#71BFCC}
   weighs the received length and SHA-256 against the published values in version.json (Part 2), so "the file
   is fine" stops being an assumption. It READS ONLY: no reload, no navigation, no AbortController, and the
   30s mark prints a line rather than acting. */
-  var BUILD="fb4db761";
+  var BUILD="8e551f03";
   var btn=document.getElementById("idxProbe"), out=document.getElementById("idxProbeOut");
   if(!btn||!out) return;
   var ar=false; try{ ar=localStorage.getItem("thrive_lang")==="ar"; }catch(e){}
@@ -201,7 +201,7 @@ a{color:#71BFCC}
   keeps the painted Arabic labels. */
   try{ if(localStorage.getItem('thrive_lang')==='ar'){
     var d=document.documentElement; d.setAttribute('lang','ar'); d.setAttribute('dir','rtl');
-    var m=document.getElementById('idxMsg'); if(m) m.innerHTML='جارٍ فتح <a href="./library/console.html?v=fb4db761">مكتبة فرص ثرايف</a>…';
+    var m=document.getElementById('idxMsg'); if(m) m.innerHTML='جارٍ فتح <a href="./library/console.html?v=8e551f03">مكتبة فرص ثرايف</a>…';
     var g=document.getElementById('idxGate'); if(g) g.textContent='صفحة تسجيل الدخول';
     var c=document.getElementById('idxCon'); if(c) c.textContent='فتح الكونسول';
     var u=document.getElementById('idxMenu'); if(u) u.textContent='القائمة';
@@ -241,7 +241,7 @@ a{color:#71BFCC}
 <script>(function(){/* BARE_GATE router, a SINGLE deferred navigation (no meta+JS race). Query params (minus
   stale v/vr/warm/stay) and the hash carry across, so ?debug=paint survives. ?stay=1 is the manual launcher:
   no auto hand-off, the static escapes above are the way in. */
-  var BUILD="fb4db761", URL_BASE="https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
+  var BUILD="8e551f03", URL_BASE="https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs";
   var SESSION_KEY="console_sb_session", PRESENCE="thrive_presence";
   if(/[?&]stay=1(&|$)/.test(location.search||"")) return;           // manual launcher: no auto hand-off
   var q=(location.search||"").replace(/^\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0&&p.indexOf("warm=")!==0&&p.indexOf("stay=")!==0;}).join("&");

@@ -198,8 +198,11 @@ with sync_playwright() as p:
     body_now = pg.evaluate(VAL, "edBody") or ""
     ck("4: the composed body has NO opp link token (linkless)", "{{LINK}}" not in body_now and "/opp/" not in body_now, body_now[:120])
     ck("4: Send is enabled with subject + body + recipient (no link required)", pg.evaluate(NM_SEND_DISABLED)==False, pg.evaluate(NM_SEND_DISABLED))
-    pg.evaluate("()=>{ var b=document.getElementById('nmSend'); if(b) b.click(); }"); pg.wait_for_timeout(1400)
-    ck("4: the overlay closed after handing off to the send", pg.evaluate(NM_HIDDEN)==True)
+    pg.evaluate("()=>{ var b=document.getElementById('nmSend'); if(b) b.click(); }"); pg.wait_for_timeout(1600)
+    # FEEDBACK (gap 1): the overlay STAYS OPEN and shows the real send result, instead of closing before it lands.
+    ck("4: the overlay STAYS OPEN to show the send result (not swallowed by close)", pg.evaluate(NM_HIDDEN)==False, pg.evaluate(NM_HIDDEN))
+    nmst = pg.evaluate("()=>{var e=document.getElementById('nmStatus'); return e?{txt:e.textContent,cls:e.className}:{};}")
+    ck("4: the overlay shows a green 'Sent' result tied to the real send", ("Sent" in nmst.get("txt","")) and ("ok" in nmst.get("cls","")), nmst)
     pay = [c for c in RELAY_CALLS if c.get("slug")==slug2]
     ck("4: the relay was called for the FRESH slug (not the prior draft)", len(pay)==1, {"calls":len(pay)})
     p0 = pay[0] if pay else {}
@@ -208,6 +211,7 @@ with sync_playwright() as p:
        slug2!=nmslug and sent_count(nmslug)==0 and sent_count(slug2)==1, {"prev_sent":sent_count(nmslug), "new_sent":sent_count(slug2)})
     ck("4: the fresh draft became a Sent opp on the board (server truth)", "sent" == [rw for rw in board_rows() if rw["slug"]==slug2][0]["stage"])
     ck("4: the draft pointer was cleared on send", pg.evaluate("()=>{try{return localStorage.getItem('thrive_nm_draft');}catch(e){return 'ERR';}}") in (None, "null", None))
+    pg.evaluate("()=>{ var b=document.getElementById('nmClose'); if(b) b.click(); }"); pg.wait_for_timeout(200)   # operator closes after reading the result
 
     # ===== 5: forced relay failure -> revert, NO phantom console_mail, the draft opp is not lost =====
     RELAY_FAULT["*"] = "500"
@@ -222,6 +226,10 @@ with sync_playwright() as p:
     ck("5: a forced relay failure writes NO console_mail row (no phantom Sent)", sent_count(failslug)==0, MAIL)
     ck("5: the draft opp is NOT lost (still a console_opps row, not sent)",
        failslug in OPPS and sent_count(failslug)==0, {"in_opps":failslug in OPPS})
+    # FEEDBACK: a failed standalone send keeps the overlay open with a RED reason (no silent failure)
+    nmst5 = pg.evaluate("()=>{var e=document.getElementById('nmStatus'); return e?{txt:e.textContent,cls:e.className,open:!document.getElementById('nmScrim').hidden}:{};}")
+    ck("5: the failed send shows a RED reason in the still-open overlay", nmst5.get("open") and ("bad" in nmst5.get("cls","")) and nmst5.get("txt","").strip()!="", nmst5)
+    pg.evaluate("()=>{ var b=document.getElementById('nmClose'); if(b) b.click(); }"); pg.wait_for_timeout(200)
     RELAY_FAULT.clear()
 
     # ===== 5b: gate desync - recipient FIRST, subject/body LAST, #nmSend must ENABLE (fails-when-broken) =====

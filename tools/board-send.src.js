@@ -331,13 +331,13 @@ function sendOne(slug, row, data, rcpt, mode){
 // console_mail). A card with N recipients reaches all N (up to the remaining budget), never silently just the
 // first. Single-recipient behaviour is preserved (one relay, one row, revert-on-failure, no phantom Sent).
 function runSend(slug){
-  if(__writing) return; __writing = true;
+  if(__writing) return Promise.resolve(null); __writing = true;
   var row = findRow(slug);
-  if(!row){ __writing = false; return; }
+  if(!row){ __writing = false; return Promise.resolve(null); }
   __act[slug] = { msg:t("s_sending"), cls:"" };
   drawerActsDisabled(true);
   var snap = null;
-  oppReadData(slug).then(function(data){
+  return oppReadData(slug).then(function(data){
     var recips = allRecipients(data);
     if(!recips.length) { var e0=new Error("no recipient"); e0.__kind="norecip"; throw e0; }
     if(!(data && (String(data.outreach_text||"").trim() || String(data.outreach_subject||"").trim()))){ var e1=new Error("no message"); e1.__kind="nomsg"; throw e1; }
@@ -369,17 +369,11 @@ function runSend(slug){
         return reloadBoardData().then(function(){}, function(){}).then(function(){
           __writing = false;
           if(sent.length === 0 && snap){ replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){} }   // nothing went out: revert (no phantom Sent)
-          var msg, cls;
-          if(!failed.length && !capped){ msg = (sent.length > 1) ? sendCountMsg(sent.length, sent.length) : t("s_sent"); cls = "ok"; }
-          else {
-            msg = sendCountMsg(sent.length, recips.length);
-            if(failed.length) msg += " " + t("s_failed_n").replace("{f}", String(failed.length)) + " " + failed.join(", ");
-            if(capped) msg += " " + t("s_capped_n").replace("{c}", String(capped));
-            cls = (sent.length === 0) ? "bad" : "";
-          }
-          __act[slug] = { msg:msg, cls:cls };
+          var view = sendResultView(sent.length, recips.length, failed, capped);   // ONE result string+class (green / amber / red)
+          __act[slug] = { msg:view.msg, cls:view.cls };
           if(__drawerSlug===slug) refreshDrawer(slug);
           try{ refreshSendCap(); }catch(e){}                                // the header counter reflects the new sends
+          return view;                                                      // resolve so a caller (the New-message overlay) can SHOW the result
         });
       });
     });
@@ -393,7 +387,22 @@ function runSend(slug){
       : (e && e.authRequired) ? t("err") : t("s_failed");
     __act[slug] = { msg:msg, cls:"bad" };
     if(__drawerSlug===slug) refreshDrawer(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
+    return { msg:msg, cls:"bad", sent:0, failed:1, capped:0 };              // resolve (never reject) so the caller can render the reason
   });
 }
 // "Sent k of n." with Western numerals, isolated for RTL by the .act-status container.
 function sendCountMsg(k, n){ return t("s_sent_n").replace("{k}", String(k)).replace("{n}", String(n)); }
+// ONE result-tied view of a send: the same string and class everywhere. Full success is GREEN (ok); a partial
+// (some sent, but >=1 failed or cap-blocked) is the AMBER WARNING (warn), never neutral grey; nothing sent is
+// RED (bad). Returns { msg, cls, sent, failed, capped } so the overlay and the drawer render identically.
+function sendResultView(sentN, total, failedAddrs, capped){
+  failedAddrs = failedAddrs || []; capped = capped || 0;
+  var failedN = failedAddrs.length;
+  if(!failedN && !capped){
+    return { msg:(sentN > 1 ? sendCountMsg(sentN, sentN) : t("s_sent")), cls:"ok", sent:sentN, failed:0, capped:0 };
+  }
+  var msg = sendCountMsg(sentN, total);
+  if(failedN) msg += " " + t("s_failed_n").replace("{f}", String(failedN)) + " " + failedAddrs.join(", ");
+  if(capped)  msg += " " + t("s_capped_n").replace("{c}", String(capped));
+  return { msg:msg, cls:(sentN === 0 ? "bad" : "warn"), sent:sentN, failed:failedN, capped:capped };   // partial = amber warning, never neutral
+}
