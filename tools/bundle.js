@@ -1078,6 +1078,13 @@ function buildBoard(){
   .lv-head-acts{display:flex;align-items:center;gap:12px}
   .btnp{background:#1a5;background:linear-gradient(180deg,#2b7,#1a5);border:0;border-radius:9px;padding:8px 14px;color:#05130b;font-weight:650;font-size:13px;cursor:pointer}
   .btnp:hover{filter:brightness(1.06)}
+  .lv-tabs{display:flex;gap:8px;margin:0 0 14px;border-bottom:1px solid #1e1e28}
+  .lv-tab{background:none;border:none;border-bottom:2px solid transparent;color:#8a8a93;font-size:14px;font-family:inherit;padding:6px 4px 9px;cursor:pointer}
+  .lv-tab.on{color:#eef;border-bottom-color:#3a5}
+  .lv-arch-meta{font-size:12.5px;color:#9aa0aa}
+  .lv-arch-meta .lv-k{color:#7a7a84;margin-inline-end:4px}
+  .lv-arch-st{margin-top:2px}
+  .lv-act-b{border-color:#1d3a4a;background:#0c1620;color:#8fd4ff}
   .lv-search{margin:0 0 16px}
   .lv-q{width:100%;box-sizing:border-box;background:#0e0e14;border:1px solid #262632;border-radius:10px;padding:10px 13px;color:#eef;font-size:15px;font-family:inherit}
   .lv-q:focus{outline:none;border-color:#3a5}
@@ -1245,7 +1252,7 @@ function buildBoard(){
           up_page_h:"Hosted page", up_state_draft:"Not activated. Activate the page before sending.", up_state_pending:"Activated. Confirming the live link.",
           up_state_dead:"The page link is not live. Sending is blocked.",
           up_state_publishing:"Activated. The page is publishing.",
-          up_state_live:"Activated and live. The page link resolves.", up_activate:"Activate the page", up_verifying:"Verifying the live link...",
+          up_state_live:"Activated and live. The page link resolves.", up_activate:"Activate the page", up_reactivate:"Re-activate the page", up_verifying:"Verifying the live link...",
           up_committing:"Publishing the page...", up_commit_failed:"Could not publish the page. Nothing is live.", up_no_html:"No uploaded page found to publish.",
           up_publishing:"Published. The page is going live (this can take a moment).",
           up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live.",
@@ -1254,6 +1261,7 @@ function buildBoard(){
           lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published", lib_row_fault:"Live link not resolving",
           lib_f_title:"Title", lib_f_slug:"Link name", lib_f_task:"Task", lib_task_ph:"Choose or type a task", lib_err_slug:"Use lowercase letters, numbers and dashes only.", lib_err_dup:"This link name is repeated in this batch.", lib_err_exists:"This link name is already taken.", lib_err_fix:"Fix the highlighted link names first.",
           lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview",
+          lib_tab_templates:"Templates", lib_tab_archive:"Archive", lib_arch_open:"History", lib_restore:"Restore", lib_arch_empty:"No archived cards yet.",
           lib_promote:"Promote", lib_prom_ph:"Recipient email (or several, comma separated)", lib_prom_go:"Add to Operations", lib_prom_need:"Enter at least one valid email.", lib_prom_saving:"Adding to Operations...", lib_prom_done:"Added to Operations. Write the message there.", lib_prom_failed:"Could not add to Operations." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
@@ -1316,7 +1324,7 @@ function buildBoard(){
           up_page_h:"الصفحة المستضافة", up_state_draft:"غير مُنشّطة. نشّط الصفحة قبل الإرسال.", up_state_pending:"مُنشّطة. جارٍ تأكيد الرابط الحيّ.",
           up_state_dead:"غير مُنشّطة. رابط الصفحة لا يعمل. الإرسال متوقّف.",
           up_state_publishing:"مُنشّطة. جارٍ نشر الصفحة.",
-          up_state_live:"مُنشّطة وحيّة. رابط الصفحة يعمل.", up_activate:"تنشيط الصفحة", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
+          up_state_live:"مُنشّطة وحيّة. رابط الصفحة يعمل.", up_activate:"تنشيط الصفحة", up_reactivate:"أعد تنشيط الصفحة", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
           up_committing:"جارٍ نشر الصفحة...", up_commit_failed:"تعذّر نشر الصفحة. لا شيء حيّ.", up_no_html:"لا توجد صفحة مرفوعة للنشر.",
           up_publishing:"نُشرت. الصفحة في طريقها إلى العمل (قد يستغرق لحظة).",
           up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ.",
@@ -1325,6 +1333,7 @@ function buildBoard(){
           lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر", lib_row_fault:"معطّلة (الرابط لا يستجيب)",
           lib_f_title:"العنوان", lib_f_slug:"اسم الرابط", lib_f_task:"المهمة", lib_task_ph:"اختر مهمة أو اكتب واحدة", lib_err_slug:"استخدم حروفًا صغيرة وأرقامًا وشرطات فقط.", lib_err_dup:"اسم الرابط مكرّر في هذه الدفعة.", lib_err_exists:"اسم الرابط مستخدم من قبل.", lib_err_fix:"صحّح أسماء الروابط المميّزة أولًا.",
           lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة",
+          lib_tab_templates:"القوالب", lib_tab_archive:"الأرشيف", lib_arch_open:"السجل", lib_restore:"استرجاع", lib_arch_empty:"لا بطاقات مؤرشفة بعد.",
           lib_promote:"أضف مستلماً", lib_prom_ph:"بريد المستلم (أو عدة، مفصولة بفواصل)", lib_prom_go:"أضف إلى العمليات", lib_prom_need:"أدخل بريداً صحيحاً واحداً على الأقل.", lib_prom_saving:"جارٍ الإضافة إلى العمليات...", lib_prom_done:"أُضيف إلى العمليات. اكتب الرسالة هناك.", lib_prom_failed:"تعذّرت الإضافة إلى العمليات." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
@@ -1467,11 +1476,17 @@ function buildBoard(){
     return Promise.all([
       restGet("console_opps?slug=eq."+enc(slug)+"&select=slug,archived_at,archived_from,data&limit=1"),
       restGet("console_mail?opp=eq."+enc(slug)+"&select=id,opp,ts,data&order=ts.asc"),
-      restGet("console_hits?slug=eq."+enc(slug)+"&select=id,slug,ts,data&order=ts.asc"),
-      // PR1: the page row carries the SINGLE liveness truth (live_verified_at). The drawer reads it here so
-      // "activated/live" is derived from the verified page, never from a flag on the opp's data. Read-only.
-      restGet("console_pages?slug=eq."+enc(slug)+"&select=slug,live_verified_at&limit=1")
-    ]).then(function(a){ return { opp:(a[0]||[])[0]||null, mail:a[1]||[], hits:a[2]||[], page:(a[3]||[])[0]||null }; }, function(){ return { opp:null, mail:[], hits:[], page:null }; });
+      restGet("console_hits?slug=eq."+enc(slug)+"&select=id,slug,ts,data&order=ts.asc")
+    ]).then(function(a){
+      var opp=(a[0]||[])[0]||null;
+      // PR-AF: read the EFFECTIVE page - a promoted card shares the template page via data.page_slug and owns no
+      // page row of its own, so its liveness lives on page_slug, not the card's slug. The page row carries the
+      // SINGLE liveness truth (live_verified_at); read-only, derived from the verified page, never a data flag.
+      var pageSlug=(opp && opp.data && opp.data.page_slug) || slug;
+      return restGet("console_pages?slug=eq."+enc(pageSlug)+"&select=slug,live_verified_at&limit=1").then(function(pg){
+        return { opp:opp, mail:a[1]||[], hits:a[2]||[], page:(pg||[])[0]||null, pageSlug:pageSlug };
+      }, function(){ return { opp:opp, mail:a[1]||[], hits:a[2]||[], page:null, pageSlug:pageSlug }; });
+    }, function(){ return { opp:null, mail:[], hits:[], page:null, pageSlug:slug }; });
   }
   // ---- L4 WRITE path (cloned from the engine's console_opps upsert; NEVER a rewrite of the read path). The
   //      engine wrote a WHOLE opp record via POST resolution=merge-duplicates because it held the full record.

@@ -26,6 +26,8 @@ var __libPages = null;     // PR-L1: the last console_pages rows fetched for the
 var __libQuery = "";       // PR-L1: the live Library search query
 var __libPromoting = false;// PR-L6: in-flight guard for promote-to-Operations (one at a time)
 var __libState = {};       // PR-CF: per-slug liveness state after re-verify ("live"|"confirming"|"fault") - survives search re-renders
+var __libTab = "templates";// PR-AF: the Library view tab ("templates" | "archive")
+var __libArch = [];        // PR-AF: the last console_opps?archived=eq.true rows fetched for the Archive tab
 // PR-L0: a page_publish commits to GitHub (GET sha + PUT, relay:pagePublish_ two round-trips) which routinely
 // takes longer than the 6s sign-in fetch timeout. This op gets its own longer client bound so a slow-but-
 // successful commit is not aborted by the client and falsely reported "could not publish".
@@ -497,15 +499,23 @@ function upApprove(){
 // slug), otherwise a draft. Activation commits the static file via the relay then verifies the live URL with
 // a real fetch and, ONLY on ok, stamps live_verified_at; send stays blocked until the fetch resolves live
 // (upSendLiveGate re-verifies at send time regardless).
+// PR-AF - no dead ends: a card that has a page (its OWN row, or a SHARED template page via data.page_slug) always
+// offers an exit. When the page is live, the section confirms it; when it is un-live, it offers Re-activate/repair
+// (re-run publish + verify + stamp) targeting the EFFECTIVE page slug (detail.pageSlug = data.page_slug || slug),
+// so a PROMOTED card that owns no page row of its own can still repair its shared template page. Only a card with
+// no page anywhere (a message-only opp) renders nothing here.
 function uploadActivateHtml(slug, row, detail){
   var page = (detail && detail.page) || null;
-  if(!page) return "";                                           // no console_pages row -> nothing to activate
-  var live = !!page.live_verified_at;                            // the SINGLE liveness truth
+  var pageSlug = (detail && detail.pageSlug) || slug;
+  var hasPage = !!(page || (detail && detail.opp && detail.opp.data && detail.opp.data.page_slug));
+  if(!hasPage) return "";                                        // no page anywhere -> nothing to activate
+  var live = !!(page && page.live_verified_at);                 // the SINGLE liveness truth (on the effective page)
   var stateKey = live ? "up_state_live" : "up_state_draft";
   var stateCls = live ? "ok" : "bad";
+  var btn = live ? "" : '<div class="acts"><button class="act" id="upActBtn" type="button" data-page-slug="' + esc(pageSlug) + '">' + esc(t("up_reactivate")) + '</button></div>';
   return '<div class="dw-sec up-act-sec"><h3>' + esc(t("up_page_h")) + '</h3>'+
     '<div class="up-state ' + stateCls + '" id="upState">' + esc(t(stateKey)) + '</div>'+
-    '<div class="acts"><button class="act" id="upActBtn" type="button">' + esc(t("up_activate")) + '</button></div>'+
+    btn +
     '<div class="act-status" id="upActStatus"></div></div>';
 }
 function upActStatus(msg, cls){ var el=document.getElementById("upActStatus"); if(el){ el.className="act-status" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; } }
@@ -542,7 +552,7 @@ function upActivate(slug){
     upActStatus(msg, "bad");
   });
 }
-function upWireActivate(slug){ var b=document.getElementById("upActBtn"); if(b) b.addEventListener("click", function(){ upActivate(slug); }); }
+function upWireActivate(slug){ var b=document.getElementById("upActBtn"); if(b) b.addEventListener("click", function(){ upActivate(b.getAttribute("data-page-slug") || slug); }); }   // PR-AF: re-activate targets the EFFECTIVE page (shared for a promoted card)
 
 // ===================================================================================================
 // LIBRARY UPLOAD (PR1) - document + activate templates with NO message, NO recipient, NO card.
@@ -772,14 +782,19 @@ function libDistinctTasks(pages){
 function openLibraryView(){
   var sc=document.getElementById("libViewScrim"), pn=document.getElementById("libViewPanel");
   if(!sc || !pn) return;
-  __libQuery = "";
-  pn.innerHTML = libViewHtml();
+  __libQuery = ""; __libTab = "templates";
+  libRenderView();
   sc.hidden = false; pn.scrollTop = 0;
+}
+function libRenderView(){
+  var pn=document.getElementById("libViewPanel"); if(!pn) return;
+  pn.innerHTML = libViewHtml();
   libViewWireShell();
   libViewLoad();
 }
 function closeLibraryView(){ var sc=document.getElementById("libViewScrim"); if(sc) sc.hidden = true; }
 function libViewHtml(){
+  var arch = (__libTab==="archive");
   return '<div class="lv-head">'+
       '<h2 class="lv-title">' + esc(t("lib_view_h")) + '</h2>'+
       '<div class="lv-head-acts">'+
@@ -787,11 +802,79 @@ function libViewHtml(){
         '<button class="link" id="lvClose" type="button">' + esc(t("pf_close")) + '</button>'+
       '</div>'+
     '</div>'+
-    '<div class="lv-search"><input class="lv-q" id="lvQ" type="search" dir="auto" placeholder="' + esc(t("lib_search_ph")) + '" autocomplete="off" aria-label="' + esc(t("lib_search_ph")) + '"></div>'+
+    '<div class="lv-tabs">'+
+      '<button class="lv-tab' + (arch ? "" : " on") + '" id="lvTabTpl" type="button">' + esc(t("lib_tab_templates")) + '</button>'+
+      '<button class="lv-tab' + (arch ? " on" : "") + '" id="lvTabArch" type="button">' + esc(t("lib_tab_archive")) + '</button>'+
+    '</div>'+
+    (arch ? '' : '<div class="lv-search"><input class="lv-q" id="lvQ" type="search" dir="auto" placeholder="' + esc(t("lib_search_ph")) + '" autocomplete="off" aria-label="' + esc(t("lib_search_ph")) + '"></div>')+
     '<div class="lv-body" id="lvBody"><div class="muted" style="padding:14px 2px">' + esc(t("up_reading")) + '</div></div>';
 }
 function libViewLoad(){
+  if(__libTab==="archive"){ libArchLoad(); return; }
   libFetchPages().then(function(pages){ __libPages = pages; libRenderList(); libReverifyPending(); });
+}
+function libSwitchTab(tab){ if(__libTab===tab) return; __libTab = tab; __libQuery = ""; libRenderView(); }
+
+// ===================================================================================================
+// ARCHIVE SURFACE (PR-AF) - the labeled home for archived cards, so an archived card is never invisible. Reads
+// console_opps?archived=eq.true directly (like the templates tab reads console_pages). Each card shows its title,
+// archived_at, and archived_from (the column it was archived from), with a one-tap open to its FULL history (the
+// board drawer, which renders notes + conversations + the archive stamps) and a one-tap Restore (archived=false).
+// ===================================================================================================
+function libArchLoad(){
+  var body=document.getElementById("lvBody");
+  if(body) body.innerHTML='<div class="muted" style="padding:14px 2px">'+esc(t("up_reading"))+'</div>';
+  restGet("console_opps?archived=eq.true&select=slug,business,stage,archived_at,archived_from&order=archived_at.desc.nullslast")
+    .then(function(a){ __libArch = Array.isArray(a) ? a : []; libArchRender(); }, function(){ __libArch = []; libArchRender(); });
+}
+function libArchRender(){
+  var body=document.getElementById("lvBody"); if(!body) return;
+  if(!__libArch.length){ body.innerHTML='<div class="lv-empty">'+esc(t("lib_arch_empty"))+'</div>'; return; }
+  body.innerHTML='<div class="lv-cards">'+__libArch.map(libArchCardHtml).join("")+'</div>';
+  libArchWire();
+}
+function libArchCardHtml(o){
+  var title=(o.business && String(o.business).trim()) || upPretty(o.slug);
+  var at=o.archived_at ? fmtWhen(o.archived_at) : "", from=o.archived_from ? laneLabel(o.archived_from) : "";
+  var meta="";
+  if(at)   meta+='<div class="lv-arch-meta"><span class="lv-k">'+esc(t("a_arch_at"))+':</span> <bdi>'+esc(at)+'</bdi></div>';
+  if(from) meta+='<div class="lv-arch-meta"><span class="lv-k">'+esc(t("a_arch_from"))+':</span> <bdi>'+esc(from)+'</bdi></div>';
+  return '<div class="lv-card lv-arch" data-arch-slug="'+esc(o.slug)+'">'+
+    '<div class="lv-card-h"><span class="lv-card-t">'+esc(title)+'</span></div>'+
+    meta+
+    '<div class="lv-acts">'+
+      '<button class="act" type="button" data-lv-arch-open="'+esc(o.slug)+'">'+esc(t("lib_arch_open"))+'</button>'+
+      '<button class="act" type="button" data-lv-restore="'+esc(o.slug)+'">'+esc(t("lib_restore"))+'</button>'+
+    '</div>'+
+    '<div class="act-status lv-arch-st" id="lvArchSt-'+esc(o.slug)+'"></div>'+
+  '</div>';
+}
+function libArchWire(){
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-arch-open]"), function(b){ b.addEventListener("click", function(){ libArchOpenHistory(b.getAttribute("data-lv-arch-open")); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-restore]"), function(b){ b.addEventListener("click", function(){ libRestore(b.getAttribute("data-lv-restore"), b); }); });
+}
+// Open the full history: close the Library and open the board drawer for this slug (it renders the archive stamps
+// via archivedInfoHtml + the notes + the conversation from fetchDetail). Reload first so the row is in board memory.
+function libArchOpenHistory(slug){
+  closeLibraryView();
+  if(typeof openDrawer !== "function") return;
+  reloadBoardData().then(function(){ openDrawer(slug); }, function(){ openDrawer(slug); });
+}
+// Restore: un-archive (archived=false), clearing a legacy terminal stage exactly like the drawer's reopen, so the
+// card returns to its lane; then refresh the archive list (the card is gone from it). Reuses oppPatch.
+function libRestore(slug, btn){
+  if(btn) btn.disabled = true;
+  var st=(document.getElementById("lvArchSt-"+slug));
+  if(st){ st.className="act-status lv-arch-st"; st.textContent=t("a_saving"); }
+  var row=(typeof findRow==="function" && findRow(slug)) || {};
+  var clear = TRAY_STAGES.indexOf(row.stage||"") >= 0;
+  var patch = clear ? { archived:false, stage:"", up:Date.now() } : { archived:false, up:Date.now() };
+  oppPatch(slug, patch).then(function(){ return reloadBoardData().then(function(){}, function(){}); }).then(function(){
+    libArchLoad();                                                     // the card left the archive; re-render the list
+  }).catch(function(e){
+    if(btn) btn.disabled = false;
+    if(st){ st.className="act-status lv-arch-st bad"; st.textContent=(e && e.authRequired) ? t("err") : t("a_failed"); }
+  });
 }
 // PR-CF - the console's first live-health signal (self-memory seed). For every template whose live_verified_at is
 // NULL (published but not yet confirmed), re-run the SAME verify-live poll the upload uses, in the background:
@@ -818,6 +901,8 @@ function libViewWireShell(){
   var c=document.getElementById("lvClose"); if(c) c.addEventListener("click", function(){ closeLibraryView(); });
   var a=document.getElementById("lvAdd"); if(a) a.addEventListener("click", function(){ closeLibraryView(); openLibrary(); });   // add templates -> the upload overlay
   var q=document.getElementById("lvQ"); if(q) q.addEventListener("input", function(){ __libQuery = String(q.value||"").trim().toLowerCase(); libRenderList(); });
+  var tt=document.getElementById("lvTabTpl"); if(tt) tt.addEventListener("click", function(){ libSwitchTab("templates"); });
+  var ta=document.getElementById("lvTabArch"); if(ta) ta.addEventListener("click", function(){ libSwitchTab("archive"); });
 }
 function libMatches(p, q){
   if(!q) return true;
@@ -849,6 +934,8 @@ function libSetState(slug, state){
   __libState[slug] = state;
   var el = document.getElementById("lvState-" + slug);
   if(el){ el.className = libStateCls(state); el.textContent = t(libStateKey(state)); }
+  var ab = document.getElementById("lvAct-" + slug);                  // PR-AF: the repair exit is offered while not live
+  if(ab) ab.hidden = (state === "live");
 }
 function libCardHtml(p){
   var state = libStateOf(p), title = (p.title && String(p.title).trim()) || upPretty(p.slug);
@@ -862,6 +949,7 @@ function libCardHtml(p){
       '<button class="act" type="button" data-lv-open="' + esc(p.slug) + '">' + esc(t("lib_open_page")) + '</button>'+
       '<button class="act" type="button" data-lv-prev="' + esc(p.slug) + '">' + esc(t("lib_preview")) + '</button>'+
       '<button class="act lv-prom-b" type="button" data-lv-promote="' + esc(p.slug) + '">' + esc(t("lib_promote")) + '</button>'+
+      '<button class="act lv-act-b" type="button" id="lvAct-' + esc(p.slug) + '" data-lv-activate="' + esc(p.slug) + '"' + (state==="live" ? " hidden" : "") + '>' + esc(t("up_reactivate")) + '</button>'+   // PR-AF: repair exit for any un-live template (no dead ends)
     '</div>'+
     '<div class="lv-prev" id="lvPrev-' + esc(p.slug) + '" hidden></div>'+
     '<div class="lv-prom" id="lvProm-' + esc(p.slug) + '" hidden></div>'+
@@ -872,6 +960,27 @@ function libViewWireCards(){
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lv-open")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-prev]"), function(b){ b.addEventListener("click", function(){ libPreviewToggle(b.getAttribute("data-lv-prev"), b); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-promote]"), function(b){ b.addEventListener("click", function(){ libPromoteToggle(b.getAttribute("data-lv-promote"), b); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-activate]"), function(b){ b.addEventListener("click", function(){ libRepair(b.getAttribute("data-lv-activate"), b); }); });
+}
+// PR-AF - the repair exit for a Library template. Re-runs the SAME publish + verify + stamp cycle upActivate uses
+// (read html -> relay page_publish -> verifyLivePoll -> pageStampLive), keeping the surface's own state chip in
+// sync: confirming while it runs, live on ok (chip flips, button hides), fault again on a persistent failure.
+function libRepair(slug, btn){
+  if(btn) btn.disabled = true;
+  libSetState(slug, "confirming");
+  pageReadHtml(slug).then(function(html){
+    if(!String(html || "").trim()){ throw new Error("nohtml"); }
+    return pagePublishRelay(slug, withBeaconClient(html));
+  }).then(function(){ return verifyLivePoll(slug); }).then(function(v){
+    if(!v || !v.ok){ throw new Error("notlive"); }
+    return pageStampLive(slug);
+  }).then(function(){
+    var p=libPageBySlug(slug); if(p) p.live_verified_at = new Date().toISOString();
+    libSetState(slug, "live");                                        // green; the repair button hides
+  }).catch(function(){
+    if(btn) btn.disabled = false;
+    libSetState(slug, "fault");                                       // still not resolving: stays a visible RED fault
+  });
 }
 // On-demand preview: read the committed html back from console_pages (pageReadHtml) into a sandboxed iframe,
 // the same isolation the editor preview uses. Toggling again closes it (and frees the frame).
