@@ -928,6 +928,9 @@ function buildBoard(){
   .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 14px;border-bottom:1px solid #17171f}
   .brand{font-weight:800;letter-spacing:.02em;font-size:16px}
   .muted{color:#8a8a93;font-size:12px}
+  .send-cap{font-size:12px;color:#8a8a93;unicode-bidi:isolate;margin-inline-start:auto}
+  .send-cap.warn{color:#e6b34a}
+  .send-cap:empty{display:none}
   .row-actions{display:flex;gap:10px;align-items:center}
   .link{background:none;border:0;color:#71BFCC;font:inherit;cursor:pointer;padding:0}
   .err{margin:10px 0;padding:10px 12px;border:1px solid #4a1d24;background:#1a0e11;color:#ff8a8a;border-radius:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
@@ -1232,6 +1235,8 @@ function buildBoard(){
           s_send:"Send email", s_sending:"Sending…", s_sent:"Sent.", s_confirming:"Email sent; confirming on the server…",
           s_failed:"Could not send. Nothing was sent.", s_no_recip:"No recipient email on this opportunity.",
           s_no_msg:"No prepared message on this opportunity.",
+          s_sent_n:"Sent {k} of {n}.", s_failed_n:"{f} failed:", s_capped_n:"{c} blocked by the daily cap.",
+          s_cap:"Daily send cap reached. Nothing was sent.", cap_today:"today", cap_month:"this month",
           s_not_live:"Activate the page first. Nothing was sent.", s_dead_link:"The page link is not live. Nothing was sent.",
           r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
           r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
@@ -1304,6 +1309,8 @@ function buildBoard(){
           s_send:"إرسال بريد", s_sending:"جارٍ الإرسال…", s_sent:"تم الإرسال.", s_confirming:"أُرسل البريد؛ يجري التأكيد على الخادم…",
           s_failed:"تعذّر الإرسال. لم يُرسل شيء.", s_no_recip:"لا يوجد بريد مستلم لهذه الفرصة.",
           s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
+          s_sent_n:"أُرسلت {k} من {n}.", s_failed_n:"أخفقت {f}:", s_capped_n:"حُجبت {c} بحدّ اليوم.",
+          s_cap:"بلغت حدّ الإرسال اليومي. لم يُرسل شيء.", cap_today:"اليوم", cap_month:"الشهر",
           s_not_live:"فعّل الصفحة أولًا. لم يُرسل شيء.", s_dead_link:"رابط الصفحة غير فعّال. لم يُرسل شيء.",
           r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
           r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
@@ -1650,6 +1657,7 @@ ${UPLOAD_SRC}
   function headerHtml(){
     return '<div class="top" style="padding:8px 2px">' +
       '<span class="muted" id="opChip">' + esc(authEmail()) + '</span>' +
+      '<span class="send-cap" id="sendCap"></span>' +   // SEND-HEALTH: live daily/monthly send-cap counter (server truth)
       '<span class="row-actions">' + langBtn() +
         // Step 2D: the Admin executive surface is a SEPARATE header entry, hidden by default and revealed only
         // for an owner. isOwner() resolves async (loadIdentity), so paintAdminSlot() runs both now and again
@@ -1685,6 +1693,7 @@ ${UPLOAD_SRC}
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
     var so=document.getElementById("signout"); if(so) so.addEventListener("click", function(){ signOut().then(signinView); });
     paintAdminSlot();
+    try{ if(typeof refreshSendCap==="function") refreshSendCap(); }catch(e){}   // SEND-HEALTH: fill the send-cap counter on every board paint
   }
 
   // Bucket by the SERVER stage only (never derived here). Domain law: a REPLIED opp is a terminal-success story
