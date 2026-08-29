@@ -83,11 +83,15 @@ function edRoot(){
 }
 function edEl(id){ try{ var r=edRoot(); return r ? r.querySelector("#"+id) : null; }catch(e){ return document.getElementById(id); } }
 function edVal(id){ var el=edEl(id); return el ? String(el.value||"") : ""; }
-// The link is present when the body carries the merge token OR an already-tokenized/literal opp URL.
+// PR-A0: the page a card points at is data.page_slug when set (a promoted card shares the template page), else
+// the card's own slug. __edBase[slug] holds the opp's data (captured at render), so this needs no new argument.
+function edPageSlug(slug){ var d = __edBase[slug] || {}; return (d && d.page_slug) || slug; }
+// The link is present when the body carries the merge token OR an already-tokenized/literal opp URL. The literal
+// check uses the SHARED page URL (edPageSlug) so a pasted template link is recognized on a promoted card too.
 function edHasLink(slug, body){
   var b = String(body||"");
   if(b.indexOf(MF_LINK) >= 0) return true;
-  try{ if(b.indexOf(liveUrl(slug)) >= 0) return true; }catch(e){}
+  try{ if(b.indexOf(liveUrl(edPageSlug(slug))) >= 0) return true; }catch(e){}
   return false;
 }
 
