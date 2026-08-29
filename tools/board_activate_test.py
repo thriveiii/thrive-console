@@ -219,7 +219,10 @@ with sync_playwright() as p:
     # ===== 8: AR RTL + the تنشيط/مُنشّطة vocabulary =====
     ctx3 = b.new_context(); wire(ctx3, lang="ar"); pg3 = ctx3.new_page()
     pg3.goto(f"{base}/library/board.html", wait_until="load"); pg3.wait_for_timeout(500); wait_ident(pg3)
-    pg3.evaluate(OPEN, "Acme Co"); pg3.wait_for_timeout(400)
+    # PR-AF: a LIVE page hides the activate control (no dead ends means offer the exit only when needed). Fresh Labs
+    # is never stamped live in this run, so its drawer still offers the re-activate control to read the AR vocab.
+    pg3.evaluate(OPEN, "Fresh Labs")
+    pg3.wait_for_function("()=>!!document.getElementById('upActBtn')", timeout=6000)
     d = pg3.evaluate("()=>{var b=document.getElementById('upActBtn'); return b?{txt:b.textContent,dir:getComputedStyle(document.getElementById('drawer')||document.body).direction}:null;}")
     ck("8: AR shows the activate control", bool(d) and (d.get("txt") or "").strip()!="", d)
     ck("8: AR activation vocab uses تنشيط", d and ("تنشيط" in (d.get("txt") or "")), d)

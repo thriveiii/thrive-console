@@ -57,10 +57,20 @@ def _post_ok(i):
     return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx) or ("console_profiles" in ctx) or ("console_opps" in ctx) or ("console_pages" in ctx)
 def _patch_ok(i):
     ctx = board[max(0,i-260):i+40]
-    # L4 opp writes hit console_opps by slug; the Step 2C admin title write hits console_profiles by uid.
-    return ("console_opps?slug=eq." in ctx) or ("console_profiles?uid=eq." in ctx)
-ck("no PUT/DELETE; every PATCH targets console_opps (by slug) or console_profiles (by uid, admin title); every POST is auth, relay send, console_mail, or an own-row console_profiles upsert",
-   all(v not in board for v in ['method:"PUT"','method:"DELETE"'])
+    # L4 opp writes hit console_opps by slug; the Step 2C admin title write hits console_profiles by uid; the
+    # liveness stamp (pageStampLive, the SINGLE liveness truth) hits console_pages by slug.
+    return ("console_opps?slug=eq." in ctx) or ("console_profiles?uid=eq." in ctx) or ("console_pages?slug=eq." in ctx)
+# The card-fate delete (R12) is the ONLY DELETE: it lives in one generic restDelete helper, and every call site
+# targets console_opps or console_pages by slug - never a ledger table (console_mail/console_hits/console_inbound).
+_delverbs = [m.start() for m in re.finditer(r'method:"DELETE"', board)]
+_delcalls = [m.start() for m in re.finditer(r'restDelete\("', board)]
+def _delcall_ok(i):
+    ctx = board[i:i+64]
+    return ('restDelete("console_opps?slug=eq.' in ctx) or ('restDelete("console_pages?slug=eq.' in ctx)
+ck("no PUT; the sole DELETE (R12) lives in restDelete and targets only console_opps/console_pages, never the ledger; every PATCH targets console_opps (by slug) or console_profiles (by uid); every POST is a known kind",
+   ('method:"PUT"' not in board)
+   and len(_delverbs) <= 1
+   and len(_delcalls) >= 1 and all(_delcall_ok(i) for i in _delcalls)
    and len(_patches) >= 1 and all(_patch_ok(i) for i in _patches)
    and len(_posts) >= 1 and all(_post_ok(i) for i in _posts))
 
