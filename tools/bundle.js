@@ -1030,6 +1030,11 @@ function buildBoard(){
   .act-status{font-size:12px;margin-top:8px;color:#8a8a93;min-height:16px;unicode-bidi:isolate}
   .act-status.ok{color:#7fd18b}
   .act-status.bad{color:#ff8a8a}
+  .del-confirm{margin-top:10px;padding:10px 12px;border:1px solid #3a1d24;border-radius:10px;background:#140b0e}
+  .del-confirm .del-q{display:block;font-size:12.5px;color:#e6b3b8;margin-bottom:8px}
+  .arch-facts{display:flex;flex-direction:column;gap:4px}
+  .arch-facts .af-row{font-size:12.5px;color:#9aa0aa}
+  .arch-facts .af-k{color:#7a7a84;margin-inline-end:6px}
   .pf-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 4px}
   .pf-h2{font-size:16px;font-weight:650;color:#eef;margin:0}
   .nm-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 10px}
@@ -1087,6 +1092,7 @@ function buildBoard(){
   .lv-card-t{font-size:15px;font-weight:620;color:#eef;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .lv-state{flex:0 0 auto;font-size:11px;color:#d8b48a;border:1px solid #4b3a27;border-radius:999px;padding:2px 9px}
   .lv-state.ok{color:#8fd6a6;border-color:#2f5a3d}
+  .lv-state.bad{color:#e79aa0;border-color:#5a2f34}
   .lv-slug{font-size:12px;color:#8a8a93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lv-link{font-size:12px;color:#9aa0aa;overflow:hidden}
   .lv-link .lv-k{color:#7a7a84}
@@ -1209,7 +1215,10 @@ function buildBoard(){
           e_sent:"Sent", e_open:"Opened", e_reply:"Reply",
           d_stage_local:"Stage moves and archiving are written to Supabase and re-read from the board view; sends, opens and replies below are read live.",
           a_actions:"Actions", a_promote:"Promote to Live", a_revert:"Back to Draft",
-          a_won:"Mark Won", a_lost:"Mark Lost", a_drop:"Drop", a_archive:"Archive", a_reopen:"Reopen",
+          a_archive:"Archive", a_reopen:"Reopen", a_delete:"Delete",
+          a_del_q:"Delete this card for good? Its sent and received history is kept.", a_del_yes:"Delete", a_del_no:"Keep",
+          a_deleting:"Deleting…", a_del_failed:"Could not delete. Nothing changed on the board.",
+          a_arch_at:"Archived", a_arch_from:"From column",
           a_saving:"Saving…", a_saved:"Saved.", a_failed:"Could not save. Nothing changed on the board.",
           a_note_ph:"Add a note to this opportunity", a_note_add:"Add note", a_note_saving:"Saving note…",
           a_note_saved:"Note saved.", a_note_failed:"Could not save the note.", a_notes:"Notes", a_note_by:"by",
@@ -1242,7 +1251,7 @@ function buildBoard(){
           up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live.",
           lib_open:"Library", lib_h:"Add templates to the Library", lib_hint:"A zip of html pages. Each page is published and gets a live link. No message, no recipient, no card.",
           lib_doc_only:"Documentation template (no message).", lib_activate:"Publish to Library", lib_activating:"Publishing templates...", lib_done:"Published to Library:",
-          lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published",
+          lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published", lib_row_fault:"Live link not resolving",
           lib_f_title:"Title", lib_f_slug:"Link name", lib_f_task:"Task", lib_task_ph:"Choose or type a task", lib_err_slug:"Use lowercase letters, numbers and dashes only.", lib_err_dup:"This link name is repeated in this batch.", lib_err_exists:"This link name is already taken.", lib_err_fix:"Fix the highlighted link names first.",
           lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview",
           lib_promote:"Promote", lib_prom_ph:"Recipient email (or several, comma separated)", lib_prom_go:"Add to Operations", lib_prom_need:"Enter at least one valid email.", lib_prom_saving:"Adding to Operations...", lib_prom_done:"Added to Operations. Write the message there.", lib_prom_failed:"Could not add to Operations." },
@@ -1277,7 +1286,10 @@ function buildBoard(){
           e_sent:"إرسال", e_open:"فتح", e_reply:"ردّ",
           d_stage_local:"تُكتب تنقلات المرحلة والأرشفة إلى Supabase وتُقرأ من عرض اللوحة؛ الإرسالات والفتحات والردود أدناه تُقرأ مباشرة.",
           a_actions:"إجراءات", a_promote:"ترقية إلى جاهزة", a_revert:"إرجاع إلى مسودة",
-          a_won:"وسمها رابحة", a_lost:"وسمها خاسرة", a_drop:"إسقاط", a_archive:"أرشفة", a_reopen:"إعادة فتح",
+          a_archive:"أرشفة", a_reopen:"إعادة فتح", a_delete:"حذف",
+          a_del_q:"حذف هذه البطاقة نهائياً؟ يبقى سجلّ ما أُرسل وما ورد.", a_del_yes:"حذف", a_del_no:"إبقاء",
+          a_deleting:"جارٍ الحذف…", a_del_failed:"تعذّر الحذف. لم يتغيّر شيء على اللوحة.",
+          a_arch_at:"أُرشفت", a_arch_from:"من عمود",
           a_saving:"جارٍ الحفظ…", a_saved:"تم الحفظ.", a_failed:"تعذّر الحفظ. لم يتغيّر شيء على اللوحة.",
           a_note_ph:"أضف ملاحظة إلى هذه الفرصة", a_note_add:"إضافة ملاحظة", a_note_saving:"جارٍ حفظ الملاحظة…",
           a_note_saved:"تم حفظ الملاحظة.", a_note_failed:"تعذّر حفظ الملاحظة.", a_notes:"الملاحظات", a_note_by:"بواسطة",
@@ -1310,7 +1322,7 @@ function buildBoard(){
           up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ.",
           lib_open:"المكتبة", lib_h:"أضف قوالب إلى المكتبة", lib_hint:"ملف مضغوط يضم صفحات html. تُنشر كل صفحة وتحصل على رابط حيّ. لا رسالة ولا مستلم ولا بطاقة.",
           lib_doc_only:"قالب توثيقي (بلا رسالة).", lib_activate:"انشر في المكتبة", lib_activating:"جارٍ نشر القوالب...", lib_done:"نُشر في المكتبة:",
-          lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر",
+          lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر", lib_row_fault:"معطّلة (الرابط لا يستجيب)",
           lib_f_title:"العنوان", lib_f_slug:"اسم الرابط", lib_f_task:"المهمة", lib_task_ph:"اختر مهمة أو اكتب واحدة", lib_err_slug:"استخدم حروفًا صغيرة وأرقامًا وشرطات فقط.", lib_err_dup:"اسم الرابط مكرّر في هذه الدفعة.", lib_err_exists:"اسم الرابط مستخدم من قبل.", lib_err_fix:"صحّح أسماء الروابط المميّزة أولًا.",
           lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة",
           lib_promote:"أضف مستلماً", lib_prom_ph:"بريد المستلم (أو عدة، مفصولة بفواصل)", lib_prom_go:"أضف إلى العمليات", lib_prom_need:"أدخل بريداً صحيحاً واحداً على الأقل.", lib_prom_saving:"جارٍ الإضافة إلى العمليات...", lib_prom_done:"أُضيف إلى العمليات. اكتب الرسالة هناك.", lib_prom_failed:"تعذّرت الإضافة إلى العمليات." }
@@ -1453,7 +1465,7 @@ function buildBoard(){
   }
   function fetchDetail(slug){
     return Promise.all([
-      restGet("console_opps?slug=eq."+enc(slug)+"&select=slug,data&limit=1"),
+      restGet("console_opps?slug=eq."+enc(slug)+"&select=slug,archived_at,archived_from,data&limit=1"),
       restGet("console_mail?opp=eq."+enc(slug)+"&select=id,opp,ts,data&order=ts.asc"),
       restGet("console_hits?slug=eq."+enc(slug)+"&select=id,slug,ts,data&order=ts.asc"),
       // PR1: the page row carries the SINGLE liveness truth (live_verified_at). The drawer reads it here so
@@ -1777,27 +1789,31 @@ ${UPLOAD_SRC}
   // ---- L4 write-action surface (in the drawer): stage moves, archive/reopen, and a note composer. Only the
   //      moves the board view HONORS as declared overrides are offered (draft<->live, and the terminal outcomes
   //      won/lost/dropped); sent/opened/replied are EARNED from real signals, never fabricated by a button. ----
+  var __delConfirm = {};          // per-slug armed-delete confirm flag (a real two-tap confirm before a full delete)
   var __act = {}, __notes = {};   // __act: per-slug transient action status {msg,cls}, rendered on every drawer
                     // paint so a "Saved." confirmation survives the detail-enrichment re-render. __notes: per-slug
                     // in-session confirmed notes (from a read-back), so a just-added note shows without a refetch.
   function actBtn(action, key, cls){ return '<button class="act'+(cls?(" "+cls):"")+'" type="button" data-act="'+action+'">'+esc(t(key))+'</button>'; }
   function actionsHtml(row){
     var st=(row && row.stage) || "", arch=!!(row && row.archived);
-    var inTray = arch || TRAY_STAGES.indexOf(st)>=0;                    // won/lost/dropped, or archived
+    var inTray = arch || TRAY_STAGES.indexOf(st)>=0;                    // archived, or a legacy won/lost/dropped row
     var btns=[];
     if(inTray){
-      btns.push(actBtn("reopen","a_reopen",""));                        // the only sensible write on a closed card
+      btns.push(actBtn("reopen","a_reopen",""));                        // the only sensible forward write on a closed card
     } else {
       if(editorEligible(row) && relayEp()) btns.push(actBtn("send","s_send","send")); // UNIFY: Send renders wherever the compose editor does (endpoint set); it is DISABLED (sendApplyGate) until subject+body+recipient, never gated on the stored has_email flag
       if(st==="draft") btns.push(actBtn("promote","a_promote","win")); // the one declarable forward step
       else if(st==="live") btns.push(actBtn("revert","a_revert",""));
-      btns.push(actBtn("won","a_won","win"));
-      btns.push(actBtn("lost","a_lost","danger"));
-      btns.push(actBtn("drop","a_drop","warn"));
-      btns.push(actBtn("archive","a_archive","warn"));
+      btns.push(actBtn("archive","a_archive","warn"));                  // FATE: archive (carries all history + stamps archived_at/archived_from)
     }
+    btns.push(actBtn("delete","a_delete","danger"));                    // FATE: full delete, on any card, behind a confirm
     var a=__act[row.slug]||{};
-    return '<div class="dw-sec"><h3>'+esc(t("a_actions"))+'</h3><div class="acts">'+btns.join("")+'</div>'+
+    // A card has three fates only: promote/complete, archive, delete. The won/lost/drop declarations are retired.
+    var confirmRow = __delConfirm[row.slug]
+      ? '<div class="del-confirm"><span class="del-q">'+esc(t("a_del_q"))+'</span>'+
+          '<div class="acts">'+actBtn("delete_go","a_del_yes","danger")+actBtn("delete_cancel","a_del_no","")+'</div></div>'
+      : '';
+    return '<div class="dw-sec"><h3>'+esc(t("a_actions"))+'</h3><div class="acts">'+btns.join("")+'</div>'+confirmRow+
       '<div class="act-status'+(a.cls?(" "+a.cls):"")+'" id="actStatus">'+esc(a.msg||"")+'</div></div>';
   }
   function noteItemHtml(n){
@@ -1823,7 +1839,7 @@ ${UPLOAD_SRC}
     return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
       '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
       '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\\u00d7</button></div>'+
-      numsHtml(row, slug)+factsHtml(row)+editorHtml(slug, row, detail)+uploadActivateHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
+      numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+editorHtml(slug, row, detail)+uploadActivateHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
   }
   var __drawerSlug=null, __writing=false;
   function wireDrawer(){
@@ -1888,19 +1904,80 @@ ${UPLOAD_SRC}
       if(__drawerSlug===slug) refreshDrawer(slug); else redInto(root, "write", new Error(t("a_failed")));
     });
   }
+  // Bounded DELETE through the same authFetchOnce discipline as oppPatch (settles always, one refresh-retry). The
+  // DB grant (docs/supabase-opp-delete.sql) permits DELETE on console_opps/console_pages; the ledger tables have
+  // no delete policy, so a delete can never reach the record of what was sent or received.
+  function restDelete(path, retried){
+    var url = URL_BASE + "/rest/v1/" + path;
+    return authFetchOnce(url, {
+      method:"DELETE",
+      headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Prefer":"return=minimal" },
+      cache:"no-store"
+    }).then(function(r){
+      if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+        return refresh().then(function(ok){ if(ok) return restDelete(path, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+      }
+      if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+      return true;
+    });
+  }
+  // Full delete of one card. OWNERSHIP: a promoted card carries data.page_slug and SHARES the template page, so it
+  // never owns a console_pages row of its own - delete ONLY its opp. A card with NO data.page_slug owns its page,
+  // so its console_pages row is removed with it. The ledger (console_mail/console_inbound) is never touched.
+  function oppDelete(slug){
+    return oppReadData(slug).then(function(data){
+      var ownsPage = !(data && data.page_slug);                         // no page_slug => the card owns its own page
+      return restDelete("console_opps?slug=eq."+enc(slug)).then(function(){
+        if(!ownsPage) return true;                                      // shared template page: leave it for the other cards
+        return restDelete("console_pages?slug=eq."+enc(slug)).catch(function(){ return true; });   // best-effort; a missing page row is fine
+      });
+    });
+  }
+  function runOppDelete(slug){
+    if(__writing) return; __writing=true;
+    __act[slug]={ msg:t("a_deleting"), cls:"" }; drawerActsDisabled(true);
+    if(__drawerSlug===slug){ try{ refreshDrawer(slug); }catch(e){} }
+    oppDelete(slug).then(function(){
+      delete __delConfirm[slug]; delete __act[slug];
+      __writing=false; closeDrawer();                                   // the card is gone; leave the board
+      return reloadBoardData();
+    }).catch(function(e){
+      __writing=false;
+      __act[slug]={ msg:((e&&e.authRequired)? t("err") : t("a_del_failed")), cls:"bad" };
+      if(__drawerSlug===slug) refreshDrawer(slug); else redInto(root, "delete", new Error(t("a_del_failed")));
+    });
+  }
+  // The localized name of the lane a card was archived from (archived_from stores a laneOf() key). Falls back to
+  // the raw key so an unknown/legacy value is shown, never blanked.
+  function laneLabel(key){ key=String(key||""); if(!key) return ""; if(key==="tray") return t("tray"); var lbl=t("l_"+key); return (lbl && lbl!=="l_"+key) ? lbl : key; }
+  // The archived record shown on a closed card: WHEN it was archived and FROM WHICH column. Read from the opp
+  // row (fetchDetail selects archived_at/archived_from); absent on a legacy archive, in which case it renders nothing.
+  function archivedInfoHtml(row, detail){
+    if(!(row && row.archived)) return "";
+    var o=(detail && detail.opp) || {};
+    var at=o.archived_at ? fmtWhen(o.archived_at) : "", from=o.archived_from ? laneLabel(o.archived_from) : "";
+    if(!at && !from) return "";
+    var rows="";
+    if(at)   rows += '<div class="af-row"><span class="af-k">'+esc(t("a_arch_at"))+'</span> <bdi>'+esc(at)+'</bdi></div>';
+    if(from) rows += '<div class="af-row"><span class="af-k">'+esc(t("a_arch_from"))+'</span> <bdi>'+esc(from)+'</bdi></div>';
+    return '<div class="dw-sec arch-facts">'+rows+'</div>';
+  }
   function onAction(slug, act){
     var m=Date.now(), row=findRow(slug); if(!row) return; var st=row.stage||"";
     if(act==="send")    return unifiedSend(slug);                         // UNIFY: persist live message+recipients, then the shared L5 runSend
     if(act==="promote") return runOppWrite(slug, function(r){ r.stage="live"; }, { stage:"live", up:m });
     if(act==="revert")  return runOppWrite(slug, function(r){ r.stage="draft"; }, { stage:"draft", up:m });
-    if(act==="won")     return runOppWrite(slug, function(r){ r.stage="won"; }, { stage:"won", up:m });
-    if(act==="lost")    return runOppWrite(slug, function(r){ r.stage="lost"; }, { stage:"lost", up:m });
-    if(act==="drop")    return runOppWrite(slug, function(r){ r.stage="dropped"; }, { stage:"dropped", up:m });
-    if(act==="archive") return runOppWrite(slug, function(r){ r.archived=true; }, { archived:true, up:m });   // stage untouched (domain law)
+    // RICH ARCHIVE: keep the one opp row (all conversations by slug + notes preserved), and STAMP when + from which
+    // column it was archived, so the archive is a legible record, not just a flag. laneOf(row) is the visible lane.
+    if(act==="archive") return runOppWrite(slug, function(r){ r.archived=true; }, { archived:true, archived_at:isoNow(), archived_from:laneOf(row), up:m });
     if(act==="reopen"){
-      var clear = TRAY_STAGES.indexOf(st)>=0;                           // a terminal declaration is cleared; a replied+archived card keeps its earned stage
+      var clear = TRAY_STAGES.indexOf(st)>=0;                           // a legacy terminal declaration is cleared; a replied+archived card keeps its earned stage
       return runOppWrite(slug, function(r){ r.archived=false; if(clear) r.stage=""; }, clear ? { archived:false, stage:"", up:m } : { archived:false, up:m });
     }
+    // FULL DELETE, two-tap confirmed: first tap arms the confirm, the "delete_go" tap performs it, "delete_cancel" clears.
+    if(act==="delete"){ __delConfirm[slug]=true; if(__drawerSlug===slug) refreshDrawer(slug); return; }
+    if(act==="delete_cancel"){ delete __delConfirm[slug]; if(__drawerSlug===slug) refreshDrawer(slug); return; }
+    if(act==="delete_go") return runOppDelete(slug);
   }
   function setNoteStatus(msg, cls){ var el=document.getElementById("noteStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
   function renderNotesInto(slug){ var host=document.getElementById("notesList"); if(!host) return; var notes=__notes[slug]||[]; host.innerHTML = notes.length ? notes.slice().reverse().map(noteItemHtml).join("") : '<div class="empty">'+esc(t("d_no_notes"))+'</div>'; }

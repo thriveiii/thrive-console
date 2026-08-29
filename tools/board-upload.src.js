@@ -25,6 +25,7 @@ var __libExisting = {};    // PR-L1: the set of console_pages slugs already take
 var __libPages = null;     // PR-L1: the last console_pages rows fetched for the Library surface (+ tests)
 var __libQuery = "";       // PR-L1: the live Library search query
 var __libPromoting = false;// PR-L6: in-flight guard for promote-to-Operations (one at a time)
+var __libState = {};       // PR-CF: per-slug liveness state after re-verify ("live"|"confirming"|"fault") - survives search re-renders
 // PR-L0: a page_publish commits to GitHub (GET sha + PUT, relay:pagePublish_ two round-trips) which routinely
 // takes longer than the 6s sign-in fetch timeout. This op gets its own longer client bound so a slow-but-
 // successful commit is not aborted by the client and falsely reported "could not publish".
@@ -790,7 +791,28 @@ function libViewHtml(){
     '<div class="lv-body" id="lvBody"><div class="muted" style="padding:14px 2px">' + esc(t("up_reading")) + '</div></div>';
 }
 function libViewLoad(){
-  libFetchPages().then(function(pages){ __libPages = pages; libRenderList(); });
+  libFetchPages().then(function(pages){ __libPages = pages; libRenderList(); libReverifyPending(); });
+}
+// PR-CF - the console's first live-health signal (self-memory seed). For every template whose live_verified_at is
+// NULL (published but not yet confirmed), re-run the SAME verify-live poll the upload uses, in the background:
+// GitHub Pages often finishes building after the short upload-time window, so a page that is actually live still
+// reads "confirming" until something re-checks it. On ok we stamp live_verified_at (the single liveness write) and
+// flip the chip to "live" without a re-upload; on a persistent failure we flip it to a RED "fault", so a broken
+// live URL announces itself instead of stalling forever. NEVER downgrades an already-live template. Returns a
+// promise (Promise.all of the per-slug jobs) so a test can await it; the poll window is wider than upload time.
+function libReverifyPending(tries, gap){
+  var pend = (__libPages || []).filter(function(p){ return p && !p.live_verified_at && __libState[p.slug] !== "live"; });
+  var jobs = pend.map(function(p){
+    return verifyLivePoll(p.slug, tries || 5, gap || 4000).then(function(v){
+      if(v && v.ok){
+        p.live_verified_at = new Date().toISOString();   // remember locally so a search re-render stays "live"
+        libSetState(p.slug, "live");
+        return pageStampLive(p.slug).catch(function(){});  // persist the liveness truth (self-memory)
+      }
+      libSetState(p.slug, "fault");                        // published but the live URL will not resolve: a visible RED fault
+    }, function(){ libSetState(p.slug, "fault"); });
+  });
+  return Promise.all(jobs);
 }
 function libViewWireShell(){
   var c=document.getElementById("lvClose"); if(c) c.addEventListener("click", function(){ closeLibraryView(); });
@@ -817,11 +839,22 @@ function libRenderList(){
   }).join("");
   libViewWireCards();
 }
+// PR-CF: three liveness states for a template chip. "live" = live_verified_at stamped (verified). "confirming" =
+// published, verify pending or retrying. "fault" = published but the live URL will not resolve after retries - a
+// visible RED fault, never a silent stall. Once re-verify settles a slug, __libState remembers it across re-renders.
+function libStateOf(p){ if(p && p.live_verified_at) return "live"; return __libState[p && p.slug] || "confirming"; }
+function libStateCls(state){ return "lv-state" + (state==="live" ? " ok" : (state==="fault" ? " bad" : "")); }
+function libStateKey(state){ return state==="live" ? "lib_row_live" : (state==="fault" ? "lib_row_fault" : "lib_row_confirming"); }
+function libSetState(slug, state){
+  __libState[slug] = state;
+  var el = document.getElementById("lvState-" + slug);
+  if(el){ el.className = libStateCls(state); el.textContent = t(libStateKey(state)); }
+}
 function libCardHtml(p){
-  var live = !!p.live_verified_at, title = (p.title && String(p.title).trim()) || upPretty(p.slug);
+  var state = libStateOf(p), title = (p.title && String(p.title).trim()) || upPretty(p.slug);
   return '<div class="lv-card" data-lib-slug="' + esc(p.slug) + '">'+
     '<div class="lv-card-h"><span class="lv-card-t">' + esc(title) + '</span>'+
-      '<span class="lv-state' + (live ? " ok" : "") + '">' + esc(t(live ? "lib_row_live" : "lib_row_confirming")) + '</span></div>'+
+      '<span class="' + libStateCls(state) + '" id="lvState-' + esc(p.slug) + '">' + esc(t(libStateKey(state))) + '</span></div>'+
     '<div class="lv-slug mono-iso" dir="ltr">' + esc(p.slug) + '</div>'+
     '<div class="lv-link"><span class="lv-k">' + esc(t("lib_link")) + ':</span> <bdi class="mono-iso lv-url" dir="ltr">' + esc(liveUrl(p.slug)) + '</bdi></div>'+
     '<div class="lv-acts">'+
@@ -944,5 +977,6 @@ try{
   window.__thriveLibraryDoneHtml = function(results){ return libDoneHtml(results); };
   window.__thriveLibraryPages = function(){ return __libPages; };                   // PR-L1: the surface's fetched rows
   window.__thriveLibraryPromote = function(slug){ return libPromoteConfirm(slug); };// PR-L6: await the promote (reads #lvPromIn-<slug>)
+  window.__thriveLibraryReverify = function(tries, gap){ return libReverifyPending(tries, gap); };   // PR-CF: await a fast re-verify pass
   window.__thriveParseSections = function(text){ return upParseSections(text); };
 }catch(e){}
