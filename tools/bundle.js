@@ -1095,6 +1095,12 @@ function buildBoard(){
   .lv-acts .act{font-size:12.5px;padding:6px 11px}
   .lv-acts .act.on{border-color:#3a5;color:#bfe6cd}
   .lv-prev{margin-top:6px}
+  .lv-prom-b.on{border-color:#3a5;color:#bfe6cd}
+  .lv-prom{margin-top:8px;display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid #262632;border-radius:10px;background:#0b0b10}
+  .lv-prom-in{width:100%;box-sizing:border-box;resize:vertical;min-height:38px;border:1px solid #262632;border-radius:8px;background:#0e0e14;color:#dfe3ea;padding:9px 10px;font-size:13px}
+  .lv-prom-in:focus{outline:none;border-color:#3d5a7a}
+  .lv-prom-acts{display:flex;justify-content:flex-start}
+  .lv-prom-st{margin:0}
   .lv-frame{width:100%;height:260px;border:1px solid #22222e;border-radius:9px;background:#fff}
   .lv-empty{font-size:14px;color:#8a8a93;padding:24px 4px;text-align:center}
   .up-state.ok{color:#a9d5b6;border-color:#274b34}
@@ -1238,7 +1244,8 @@ function buildBoard(){
           lib_doc_only:"Documentation template (no message).", lib_activate:"Publish to Library", lib_activating:"Publishing templates...", lib_done:"Published to Library:",
           lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published",
           lib_f_title:"Title", lib_f_slug:"Link name", lib_f_task:"Task", lib_task_ph:"Choose or type a task", lib_err_slug:"Use lowercase letters, numbers and dashes only.", lib_err_dup:"This link name is repeated in this batch.", lib_err_exists:"This link name is already taken.", lib_err_fix:"Fix the highlighted link names first.",
-          lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview" },
+          lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview",
+          lib_promote:"Promote", lib_prom_ph:"Recipient email (or several, comma separated)", lib_prom_go:"Add to Operations", lib_prom_need:"Enter at least one valid email.", lib_prom_saving:"Adding to Operations...", lib_prom_done:"Added to Operations. Write the message there.", lib_prom_already:"Already in Operations.", lib_prom_failed:"Could not add to Operations." },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -1305,7 +1312,8 @@ function buildBoard(){
           lib_doc_only:"قالب توثيقي (بلا رسالة).", lib_activate:"انشر في المكتبة", lib_activating:"جارٍ نشر القوالب...", lib_done:"نُشر في المكتبة:",
           lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر",
           lib_f_title:"العنوان", lib_f_slug:"اسم الرابط", lib_f_task:"المهمة", lib_task_ph:"اختر مهمة أو اكتب واحدة", lib_err_slug:"استخدم حروفًا صغيرة وأرقامًا وشرطات فقط.", lib_err_dup:"اسم الرابط مكرّر في هذه الدفعة.", lib_err_exists:"اسم الرابط مستخدم من قبل.", lib_err_fix:"صحّح أسماء الروابط المميّزة أولًا.",
-          lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة" }
+          lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة",
+          lib_promote:"أضف مستلماً", lib_prom_ph:"بريد المستلم (أو عدة، مفصولة بفواصل)", lib_prom_go:"أضف إلى العمليات", lib_prom_need:"أدخل بريداً صحيحاً واحداً على الأقل.", lib_prom_saving:"جارٍ الإضافة إلى العمليات...", lib_prom_done:"أُضيف إلى العمليات. اكتب الرسالة هناك.", lib_prom_already:"موجود في العمليات مسبقاً.", lib_prom_failed:"تعذّرت الإضافة إلى العمليات." }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
