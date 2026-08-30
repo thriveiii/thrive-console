@@ -315,6 +315,8 @@ function scanInbox() {
     store.scanLog = (store.scanLog || []).concat([{ ms: new Date().getTime() - started, idle: false }]).slice(-96);
     return { ok: true, added: added, scanned: scanned, capped: capped };
   });
+  var mirror = supaMirrorLedger_();       // idempotent upsert of new replies + opens into Supabase (retires the old-engine mirror)
+  if (mirror) out.supaMirror = mirror;
   return out;
 }
 
@@ -401,6 +403,104 @@ function inboxReconcile_(days) {
   }
   return { ok: true, days: days, mailbox: mailbox, filed: mailbox - missing.length,
            gap: missing.length, missing: missing.slice(0, 50), ts: new Date().toISOString() };
+}
+
+/* ===================== Supabase ledger mirror ===================== */
+
+/*
+ * Retire the old-engine mirror. Historically the browser console (library/app.js) was the ONLY writer of
+ * console_inbound (replies) and console_hits (opens): it pulled these very records from this relay and
+ * mirrored them into Supabase. That console is a localStorage app now at the browser quota, so reply and
+ * open capture were fragile. This relay already holds both ledgers (store.inbound from scanInbox, store.hits
+ * from the pixel/beacon) and already attributes every reply (attributeMessage_), so it can write the two
+ * tables itself and let the old engine be retired.
+ *
+ * The write needs a service_role key, which bypasses RLS, so it lives ONLY in this relay's Script Properties
+ * (SUPABASE_URL + SUPABASE_SERVICE_KEY), exactly like GH_TOKEN and RESEND_KEY. It is NEVER emitted into the
+ * client bundle, a response, or a log. If either property is unset the mirror is a safe no-op that never
+ * blocks or fails the scan.
+ */
+
+/* One idempotent upsert into a PostgREST table. Prefer: resolution=merge-duplicates makes it an upsert on the
+   table's primary key (console_inbound.id = gid, console_hits.id = hitKey), so this relay and the old engine
+   may both write the same rows during the transition with NO duplicates. Returns true only on a 2xx, so a
+   caller can leave its cursor unadvanced and retry next scan. The key is read here and never logged. */
+function supaInsert_(table, rows) {
+  var url = props_().getProperty('SUPABASE_URL');
+  var key = props_().getProperty('SUPABASE_SERVICE_KEY');
+  if (!url || !key || !rows || !rows.length) return false;   // unconfigured or nothing to send: safe no-op
+  try {
+    var res = UrlFetchApp.fetch(String(url).replace(/\/+$/, '') + '/rest/v1/' + table, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { apikey: key, Authorization: 'Bearer ' + key,
+                 Prefer: 'resolution=merge-duplicates,return=minimal' },
+      payload: JSON.stringify(rows),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    return code >= 200 && code < 300;
+  } catch (e) {
+    return false;   // network/transient error: cursor stays put, next scan retries. Never surface the key.
+  }
+}
+
+/* One console_inbound row, shaped BYTE FOR BYTE as the old engine's supaInboundRow (library/app.js:4132-4135):
+   id is the Gmail message id (inboundKey), the whole record in data, opp/kind/bounce/ts lifted from the
+   attribution this relay already computed. Every reply is mirrored (autos and opp-less rows included), exactly
+   as the engine's supaMirrorInbound did; the console_board view filters noise on read. */
+function inboundKey_(r) { return String((r && (r.gid || r.messageId || r.mid || r.id)) || ''); }
+function supaInboundRow_(r) {
+  return { id: inboundKey_(r) || ('in_' + ((r && r.ts) || '')), opp: (r && r.opp) || '',
+    kind: (r && r.kind) || '', bounce: (r && r.bounce) || '', ts: (r && r.ts) || '',
+    data: r, up: (r && r.up) || Date.now() };
+}
+
+/* One console_hits row, shaped BYTE FOR BYTE as the old engine's supaHitRow (library/app.js:4164-4166) with
+   the same hitKey (library/app.js:543): id is type|slug|ts|vid, the whole event in data. */
+function hitKey_(e) { return (e.type || 'open') + '|' + (e.slug || '') + '|' + (e.ts || '') + '|' + (e.vid || ''); }
+function supaHitRow_(e) {
+  return { id: hitKey_(e), slug: (e && e.slug) || '', type: (e && e.type) || 'open',
+    ts: (e && e.ts) || '', self: !!(e && e.self), data: e };
+}
+
+/* Mirror everything new in both ledgers, once per scan. A per-ledger high-water mark (the newest ts already
+   written) keeps each run bounded and self-healing: a ledger's cursor advances ONLY when its upsert returned
+   2xx, so a failed write is retried on the next scan rather than lost. The first run (empty cursor) upserts
+   the whole current ledger once, which is idempotent. Runs on every scan, idle inbox or not, so opens stay
+   fresh even when no reply arrived. Never throws: a mirror problem must never break the inbox scan. */
+function supaMirrorLedger_() {
+  if (!props_().getProperty('SUPABASE_URL') || !props_().getProperty('SUPABASE_SERVICE_KEY')) return null;
+  try {
+    var snap = withStore_(function (store) {
+      var inMark = store.inboundSyncTs || '', hMark = store.hitsSyncTs || '';
+      var inbound = store.inbound || [], hits = store.hits || [];
+      var inRows = [], inMax = inMark, hRows = [], hMax = hMark, i, ts;
+      for (i = 0; i < inbound.length; i++) {
+        if (!inbound[i]) continue; ts = String(inbound[i].ts || '');
+        if (ts >= inMark) { inRows.push(supaInboundRow_(inbound[i])); if (ts > inMax) inMax = ts; }
+      }
+      for (i = 0; i < hits.length; i++) {
+        if (!hits[i]) continue; ts = String(hits[i].ts || '');
+        if (ts >= hMark) { hRows.push(supaHitRow_(hits[i])); if (ts > hMax) hMax = ts; }
+      }
+      return { inRows: inRows, hRows: hRows, inMax: inMax, hMax: hMax };
+    });
+
+    var okIn = snap.inRows.length ? supaInsert_('console_inbound', snap.inRows) : true;
+    var okHit = snap.hRows.length ? supaInsert_('console_hits', snap.hRows) : true;
+
+    if ((okIn && snap.inRows.length) || (okHit && snap.hRows.length)) {
+      withStore_(function (store) {
+        if (okIn && snap.inRows.length) store.inboundSyncTs = snap.inMax;
+        if (okHit && snap.hRows.length) store.hitsSyncTs = snap.hMax;
+      });
+    }
+    return { inbound: okIn ? snap.inRows.length : 0, hits: okHit ? snap.hRows.length : 0,
+             inboundPending: okIn ? 0 : snap.inRows.length, hitsPending: okHit ? 0 : snap.hRows.length };
+  } catch (e) {
+    return { error: String((e && e.message) || e) };   // reported, never thrown: the scan already succeeded
+  }
 }
 
 /**
