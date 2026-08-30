@@ -528,6 +528,16 @@ function attributeMessage_(msg, mail, known) {
     // the console also matches by sender and subject.
     inReplyTo: headerOf_(raw, 'In-Reply-To'),
     references: headerOf_(raw, 'References'),
+    // FULL FIDELITY (additive): keep the whole email, not a 300-char snippet. The plus-tag To is the linking
+    // key and must be STORED, not just read; the reply's own Message-ID, Cc, from name+address, the full plain
+    // body and the html body are persisted so the console holds the real message. snippet stays for the
+    // existing list-render/back-compat callers.
+    to: msg.getTo() || '',
+    cc: msg.getCc() || '',
+    fromRaw: from,
+    messageId: headerOf_(raw, 'Message-ID'),
+    bodyPlain: String(msg.getPlainBody() || ''),
+    bodyHtml: String(msg.getBody() || ''),
     kind: 'reply',
     rule: 'none',
     opp: ''
@@ -548,14 +558,20 @@ function attributeMessage_(msg, mail, known) {
     else if (/\b4\.\d\.\d\b|temporar|mailbox full|over quota/i.test(body)) rec.bounce = 'soft';
   }
 
-  // ---- rule 1, the tag
+  // ---- rule 1, the tag: LINK BY SLUG, ABOVE EVERYTHING.
+  // The plus-tag hi+<slug>@thriveiii.com is minted only by our own outbound (outboundHeaders Reply-To,
+  // board-send.src.js), so a reply carrying it is self-authenticating: the slug IS the opp. It therefore
+  // takes precedence over the sender and subject tiers, and is trusted UNCONDITIONALLY. The old
+  // `&& known[tagged]` gate suppressed a correct slug whenever the opp was not in the relay's synced
+  // store.state.opps (a stale/empty set), so a perfectly tagged reply fell through to a wrong sender/subject
+  // guess. That gate is removed: a present slug always wins; sender/subject match ONLY when no slug tag exists.
   var tagged = '';
   var fields = [msg.getTo(), msg.getCc(), headerOf_(raw, 'Delivered-To'), headerOf_(raw, 'X-Original-To')];
   for (var i = 0; i < fields.length && !tagged; i++) {
     var parts = String(fields[i] || '').split(',');
     for (var j = 0; j < parts.length && !tagged; j++) tagged = slugFromTag_(parts[j]);
   }
-  if (tagged && known[tagged]) { rec.rule = 'tag'; rec.opp = tagged; return rec; }
+  if (tagged) { rec.rule = 'tag'; rec.opp = tagged; return rec; }
 
   // ---- rule 2, the threading headers
   var ids = idsIn_(headerOf_(raw, 'In-Reply-To')).concat(idsIn_(headerOf_(raw, 'References')));
