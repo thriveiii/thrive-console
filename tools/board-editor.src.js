@@ -175,15 +175,20 @@ function edRenderPreview(slug){
 }
 function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); }
 
-// Insert the opp-link token at the cursor via execCommand, which PRESERVES the native undo stack (ConTh 4).
-// Falls back to a splice + manual input event if execCommand is unavailable.
+// Insert the opp link. With a selection, EMBED the link on the chosen phrase as a markdown link
+// [selected]({{LINK}}) (ConTh 11: an anchor, not a naked URL - bodyParasHtml renders it as <a>). With no
+// selection, insert the bare {{LINK}} token as before (the naked token stays supported and optional). Either
+// way {{LINK}} is present, so edHasLink still clears the ckLink gate. execCommand keeps the native undo stack
+// (ConTh 4); a splice fallback covers browsers without it.
 function edInsertLink(slug){
   var el=edEl("edBody"); if(!el) return;
   el.focus();
-  var token=MF_LINK, ok=false;
+  var s=el.selectionStart==null?el.value.length:el.selectionStart, e2=el.selectionEnd==null?el.value.length:el.selectionEnd;
+  var sel=el.value.slice(s,e2);
+  var token = sel ? ("[" + sel + "](" + MF_LINK + ")") : MF_LINK;
+  var ok=false;
   try{ ok=document.execCommand("insertText", false, token); }catch(e){ ok=false; }
   if(!ok){
-    var s=el.selectionStart==null?el.value.length:el.selectionStart, e2=el.selectionEnd==null?el.value.length:el.selectionEnd;
     el.value = el.value.slice(0,s) + token + el.value.slice(e2);
     var pos=s+token.length; try{ el.selectionStart=el.selectionEnd=pos; }catch(_){}
     try{ el.dispatchEvent(new Event("input", { bubbles:true })); }catch(_){}

@@ -379,7 +379,7 @@ function upDelay(ms){ return new Promise(function(res){ setTimeout(res, ms); });
 // commit, so the file exists in the repo; a persistent 404 means Pages has not published it yet, not that it
 // is dead. The send gate re-checks live at send time regardless, so nothing sends before a real ok.
 function verifyLivePoll(slug, tries, gap){
-  tries = tries || 3; gap = gap || 3000;
+  tries = tries || 8; gap = gap || 3000;    // ~24s: a realistic GitHub Pages propagation window, so a live page stops showing a false "publishing" / re-activate loop
   function attempt(n){
     return verifyLive(slug).then(function(v){
       if(v.ok) return { ok:true, publishing:false };
@@ -406,12 +406,30 @@ function verifyLive(slug){
 // opp's live URL must resolve RIGHT NOW; otherwise the send is refused. PR1: the gate trusts ONLY the real
 // fetch - it no longer pre-checks a stored page_active flag (that flag is retired). A page that is not live
 // fails the fetch and is refused, which is the same outcome the flag used to guard, minus the stale signal.
+// The board's own live-verified signal for this slug: console_board.has_page is true iff the page has been
+// proven live (live_verified_at stamped, docs/supabase-live-verified.sql). A page that was verified live must
+// not be aborted by one flaky GET; a page never proven live still blocks until it resolves.
+function upWasVerifiedLive(slug){
+  var row = (typeof findRow === "function") ? findRow(slug) : null;
+  return !!(row && row.has_page);
+}
 function upSendLiveGate(slug, data){
   data = data || {};
   if(data.source !== "upload") return Promise.resolve();
+  var wasLive = upWasVerifiedLive(slug);
+  function deny(kind){ var e=new Error(kind); e.__kind=kind; throw e; }
   return verifyLive(slug).then(function(v){
-    if(v.ok) return true;
-    var e2=new Error("dead link"); e2.__kind="deadlink"; throw e2;
+    if(v.ok) return true;                                   // live right now
+    if(v.dead) deny("deadlink");                            // 404/410: the page is truly gone -> always block
+    // Transient (network error, 5xx, any non-2xx that is not 404/410): retry ONCE before deciding.
+    return upDelay(1500).then(function(){ return verifyLive(slug); }).then(function(v2){
+      if(v2.ok) return true;
+      if(v2.dead) deny("deadlink");                         // now a definitive dead signal -> block
+      // Still only a transient failure. A page proven live before is allowed (do not lose a ready send to a
+      // flaky GET); a page never verified live still blocks so nothing ships to an unproven link.
+      if(wasLive) return true;
+      deny("notlive");
+    });
   });
 }
 

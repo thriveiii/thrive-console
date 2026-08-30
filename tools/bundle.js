@@ -1750,9 +1750,9 @@ ${UPLOAD_SRC}
   function fmtWhen(ts){ ts=String(ts||""); if(!ts) return ""; return ts.replace("T"," ").replace(/\\.\\d+.*$/,"").replace(/Z$/,"").trim(); }
   function numsHtml(row, slug){
     var sc=Number(row.sent_count||0), oc=Number(row.open_count||0), rc=(__reps.count&&__reps.count[slug])||0;
-    function n(k,v,src){ return '<div class="dw-num"><div class="k">'+v+'</div><div class="l">'+esc(t(k))+'</div><div class="src">'+esc(src)+'</div></div>'; }
+    function n(k,v){ return '<div class="dw-num"><div class="k">'+v+'</div><div class="l">'+esc(t(k))+'</div></div>'; }
     return '<div class="dw-sec"><h3>'+esc(t("d_signals"))+'</h3><div class="dw-nums">'+
-      n("n_sent",sc,t("src_mail"))+n("n_opens",oc,t("src_hits"))+n("n_replies",rc,t("src_inbound"))+'</div></div>';
+      n("n_sent",sc)+n("n_opens",oc)+n("n_replies",rc)+'</div></div>';
   }
   function factsHtml(row){
     function yn(b){ return b ? t("d_present") : t("d_absent"); }
@@ -1796,7 +1796,7 @@ ${UPLOAD_SRC}
     if(d.page_missing) rows.push([t("d_pagemiss"), t("d_present")]);
     if(d.template_retired) rows.push([t("d_tmplretired"), t("d_present")]);
     var body = rows.length ? '<dl class="dl">'+rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+esc(String(r[1]))+'</dd>'; }).join("")+'</dl>' : '<div class="empty">'+esc(t("d_no_notes"))+'</div>';
-    return '<div class="dw-sec"><h3>'+esc(t("d_record"))+'</h3><div class="note">'+esc(t("d_no_memory"))+'</div>'+body+'</div>';
+    return '<div class="dw-sec"><h3>'+esc(t("d_record"))+'</h3>'+body+'</div>';
   }
   // Activity timeline: sends (console_mail) + opens (console_hits) + replies (the ONE resolver), newest first.
   // L4 writes stage moves/archiving to console_opps and re-reads the board view; there is still no per-move
@@ -1809,7 +1809,7 @@ ${UPLOAD_SRC}
     ((__reps.list&&__reps.list[slug])||[]).forEach(function(it){ ev.push({ ts:String(it.ts||""), label:t("e_reply")+" #"+it.num }); });
     ev.sort(function(a,b){ return a.ts>b.ts?-1:(a.ts<b.ts?1:0); });
     var body = ev.length ? '<div class="log">'+ev.map(function(e){ return '<div class="logrow"><span class="lt">'+esc(fmtWhen(e.ts))+'</span> '+esc(e.label)+'</div>'; }).join("")+'</div>' : '<div class="empty">'+esc(t("d_no_activity"))+'</div>';
-    return '<div class="dw-sec"><h3>'+esc(t("d_activity"))+'</h3><div class="note">'+esc(t("d_stage_local"))+'</div>'+body+'</div>';
+    return '<div class="dw-sec"><h3>'+esc(t("d_activity"))+'</h3>'+body+'</div>';
   }
   // ---- L4 write-action surface (in the drawer): stage moves, archive/reopen, and a note composer. Only the
   //      moves the board view HONORS as declared overrides are offered (draft<->live, and the terminal outcomes
