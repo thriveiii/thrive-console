@@ -82,6 +82,26 @@ if (m) {
   ck("(b) no selection inserts the bare {{LINK}} token (naked token stays optional)", build("") === "{{LINK}}", build(""));
 }
 
+// ---- (b) CLEAN LINK: the sent body link is the bare /opp/<slug> with NO ?r= tail ----------------
+// The channel-2 ?r= tokenization rewrite is removed; the body link is whatever mergeFieldsInto substitutes for
+// {{LINK}} (= liveUrl(pageSlug)), clean. Source guard first, so the rewrite cannot silently come back.
+ck("(b) the ?r= page-link rewrite is gone from board-send.src.js (no split(base).join(tokd))",
+   send.indexOf("split(base).join(tokd)") < 0 && !/"r="\s*\+\s*encodeURIComponent\(token\)/.test(send));
+const LINK_PRE =
+  'var SITE_L5="console.thriveiii.com", OPP_PATH_L5="/opp/";\n' +
+  'var MF_BIZ="{{"+"BIZ}}", MF_LINK="{{"+"LINK}}", MF_MONTH="{{"+"MONTH}}";\n';
+const L = load(send, ["liveUrl", "mergeFieldsInto"], LINK_PRE);
+const clean = L.liveUrl("acme");
+ck("(b) liveUrl is the bare short form with no query", clean === "https://console.thriveiii.com/opp/acme" && clean.indexOf("?") < 0, clean);
+// A naked {{LINK}} body substitutes to the clean URL, no ?r=.
+const nakedLink = L.mergeFieldsInto("Visit {{" + "LINK}} today.", "Lina", { business: "Acme", link: clean, month: "" });
+ck("(b) a {{LINK}} body substitutes to the clean /opp/<slug>, NO ?r= tail", nakedLink.indexOf(clean) >= 0 && nakedLink.indexOf("?r=") < 0, nakedLink);
+// An embedded [text]({{LINK}}) becomes [text](clean) then <a href=clean>, still no ?r=.
+const embLink = L.mergeFieldsInto("[the Del Ray opening]({{" + "LINK}})", "", { business: "", link: clean, month: "" });
+const embLinkHtml = S.bodyParasHtml(embLink);
+ck("(b) an embedded [text]({{LINK}}) renders <a href=clean> with NO ?r= tail",
+   embLinkHtml.indexOf('<a href="' + clean + '"') >= 0 && embLinkHtml.indexOf("?r=") < 0, embLinkHtml);
+
 // ---- (a) the send live-gate: block only on 404/410, retry a transient, allow a proven-live page --
 // upSendLiveGate depends on verifyLive, upDelay, findRow. We inject stubs: verifyLive returns a scripted
 // queue of results, findRow decides whether the page was proven live, upDelay is instant.

@@ -1222,11 +1222,12 @@ function sendCompile(slug, row, data, rcpt, mode){
   var sig = data.sig || "";
   var plan = planAttachments(data.attachments||[]);
   var bodyPlain = inner + attachHostedBlockText(plan.hosted, lang);   // hosted-image links ride as text lines
-  var token = recipientOpenToken(slug, addr, subject);       // == the console_mail row id (attribution join)
-  if(token){
-    var base = liveUrl(pageSlug), tokd = base + (base.indexOf("?")<0?"?":"&") + "r=" + encodeURIComponent(token);
-    bodyPlain = bodyPlain.split(base).join(tokd);            // channel 2: the SHARED page link carries the token (PR-A0: page_slug-aware)
-  }
+  var token = recipientOpenToken(slug, addr, subject);       // == the console_mail row id; still the open-pixel token below
+  // CLEAN LINK (LINK_OWNERSHIP_EVIDENCE A): the body carries the bare, working liveUrl(pageSlug) with NO ?r= tail.
+  // The old channel-2 rewrite (bodyPlain.split(base).join(base+"?r="+token)) is REMOVED: a query on the no-trailing-
+  // slash directory URL (/opp/<slug>) is the form that failed to resolve on GitHub Pages while the bare short form
+  // works, and the string replace could malform a link that already had a trailing slash. Per-recipient EMAIL-open
+  // attribution is unaffected: it rides on the separate campaign open pixel (channel 1, below), not the page link.
   var text = toPlainText(bodyPlain, sig) + (bulk ? footerText(lang) : "");   // plain-text alternative part; footer only for campaigns
   var html = lightHtml(bodyPlain, sig, lang, bulk);                          // light-HTML primary part; footer only for campaigns
   if(token && bulk) html = html + openPixelHtml(slug, token, relayEp());     // channel 1: the open pixel - campaign only (never on a personal 1:1)
