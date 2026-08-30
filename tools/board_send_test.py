@@ -10,7 +10,7 @@ This drives a STATEFUL mock of BOTH the relay (script.google.com /exec) and Supa
 the relay is intercepted and answered by the mock. Assertions:
   1. a send writes console_mail and the SENT lane reflects it across a full reload;
   2. pending-then-confirm ordering: the console_mail write happens AFTER the relay POST, never before acceptance;
-  3. the payload carries slug, a Message-ID, and the channel-2 page-link token r=<token> (== console_mail id);
+  3. the payload carries slug, a Message-ID, and a CLEAN opp-page link (no ?r= tail; channel-2 removed);
      PERSONAL MODE: a standalone 1:1 opp (no data.source==="upload") sends personal-shaped - NO open pixel, NO
      "Reply STOP"/postal footer, NO List-Unsubscribe header - while the text/plain part and Reply-To remain;
   4. forced relay 500, forced Resend reject, and an aborted body-read all revert the card with red and write NO row;
@@ -145,12 +145,13 @@ with sync_playwright() as p:
     ck("3: the payload carries slug=alpha", pay.get("slug")=="alpha", pay.get("slug"))
     mid = (pay.get("headers") or {}).get("Message-ID","")
     ck("3: the payload carries a Message-ID (<c...@thriveiii.com>)", bool(re.match(r"^<c.+@thriveiii\.com>$", mid)), mid)
-    # LIGHT-HTML: the tokenized opp-page link (channel 2) rides in the TEXT as a plain URL, so a page VISIT
-    # is attributed to the recipient (beacon.js reads r). This channel is mode-independent (kept in personal too).
-    m = re.search(r"[?&]r=([^&\"'\s<]+)", pay.get("text",""))
-    tok = m.group(1) if m else ""
-    ck("3: the text carries the tokenized opp-page link r=<token> (channel 2)", bool(tok), pay.get("text","")[:200])
-    ck("3: the page-link token equals the console_mail row id (the attribution join)", bool(tok) and MAIL and MAIL[0].get("id")==tok, {"tok":tok, "id":(MAIL[0].get('id') if MAIL else None)})
+    # CLEAN LINK (launch-send 2a / LINK_OWNERSHIP_EVIDENCE A): the body carries the BARE opp-page link with NO
+    # ?r= tail. The channel-2 tokenization was removed because /opp/<slug>?r=... did not resolve on GitHub Pages
+    # while the bare short form works; per-recipient email-open attribution rides on the campaign pixel (channel 1).
+    ck("3: the text carries the CLEAN opp-page link /opp/alpha (bare short form)",
+       "https://console.thriveiii.com/opp/alpha" in pay.get("text",""), pay.get("text","")[:200])
+    ck("3: the body link has NO ?r= token tail (channel-2 tokenization removed)",
+       re.search(r"[?&]r=", pay.get("text","")) is None, pay.get("text","")[:200])
     html = pay.get("html",""); text = pay.get("text",""); hdrs = pay.get("headers") or {}
     # PERSONAL MODE: Alpha is a standalone 1:1 opp (no data.source==="upload"), so the send drops all three
     # Promotions markers. The open pixel (channel 1) does NOT ride in a personal html; no bulk footer; no list header.
