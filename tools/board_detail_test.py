@@ -36,11 +36,14 @@ ck("the drawer reply thread reads the ONE resolver (__reps.list[slug]), same as 
 ck("detail reads are best-effort and scoped to one opp (console_opps/mail/hits), never blocking the board",
    "console_opps?slug=eq." in board and "console_mail?opp=eq." in board and "console_hits?slug=eq." in board
    and "if(!res.ok) return [];" in board)
-ck("no server memory store is claimed; the record disclosure is present",
-   "No accrued profile store" in board and "d_no_memory" in board)
-ck("stage moves disclosed as written to Supabase and re-read from the board view (L4)",
-   "written to Supabase and re-read from the board view" in board
-   and "Stage moves are recorded on the device and are not in Supabase" not in board)
+# DECLUTTER (launch-send item 3): the drawer no longer RENDERS the three build-artifacts. Assert the render
+# calls are gone (t("d_no_memory") / t("d_stage_local") / the .src caption), not the i18n key definitions.
+ck("the no-memory-store disclosure note is no longer rendered in the drawer (build-artifact removed)",
+   't("d_no_memory")' not in board)
+ck("the stage-local technical note is no longer rendered in the activity section (build-artifact removed)",
+   't("d_stage_local")' not in board)
+ck("the raw table-name source captions under the signal numbers are no longer rendered (build-artifact removed)",
+   'class="src"' not in board and 't("src_mail")' not in board)
 # The board.html write surface is fenced: the ONLY data-write VERB is PATCH/POST, no PUT, no DELETE. PATCH
 # targets ONLY console_opps (L4 stage / archived / note) or console_profiles (Step 2C admin title). POSTs are
 # limited to known kinds: the GoTrue auth call (/auth/v1/), the L5 relay send (relayEp - the courier that
@@ -151,10 +154,16 @@ with sync_playwright() as p:
     ck("1: the reply address is LTR-isolated even though it is user-provided", d["addrDir"]=="ltr", d)
     ck("2: the Thrive->prospect outbound send shows (console_mail)", d["hasOut"] and ("Thrive" in d["outWho"]), d)
     ck("3: the three numbers show their values (sent 2, opens 3, replies 2)", d["nums"]==["2","3","2"], d["nums"])
-    ck("3: each number names its source", "console_mail" in d["srcs"] and "console_hits" in d["srcs"] and "console_inbound" in d["srcs"], d["srcs"])
-    ck("4: the record shows the carried note AND the no-memory-store disclosure", d["record"] and d["noMemory"], d)
-    ck("5: the activity log discloses stage moves/archiving are written to Supabase (L4)", d["stageDisclosed"], d)
-    ck("5: the activity log lists a Sent, an Opened and a Reply event", ("Sent" in d["logText"]) and ("Opened" in d["logText"]) and ("Reply" in d["logText"]), d["logText"])
+    # DECLUTTER (launch-send item 3): the raw table-name source captions (console_mail/hits/inbound) under the
+    # numbers are a build-artifact and are GONE; the operational numbers stay.
+    ck("3: the raw table-name source captions are removed (build-artifact); the numbers remain", d["srcs"].strip()=="" and d["nums"]==["2","3","2"], d["srcs"])
+    # The carried operational note (the opportunity record) STAYS; the "no accrued memory store" technical
+    # disclosure is a build-artifact and is GONE.
+    ck("4: the record shows the carried note, and the no-memory-store disclosure is removed (build-artifact)", d["record"] and not d["noMemory"], d)
+    # The activity timeline (the operational element) STAYS; the "written to Supabase / re-read from the board
+    # view" technical note is a build-artifact and is GONE.
+    ck("5: the stage-local technical activity note is removed (build-artifact)", not d["stageDisclosed"], d)
+    ck("5: the activity log still lists a Sent, an Opened and a Reply event", ("Sent" in d["logText"]) and ("Opened" in d["logText"]) and ("Reply" in d["logText"]), d["logText"])
 
     # ---- close returns to the board without reload ----
     pg.evaluate("()=>{window.__alive='YES';}")

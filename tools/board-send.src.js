@@ -128,6 +128,9 @@ function brandWrap(inner, branded, sigText){                                    
 }
 function toPlainText(html, sig){                                                             // app.js:6371
   var s = String(html||"");
+  // Markdown link -> "text (url)" so an embedded link reads as the phrase plus its URL in the plain part
+  // (mirrors the <a> downgrade below). A bare {{LINK}}-substituted URL carries no [text](...) and is untouched.
+  s = s.replace(/\[([^\]\n]+)\]\(((?:https?:|mailto:)[^)\s]+)\)/g, function(_, txt, url){ txt = String(txt).trim(); return (txt && txt !== url) ? (txt + " (" + url + ")") : url; });
   s = s.replace(/<br\s*\/?>/gi, "\n")
        .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
        .replace(/<li[^>]*>/gi, "- ")
@@ -149,6 +152,15 @@ function toPlainText(html, sig){                                                
 // whose only user it was) is removed; AGENCY_SITE_L5 stays because the editor preset still reads it.
 var AGENCY_SITE_L5 = "thriveiii.com";
 
+// Turn markdown links [text](url) into <a> anchors, run AFTER html-escaping so the anchor is the ONLY raw
+// HTML in the paragraph (text and url arrive already entity-escaped). Only http(s)/mailto targets linkify, so
+// an escaped scheme like javascript: is left as plain text. This is what lets "إدراج رابط الفرصة" embed the
+// opp link on a chosen phrase instead of sending a naked URL; a body with no [text](url) is unchanged.
+function mdLinksHtml(escaped){
+  return String(escaped).replace(/\[([^\]\n]+)\]\(((?:https?:|mailto:)[^)\s]+)\)/g, function(_, txt, url){
+    return '<a href="' + url + '" target="_blank" rel="noopener">' + txt + '</a>';
+  });
+}
 // Body paragraphs as light HTML: split on blank lines into <p>, single newlines become <br>. Black text,
 // one system font, normal size. No wrapper card, no colors, no tables.
 function bodyParasHtml(bodyPlain){
@@ -156,7 +168,7 @@ function bodyParasHtml(bodyPlain){
   if(!s) return "";
   return s.split(/\n{2,}/).map(function(b){
     b = b.replace(/^\n+|\n+$/g, "");
-    return b ? '<p style="margin:0 0 14px 0">' + esc(b).split("\n").join("<br>") + '</p>' : "";
+    return b ? '<p style="margin:0 0 14px 0">' + mdLinksHtml(esc(b)).split("\n").join("<br>") + '</p>' : "";
   }).filter(Boolean).join("");
 }
 
