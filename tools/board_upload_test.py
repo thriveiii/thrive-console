@@ -6,7 +6,8 @@ draft opp cards while storing each page to console_pages. Then a page must be AC
 resolve (a real fetch) before any send. Stateful mock of Supabase REST + the relay + the live-page fetch
 (never a real send). A real .zip fixture is built on disk so the ported reader runs for real. Assertions:
   1. a zip yields a match table (html -> text -> email -> slug); NOTHING is written before Approve;
-  2. breakage warnings fire by name: dup slug, a page with no message, an orphan text with no page;
+  2. AXIOM #3 "ignores the rest": non-page files (orphan messages, README, market assessment, assets, manifest)
+     are silently ignored - never surfaced as orphan/informational; only a page's own dup_slug / no_message note fires;
   3. mailto: is stripped from the recipient (a clean bare address, never "mailto:foo@bar");
   4. on Approve each html becomes a DRAFT opp AND a console_pages row (nothing before approve);
   5. send is BLOCKED until the page is activated AND verifyLive returns ok; a dead link blocks with a clear
@@ -248,9 +249,10 @@ with sync_playwright() as p:
        fresh["email"]=="buyer.fresh@example.test" and "mailto" not in fresh["email"], fresh.get("email"))
     ck("3: the acme recipient is bare too", acme["email"]=="buyer.acme@example.test", acme.get("email"))
 
-    # ===== 2: breakage warnings by name (orphan text; the table renders warnings) =====
-    ck("2: an orphan text (no page) is surfaced", "orphan-widget.md" in " ".join(plan.get("orphanTexts",[])), plan.get("orphanTexts"))
-    ck("2: the match table renders the orphan warning label", "with no page" in (pg.text_content("#upResult") or "").lower() or pg.evaluate("()=>!!document.querySelector('.up-orphans')"))
+    # ===== 2: AXIOM #3 "ignores the rest" - an orphan text (a message that matched no page) is NOT surfaced =====
+    # (was: orphan-widget.md surfaced as an orphan note). Only html pages are rows; every non-page file is ignored.
+    ck("2: an orphan text (no page) is IGNORED, not surfaced", not plan.get("orphanTexts"), plan.get("orphanTexts"))
+    ck("2: the preview renders NO orphan line (.up-orphans)", not pg.evaluate("()=>!!document.querySelector('.up-orphans')"))
 
     # ===== 6: uploaded text renders FRAMED, not raw =====
     ck("6: the uploaded message renders inside a framed area (.up-frame/.up-pre), not raw off-screen",
@@ -342,13 +344,12 @@ with sync_playwright() as p:
        byslug.get("manna-pottery",{}).get("email")=="studio.manna@example.test" and "mailto" not in byslug.get("manna-pottery",{}).get("email",""),
        byslug.get("manna-pottery",{}).get("email"))
     ck("8: the [LINK] token is preserved in the extracted body", "[LINK]" in (byslug.get("drip-docx",{}).get("body") or ""), byslug.get("drip-docx",{}).get("body"))
-    ck("8: a section with no page is surfaced BY NAME (message with no page)",
-       "Nobody Bakery" in " ".join(plan4.get("orphanTexts",[])), plan4.get("orphanTexts"))
-    info4 = " ".join(plan4.get("informational",[]))
-    ck("8: a market assessment and a README are INFORMATIONAL, not errors",
-       "MARKET_ASSESSMENT_DMV_and_EastCoast.md" in info4 and "README.md" in info4, plan4.get("informational"))
-    ck("8: informational files are NOT reported as orphaned messages",
-       "MARKET_ASSESSMENT" not in " ".join(plan4.get("orphanTexts",[])) and "README" not in " ".join(plan4.get("orphanTexts",[])), plan4.get("orphanTexts"))
+    # AXIOM #3 "ignores the rest": a section that matched no page, a market assessment, and a README are all
+    # non-page, non-matched files - they are SILENTLY IGNORED now, never surfaced as orphan or informational.
+    ck("8: a section with no page is IGNORED, not surfaced (no orphan note)", not plan4.get("orphanTexts"), plan4.get("orphanTexts"))
+    ck("8: a market assessment and a README are IGNORED, not surfaced (no informational note)", not plan4.get("informational"), plan4.get("informational"))
+    ck("8: the preview renders NO orphan / informational lines",
+       not pg4.evaluate("()=>!!document.querySelector('.up-orphans, .up-info')"))
     ck("8: NOTHING was written before Approve (consolidated path too)",
        len(OPP_POSTS)==opp_before and len(PAGE_POSTS)==page_before, {"opps_delta":len(OPP_POSTS)-opp_before, "pages_delta":len(PAGE_POSTS)-page_before})
     # Approve: each of the six pages becomes a draft opp + a console_pages row, [LINK] carried into outreach_text

@@ -202,14 +202,14 @@ function upParseSections(text){
 }
 
 // ---- upBuildPlan: the preview (read-only, nothing written) ---------------------------------------
-// For each html page derive its slug. Build ONE pool of message UNITS from every text file, supporting BOTH
-// structures: a consolidated file yields one unit per per-opportunity section; a plain per-page file (with a
-// recipient email) is a single whole-file unit (the original mode). A text that is neither a section message
-// nor an email-bearing message (a README or a market assessment) is INFORMATIONAL - surfaced by name, never
-// an error. Match each page to its best unit by the token ranker, extract subject / body / bare email.
-// Warnings by name in BOTH directions, so nothing is silently dropped: dup_slug (two pages one slug),
-// no_message (a page that resolved no message), orphanTexts (a message that matched no page, by name),
-// informational (a file that is not a per-page message). This only reads; it writes nothing.
+// AXIOM #3 - the upload extracts html, IGNORES the rest, never rejects a valid file. Only an html page becomes
+// a row. For each html page derive its slug. Build ONE pool of message UNITS from every text file, supporting
+// BOTH structures: a consolidated file yields one unit per per-opportunity section; a plain per-page file (with
+// a recipient email) is a single whole-file unit (the original mode). A text that carries no message (a README,
+// a facts sheet, a base64 asset, a manifest) is NOT a page and NOT a message: it is silently IGNORED, never
+// surfaced as a row or a note. Match each page to its best unit by the token ranker, extract subject / body /
+// bare email. The only page-level warnings kept: dup_slug (two pages one slug) and no_message (a page that
+// resolved no message - the operator completes it on the card). This only reads; it writes nothing.
 function upBuildPlan(files){
   return upReadFiles(files).then(function(kinds){
     var pages = kinds.pages, texts = kinds.texts, seen = {}, rows = [];
@@ -218,7 +218,7 @@ function upBuildPlan(files){
       var dup = !!seen[slug]; seen[slug] = (seen[slug] || 0) + 1;
       rows.push({ slug:slug, page:pg, title:"", subject:"", body:"", email:"", text_name:"", warnings: dup ? ["dup_slug"] : [] });
     });
-    var units = [], informational = [];
+    var units = [];
     texts.forEach(function(tx){
       var msgs = upParseSections(tx.text).filter(function(sec){ return sec.isMessage; });
       if(msgs.length){                                              // a consolidated file: one unit per section
@@ -229,12 +229,12 @@ function upBuildPlan(files){
         return;
       }
       var ex = upExtract(tx.text);                                  // else the original whole-file mode
-      var nm = upFirstHeading(tx.text) || upBaseName(tx.name).replace(/\.(md|txt|json)$/i, "");
       if(ex.email){                                                 // a real message carries a recipient email
+        var nm = upFirstHeading(tx.text) || upBaseName(tx.name).replace(/\.(md|txt|json)$/i, "");
         units.push({ file:tx.name, name:nm, slug:upSlugify(nm), subject:ex.subject, body:ex.body, email:ex.email, whole:true });
-      } else {
-        informational.push(tx.name);                               // README / market assessment: not a message
       }
+      // AXIOM #3 "ignores the rest": a text with no message (README / facts sheet / base64 asset / manifest) is
+      // neither a page nor a message. It is silently ignored - no informational row, no note.
     });
     var usedUnit = {};
     rows.forEach(function(r){
@@ -253,9 +253,9 @@ function upBuildPlan(files){
         if(r.warnings.indexOf("no_message") < 0) r.warnings.push("no_message");
       }
     });
-    var orphans = [];                                               // a message with no page, reported by name
-    units.forEach(function(u, ui){ if(!usedUnit[ui]) orphans.push(u.whole ? u.file : (u.name || u.file)); });
-    return { rows:rows, orphanTexts:orphans, informational:informational, skipped:kinds.skipped || [] };
+    // AXIOM #3 "ignores the rest": a message unit that matched no page is NOT surfaced as an orphan note - it is
+    // silently ignored, exactly like a non-message file. Only html pages become rows. (was: orphanTexts)
+    return { rows:rows };
   });
 }
 
@@ -498,13 +498,10 @@ function upRowHtml(r){
 }
 function upResultHtml(plan){
   var rows = (plan.rows || []).map(upRowHtml).join("");
-  var orphan = (plan.orphanTexts && plan.orphanTexts.length)
-    ? '<div class="up-orphans">' + esc(t("up_warn_orphan")) + ': <bdi>' + esc(plan.orphanTexts.join(", ")) + '</bdi></div>' : "";
-  // Files that are not per-page messages (a README, a market assessment) are informational, never an error.
-  var info = (plan.informational && plan.informational.length)
-    ? '<div class="up-info">' + esc(t("up_info")) + ': <bdi>' + esc(plan.informational.join(", ")) + '</bdi></div>' : "";
+  // AXIOM #3 "ignores the rest": no orphan / informational lines. Non-page, non-message files are ignored, so
+  // the preview shows ONLY the html page rows. The count below is exactly the number of those rows.
   var n = (plan.rows || []).length;
-  return '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>' + orphan + info +
+  return '<div class="up-count">' + esc(t("up_matched")) + ' ' + n + '</div>' +
     '<div class="up-rows">' + rows + '</div>'+
     '<div class="acts"><button class="act send" id="upApprove" type="button"' + (n ? "" : " disabled") + '>' + esc(t("up_approve")) + '</button></div>'+
     '<div class="act-status" id="upStatus" role="status" aria-live="polite"></div>';
@@ -514,7 +511,7 @@ function upPanelHtml(){
       '<button class="link nm-x" id="upClose" type="button">' + esc(t("pf_close")) + '</button></div>'+
     '<div class="nm-body">'+
       '<div class="up-hint">' + esc(t("up_hint")) + '</div>'+
-      '<input class="up-file" id="upFile" type="file" accept=".zip" aria-label="' + esc(t("up_h")) + '">'+
+      '<input class="up-file" id="upFile" type="file" accept=".zip,.html,.htm" aria-label="' + esc(t("up_h")) + '">'+
       '<div id="upResult"></div>'+
     '</div>';
 }
@@ -615,7 +612,7 @@ function libPanelHtml(){
       '<button class="link nm-x" id="upClose" type="button">' + esc(t("pf_close")) + '</button></div>'+
     '<div class="nm-body">'+
       '<div class="up-hint">' + esc(t("lib_hint")) + '</div>'+
-      '<input class="up-file" id="upFile" type="file" accept=".zip" aria-label="' + esc(t("lib_h")) + '">'+
+      '<input class="up-file" id="upFile" type="file" accept=".zip,.html,.htm" aria-label="' + esc(t("lib_h")) + '">'+
       '<div id="upResult"></div>'+
     '</div>';
 }
