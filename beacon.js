@@ -34,9 +34,16 @@
   }
   var R = tokenR();
 
-  // Is this the console operator previewing their own page? Their browser holds an unlocked
-  // console session on this same origin. Tagged, not dropped: the console filters it.
+  // Is this the console operator (or a teammate) previewing their own page? Their browser holds a console
+  // session on this same origin. Tagged, not dropped: the console filters it. Two signals, either suffices:
+  //   1. console_sb_session in localStorage - the DURABLE, per-origin signed-in session (bundle.js SESSION_KEY,
+  //      the same signal the gate trusts as signed-in, gate.js returning()). localStorage is shared across
+  //      tabs and survives opening /opp/<slug> DIRECTLY, so an owner preview outside the console tab is caught.
+  //   2. thrive_gate_v2 in sessionStorage - the per-tab gate marker (kept for the in-console preview case).
+  // The old code checked ONLY (2), so an owner opening the page directly (a fresh tab with empty
+  // sessionStorage) was scored self=false and counted as a real open.
   function isSelf() {
+    try { if (localStorage.getItem("console_sb_session")) return true; } catch (e) {}
     try { return !!sessionStorage.getItem("thrive_gate_v2"); } catch (e) { return false; }
   }
   var SELF = isSelf();
