@@ -355,18 +355,26 @@ function upCommit(plan){
   }
   return one(0);
 }
-// Background live-verify for the pages just published on upload: poll the live URL, and ONLY on a real ok stamp
-// live_verified_at (the single liveness write), then reload the board once so the cards read live. A verify
-// failure never downgrades a published page (build-lag is not a failure); the card simply stays "confirming"
-// until a later verify succeeds. Non-blocking: upApprove does not wait on it.
+// The per-page NON-LIVE outcome from the last verify, keyed by (page) slug: "dead" or "unconfirmed". Absent when
+// the page is live or has not been checked yet. The drawer reads this so a page is NEVER a silent permanent
+// "publishing" - it shows live, a named dead, or "still checking". __upVerifying guards a re-check in flight so
+// a re-open does not stack polls. Both are in-memory (lost on reload); the drawer re-verifies on open to rebuild
+// them, and live_verified_at (persisted by pageStampLive) is the durable truth.
+var __upLive = {}, __upVerifying = {};
+// Background live-verify for the pages just published on upload: poll the live URL (patient, backing off), and
+// ONLY on a real ok stamp live_verified_at (the single liveness write). A non-ok result records a NAMED outcome
+// (dead vs unconfirmed) instead of leaving a silent "publishing", reflects it in an open drawer, and reloads the
+// board so the cards read the truth. Non-blocking: upApprove does not wait on it.
 function upActivateBackground(slugs){
   var pend = (slugs || []).slice(); if(!pend.length) return;
   var left = pend.length;
   pend.forEach(function(slug){
     verifyLivePoll(slug).then(function(v){
-      if(v && v.ok) return pageStampLive(slug).catch(function(){});
-    }).catch(function(){}).then(function(){
+      if(v && v.ok){ delete __upLive[slug]; return pageStampLive(slug).catch(function(){}); }
+      __upLive[slug] = (v && v.dead) ? "dead" : "unconfirmed";   // NAMED, never a silent permanent "publishing"
+    }).catch(function(){ __upLive[slug] = "unconfirmed"; }).then(function(){
       left--; if(left === 0){ reloadBoardData().then(function(){}, function(){}); }
+      try{ if(__drawerSlug === slug) refreshDrawer(slug); }catch(e){}   // reflect the outcome in an open drawer
     });
   });
 }
@@ -423,18 +431,25 @@ function pagePublishRelay(slug, html){
 }
 // A bounded wait (never a hang): a real setTimeout wrapped in a promise, used only to space verify-live polls.
 function upDelay(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
-// Verify-live with a bounded poll for the GitHub Pages publish delay. Pages takes a moment to serve a fresh
-// commit, so a 404 right after activation is "still publishing", not dead. Poll up to `tries` with `gap`, then
-// settle: ok -> live; otherwise -> publishing (honest, never a false success). This runs AFTER a successful
-// commit, so the file exists in the repo; a persistent 404 means Pages has not published it yet, not that it
-// is dead. The send gate re-checks live at send time regardless, so nothing sends before a real ok.
+// Verify-live with a bounded, BACKING-OFF poll for the GitHub Pages publish delay. A FRESH Pages path
+// (opp/<slug>/index.html) 404s while Pages rebuilds and the CDN propagates, which routinely takes far longer
+// than a few seconds, so the poll must be patient: a realistic window of several minutes with a RAMPING gap
+// (never a busy-poll). Settle honestly and NAMED (never a silent permanent "publishing"):
+//   ok               -> live (the caller stamps live_verified_at)
+//   budget spent, still 404/410 -> dead (a definitive failure the operator can act on)
+//   budget spent, other error   -> unconfirmed (still checkable; not dead, not live)
+// A caller may pass a fixed (tries, gap) for a SHORT bounded re-check (e.g. the drawer's Re-check). This runs
+// AFTER a successful commit, so the file exists in the repo; the send gate re-checks live at send time regardless.
 function verifyLivePoll(slug, tries, gap){
-  tries = tries || 8; gap = gap || 3000;    // ~24s: a realistic GitHub Pages propagation window, so a live page stops showing a false "publishing" / re-activate loop
+  var fixed = (typeof gap === "number");                       // an explicit gap -> fixed spacing (a short bounded check)
+  tries = tries || 30;                                         // default ~4.5 min with the backoff below (was 8 x 3000 = 24s, too short for a fresh Pages path)
+  var base = fixed ? gap : 2000, cap = 10000, factor = 1.4;    // ramp 2s -> capped 10s; do not busy-poll
+  function gapFor(n){ return fixed ? base : Math.min(cap, Math.round(base * Math.pow(factor, n - 1))); }
   function attempt(n){
     return verifyLive(slug).then(function(v){
-      if(v.ok) return { ok:true, publishing:false };
-      if(n >= tries) return { ok:false, publishing:true };     // committed but not yet served -> publishing
-      return upDelay(gap).then(function(){ return attempt(n + 1); });
+      if(v.ok) return { ok:true, dead:false };
+      if(n >= tries) return v.dead ? { ok:false, dead:true } : { ok:false, dead:false, unconfirmed:true };
+      return upDelay(gapFor(n)).then(function(){ return attempt(n + 1); });
     });
   }
   return attempt(1);
@@ -578,15 +593,48 @@ function uploadActivateHtml(slug, row, detail){
   var pageSlug = (detail && detail.pageSlug) || slug;
   var hasPage = !!(page || (detail && detail.opp && detail.opp.data && detail.opp.data.page_slug));
   if(!hasPage) return "";                                        // no page anywhere -> nothing to activate
-  var live = !!(page && page.live_verified_at);                 // the SINGLE liveness truth (on the effective page)
-  // Activation now happens on upload (upCommit -> upActivateBackground), so there is no manual button and no
-  // "not activated" prompt: the section is a passive state line. Live confirms it; not-yet-live reads as
-  // "publishing" (the page was committed and is going live), which self-heals as the background verify stamps.
-  var stateKey = live ? "up_state_live" : "up_state_publishing";
-  var stateCls = live ? "ok" : "";
-  return '<div class="dw-sec up-act-sec"><h3>' + esc(t("up_page_h")) + '</h3>'+
+  var live = !!(page && page.live_verified_at);                 // the SINGLE, durable liveness truth (on the effective page)
+  // AXIOM: the state must be TRUE - live, or a NAMED failure the operator can act on, never a permanent silent
+  // "publishing". live wins. Else a recorded verify outcome names it: "dead" (a definitive 404/410, sending is
+  // blocked) or "unconfirmed" (still checking, not dead). Else the initial poll is still running -> "publishing"
+  // (transient, and re-checked on drawer open by upWireActivate). dead/unconfirmed carry a Re-check action.
+  var outcome = live ? "live" : (__upLive[pageSlug] || "publishing");
+  var stateKey = outcome === "live"        ? "up_state_live"
+               : outcome === "dead"        ? "up_state_dead"
+               : outcome === "unconfirmed" ? "up_state_checking"
+               :                             "up_state_publishing";
+  var stateCls = outcome === "live" ? "ok" : outcome === "dead" ? "bad" : "";
+  var canReverify = (outcome === "dead" || outcome === "unconfirmed");
+  return '<div class="dw-sec up-act-sec" data-page-slug="' + esc(pageSlug) + '" data-live="' + (live ? "1" : "0") + '"><h3>' + esc(t("up_page_h")) + '</h3>'+
     '<div class="up-state ' + stateCls + '" id="upState">' + esc(t(stateKey)) + '</div>'+
+    (canReverify ? '<div class="acts"><button class="act" id="upReverify" type="button">' + esc(t("up_reverify")) + '</button></div>' : '')+
     '<div class="act-status" id="upActStatus"></div></div>';
+}
+// A SHORT, bounded re-check (the operator is watching): ~24s, fixed spacing. On ok, stamp live_verified_at (which
+// persists across reloads) and clear the outcome; on a definitive dead or a spent budget, record the NAMED
+// outcome. Guarded by __upVerifying so a re-open never stacks polls. Always refreshes the open drawer, so the
+// result (live / dead / still checking) is shown, never a stale "publishing".
+function upReverify(pageSlug, oppSlug){
+  if(__upVerifying[pageSlug]) return Promise.resolve();
+  __upVerifying[pageSlug] = 1;
+  return verifyLivePoll(pageSlug, 6, 4000).then(function(v){
+    if(v && v.ok){ delete __upLive[pageSlug]; return pageStampLive(pageSlug).catch(function(){}); }
+    __upLive[pageSlug] = (v && v.dead) ? "dead" : "unconfirmed";
+  }, function(){ __upLive[pageSlug] = "unconfirmed"; }).then(function(){
+    delete __upVerifying[pageSlug];
+    try{ if(__drawerSlug === oppSlug) refreshDrawer(oppSlug); }catch(e){}
+  }, function(){ delete __upVerifying[pageSlug]; });
+}
+// Wire the upload-page section AFTER the drawer renders (called from wireDrawer): the Re-check button, and a
+// RE-VERIFY ON DRAWER OPEN. A page refresh drops the in-page background promise, so a page that is un-live with
+// no recorded outcome yet is re-checked here (bounded), resolving its true state instead of a stale "publishing".
+function upWireActivate(slug){
+  var sec = document.querySelector("#drawer .up-act-sec"); if(!sec) return;
+  var pageSlug = sec.getAttribute("data-page-slug") || slug;
+  var live = sec.getAttribute("data-live") === "1";
+  var btn = document.getElementById("upReverify");
+  if(btn) btn.addEventListener("click", function(){ btn.disabled = true; upActStatus(t("up_verifying"), ""); upReverify(pageSlug, slug); });
+  if(!live && !__upLive[pageSlug] && !__upVerifying[pageSlug]){ upActStatus(t("up_verifying"), ""); upReverify(pageSlug, slug); }
 }
 function upActStatus(msg, cls){ var el=document.getElementById("upActStatus"); if(el){ el.className="act-status" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; } }
 // Activation, the GitHub-Pages sacred order (mirror app.js:3586 activateAndConfirm): COMMIT the static file

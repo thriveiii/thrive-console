@@ -1263,6 +1263,7 @@ function buildBoard(){
           up_page_h:"Hosted page", up_state_pending:"Activated. Confirming the live link.",
           up_state_dead:"The page link is not live. Sending is blocked.",
           up_state_publishing:"Activated. The page is publishing.",
+          up_state_checking:"Publishing is taking longer than usual. Still checking the live link.", up_reverify:"Re-check now",
           up_state_live:"Activated and live. The page link resolves.", up_verifying:"Verifying the live link...",
           up_committing:"Publishing the page...", up_commit_failed:"Could not publish the page. Nothing is live.", up_no_html:"No uploaded page found to publish.",
           up_publishing:"Published. The page is going live (this can take a moment).",
@@ -1337,6 +1338,7 @@ function buildBoard(){
           up_page_h:"الصفحة المستضافة", up_state_pending:"مُنشّطة. جارٍ تأكيد الرابط الحيّ.",
           up_state_dead:"غير مُنشّطة. رابط الصفحة لا يعمل. الإرسال متوقّف.",
           up_state_publishing:"مُنشّطة. جارٍ نشر الصفحة.",
+          up_state_checking:"النشر يستغرق وقتا أطول من المعتاد. جارٍ متابعة التحقّق من الرابط الحيّ.", up_reverify:"أعد التحقّق الآن",
           up_state_live:"مُنشّطة وحيّة. رابط الصفحة يعمل.", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
           up_committing:"جارٍ نشر الصفحة...", up_commit_failed:"تعذّر نشر الصفحة. لا شيء حيّ.", up_no_html:"لا توجد صفحة مرفوعة للنشر.",
           up_publishing:"نُشرت. الصفحة في طريقها إلى العمل (قد يستغرق لحظة).",
@@ -1888,7 +1890,7 @@ ${UPLOAD_SRC}
     var ri=document.getElementById("recIn");                            // UNIFY: typing a recipient re-runs the shared Send gate
     if(ri) ri.addEventListener("input", function(){ try{ if(typeof sendApplyGate==="function") sendApplyGate(slug); }catch(e){} });
     try{ wireEditor(slug); }catch(e){}                                  // unified message editor (compose + reply)
-    // (no upWireActivate: the upload-page section is a passive state line; activation happens on upload)
+    try{ upWireActivate(slug); }catch(e){}                              // upload-page section: Re-check button + re-verify on drawer open (never a stuck "publishing")
   }
   function openDrawer(slug){
     __drawerSlug=slug;
