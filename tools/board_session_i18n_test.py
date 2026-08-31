@@ -98,7 +98,7 @@ with sync_playwright() as p:
                stored:(localStorage.getItem('thrive_lang')||'') };
     }""")
     ck("A: AR toggle flips the document to RTL", stAr["dir"]=="rtl" and stAr["lang"]=="ar" and stAr["lanesDir"]=="rtl", stAr)
-    ck("A: lane labels are Arabic", "مسودة" in stAr["labels"] and "مُرسلة" in stAr["labels"], stAr)
+    ck("A: lane labels are Arabic", "قيد المراجعة" in stAr["labels"] and "مُرسلة" in stAr["labels"], stAr)
     ck("A: no uppercase and no letter-spacing on Arabic headers",
        stAr["transform"]=="none" and stAr["spacing"] in ("normal","0px"), stAr)
     ck("A: the language choice persisted (thrive_lang=ar)", stAr["stored"]=="ar", stAr)

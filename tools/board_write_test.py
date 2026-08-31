@@ -35,8 +35,9 @@ def ck(n, c, d=None):
 
 # ---- stateful server model (ALL addresses synthetic *.example.test) ------------------------------
 # Each opp is the console_opps row shape (slug/business/stage/archived/data + send/open counts). The
-# console_board VIEW stage is DERIVED here the same way docs/supabase-board-view.sql derives it (rung 1:
-# a declared stage that is not sent/replied stands; else replied; else no-send live/draft; else opened/sent).
+# console_board VIEW stage is DERIVED here the same way docs/supabase-live-verified.sql derives it (rung 1:
+# a declared TERMINAL stage stands - draft/live are NOT taken from a stored value; else replied; else, for a
+# no-send card, the APPROVAL GATE: 'live' ONLY when approved_at is set, otherwise 'draft'; else opened/sent).
 OPPS = {
   "delta": {"slug":"delta","business":"Delta Co","stage":"","archived":False,"sent_count":0,"open_count":0,"has_page":False,"has_email":False,"data":{}},
   "epsi":  {"slug":"epsi", "business":"Epsilon", "stage":"","archived":False,"sent_count":2,"open_count":3,"has_page":True, "has_email":True, "data":{"prohibition":"synthetic hold"}},
@@ -59,19 +60,21 @@ def board_rows():
         sent = int(o.get("sent_count",0)); opens = int(o.get("open_count",0))
         rep = replied_signal(o["slug"]) or (st=="replied")
         page = bool(o.get("has_page")); mail = bool(o.get("has_email"))
-        if st and st not in ("sent","replied"):
+        approved = o.get("approved_at")
+        if st and st not in ("sent","replied","draft","live"):   # a declared TERMINAL stands; draft/live are derived
             stage = st
         elif rep:
             stage = "replied"
         elif sent == 0:
-            stage = "live" if (page or mail) else "draft"
+            stage = "live" if approved else "draft"              # APPROVAL GATE: ready ONLY by approval, never page/mail
         elif opens > 0:
             stage = "opened"
         else:
             stage = "sent"
         rows.append({"slug":o["slug"],"business":o["business"],"stage":stage,"sent_count":sent,
           "open_count":opens,"replied":rep,"idle_days":0,"last_activity_ts":"2026-01-04T00:00:00Z",
-          "has_page":page,"has_email":mail,"archived":bool(o.get("archived"))})
+          "has_page":page,"has_email":mail,"archived":bool(o.get("archived")),
+          "approved_at":approved,"approved_by":o.get("approved_by")})
     return rows
 
 def slug_of(url):
@@ -110,6 +113,8 @@ def route_opps(r):
         if o is not None:
             if "stage" in body:    o["stage"] = body["stage"] or ""
             if "archived" in body: o["archived"] = bool(body["archived"])
+            if "approved_at" in body: o["approved_at"] = body["approved_at"]   # the approval gate: set on approve, null on un-approve
+            if "approved_by" in body: o["approved_by"] = body["approved_by"]
             if "data" in body and isinstance(body["data"], dict): o["data"] = body["data"]
         return r.fulfill(status=204, body="")
     # GET select=slug,data  (note read + read-back)
@@ -143,15 +148,19 @@ with sync_playwright() as p:
     pg = ctx.new_page()
     perr = []
     pg.on("pageerror", lambda e: perr.append(str(e)))
+    # The Approve action asks for an OPTIONAL note via a prompt; accept it empty so approval proceeds with no note.
+    pg.on("dialog", lambda d: d.accept(""))
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(700)
 
-    # ===== 1. STAGE MOVE: promote a Draft card to Live; persists across a full reload =====
-    ck("1: Delta starts in the Draft lane", "Draft" in pg.evaluate(LANE_OF, "Delta Co"))
+    # ===== 1. APPROVAL GATE: approve a card Under review -> Live; persists across a full reload =====
+    # The card moves ONLY via the server re-read of the view's approved_at derivation - the client never sets 'live'.
+    ck("1: Delta starts in the Under review lane", "Under review" in pg.evaluate(LANE_OF, "Delta Co"))
     pg.evaluate(OPEN, "Delta Co"); pg.wait_for_timeout(400)
-    ck("1: the drawer offers a Promote action on a draft card", pg.evaluate("()=>!!document.querySelector('#drawer .act[data-act=\"promote\"]')"))
-    pg.evaluate(CLICK_ACT, "promote"); pg.wait_for_timeout(700)   # optimistic paint + PATCH + re-read
-    ck("1: after promote, Delta is in the Live lane (server re-read, not fabricated)", "Live" in pg.evaluate(LANE_OF, "Delta Co"))
-    ck("1: the server console_opps row now carries the declared stage 'live'", OPPS["delta"]["stage"]=="live")
+    ck("1: the drawer offers an Approve action on an under-review card", pg.evaluate("()=>!!document.querySelector('#drawer .act[data-act=\"promote\"]')"))
+    pg.evaluate(CLICK_ACT, "promote"); pg.wait_for_timeout(700)   # approve write (approved_at) + PATCH + re-read
+    ck("1: after approve, Delta is in the Live lane (server re-read of approved_at, not fabricated)", "Live" in pg.evaluate(LANE_OF, "Delta Co"))
+    ck("1: the approval was written (approved_at set); the client wrote NO stage", OPPS["delta"].get("approved_at") and OPPS["delta"].get("stage","")!="live")
+    ck("1: the approver's uid was recorded (Axiom 5)", (OPPS["delta"].get("approved_by") or "")!="")
     # persists across a FULL reload (the mock server keeps the state, like Supabase would)
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(700)
     ck("1: after a full reload, Delta is STILL Live (the write persisted)", "Live" in pg.evaluate(LANE_OF, "Delta Co"))
@@ -197,14 +206,14 @@ with sync_playwright() as p:
 
     # ===== 4. OPTIMISTIC CONFIRM-OR-REVERT: a forced 500 reverts the card and shows RED =====
     FAULT["theta"] = "500"
-    ck("4: Theta starts in Draft", "Draft" in pg.evaluate(LANE_OF, "Theta LLC"))
+    ck("4: Theta starts Under review", "Under review" in pg.evaluate(LANE_OF, "Theta LLC"))
     pg.evaluate(OPEN, "Theta LLC"); pg.wait_for_timeout(400)
-    pg.evaluate(CLICK_ACT, "promote"); pg.wait_for_timeout(900)   # optimistic to live, PATCH 500, revert
+    pg.evaluate(CLICK_ACT, "promote"); pg.wait_for_timeout(900)   # approve write, PATCH 500, revert
     st = pg.evaluate(ACT_STATUS)
     ck("4: a forced write failure shows a visible RED status", ("bad" in st["cls"]) and st["txt"].strip()!="", st)
-    ck("4: the failed write did NOT persist on the server (stage stayed empty)", OPPS["theta"]["stage"]=="")
+    ck("4: the failed approval did NOT persist on the server (approved_at stayed null)", OPPS["theta"].get("approved_at") is None)
     pg.evaluate("()=>{var e=new KeyboardEvent('keydown',{key:'Escape'});document.dispatchEvent(e);}"); pg.wait_for_timeout(150)
-    ck("4: the card REVERTED to Draft after the failure (no silent wrong state)", "Draft" in pg.evaluate(LANE_OF, "Theta LLC"))
+    ck("4: the card stayed Under review after the failure (no silent wrong state)", "Under review" in pg.evaluate(LANE_OF, "Theta LLC"))
 
     # ===== 4b. SETTLE-ALWAYS: an aborted/rejecting write settles to a revert, never a hung promise =====
     FAULT["kappa"] = "abort"
@@ -213,7 +222,7 @@ with sync_playwright() as p:
     st2 = pg.evaluate(ACT_STATUS)
     ck("4b: an aborted write settles to a visible RED status (never a hung promise)", ("bad" in st2["cls"]) and st2["txt"].strip()!="", st2)
     pg.evaluate("()=>{var e=new KeyboardEvent('keydown',{key:'Escape'});document.dispatchEvent(e);}"); pg.wait_for_timeout(150)
-    ck("4b: Kappa reverted to Draft after the aborted write", "Draft" in pg.evaluate(LANE_OF, "Kappa Ltd"))
+    ck("4b: Kappa stayed Under review after the aborted write", "Under review" in pg.evaluate(LANE_OF, "Kappa Ltd"))
 
     # ===== 5. AR: the actions surface localizes and the drawer flips RTL =====
     pg.evaluate("()=>{try{localStorage.setItem('thrive_lang','ar');}catch(e){}}")

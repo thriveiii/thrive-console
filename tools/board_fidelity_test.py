@@ -110,7 +110,7 @@ with sync_playwright() as p:
       };
     }""")
     ck("1: five open lanes render with their server counts (Replied includes the archived Basel)",
-       st["lanes"].get("Draft")=="1" and st["lanes"].get("Live")=="2" and st["lanes"].get("Sent")=="1"
+       st["lanes"].get("Under review")=="1" and st["lanes"].get("Live")=="2" and st["lanes"].get("Sent")=="1"
        and st["lanes"].get("Opened")=="1" and st["lanes"].get("Replied")=="2", st["lanes"])
     ck("1: bounced and failed appear as their own lanes",
        st["lanes"].get("Bounced")=="1" and st["lanes"].get("Failed")=="1", st["lanes"])

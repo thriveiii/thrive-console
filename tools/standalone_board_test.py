@@ -120,7 +120,7 @@ with sync_playwright() as p:
                hasOpens:/4 opens/.test(document.body.textContent),
                err:(document.querySelector('.err')||{}).textContent||'' };
     }""")
-    ck("the five lanes render with one card each", st["lanes"].get("Draft")=="1" and st["lanes"].get("Live")=="1"
+    ck("the five lanes render with one card each", st["lanes"].get("Under review")=="1" and st["lanes"].get("Live")=="1"
        and st["lanes"].get("Sent")=="1" and st["lanes"].get("Opened")=="1" and st["lanes"].get("Replied")=="1", st["lanes"])
     ck("all five cards rendered", st["cards"]==5, st)
     ck("a card shows its business name and derived counts", st["hasAcme"] and st["hasOpens"], st)

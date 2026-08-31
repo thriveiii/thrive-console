@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="a9e3556a">
+<meta name="thrive-build" content="c3e2ffe3">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -258,7 +258,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build a9e3556a</span>
+    <span class="muted">build c3e2ffe3</span>
   </div>
   <div id="root"></div>
 </div>
@@ -272,11 +272,11 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "a9e3556a";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "c3e2ffe3";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
-  var QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived,cycle&order=last_activity_ts.desc.nullslast";
+  var QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived,cycle,approved_at,approved_by&order=last_activity_ts.desc.nullslast";
   var LANES = ["draft","live","sent","opened","replied"];
   // L2 lane completeness: the open lanes, plus bounced/failed as their own lanes; won/lost/dropped and archived
   // go to the collapsible tray. The stage ALWAYS comes from console_board (server authority); never derived here.
@@ -303,7 +303,7 @@
           adm_open:"Admin", adm_title:"Team admin",
           refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
           none:"none", unnamed:"(unnamed)",
-          l_draft:"Draft", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
+          l_draft:"Under review", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
           b_send:"send", b_sends:"sends", b_open:"open", b_opens:"opens", b_replied:"replied", b_idle:"days idle",
           bg_page:"page", bg_email:"email", bg_archived:"archived",
           l_bounced:"Bounced", l_failed:"Failed", tray:"Closed",
@@ -319,7 +319,7 @@
           d_activity:"Activity", d_no_activity:"No activity yet.", d_loading:"Loading detail.",
           e_sent:"Sent", e_open:"Opened", e_reply:"Reply",
           d_stage_local:"Stage moves and archiving are written to Supabase and re-read from the board view; sends, opens and replies below are read live.",
-          a_actions:"Actions", a_promote:"Promote to Live", a_revert:"Back to Draft",
+          a_actions:"Actions", a_promote:"Approve, move to Ready", a_revert:"Back to review", a_approve_note:"Optional note on this approval (who asked, why). Leave blank to approve with no note.",
           a_archive:"Archive", a_reopen:"Reopen", a_delete:"Delete",
           a_del_q:"Delete this card for good? Its sent and received history is kept.", a_del_yes:"Delete", a_del_no:"Keep",
           a_deleting:"Deleting…", a_del_failed:"Could not delete. Nothing changed on the board.",
@@ -378,7 +378,7 @@
           adm_open:"الإدارة", adm_title:"إدارة الفريق",
           refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
           none:"لا شيء", unnamed:"(بدون اسم)",
-          l_draft:"مسودة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
+          l_draft:"قيد المراجعة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
           b_send:"إرسال", b_sends:"إرسال", b_open:"فتح", b_opens:"فتح", b_replied:"ردّ", b_idle:"يوم خمول",
           bg_page:"صفحة", bg_email:"رسالة", bg_archived:"مؤرشفة",
           l_bounced:"مرتدة", l_failed:"فشلت", tray:"مغلقة",
@@ -394,7 +394,7 @@
           d_activity:"النشاط", d_no_activity:"لا نشاط بعد.", d_loading:"جارٍ تحميل التفاصيل.",
           e_sent:"إرسال", e_open:"فتح", e_reply:"ردّ",
           d_stage_local:"تُكتب تنقلات المرحلة والأرشفة إلى Supabase وتُقرأ من عرض اللوحة؛ الإرسالات والفتحات والردود أدناه تُقرأ مباشرة.",
-          a_actions:"إجراءات", a_promote:"ترقية إلى جاهزة", a_revert:"إرجاع إلى مسودة",
+          a_actions:"إجراءات", a_promote:"اعتماد، وانقلها إلى جاهزة", a_revert:"إعادة إلى المراجعة", a_approve_note:"ملاحظة اختيارية على هذا الاعتماد (من طلبه ولماذا). اتركها فارغة للاعتماد دون ملاحظة.",
           a_archive:"أرشفة", a_reopen:"إعادة فتح", a_delete:"حذف",
           a_del_q:"حذف هذه البطاقة نهائياً؟ يبقى سجلّ ما أُرسل وما ورد.", a_del_yes:"حذف", a_del_no:"إبقاء",
           a_deleting:"جارٍ الحذف…", a_del_failed:"تعذّر الحذف. لم يتغيّر شيء على اللوحة.",
@@ -3570,7 +3570,7 @@ try{
   function replaceRow(slug, snap){ if(!__data || !__data.rows) return; for(var i=0;i<__data.rows.length;i++){ if(__data.rows[i] && __data.rows[i].slug===slug){ __data.rows[i]=snap; return; } } }
   function drawerActsDisabled(on){ var dw=document.getElementById("drawer"); if(!dw) return; [].forEach.call(dw.querySelectorAll(".act"), function(b){ b.disabled=!!on; }); }
   function refreshDrawer(slug){ if(__drawerSlug!==slug) return; if(!findRow(slug)){ closeDrawer(); return; } openDrawer(slug); }
-  function runOppWrite(slug, optimistic, patch){
+  function runOppWrite(slug, optimistic, patch, after){
     if(__writing) return; __writing=true;
     var row=findRow(slug); if(!row){ __writing=false; return; }
     var snap=JSON.parse(JSON.stringify(row));                            // exact pre-write state for a clean revert
@@ -3579,6 +3579,8 @@ try{
     drawerActsDisabled(true);
     try{ renderBoard(__data); }catch(e){}                               // optimistic paint: the card jumps at once
     oppPatch(slug, patch).then(function(){
+      return after ? Promise.resolve().then(after) : null;             // optional follow-up write (e.g. an approval note into data.notes)
+    }).then(function(){
       return reloadBoardData();                                         // confirmed: adopt server truth
     }).then(function(){
       __writing=false; __act[slug]={ msg:t("a_saved"), cls:"ok" }; refreshDrawer(slug);
@@ -3650,8 +3652,20 @@ try{
   function onAction(slug, act){
     var m=Date.now(), row=findRow(slug); if(!row) return; var st=row.stage||"";
     if(act==="send")    return unifiedSend(slug);                         // UNIFY: persist live message+recipients, then the shared L5 runSend
-    if(act==="promote") return runOppWrite(slug, function(r){ r.stage="live"; }, { stage:"live", up:m });
-    if(act==="revert")  return runOppWrite(slug, function(r){ r.stage="draft"; }, { stage:"draft", up:m });
+    // APPROVAL GATE (stage_gate). "promote" is the admin "Approve, move to Ready": it stamps approved_at + the
+    // approver's uid (Axiom 5), never the stage - the VIEW derives 'live' from approved_at (Axiom 6). No client
+    // stage math, so the card can never reach Ready without this human write. An optional note is recorded on the
+    // record (data.notes, carrying its own actor + ts). "revert" un-approves: it clears approved_at, and the view
+    // returns the card to 'draft' (Under review).
+    if(act==="promote"){
+      var note = (typeof window!=="undefined" && window.prompt) ? window.prompt(t("a_approve_note")) : "";
+      if(note === null) return;                                          // the operator cancelled -> do not approve
+      var at = isoNow(), by = currentUid();
+      return runOppWrite(slug, function(r){ r.approved_at = at; r.approved_by = by; },
+                         { approved_at:at, approved_by:by, up:m },
+                         (note && note.trim()) ? function(){ return addNote(slug, note.trim()); } : null);
+    }
+    if(act==="revert")  return runOppWrite(slug, function(r){ r.approved_at=null; r.approved_by=null; }, { approved_at:null, approved_by:null, up:m });
     // RICH ARCHIVE: keep the one opp row (all conversations by slug + notes preserved), and STAMP when + from which
     // column it was archived, so the archive is a legible record, not just a flag. laneOf(row) is the visible lane.
     if(act==="archive") return runOppWrite(slug, function(r){ r.archived=true; }, { archived:true, archived_at:isoNow(), archived_from:laneOf(row), up:m });
