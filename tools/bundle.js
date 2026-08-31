@@ -890,7 +890,7 @@ ${loader}
    the apikey header; (3) render the rows as plain HTML cards grouped by lane, every field access defaulting
    to empty, dark #07070b, Lato, no blur; (4) READ-ONLY. Any error is printed as visible red text on screen. */
 function buildBoard(){
-  const BOARD_QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived,cycle&order=last_activity_ts.desc.nullslast";
+  const BOARD_QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived,cycle,approved_at,approved_by&order=last_activity_ts.desc.nullslast";
   // L5: the single-recipient send clone, authored as real JS (node-checkable) and INLINED verbatim here, so its
   // regexes need no template escaping. The relay endpoint is baked from library/sync.json (published.ep).
   const SEND_SRC = read(path.join(ROOT, "tools/board-send.src.js"));
@@ -1214,7 +1214,7 @@ function buildBoard(){
           adm_open:"Admin", adm_title:"Team admin",
           refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
           none:"none", unnamed:"(unnamed)",
-          l_draft:"Draft", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
+          l_draft:"Under review", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
           b_send:"send", b_sends:"sends", b_open:"open", b_opens:"opens", b_replied:"replied", b_idle:"days idle",
           bg_page:"page", bg_email:"email", bg_archived:"archived",
           l_bounced:"Bounced", l_failed:"Failed", tray:"Closed",
@@ -1230,7 +1230,7 @@ function buildBoard(){
           d_activity:"Activity", d_no_activity:"No activity yet.", d_loading:"Loading detail.",
           e_sent:"Sent", e_open:"Opened", e_reply:"Reply",
           d_stage_local:"Stage moves and archiving are written to Supabase and re-read from the board view; sends, opens and replies below are read live.",
-          a_actions:"Actions", a_promote:"Promote to Live", a_revert:"Back to Draft",
+          a_actions:"Actions", a_promote:"Approve, move to Ready", a_revert:"Back to review", a_approve_note:"Optional note on this approval (who asked, why). Leave blank to approve with no note.",
           a_archive:"Archive", a_reopen:"Reopen", a_delete:"Delete",
           a_del_q:"Delete this card for good? Its sent and received history is kept.", a_del_yes:"Delete", a_del_no:"Keep",
           a_deleting:"Deleting…", a_del_failed:"Could not delete. Nothing changed on the board.",
@@ -1289,7 +1289,7 @@ function buildBoard(){
           adm_open:"الإدارة", adm_title:"إدارة الفريق",
           refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
           none:"لا شيء", unnamed:"(بدون اسم)",
-          l_draft:"مسودة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
+          l_draft:"قيد المراجعة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
           b_send:"إرسال", b_sends:"إرسال", b_open:"فتح", b_opens:"فتح", b_replied:"ردّ", b_idle:"يوم خمول",
           bg_page:"صفحة", bg_email:"رسالة", bg_archived:"مؤرشفة",
           l_bounced:"مرتدة", l_failed:"فشلت", tray:"مغلقة",
@@ -1305,7 +1305,7 @@ function buildBoard(){
           d_activity:"النشاط", d_no_activity:"لا نشاط بعد.", d_loading:"جارٍ تحميل التفاصيل.",
           e_sent:"إرسال", e_open:"فتح", e_reply:"ردّ",
           d_stage_local:"تُكتب تنقلات المرحلة والأرشفة إلى Supabase وتُقرأ من عرض اللوحة؛ الإرسالات والفتحات والردود أدناه تُقرأ مباشرة.",
-          a_actions:"إجراءات", a_promote:"ترقية إلى جاهزة", a_revert:"إرجاع إلى مسودة",
+          a_actions:"إجراءات", a_promote:"اعتماد، وانقلها إلى جاهزة", a_revert:"إعادة إلى المراجعة", a_approve_note:"ملاحظة اختيارية على هذا الاعتماد (من طلبه ولماذا). اتركها فارغة للاعتماد دون ملاحظة.",
           a_archive:"أرشفة", a_reopen:"إعادة فتح", a_delete:"حذف",
           a_del_q:"حذف هذه البطاقة نهائياً؟ يبقى سجلّ ما أُرسل وما ورد.", a_del_yes:"حذف", a_del_no:"إبقاء",
           a_deleting:"جارٍ الحذف…", a_del_failed:"تعذّر الحذف. لم يتغيّر شيء على اللوحة.",
@@ -1920,7 +1920,7 @@ ${UPLOAD_SRC}
   function replaceRow(slug, snap){ if(!__data || !__data.rows) return; for(var i=0;i<__data.rows.length;i++){ if(__data.rows[i] && __data.rows[i].slug===slug){ __data.rows[i]=snap; return; } } }
   function drawerActsDisabled(on){ var dw=document.getElementById("drawer"); if(!dw) return; [].forEach.call(dw.querySelectorAll(".act"), function(b){ b.disabled=!!on; }); }
   function refreshDrawer(slug){ if(__drawerSlug!==slug) return; if(!findRow(slug)){ closeDrawer(); return; } openDrawer(slug); }
-  function runOppWrite(slug, optimistic, patch){
+  function runOppWrite(slug, optimistic, patch, after){
     if(__writing) return; __writing=true;
     var row=findRow(slug); if(!row){ __writing=false; return; }
     var snap=JSON.parse(JSON.stringify(row));                            // exact pre-write state for a clean revert
@@ -1929,6 +1929,8 @@ ${UPLOAD_SRC}
     drawerActsDisabled(true);
     try{ renderBoard(__data); }catch(e){}                               // optimistic paint: the card jumps at once
     oppPatch(slug, patch).then(function(){
+      return after ? Promise.resolve().then(after) : null;             // optional follow-up write (e.g. an approval note into data.notes)
+    }).then(function(){
       return reloadBoardData();                                         // confirmed: adopt server truth
     }).then(function(){
       __writing=false; __act[slug]={ msg:t("a_saved"), cls:"ok" }; refreshDrawer(slug);
@@ -2000,8 +2002,20 @@ ${UPLOAD_SRC}
   function onAction(slug, act){
     var m=Date.now(), row=findRow(slug); if(!row) return; var st=row.stage||"";
     if(act==="send")    return unifiedSend(slug);                         // UNIFY: persist live message+recipients, then the shared L5 runSend
-    if(act==="promote") return runOppWrite(slug, function(r){ r.stage="live"; }, { stage:"live", up:m });
-    if(act==="revert")  return runOppWrite(slug, function(r){ r.stage="draft"; }, { stage:"draft", up:m });
+    // APPROVAL GATE (stage_gate). "promote" is the admin "Approve, move to Ready": it stamps approved_at + the
+    // approver's uid (Axiom 5), never the stage - the VIEW derives 'live' from approved_at (Axiom 6). No client
+    // stage math, so the card can never reach Ready without this human write. An optional note is recorded on the
+    // record (data.notes, carrying its own actor + ts). "revert" un-approves: it clears approved_at, and the view
+    // returns the card to 'draft' (Under review).
+    if(act==="promote"){
+      var note = (typeof window!=="undefined" && window.prompt) ? window.prompt(t("a_approve_note")) : "";
+      if(note === null) return;                                          // the operator cancelled -> do not approve
+      var at = isoNow(), by = currentUid();
+      return runOppWrite(slug, function(r){ r.approved_at = at; r.approved_by = by; },
+                         { approved_at:at, approved_by:by, up:m },
+                         (note && note.trim()) ? function(){ return addNote(slug, note.trim()); } : null);
+    }
+    if(act==="revert")  return runOppWrite(slug, function(r){ r.approved_at=null; r.approved_by=null; }, { approved_at:null, approved_by:null, up:m });
     // RICH ARCHIVE: keep the one opp row (all conversations by slug + notes preserved), and STAMP when + from which
     // column it was archived, so the archive is a legible record, not just a flag. laneOf(row) is the visible lane.
     if(act==="archive") return runOppWrite(slug, function(r){ r.archived=true; }, { archived:true, archived_at:isoNow(), archived_from:laneOf(row), up:m });

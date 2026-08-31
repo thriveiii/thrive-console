@@ -42,8 +42,18 @@
 -- The column is the given confirmed schema; guarded add so this file is self-sufficient.
 alter table public.console_pages
   add column if not exists live_verified_at timestamptz;
+-- STAGE GATE (docs/sql/stage_gate.sql): the approval columns this view reads. Guarded adds so this file is
+-- self-sufficient; legacy rows keep approved_at null and render as "Under review" (draft).
+alter table public.console_opps
+  add column if not exists approved_at timestamptz;
+alter table public.console_opps
+  add column if not exists approved_by text;
 
-create or replace view public.console_board
+-- The stage gate exposes two NEW columns (approved_at, approved_by). CREATE OR REPLACE cannot reorder existing
+-- view columns, and the live view has been shown to diverge from this repo copy, so drop-then-create is the safe
+-- path (a drop view touches NO table data). Rebuilt in full below, ending with the grant.
+drop view if exists public.console_board;
+create view public.console_board
 with (security_invoker = true)
 as
 with
@@ -193,21 +203,24 @@ select
   greatest(s.last_ts, r.last_reply_ts, op.last_open_ts)                      as last_activity_ts,
   extract(day from (now() - greatest(s.last_ts, r.last_reply_ts, op.last_open_ts)))::int as idle_days,
   case
+    -- 1. a declared TERMINAL / override stage stands (won / lost / dropped, etc.). The pre-send lane values
+    --    'draft' and 'live' are EXCLUDED here: they are never taken from a stored value, they are derived below
+    --    from the approval gate, so a stale stored stage can never produce 'ready' (Axiom 6, compute here).
     when nullif(o.stage, '') is not null
-         and o.stage not in ('sent', 'replied')          then o.stage        -- 1. declared stands
+         and o.stage not in ('sent', 'replied', 'draft', 'live')  then o.stage
     when coalesce(r.replied, false)                       then 'replied'      -- 2. a reply exists
     when coalesce(s.sent_count, 0) = 0
-      then case
-             -- no send: 'live' when the page is verified live (SOLELY live_verified_at),
-             -- OR a message is prepared (has_email, unchanged). Otherwise 'draft'.
-             when (p.live_verified_at is not null
-                   or coalesce(nullif(o.outreach_text, ''), nullif(o.outreach_subject, '')) is not null)
-             then 'live' else 'draft' end                                    -- 3. no send: ready or draft
+      -- STAGE GATE: 'live' (ready) ONLY when the card has an explicit approval (approved_at). A page or a
+      -- prepared message no longer makes a card ready by itself; it is 'draft' (displayed "Under review") until
+      -- an approver stamps approved_at. Legacy rows (approved_at null) therefore read as under review.
+      then case when o.approved_at is not null then 'live' else 'draft' end   -- 3. no send: ready ONLY by approval
     when coalesce(b.hard, false)                          then 'bounced'      -- 4. hard bounce
     when coalesce(b.soft, false)                          then 'failed'       --    soft bounce
     when coalesce(op.open_count, 0) > 0                   then 'opened'       -- 5. opened after a send
     else 'sent'                                                              --    otherwise sent
-  end                                                                        as stage
+  end                                                                        as stage,
+  o.approved_at                                                              as approved_at,   -- when the card was approved to Ready (null = under review)
+  o.approved_by                                                              as approved_by    -- the approver's uid (Axiom 5: the actor of the approval)
 from public.console_opps o
 left join sends   s  on s.slug  = o.slug
 left join opens   op on op.slug = o.slug
