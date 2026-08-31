@@ -332,8 +332,11 @@ function sendOne(slug, row, data, rcpt, mode){
     if(!r.res.ok) return { ok:false, addr:art.to };
     var d = r.data;
     if(d && d.ok===false) return { ok:false, addr:art.to };
+    // TRANSIT CYCLE: stamp the send with the opp's CURRENT cycle (row.cycle from console_board, via BOARD_QUERY).
+    // The view counts this send only while the opp still carries this cycle; a re-upload bumps the opp cycle and
+    // this send drops out of the count. A legacy opp (no cycle) stamps null, which the view treats as today.
     var mailRow = { id:art.token, opp:slug, status:"sent", to_addr:art.to, subject:art.subject, ts:isoNow(),
-      actor:currentUid(), up:Date.now(),
+      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null,
       data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:(d && d.id) || "", provider:"endpoint", direction:"out" } };
     return confirmMail(mailRow).then(function(){ return { ok:true, addr:art.to }; },
                                      function(){ return { ok:true, addr:art.to, confirming:true }; });  // email out; the confirm-write is the 'sending' limbo, still a send

@@ -890,7 +890,7 @@ ${loader}
    the apikey header; (3) render the rows as plain HTML cards grouped by lane, every field access defaulting
    to empty, dark #07070b, Lato, no blur; (4) READ-ONLY. Any error is printed as visible red text on screen. */
 function buildBoard(){
-  const BOARD_QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived&order=last_activity_ts.desc.nullslast";
+  const BOARD_QUERY = "select=slug,business,stage,sent_count,open_count,replied,idle_days,last_activity_ts,has_page,has_email,archived,cycle&order=last_activity_ts.desc.nullslast";
   // L5: the single-recipient send clone, authored as real JS (node-checkable) and INLINED verbatim here, so its
   // regexes need no template escaping. The relay endpoint is baked from library/sync.json (published.ep).
   const SEND_SRC = read(path.join(ROOT, "tools/board-send.src.js"));

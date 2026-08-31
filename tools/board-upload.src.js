@@ -323,6 +323,9 @@ function pageStampLive(slug, retried){
 // "activate" click. The live-verify + live_verified_at stamp runs in the background right after (upApprove ->
 // upActivateBackground), so the card is born live/confirming, never a draft with a lingering prompt. A
 // text-only row (no page html) skips the publish untouched. published[] carries the slugs to verify + stamp.
+// A short, unique transit id for a fresh upload cycle (time + randomness; guarded so a hostile runtime still
+// yields a usable string). Written to console_opps.cycle; the send stamps console_mail.cycle with it.
+function upNewCycle(){ try{ return "cy" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }catch(e){ return "cy" + Date.now(); } }
 function upCommit(plan){
   var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0, failed = [], published = [];
   function one(i){
@@ -334,7 +337,9 @@ function upCommit(plan){
       outreach_subject:r.subject || "", outreach_text:r.body || "",
       recipients: r.email ? [{ addr:r.email, name:"", lang:"en" }] : [] };
     var html = (r.page && r.page.html) || "";
-    return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now() })
+    // TRANSIT CYCLE: every (re-)upload starts a CLEAN transit - a fresh short cycle id on the opp. The view
+    // scopes sends/opens to this cycle, so an old transit's ledger rows never re-attach to the new card.
+    return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now(), cycle:upNewCycle() })
       .then(function(){ return pageUpsert(r.slug, html); })
       .then(function(){
         if(!String(html).trim()){ ok++; return one(i + 1); }                     // text-only row: no page to publish, untouched

@@ -54,8 +54,12 @@ mail_sends as (
     min(m.ts)                                            as first_ts,
     max(m.ts)                                            as last_ts
   from public.console_mail m
+  left join public.console_opps mo on mo.slug = m.opp    -- TRANSIT SCOPE: the opp's current cycle (docs/sql/transit_cycle.sql)
   where coalesce(m.data->>'direction', '') <> 'in'
     and (m.status is null or m.status in ('', 'sent', 'copied', 'pending'))
+    -- current-transit rows only: a row counts when its cycle equals the opp's cycle, OR both are null (legacy,
+    -- unchanged). Once an opp has a cycle, an old-transit send (a different or null cycle) drops out of the join.
+    and ((m.cycle = mo.cycle) or (m.cycle is null and mo.cycle is null))
   group by m.opp
 ),
 manual_sends as (
@@ -91,10 +95,14 @@ opens as (
     max(nullif(h.ts, '')::timestamptz)                   as last_open_ts
   from public.console_hits h
   join sends s on s.slug = h.slug
+  left join public.console_opps ho on ho.slug = h.slug   -- TRANSIT SCOPE: the opp's current cycle (docs/sql/transit_cycle.sql)
   where coalesce(h.type, 'open') in ('', 'open')
     and coalesce(h.self, false) = false
     and s.first_ts is not null
     and nullif(h.ts, '')::timestamptz >= s.first_ts
+    -- current-transit opens only: a hit counts when its cycle equals the opp's cycle, OR both are null (legacy,
+    -- unchanged). An old-transit open (a different or null cycle on a now-cycled opp) is excluded.
+    and ((h.cycle = ho.cycle) or (h.cycle is null and ho.cycle is null))
   group by h.slug
 ),
 inbound_real as (
@@ -178,6 +186,7 @@ select
   (p.live_verified_at is not null)                                           as has_page,
   (coalesce(nullif(o.outreach_text, ''), nullif(o.outreach_subject, '')) is not null) as has_email,
   coalesce(o.archived, false)                                                as archived,
+  o.cycle                                                                    as cycle,   -- the opp's current transit id (send stamps console_mail.cycle with it)
   coalesce(s.sent_count, 0)                                                  as sent_count,
   coalesce(op.open_count, 0)                                                 as open_count,
   coalesce(r.replied, false)                                                 as replied,
