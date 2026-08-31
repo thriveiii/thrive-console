@@ -318,22 +318,50 @@ function pageStampLive(slug, retried){
 // to nobody, source "upload") AND its html a console_pages row (live_verified_at null, so a draft page).
 // Deduped by slug (first wins). Bounded confirm-or-revert per row; a per-row failure is counted, never a
 // phantom success.
+// ACTIVATE ON UPLOAD: a page-bearing row is written AND published in the one action - oppUpsert, pageUpsert,
+// then pagePublishRelay (the same relay commit the Library path does), so the operator never faces a second
+// "activate" click. The live-verify + live_verified_at stamp runs in the background right after (upApprove ->
+// upActivateBackground), so the card is born live/confirming, never a draft with a lingering prompt. A
+// text-only row (no page html) skips the publish untouched. published[] carries the slugs to verify + stamp.
 function upCommit(plan){
-  var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0, failed = [];
+  var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0, failed = [], published = [];
   function one(i){
-    if(i >= rows.length) return Promise.resolve({ ok:ok, fail:fail, failed:failed });
+    if(i >= rows.length) return Promise.resolve({ ok:ok, fail:fail, failed:failed, published:published });
     var r = rows[i];
     if(done[r.slug]) return one(i + 1);
     done[r.slug] = 1;
     var data = { source:"upload", page_title:r.title,
       outreach_subject:r.subject || "", outreach_text:r.body || "",
       recipients: r.email ? [{ addr:r.email, name:"", lang:"en" }] : [] };
+    var html = (r.page && r.page.html) || "";
     return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now() })
-      .then(function(){ return pageUpsert(r.slug, r.page && r.page.html); })
-      .then(function(){ ok++; return one(i + 1); },
-            function(){ fail++; failed.push(r.title || r.slug); return one(i + 1); });   // FEEDBACK: name the file that failed, never silently
+      .then(function(){ return pageUpsert(r.slug, html); })
+      .then(function(){
+        if(!String(html).trim()){ ok++; return one(i + 1); }                     // text-only row: no page to publish, untouched
+        return pagePublishRelay(r.slug, withBeaconClient(html)).then(          // commit the static file NOW (relay holds the token)
+          function(){ ok++; published.push(r.slug); return one(i + 1); },
+          function(e){
+            if(e && e.kind === "timeout"){ ok++; published.push(r.slug); return one(i + 1); }   // idempotent commit likely landed -> confirm in background
+            fail++; failed.push(r.title || r.slug); return one(i + 1);          // a real relay error: named, never a phantom success
+          });
+      }, function(){ fail++; failed.push(r.title || r.slug); return one(i + 1); });   // opp/page write failure: name the file
   }
   return one(0);
+}
+// Background live-verify for the pages just published on upload: poll the live URL, and ONLY on a real ok stamp
+// live_verified_at (the single liveness write), then reload the board once so the cards read live. A verify
+// failure never downgrades a published page (build-lag is not a failure); the card simply stays "confirming"
+// until a later verify succeeds. Non-blocking: upApprove does not wait on it.
+function upActivateBackground(slugs){
+  var pend = (slugs || []).slice(); if(!pend.length) return;
+  var left = pend.length;
+  pend.forEach(function(slug){
+    verifyLivePoll(slug).then(function(v){
+      if(v && v.ok) return pageStampLive(slug).catch(function(){});
+    }).catch(function(){}).then(function(){
+      left--; if(left === 0){ reloadBoardData().then(function(){}, function(){}); }
+    });
+  });
 }
 
 // ---- F2 static activation: commit opp/<slug>/index.html via the relay (the token lives on the relay) -------
@@ -409,26 +437,20 @@ function verifyLive(slug){
 // The board's own live-verified signal for this slug: console_board.has_page is true iff the page has been
 // proven live (live_verified_at stamped, docs/supabase-live-verified.sql). A page that was verified live must
 // not be aborted by one flaky GET; a page never proven live still blocks until it resolves.
-function upWasVerifiedLive(slug){
-  var row = (typeof findRow === "function") ? findRow(slug) : null;
-  return !!(row && row.has_page);
-}
 function upSendLiveGate(slug, data){
   data = data || {};
   if(data.source !== "upload") return Promise.resolve();
-  var wasLive = upWasVerifiedLive(slug);
   function deny(kind){ var e=new Error(kind); e.__kind=kind; throw e; }
+  // Pages now activate ON UPLOAD, so a card in Operations already carries a live page. The gate therefore
+  // blocks ONLY on a DEFINITIVELY dead page (404/410); it never blocks on "not activated" or on a transient
+  // GET. A live page passes; a transient failure (network/5xx/unknown) is retried once and then ALLOWED (do
+  // not lose a ready send to a flaky GET); only a 404/410 stops the send.
   return verifyLive(slug).then(function(v){
     if(v.ok) return true;                                   // live right now
     if(v.dead) deny("deadlink");                            // 404/410: the page is truly gone -> always block
-    // Transient (network error, 5xx, any non-2xx that is not 404/410): retry ONCE before deciding.
     return upDelay(1500).then(function(){ return verifyLive(slug); }).then(function(v2){
-      if(v2.ok) return true;
-      if(v2.dead) deny("deadlink");                         // now a definitive dead signal -> block
-      // Still only a transient failure. A page proven live before is allowed (do not lose a ready send to a
-      // flaky GET); a page never verified live still blocks so nothing ships to an unproven link.
-      if(wasLive) return true;
-      deny("notlive");
+      if(v2.dead) deny("deadlink");                         // still a definitive dead signal -> block
+      return true;                                          // ok or a mere transient -> allow (page is live on upload)
     });
   });
 }
@@ -501,6 +523,7 @@ function upApprove(){
   if(__upBusy || !__upPlan) return; __upBusy = true;
   upSetStatus(t("up_writing"), ""); var ap=document.getElementById("upApprove"); if(ap) ap.disabled = true;
   upCommit(__upPlan).then(function(res){
+    try{ upActivateBackground(res.published); }catch(e){}   // ACTIVATE ON UPLOAD: verify + stamp live in the background, then reload
     return reloadBoardData().then(function(){ return res; }, function(){ return res; });
   }).then(function(res){
     __upBusy = false;
@@ -537,12 +560,13 @@ function uploadActivateHtml(slug, row, detail){
   var hasPage = !!(page || (detail && detail.opp && detail.opp.data && detail.opp.data.page_slug));
   if(!hasPage) return "";                                        // no page anywhere -> nothing to activate
   var live = !!(page && page.live_verified_at);                 // the SINGLE liveness truth (on the effective page)
-  var stateKey = live ? "up_state_live" : "up_state_draft";
-  var stateCls = live ? "ok" : "bad";
-  var btn = live ? "" : '<div class="acts"><button class="act" id="upActBtn" type="button" data-page-slug="' + esc(pageSlug) + '">' + esc(t("up_reactivate")) + '</button></div>';
+  // Activation now happens on upload (upCommit -> upActivateBackground), so there is no manual button and no
+  // "not activated" prompt: the section is a passive state line. Live confirms it; not-yet-live reads as
+  // "publishing" (the page was committed and is going live), which self-heals as the background verify stamps.
+  var stateKey = live ? "up_state_live" : "up_state_publishing";
+  var stateCls = live ? "ok" : "";
   return '<div class="dw-sec up-act-sec"><h3>' + esc(t("up_page_h")) + '</h3>'+
     '<div class="up-state ' + stateCls + '" id="upState">' + esc(t(stateKey)) + '</div>'+
-    btn +
     '<div class="act-status" id="upActStatus"></div></div>';
 }
 function upActStatus(msg, cls){ var el=document.getElementById("upActStatus"); if(el){ el.className="act-status" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; } }
@@ -551,35 +575,8 @@ function upActStatus(msg, cls){ var el=document.getElementById("upActStatus"); i
 // never holds the token (the relay commits). PR1 settle-always: green (up_now_live) ONLY after the stamp write
 // returns ok; red on a verify fail OR a stamp-write fail; there is no optimistic success and no liveness flag
 // written to the opp's data. On any failure the page is left NOT stamped, so it stays a draft everywhere.
-function upActivate(slug){
-  if(__writing || __upBusy) return; __upBusy = true;
-  upActStatus(t("up_committing"), ""); var b=document.getElementById("upActBtn"); if(b) b.disabled = true;
-  pageReadHtml(slug).then(function(html){
-    if(!String(html || "").trim()){ var e0=new Error("no page html"); e0.__kind="nohtml"; throw e0; }
-    return pagePublishRelay(slug, withBeaconClient(html));              // relay commits opp/<slug>/index.html
-  }).then(function(){
-    upActStatus(t("up_verifying"), "");
-    return verifyLivePoll(slug);                                        // bounded poll for the Pages build delay
-  }).then(function(v){
-    if(!v.ok){ var e1=new Error("not live"); e1.__kind="notlive"; throw e1; }   // committed, not yet served
-    return pageStampLive(slug);                                         // the ONLY liveness write, after a real ok
-  }).then(function(){
-    __upBusy = false;
-    upActStatus(t("up_now_live"), "ok");                                // green ONLY after the stamp write returned ok
-    return reloadBoardData().then(function(){}, function(){});          // the card stage (view) now reads live
-  }).then(function(){
-    if(__drawerSlug === slug) refreshDrawer(slug);
-  }).catch(function(e){
-    __upBusy = false; var b2=document.getElementById("upActBtn"); if(b2) b2.disabled = false;
-    var kind = e && e.__kind;
-    var msg = (e && e.authRequired) ? t("err")
-      : (kind === "nohtml") ? t("up_no_html")
-      : (kind === "notlive") ? t("up_publishing")                      // committed but not served yet (honest, red)
-      : t("up_commit_failed");                                         // relay/commit OR stamp-write failure
-    upActStatus(msg, "bad");
-  });
-}
-function upWireActivate(slug){ var b=document.getElementById("upActBtn"); if(b) b.addEventListener("click", function(){ upActivate(b.getAttribute("data-page-slug") || slug); }); }   // PR-AF: re-activate targets the EFFECTIVE page (shared for a promoted card)
+// (upActivate / upWireActivate removed: activation is no longer a manual drawer button. Pages activate on
+// upload via upCommit -> upActivateBackground; the drawer's page section is a passive state line only.)
 
 // ===================================================================================================
 // LIBRARY UPLOAD (PR1) - document + activate templates with NO message, NO recipient, NO card.
@@ -976,7 +973,8 @@ function libCardHtml(p){
       '<button class="act" type="button" data-lv-open="' + esc(p.slug) + '">' + esc(t("lib_open_page")) + '</button>'+
       '<button class="act" type="button" data-lv-prev="' + esc(p.slug) + '">' + esc(t("lib_preview")) + '</button>'+
       '<button class="act lv-prom-b" type="button" data-lv-promote="' + esc(p.slug) + '">' + esc(t("lib_promote")) + '</button>'+
-      '<button class="act lv-act-b" type="button" id="lvAct-' + esc(p.slug) + '" data-lv-activate="' + esc(p.slug) + '"' + (state==="live" ? " hidden" : "") + '>' + esc(t("up_reactivate")) + '</button>'+   // PR-AF: repair exit for any un-live template (no dead ends)
+      // No re-activate button: a template publishes and verifies on upload (upCommitLibrary + libVerifyBackground),
+      // and a not-yet-live row self-heals in the background - the state chip reads confirming/live, never a prompt.
     '</div>'+
     '<div class="lv-prev" id="lvPrev-' + esc(p.slug) + '" hidden></div>'+
     '<div class="lv-prom" id="lvProm-' + esc(p.slug) + '" hidden></div>'+
@@ -987,28 +985,8 @@ function libViewWireCards(){
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lv-open")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-prev]"), function(b){ b.addEventListener("click", function(){ libPreviewToggle(b.getAttribute("data-lv-prev"), b); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-promote]"), function(b){ b.addEventListener("click", function(){ libPromoteToggle(b.getAttribute("data-lv-promote"), b); }); });
-  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-activate]"), function(b){ b.addEventListener("click", function(){ libRepair(b.getAttribute("data-lv-activate"), b); }); });
 }
-// PR-AF - the repair exit for a Library template. Re-runs the SAME publish + verify + stamp cycle upActivate uses
-// (read html -> relay page_publish -> verifyLivePoll -> pageStampLive), keeping the surface's own state chip in
-// sync: confirming while it runs, live on ok (chip flips, button hides), fault again on a persistent failure.
-function libRepair(slug, btn){
-  if(btn) btn.disabled = true;
-  libSetState(slug, "confirming");
-  pageReadHtml(slug).then(function(html){
-    if(!String(html || "").trim()){ throw new Error("nohtml"); }
-    return pagePublishRelay(slug, withBeaconClient(html));
-  }).then(function(){ return verifyLivePoll(slug); }).then(function(v){
-    if(!v || !v.ok){ throw new Error("notlive"); }
-    return pageStampLive(slug);
-  }).then(function(){
-    var p=libPageBySlug(slug); if(p) p.live_verified_at = new Date().toISOString();
-    libSetState(slug, "live");                                        // green; the repair button hides
-  }).catch(function(){
-    if(btn) btn.disabled = false;
-    libSetState(slug, "fault");                                       // still not resolving: stays a visible RED fault
-  });
-}
+// (libRepair removed: a Library template publishes and verifies on upload, so there is no manual repair button.)
 // On-demand preview: read the committed html back from console_pages (pageReadHtml) into a sandboxed iframe,
 // the same isolation the editor preview uses. Toggling again closes it (and frees the frame).
 function libPreviewToggle(slug, btn){

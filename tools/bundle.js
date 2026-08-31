@@ -946,6 +946,11 @@ function buildBoard(){
   .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#9a9aa6;margin:2px 4px 10px;display:flex;justify-content:space-between;align-items:center}
   .lane h2 .n{color:#6a6a74;font-weight:700}
   .card{background:#111119;border:1px solid #20202a;border-radius:10px;padding:10px 11px;margin:0 0 8px}
+  /* Edge-mark by page state (rendered from the view's has_page / has_email, no client computation): a card with
+     a rich hosted page carries a solid brand edge; a text-only message carries a distinct lighter dashed edge.
+     border-inline-start so the mark sits on the leading edge in both LTR and RTL. */
+  .card.card-offer{border-inline-start:3px solid #71BFCC}
+  .card.card-msg{border-inline-start:3px dashed #5D7FB7}
   .card .b{font-weight:700;font-size:14px;word-break:break-word}
   .card .s{color:#8a8a93;font-size:12px;margin-top:4px;word-break:break-word}
   .badge{display:inline-block;font-size:11px;color:#8a8a93;border:1px solid #26262f;border-radius:999px;padding:1px 7px;margin-block-start:6px;margin-inline-end:6px}
@@ -1238,7 +1243,7 @@ function buildBoard(){
           s_no_msg:"No prepared message on this opportunity.",
           s_sent_n:"Sent {k} of {n}.", s_failed_n:"{f} failed:", s_capped_n:"{c} blocked by the daily cap.",
           s_cap:"Daily send cap reached. Nothing was sent.", cap_today:"today", cap_month:"this month",
-          s_not_live:"Activate the page first. Nothing was sent.", s_dead_link:"The page link is not live. Nothing was sent.",
+          s_dead_link:"The page link is not live. Nothing was sent.",
           r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
           r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
           r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email.",
@@ -1255,10 +1260,10 @@ function buildBoard(){
           up_col_email:"To", up_col_subject:"Subject", up_no_text:"No message matched this page.",
           up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Message with no page", up_warn_generic:"check this row",
           up_info:"Informational (not a per-page message)",
-          up_page_h:"Hosted page", up_state_draft:"Not activated. Activate the page before sending.", up_state_pending:"Activated. Confirming the live link.",
+          up_page_h:"Hosted page", up_state_pending:"Activated. Confirming the live link.",
           up_state_dead:"The page link is not live. Sending is blocked.",
           up_state_publishing:"Activated. The page is publishing.",
-          up_state_live:"Activated and live. The page link resolves.", up_activate:"Activate the page", up_reactivate:"Re-activate the page", up_verifying:"Verifying the live link...",
+          up_state_live:"Activated and live. The page link resolves.", up_verifying:"Verifying the live link...",
           up_committing:"Publishing the page...", up_commit_failed:"Could not publish the page. Nothing is live.", up_no_html:"No uploaded page found to publish.",
           up_publishing:"Published. The page is going live (this can take a moment).",
           up_now_live:"The page is live.", up_dead:"The link is dead. Nothing is live.", up_unconfirmed:"Could not confirm the link is live.",
@@ -1312,7 +1317,7 @@ function buildBoard(){
           s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
           s_sent_n:"أُرسلت {k} من {n}.", s_failed_n:"أخفقت {f}:", s_capped_n:"حُجبت {c} بحدّ اليوم.",
           s_cap:"بلغت حدّ الإرسال اليومي. لم يُرسل شيء.", cap_today:"اليوم", cap_month:"الشهر",
-          s_not_live:"فعّل الصفحة أولًا. لم يُرسل شيء.", s_dead_link:"رابط الصفحة غير فعّال. لم يُرسل شيء.",
+          s_dead_link:"رابط الصفحة غير فعّال. لم يُرسل شيء.",
           r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
           r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
           r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا.",
@@ -1329,10 +1334,10 @@ function buildBoard(){
           up_col_email:"إلى", up_col_subject:"الموضوع", up_no_text:"لا رسالة مطابِقة لهذه الصفحة.",
           up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"رسالة بلا صفحة", up_warn_generic:"راجع هذا الصف",
           up_info:"للمعلومة (ليست رسالة لصفحة)",
-          up_page_h:"الصفحة المستضافة", up_state_draft:"غير مُنشّطة. نشّط الصفحة قبل الإرسال.", up_state_pending:"مُنشّطة. جارٍ تأكيد الرابط الحيّ.",
+          up_page_h:"الصفحة المستضافة", up_state_pending:"مُنشّطة. جارٍ تأكيد الرابط الحيّ.",
           up_state_dead:"غير مُنشّطة. رابط الصفحة لا يعمل. الإرسال متوقّف.",
           up_state_publishing:"مُنشّطة. جارٍ نشر الصفحة.",
-          up_state_live:"مُنشّطة وحيّة. رابط الصفحة يعمل.", up_activate:"تنشيط الصفحة", up_reactivate:"أعد تنشيط الصفحة", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
+          up_state_live:"مُنشّطة وحيّة. رابط الصفحة يعمل.", up_verifying:"جارٍ التحقّق من الرابط الحيّ...",
           up_committing:"جارٍ نشر الصفحة...", up_commit_failed:"تعذّر نشر الصفحة. لا شيء حيّ.", up_no_html:"لا توجد صفحة مرفوعة للنشر.",
           up_publishing:"نُشرت. الصفحة في طريقها إلى العمل (قد يستغرق لحظة).",
           up_now_live:"الصفحة مُنشّطة وحيّة.", up_dead:"الرابط لا يعمل. لا شيء حيّ.", up_unconfirmed:"تعذّر تأكيد أن الرابط حيّ.",
@@ -1737,7 +1742,10 @@ ${UPLOAD_SRC}
         return '<div class="rep"><span class="repn">' + it.num + '</span> ' + esc(it.from || t("unnamed")) + '</div>';
       }).join("") + '</div>';
     }
-    return '<div class="card" data-slug="' + esc(slug) + '" role="button" tabindex="0">' + dot +
+    // Edge class from the view fields, verbatim: a rich page -> card-offer; a text-only message (message, no
+    // page) -> card-msg; neither -> plain. No client stage/page computation.
+    var edge = row.has_page ? " card-offer" : ((row.has_email && !row.has_page) ? " card-msg" : "");
+    return '<div class="card' + edge + '" data-slug="' + esc(slug) + '" role="button" tabindex="0">' + dot +
            '<div class="b">' + biz + nb + '</div>' +
            (bits.length ? ('<div class="s">' + bits.map(function(bt){ return '<bdi>' + esc(bt) + '</bdi>'; }).join("  \\u00b7  ") + '</div>') : '') +
            (badges || sendmark ? ('<div>' + sendmark + badges + '</div>') : '') +
@@ -1880,7 +1888,7 @@ ${UPLOAD_SRC}
     var ri=document.getElementById("recIn");                            // UNIFY: typing a recipient re-runs the shared Send gate
     if(ri) ri.addEventListener("input", function(){ try{ if(typeof sendApplyGate==="function") sendApplyGate(slug); }catch(e){} });
     try{ wireEditor(slug); }catch(e){}                                  // unified message editor (compose + reply)
-    try{ upWireActivate(slug); }catch(e){}                              // E2 upload-page Activate control
+    // (no upWireActivate: the upload-page section is a passive state line; activation happens on upload)
   }
   function openDrawer(slug){
     __drawerSlug=slug;

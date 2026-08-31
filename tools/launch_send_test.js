@@ -102,17 +102,14 @@ const embLinkHtml = S.bodyParasHtml(embLink);
 ck("(b) an embedded [text]({{LINK}}) renders <a href=clean> with NO ?r= tail",
    embLinkHtml.indexOf('<a href="' + clean + '"') >= 0 && embLinkHtml.indexOf("?r=") < 0, embLinkHtml);
 
-// ---- (a) the send live-gate: block only on 404/410, retry a transient, allow a proven-live page --
-// upSendLiveGate depends on verifyLive, upDelay, findRow. We inject stubs: verifyLive returns a scripted
-// queue of results, findRow decides whether the page was proven live, upDelay is instant.
-function runGate(scripted, wasLive) {
-  const q = scripted.slice();
+// ---- (a) the send live-gate (post activate-on-upload): block ONLY on a definitive 404/410; a live page and
+// a mere transient both pass (the page is live on upload). upSendLiveGate depends on verifyLive + upDelay only.
+function runGate(scripted) {
   const preamble =
     "var __q = " + JSON.stringify(scripted) + ";\n" +
     "function verifyLive(){ return Promise.resolve(__q.length>1 ? __q.shift() : __q[0]); }\n" +
-    "function upDelay(){ return Promise.resolve(); }\n" +
-    "function findRow(){ return { has_page: " + (wasLive ? "true" : "false") + " }; }\n";
-  const G = load(upload, ["upWasVerifiedLive", "upSendLiveGate"], preamble);
+    "function upDelay(){ return Promise.resolve(); }\n";
+  const G = load(upload, ["upSendLiveGate"], preamble);
   return G.upSendLiveGate("acme", { source: "upload" });
 }
 const DEAD = { ok: false, dead: true, status: 404 };
@@ -120,29 +117,28 @@ const TRANSIENT = { ok: false, dead: false, status: 0 };
 const OK = { ok: true, dead: false, status: 200 };
 
 (async function () {
-  // proven-live page, live right now -> allowed
-  let r1 = await runGate([OK], true).then(() => "allow", (e) => "block:" + (e && e.__kind));
+  // live right now -> allowed
+  let r1 = await runGate([OK]).then(() => "allow", (e) => "block:" + (e && e.__kind));
   ck("(a) a live page sends", r1 === "allow", r1);
 
-  // proven-live page, a single transient GET (twice, since it retries once) -> allowed, not aborted
-  let r2 = await runGate([TRANSIENT], true).then(() => "allow", (e) => "block:" + (e && e.__kind));
-  ck("(a) a proven-live card is NOT aborted by a transient GET (retries, then allows)", r2 === "allow", r2);
+  // a transient GET no longer blocks (page is live on upload) -> allowed
+  let r2 = await runGate([TRANSIENT]).then(() => "allow", (e) => "block:" + (e && e.__kind));
+  ck("(a) a transient GET is NOT aborted (page is live on upload, retried then allowed)", r2 === "allow", r2);
 
-  // any page returning a definitive 404 -> blocked as deadlink, even if it was proven live before
-  let r3 = await runGate([DEAD], true).then(() => "allow", (e) => "block:" + (e && e.__kind));
-  ck("(a) a definitive 404/410 blocks as deadlink (even a once-live page)", r3 === "block:deadlink", r3);
-
-  // never-verified page, only transient responses -> blocked (nothing ships to an unproven link)
-  let r4 = await runGate([TRANSIENT], false).then(() => "allow", (e) => "block:" + (e && e.__kind));
-  ck("(a) a never-verified page still blocks on a transient (notlive), nothing ships unproven", r4 === "block:notlive", r4);
+  // a definitive 404 -> blocked as deadlink
+  let r3 = await runGate([DEAD]).then(() => "allow", (e) => "block:" + (e && e.__kind));
+  ck("(a) a definitive 404/410 blocks as deadlink", r3 === "block:deadlink", r3);
 
   // transient first, then a 404 on the retry -> blocked as deadlink
-  let r5 = await runGate([TRANSIENT, DEAD], true).then(() => "allow", (e) => "block:" + (e && e.__kind));
+  let r5 = await runGate([TRANSIENT, DEAD]).then(() => "allow", (e) => "block:" + (e && e.__kind));
   ck("(a) a transient that resolves to 404 on retry blocks as deadlink", r5 === "block:deadlink", r5);
 
+  // no 'notlive' path exists any more (the gate never blocks on 'not activated')
+  ck("(a) the gate has no 'notlive' deny (never blocks on 'not activated')", upload.indexOf('deny("notlive")') < 0);
+
   // a non-upload opp passes straight through (unchanged)
-  const Gpass = load(upload, ["upWasVerifiedLive", "upSendLiveGate"],
-    "function verifyLive(){ return Promise.reject(new Error('should not be called')); }\nfunction upDelay(){return Promise.resolve();}\nfunction findRow(){return null;}\n");
+  const Gpass = load(upload, ["upSendLiveGate"],
+    "function verifyLive(){ return Promise.reject(new Error('should not be called')); }\nfunction upDelay(){return Promise.resolve();}\n");
   let r6 = await Gpass.upSendLiveGate("x", { source: "manual" }).then(() => "allow", () => "block");
   ck("(a) a non-upload opp passes straight through (gate unchanged for manual sends)", r6 === "allow", r6);
 
