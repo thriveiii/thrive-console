@@ -34,6 +34,16 @@
   }
   var R = tokenR();
 
+  // The transit cycle: the console stamps <meta name="thrive-cycle"> into the published page (the same publish
+  // that injects this beacon), so an open can be attributed to the CURRENT transit and an old transit's opens
+  // never inherit onto a re-uploaded card. The cycle is NOT in the URL, so it must be read from the page. An old
+  // page has no such meta -> we send no cycle (null), never guessed: the console treats null as legacy.
+  function pageCycle() {
+    try { var m = document.querySelector('meta[name="thrive-cycle"]'); var c = m && m.getAttribute("content"); return c ? String(c) : ""; }
+    catch (e) { return ""; }
+  }
+  var CYCLE = pageCycle();
+
   // Is this the console operator (or a teammate) previewing their own page? Their browser holds a console
   // session on this same origin. Tagged, not dropped: the console filters it. Two signals, either suffices:
   //   1. console_sb_session in localStorage - the DURABLE, per-origin signed-in session (bundle.js SESSION_KEY,
@@ -97,6 +107,7 @@
 
   var openEv = {
     type: "open", slug: slug, ts: new Date().toISOString(), vid: VID, self: SELF, r: R,
+    cycle: CYCLE || null,
     ref: document.referrer || "", lang: navigator.language || "",
     w: (screen && screen.width) || 0, h: (screen && screen.height) || 0,
     ua: (navigator.userAgent || "").slice(0, 180)
@@ -115,7 +126,7 @@
   function flush() {
     if (done) return; done = true;
     var ms = Date.now() - start; if (ms < 500) return;
-    send({ type: "dwell", slug: slug, ts: new Date().toISOString(), vid: VID, self: SELF, ms: ms });
+    send({ type: "dwell", slug: slug, ts: new Date().toISOString(), vid: VID, self: SELF, cycle: CYCLE || null, ms: ms });
   }
   document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") flush(); });
   window.addEventListener("pagehide", flush);

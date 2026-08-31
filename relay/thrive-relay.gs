@@ -461,10 +461,10 @@ function supaInboundRow_(r) {
 function hitKey_(e) { return (e.type || 'open') + '|' + (e.slug || '') + '|' + (e.ts || '') + '|' + (e.vid || ''); }
 function supaHitRow_(e) {
   // TRANSIT CYCLE: pass through the transit id the beacon supplied, so the board counts this open only against
-  // the opp's CURRENT cycle. HONEST LIMITATION: the static opp page's beacon does NOT carry a cycle today (the
-  // page has no cycle signal, and the beacon/open-pixel must not be touched), so e.cycle is absent and this is
-  // NULL in production - which the view treats as legacy (a cycled opp therefore shows 0 opens until the hit
-  // path carries the cycle, a follow-up). We stamp when present and never guess when absent.
+  // the opp's CURRENT cycle. The published page carries <meta name="thrive-cycle"> (stamped at publish by
+  // withBeaconClient), and the beacon reads it and sends e.cycle on the hit. An OLD page has no such meta, so
+  // the beacon sends no cycle and this is NULL - which the view treats as legacy. We stamp when present and
+  // never guess when absent.
   return { id: hitKey_(e), slug: (e && e.slug) || '', type: (e && e.type) || 'open',
     ts: (e && e.ts) || '', self: !!(e && e.self), cycle: (e && e.cycle) || null, data: e };
 }

@@ -81,10 +81,11 @@ ck("migration: no destructive drop/delete/truncate",
 
 // ---- (d) re-upload bumps the opp cycle to a NEW value ---------------------------------------------------------
 const upload = fs.readFileSync(path.join(ROOT, "tools/board-upload.src.js"), "utf8");
-// upCommit's oppUpsert must pass a freshly-generated cycle (upNewCycle), not a constant.
-ck("(d) upCommit stamps a fresh cycle on (re-)upload (cycle:upNewCycle())",
-   /oppUpsert\([^)]*cycle:\s*upNewCycle\(\)/.test(upload) || /cycle:\s*upNewCycle\(\)/.test(upload),
-   "upCommit does not call upNewCycle()");
+// upCommit must derive a freshly-generated cycle (upNewCycle) and stamp it on the opp (captured in a var so the
+// published page can carry the SAME cycle - see beacon_cycle_test.js).
+ck("(d) upCommit stamps a fresh cycle on (re-)upload (var cycle = upNewCycle(); cycle:cycle)",
+   /var cycle = upNewCycle\(\)/.test(upload) && /cycle:cycle\b/.test(upload),
+   "upCommit does not capture a fresh cycle from upNewCycle()");
 // upNewCycle must produce distinct ids across calls (so two uploads = two transits). Extract by balanced braces
 // (the helper is a one-liner, so a lazy regex would over-match) and run it.
 function extractFn(src, name) {
