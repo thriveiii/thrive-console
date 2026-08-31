@@ -460,8 +460,13 @@ function supaInboundRow_(r) {
    the same hitKey (library/app.js:543): id is type|slug|ts|vid, the whole event in data. */
 function hitKey_(e) { return (e.type || 'open') + '|' + (e.slug || '') + '|' + (e.ts || '') + '|' + (e.vid || ''); }
 function supaHitRow_(e) {
+  // TRANSIT CYCLE: pass through the transit id the beacon supplied, so the board counts this open only against
+  // the opp's CURRENT cycle. The published page carries <meta name="thrive-cycle"> (stamped at publish by
+  // withBeaconClient), and the beacon reads it and sends e.cycle on the hit. An OLD page has no such meta, so
+  // the beacon sends no cycle and this is NULL - which the view treats as legacy. We stamp when present and
+  // never guess when absent.
   return { id: hitKey_(e), slug: (e && e.slug) || '', type: (e && e.type) || 'open',
-    ts: (e && e.ts) || '', self: !!(e && e.self), data: e };
+    ts: (e && e.ts) || '', self: !!(e && e.self), cycle: (e && e.cycle) || null, data: e };
 }
 
 /* Mirror everything new in both ledgers, once per scan. A per-ledger high-water mark (the newest ts already

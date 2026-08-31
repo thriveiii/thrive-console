@@ -323,6 +323,9 @@ function pageStampLive(slug, retried){
 // "activate" click. The live-verify + live_verified_at stamp runs in the background right after (upApprove ->
 // upActivateBackground), so the card is born live/confirming, never a draft with a lingering prompt. A
 // text-only row (no page html) skips the publish untouched. published[] carries the slugs to verify + stamp.
+// A short, unique transit id for a fresh upload cycle (time + randomness; guarded so a hostile runtime still
+// yields a usable string). Written to console_opps.cycle; the send stamps console_mail.cycle with it.
+function upNewCycle(){ try{ return "cy" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }catch(e){ return "cy" + Date.now(); } }
 function upCommit(plan){
   var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0, failed = [], published = [];
   function one(i){
@@ -334,11 +337,15 @@ function upCommit(plan){
       outreach_subject:r.subject || "", outreach_text:r.body || "",
       recipients: r.email ? [{ addr:r.email, name:"", lang:"en" }] : [] };
     var html = (r.page && r.page.html) || "";
-    return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now() })
+    // TRANSIT CYCLE: every (re-)upload starts a CLEAN transit - a fresh short cycle id on the opp. The view
+    // scopes sends/opens to this cycle, so an old transit's ledger rows never re-attach to the new card. The
+    // SAME cycle is stamped into the published page (withBeaconClient below), so the beacon carries it on opens.
+    var cycle = upNewCycle();
+    return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now(), cycle:cycle })
       .then(function(){ return pageUpsert(r.slug, html); })
       .then(function(){
         if(!String(html).trim()){ ok++; return one(i + 1); }                     // text-only row: no page to publish, untouched
-        return pagePublishRelay(r.slug, withBeaconClient(html)).then(          // commit the static file NOW (relay holds the token)
+        return pagePublishRelay(r.slug, withBeaconClient(html, cycle)).then(   // commit the static file NOW, carrying THIS transit's cycle
           function(){ ok++; published.push(r.slug); return one(i + 1); },
           function(e){
             if(e && e.kind === "timeout"){ ok++; published.push(r.slug); return one(i + 1); }   // idempotent commit likely landed -> confirm in background
@@ -370,8 +377,23 @@ function upActivateBackground(slugs){
 // is a static client and must NOT hold a repo-write token, so activation POSTs the html to the relay (the same
 // endpoint the send uses) and the RELAY commits it with a server-held GH_TOKEN. The client never sees the token.
 var BEACON_TAG_UP = '<script src="/beacon.js" defer></' + 'script>';   // byte-identical to app.js:3493 withBeacon
-function withBeaconClient(html){                                        // mirror app.js:3494-3502 (idempotent)
+// TRANSIT CYCLE: the beacon reads the slug from the URL (beacon.js /opp/<slug>) but the cycle is NOT in the URL,
+// so the published page must CARRY it. We stamp <meta name="thrive-cycle"> with the opp's current cycle; the
+// beacon reads that meta and sends it on the hit, so the view counts the open against the CURRENT transit. The
+// stamp is authoritative (any stale marker is dropped first) and idempotent. An old page with no such meta ->
+// the beacon sends no cycle (NULL) -> legacy behavior, exactly as today.
+function withCycleMeta(html, cycle){
   var h = String(html || "");
+  if(!h.trim() || !cycle) return h;                                    // old/empty page or no cycle: nothing stamped (beacon -> NULL)
+  h = h.replace(/<meta\s+name=["']thrive-cycle["'][^>]*>\s*/ig, "");    // authoritative: strip any stale marker first
+  var tag = '<meta name="thrive-cycle" content="' + String(cycle).replace(/["&<>]/g, "") + '">';
+  if(/<\/head\s*>/i.test(h)) return h.replace(/<\/head\s*>/i, tag + "\n</head>");
+  if(/<\/body\s*>/i.test(h)) return h.replace(/<\/body\s*>/i, tag + "\n</body>");
+  if(/<\/html\s*>/i.test(h)) return h.replace(/<\/html\s*>/i, tag + "\n</html>");
+  return tag + "\n" + h;
+}
+function withBeaconClient(html, cycle){                                 // mirror app.js:3494-3502 (idempotent) + stamp the cycle
+  var h = withCycleMeta(html, cycle);                                  // stamp the transit cycle FIRST (survives the relay commit)
   if(!h.trim()) return h;
   if(/beacon\.js/.test(h)) return h;
   if(/<\/body\s*>/i.test(h)) return h.replace(/<\/body\s*>/i, BEACON_TAG_UP + "\n</body>");
