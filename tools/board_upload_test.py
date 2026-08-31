@@ -256,44 +256,47 @@ with sync_playwright() as p:
     ck("6: the uploaded message renders inside a framed area (.up-frame/.up-pre), not raw off-screen",
        pg.evaluate("()=>{var f=document.querySelector('.up-frame .up-pre'); return !!f && f.textContent.indexOf('ship faster')>=0;}"))
 
-    # ===== 4: Approve writes a draft opp AND a console_pages row per html; nothing before this =====
+    # ===== 4: Approve writes the opp + page AND activates on upload (publish + verify + stamp), no button =====
+    LIVE["acme-co"] = "ok"; LIVE["fresh-labs"] = "ok"   # the live-verify the background activation polls will see
     pg.evaluate("()=>{var b=document.getElementById('upApprove'); if(b) b.click();}")
-    pg.wait_for_timeout(1400)
-    ck("4: Approve created draft opps (console_opps rows)", "acme-co" in OPPS and "fresh-labs" in OPPS, list(OPPS.keys()))
+    pg.wait_for_timeout(1800)                            # approve writes + publishes; the background verify then stamps
+    ck("4: Approve created opps (console_opps rows)", "acme-co" in OPPS and "fresh-labs" in OPPS, list(OPPS.keys()))
     ck("4: each uploaded html became a console_pages row", "acme-co" in PAGES and "fresh-labs" in PAGES, list(PAGES.keys()))
-    ck("4: the opp is a DRAFT from upload (source=upload, page not stamped live, no retired flags, not sent)",
-       OPPS["acme-co"]["data"].get("source")=="upload" and not STAMP.get("acme-co")
-       and "page_active" not in OPPS["acme-co"]["data"] and "page_live" not in OPPS["acme-co"]["data"]
-       and sent_count("acme-co")==0, {"data":OPPS["acme-co"]["data"], "stamp":STAMP.get("acme-co")})
-    ck("4: the recipient persisted bare on the draft opp",
-       (OPPS["acme-co"]["data"].get("recipients") or [{}])[0].get("addr")=="buyer.acme@example.test", OPPS["acme-co"]["data"].get("recipients"))
+    ck("4: the opp is upload-sourced with its bare recipient",
+       OPPS["acme-co"]["data"].get("source")=="upload"
+       and (OPPS["acme-co"]["data"].get("recipients") or [{}])[0].get("addr")=="buyer.acme@example.test", OPPS["acme-co"]["data"])
+    # ACTIVATE ON UPLOAD: the page is committed via the relay (op=page_publish) during Approve - no second click.
+    ck("4: the page was PUBLISHED on upload (op=page_publish via the relay), and NO activate button exists",
+       any(c.get("op")=="page_publish" and c.get("slug")=="acme-co" for c in RELAY_CALLS)
+       and pg.evaluate("()=>!document.getElementById('upActBtn')"), RELAY_CALLS)
+    # the background verify stamped live_verified_at (poll the mock until it lands, bounded)
+    for _ in range(20):
+        if STAMP.get("acme-co"): break
+        pg.wait_for_timeout(300)
+    ck("4: the page was live_verified ON UPLOAD (background stamp, no manual activate)", bool(STAMP.get("acme-co")), {"stamp":STAMP.get("acme-co")})
 
-    # ===== 5: send BLOCKED until activated (F2: activation commits via the relay, then verify-live) =====
-    # The dead-link and still-publishing nuances live in board_activate_test.py; here the E2-scoped check is
-    # that a not-activated upload page cannot send, and that an activated + live page can. (F2 changed activate
-    # to a relay commit + verify-live poll, so this exercises the whole path with a fast live poll.)
+    # ===== 5: send is NOT blocked for a live-on-upload page; blocked ONLY for a definitively dead page (404) =====
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(600); wait_ident(pg)
-    # 5a: NOT activated -> send refused (the gate blocks before any activation)
+    # 5a: acme-co is live on upload -> the send goes straight through, no manual activate, no re-activate button
     pg.evaluate(OPEN, "A quick note for Acme Co")   # business == subject/title
     pg.wait_for_timeout(400)
-    n_mail_before = sent_count("acme-co")
+    ck("5: no re-activate button on a live upload card (activation happened on upload)",
+       pg.evaluate("()=>!document.getElementById('upActBtn')"))
     pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
-    pg.wait_for_timeout(900)
-    ck("5: send is BLOCKED for a not-activated upload page (no console_mail, no relay send)",
-       sent_count("acme-co")==n_mail_before and not any((c.get("op") is None and c.get("slug")=="acme-co") for c in RELAY_CALLS), {"mail":sent_count("acme-co")})
-    stA = pg.evaluate("()=>{var e=document.getElementById('actStatus'); return e?{txt:e.textContent,cls:e.className}:{};}")
-    ck("5: the blocked send shows a RED reason (not a phantom success)", "bad" in (stA.get("cls") or ""), stA)
-
-    # 5b: activate against a LIVE link -> the relay commits, the poll confirms live, then the send goes through
-    LIVE["acme-co"] = "ok"
-    pg.evaluate("()=>{var b=document.getElementById('upActBtn'); if(b) b.click();}")
     pg.wait_for_timeout(1600)
-    ck("5: activation committed the page via the relay (op=page_publish)",
-       any(c.get("op")=="page_publish" and c.get("slug")=="acme-co" for c in RELAY_CALLS), RELAY_CALLS)
-    ck("5: activating a LIVE link stamps console_pages.live_verified_at (the single liveness truth)", bool(STAMP.get("acme-co")), {"stamp":STAMP.get("acme-co")})
+    ck("5: a live-on-upload page sends directly (one console_mail row via L5, no activate step)", sent_count("acme-co")==1, MAIL)
+
+    # 5b: a DEFINITIVELY DEAD page (404) still blocks the send with a clear reason
+    LIVE["fresh-labs"] = "dead"; STAMP.pop("fresh-labs", None)   # force the live /opp/fresh-labs to 404
+    pg.evaluate("()=>location.reload()"); pg.wait_for_timeout(700); wait_ident(pg)
+    pg.evaluate(OPEN, "Fresh Labs intro")
+    pg.wait_for_timeout(400)
+    n_before = sent_count("fresh-labs")
     pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
-    pg.wait_for_timeout(1200)
-    ck("5: once activated AND live, the send goes through (one console_mail row via L5)", sent_count("acme-co")==1, MAIL)
+    pg.wait_for_timeout(2400)   # gate: verifyLive 404 -> retry 1.5s -> 404 -> deadlink, no send
+    ck("5: a 404/410 dead page still BLOCKS the send (no console_mail)", sent_count("fresh-labs")==n_before, {"mail":sent_count("fresh-labs")})
+    stD = pg.evaluate("()=>{var e=document.getElementById('actStatus'); return e?{txt:e.textContent,cls:e.className}:{};}")
+    ck("5: the dead-page block shows a RED reason (not a phantom success)", "bad" in (stD.get("cls") or ""), stD)
 
     pg.close(); ctx.close()
 

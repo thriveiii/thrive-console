@@ -396,7 +396,7 @@ function runSend(slug){
     var kind = e && e.__kind;
     var msg = (kind==="norecip") ? t("s_no_recip") : (kind==="nomsg") ? t("s_no_msg")
       : (kind==="cap") ? t("s_cap")
-      : (kind==="notlive") ? t("s_not_live") : (kind==="deadlink") ? t("s_dead_link")
+      : (kind==="deadlink") ? t("s_dead_link")    // page activates on upload; the ONLY page block left is a definitively dead link (404/410)
       : (e && e.authRequired) ? t("err") : t("s_failed");
     __act[slug] = { msg:msg, cls:"bad" };
     if(__drawerSlug===slug) refreshDrawer(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
