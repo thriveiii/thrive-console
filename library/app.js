@@ -4634,11 +4634,20 @@ async function writeImport(items, ctx){
         // un-archives - or un-deletes - a card. The tombstone is lifted so a re-created slug stays created.
         if(isNew || it.decision==="restore"){ rec.archived=false; } else { delete rec.archived; }
         liftTomb("opp", s);
+        staged.push(rec);                               // stage FIRST: a create never drops the card, even if hosting fails
         if(it.host){
-          await publishOpp(Object.assign({}, rec, { slug:s, published:false, stage:(rec.stage||""), html:html }));
-          rec.published=true; tally.hosted++;
+          try{
+            await publishOpp(Object.assign({}, rec, { slug:s, published:false, stage:(rec.stage||""), html:html }));
+            rec.published=true; tally.hosted++;         // staged is the same object reference, mutated before commitDraftsBatch
+          }catch(pubErr){
+            // Hosting needs a GitHub token, which only the owner device holds. A member (or any tokenless device)
+            // can still create the draft: it lands UNPUBLISHED and the owner publishes it on approval. Axiom 3:
+            // a missing capability is filled later, never a dropped upload.
+            rec.published=false; rec.needs_hosting=true;
+            tally.hosting_deferred=(tally.hosting_deferred||0)+1;
+            logActivity("publish_deferred", s, String((pubErr&&pubErr.message)||pubErr));
+          }
         }
-        staged.push(rec);                               // staged, not yet written: the store stays whole
         if(isNew) tally.imported++; else tally.updated++;
         if(!e.subject && !e.body) tally.incomplete++;   // stored, but named text-less rather than hidden
         tally.slugs.push(s);
