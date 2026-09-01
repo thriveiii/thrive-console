@@ -3967,8 +3967,21 @@ function stripOptionalMailCols(row){ var r=Object.assign({}, row); MAIL_OPTIONAL
 /* The one console_mail writer. Try the full row; if the server is a migration behind (a missing optional
    column), drop the optional top-level columns and retry - each survives inside data jsonb, so nothing is lost
    and the send records whether or not the actor migration ran. The drift is recorded, visible, never silent. */
+function mailRowComplete(r){
+  // A sent-mail row is only truthful with all four: the opp it belongs to, its own id, a recipient, and a
+  // subject. A row missing any of these is not a send, it is a phantom, and it must never be counted 'sent'
+  // (a real empty-everything 'sent' row reached production; this closes the path that wrote it). Inbound
+  // replies carry all four too (to_addr = the sender, subject = 'Re: ...'), so they pass unchanged.
+  return !!r && !!String(r.opp||"").trim() && !!String(r.id||"").trim()
+      && !!String(r.to_addr||"").trim() && !!String(r.subject||"").trim();
+}
 async function mailUpsert(rows){
-  var arr=Array.isArray(rows)? rows : [rows];
+  var arr=(Array.isArray(rows)? rows : [rows]).filter(function(r){
+    if(mailRowComplete(r)) return true;
+    try{ supaRecordDiverge("write", "console_mail", "refused: incomplete row (need opp, id, to_addr, subject) id="+String((r&&r.id)||"")+" opp="+String((r&&r.opp)||"")); }catch(_){}
+    return false;                                   // refused and recorded, never written, never counted
+  });
+  if(!arr.length) return { skipped:true, incomplete:true };
   try{ return await window.ThriveSupa.upsert("console_mail", arr); }
   catch(e){
     if(mailColMissing(e)){
