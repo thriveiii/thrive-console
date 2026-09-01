@@ -843,12 +843,19 @@
 
     function hasSend(e) { return !!(e && (e.email || e.url || (e.channel && e.channel !== ""))); }
     function hasBody(e) { return !!(e && e.body && e.body.trim()); }
+    function hasSubject(e) { return !!(e && e.subject && String(e.subject).trim()); }
 
     var chosen = null, needs = false, i;
     for (i = 0; i < cands.length; i++) { if (hasSend(cands[i]) && hasBody(cands[i])) { chosen = cands[i]; break; } }
     if (!chosen) {
       needs = true;
       for (i = 0; i < cands.length; i++) { if (hasSend(cands[i])) { chosen = cands[i]; break; } }  // best partial: a send with no body
+    }
+    if (!chosen) {
+      // Axiom 3: a WRITTEN message whose only missing field is the recipient must survive. When no candidate has
+      // a recipient at all, keep the first that still carries content (a body or a subject) - e.g. an opp.md with
+      // a blank `Send to:`. The recipient is filled on the card, never a rejected upload or a discarded message.
+      for (i = 0; i < cands.length; i++) { if (hasBody(cands[i]) || hasSubject(cands[i])) { chosen = cands[i]; break; } }
     }
     var e;
     if (chosen) { e = chosen; }
@@ -862,6 +869,10 @@
     if (page && !e.file) e.file = page;
     if (!e.business) e.business = page ? baseOf(page.name).replace(/\.html?$/i, "").replace(/[-_]+/g, " ").trim() : slug.replace(/-/g, " ");
     e.needs_message = needs || e.provenance === "page_partial" || e.provenance === "needs_message";
+    // Additive flag: the chosen entry has content but no recipient yet (Axiom 3, filled on the card). Nothing
+    // reads it yet; it lets the send guard and the card label distinguish "needs a recipient" from "needs a
+    // message" without another parser change.
+    e.needs_recipient = !hasSend(e);
     return e;
   }
 
