@@ -123,10 +123,12 @@ with sync_playwright() as p:
        r2["hasTopActor"] is True, r2)
 
     # ---- a NON-schema error is NOT hidden: mailUpsert re-throws, the send is not falsely confirmed ----
+    # The row must be COMPLETE (opp,id,to_addr,subject) to reach the server where __failMode injects the 500;
+    # the mail-integrity guard now refuses an incomplete row BEFORE any server call (a phantom never writes).
     r3 = pg.evaluate("""async ()=>{
       window.__mail = {}; window.__failMode = 'server';
       let threw = false;
-      try { await window.mailUpsert([{ id:'m-err', opp:'x', status:'sent' }]); } catch(e){ threw = true; }
+      try { await window.mailUpsert([{ id:'m-err', opp:'x', to_addr:'a@b', subject:'s', status:'sent' }]); } catch(e){ threw = true; }
       const res = await window.supaConfirmMail({ mid:'m-err2', opp:'x', to:'a@b', subject:'s', status:'sent', actor:'op@x' });
       window.__failMode = null;
       return { threw, confirmed: res && res.confirmed, count: Object.keys(window.__mail).length };
