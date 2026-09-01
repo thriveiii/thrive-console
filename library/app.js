@@ -3526,9 +3526,34 @@ async function publishManifest(rec){
   await ghPutFile("library/manifest.json", JSON.stringify(man,null,2)+"\n", "Update manifest: "+rec.slug);
   setHalfPublished(rec.slug, false);
 }
+/* Commit the opp page. An owner device holds the repo-write token and commits directly. A member device
+   holds no token (it is a per-device secret, never synced), so it commits through the relay page_publish op,
+   which holds GH_TOKEN server-side and writes the SAME opp/<slug>/index.html. page_publish is answered before
+   the relay auth gate (the /exec URL is the capability, exactly as for a send), so a member needs no
+   credential. The relay adds the beacon (withBeacon_) itself, so the relay path sends RAW html while the
+   direct path adds the beacon here; either way the identical page goes live and a member can activate. */
+async function publishOppPage(rec){
+  if(ghReady()){
+    await ghPutFile("opp/"+rec.slug+"/index.html", withBeacon(rec.html||""), "Publish opp/"+rec.slug);
+    return;
+  }
+  const ep=getSyncEndpoint();
+  if(!ep) throw new Error(t("sy_need_ep"));
+  const r=await fetchT(ep,{ method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    body:relayBody({ op:"page_publish", slug:rec.slug, html:rec.html||"" }) });
+  let j={}; try{ j=await r.json(); }catch(_){}
+  noteRelayVersion(j);
+  if(!j || j.ok!==true) throw new Error("relay page_publish "+((j&&j.error)||r.status));
+}
 async function publishOpp(rec){
-  await ghPutFile("opp/"+rec.slug+"/index.html", withBeacon(rec.html||""), "Publish opp/"+rec.slug);
+  await publishOppPage(rec);                 // owner: direct with token; member: through the relay
   setHalfPublished(rec.slug, true);          // from here the page is live whatever happens next
+  if(!ghReady()){
+    // A member holds no repo token: the page is live via the relay, and the library manifest (a listing) is
+    // deferred, never failed. The board reads console_board, not the manifest; the owner next publish updates it.
+    logActivity("manifest_deferred", rec.slug, "");
+    return;
+  }
   try{
     await publishManifest(rec);
   }catch(e){
