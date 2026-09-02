@@ -4632,10 +4632,18 @@ function hasLedgerHistory(slug){
 // Built here, in the client, because only the client can read the three ledgers. One builder, both surfaces.
 function oppExistingMeta(records){
   var map={};
-  (records||[]).forEach(function(o){
-    if(!o || !o.slug) return;
+  function add(o){
+    if(!o || !o.slug || map[o.slug]) return;                 // first writer wins: the caller's reconciled record
     map[o.slug]={ archived:!!o.archived, hasHistory:hasLedgerHistory(o.slug) };
-  });
+  }
+  (records||[]).forEach(add);
+  // An opportunity archived days ago and pruned from manifest.json is absent from mergedOpps, so the classifier
+  // could not see it and mis-classified a re-upload of it (the silent drop, the invisible archived update, the
+  // would-be duplicate all trace to this one blindness). Fold in the full hydrated server list (__supa.opps
+  // carries every console_opps row, including archived ones, with archived inside its data - supaOppFromRow),
+  // so NO opportunity the system knows is ever invisible to importPlan. The caller's reconciled records win on
+  // a shared slug (add() skips a slug already mapped); __supa only fills the gaps a pruned manifest left.
+  try{ if(__supa && __supa.opps){ __supa.opps.forEach(add); } }catch(_){}
   return map;
 }
 // A safe delete gate: only a zero-history card may be hard-deleted; anything with ledger history archives.
@@ -4644,7 +4652,6 @@ function canHardDelete(o){ return !!o && !hasLedgerHistory(o.slug); }
 async function writeImport(items, ctx){
   ctx=ctx||{};
   const existing=ctx.existing||{};
-  const seen={}; Object.keys(existing).forEach(k=>seen[k]=1);
   const tally={ imported:0, updated:0, hosted:0, incomplete:0, failed:0, slugs:[] };
   // INVARIANT I3, atomic batch: every record is MINTED and its page HOSTED in the loop, but nothing is
   // written to the store until the loop is done. The records are staged, then committed as ONE store
@@ -4658,35 +4665,26 @@ async function writeImport(items, ctx){
       const it=items[i]||{}, e=it.entry; if(!e) continue;
       try{
         const rec=ThriveIntake.toRecord(e, { today:today(), note_text:ctx.notes, batch:ctx.batch });
-        let s=rec.slug;
-        // R13: the ONE re-import classifier (ThriveIntake.importPlan) decides new vs update vs update_locked
-        // vs decision. A decision (an archived slug) is resolved only by Thyab's explicit per-row choice,
-        // carried on it.decision; without it the row is left pending, never written silently.
-        let plan=ThriveIntake.importPlan(s, existing);
-        if(plan==="decision"){
-          const d=it.decision;
-          if(d==="new"){ plan="new"; }                                            // import as a fresh, suffixed card
-          else if(d==="restore"){ plan=(existing[s]&&existing[s].hasHistory)?"update_locked":"update"; }  // restore-and-update
-          // AGREEMENT: an upload always INSERTS a new operation, it is never silently dropped. When no explicit
-          // per-row choice is given for a slug that collides with an ARCHIVED card, default to a fresh, suffixed
-          // NEW card (the archived card is left untouched as history). This replaces the old silent "pending"
-          // drop that made an upload vanish. Restore is still available as an explicit choice (d==="restore").
-          else { plan="new"; }
-        }
+        const s=rec.slug;
+        // The opportunity's IDENTITY is its stable slug: one slug = one public link (/opp/<slug>) = one card,
+        // forever. The ONE re-import classifier (ThriveIntake.importPlan) has exactly two outcomes: a slug the
+        // system does not know is "new" (create it); a slug it knows - active OR archived - is "update" (matched
+        // by slug, updated IN PLACE, never suffixed, never duplicated). A re-upload of a business is the SAME
+        // opportunity; the count of send operations lives separately in console_mail. The classifier now sees
+        // every opp the server knows, including archived rows pruned from the manifest (see oppExistingMeta), so
+        // a known slug can no longer hide from it and produce a drop, an invisible archived update, or a twin.
+        const plan=ThriveIntake.importPlan(s, existing);   // "new" (unknown slug) or "update" (known: match in place)
         const isNew=(plan==="new");
-        // A slug collision only matters for a NEW record; an update keeps its slug. An import-as-new over an
-        // existing (or archived) slug is suffixed so it never overwrites the card it was told to spare.
-        if(isNew && (seen[s] || existing[s])){ let k=2; while(seen[s+"-"+k]||existing[s+"-"+k]) k++; s=s+"-"+k; }
-        rec.slug=s; seen[s]=1;
         const html=(e.file&&e.file.html)||"";
-        // Update in place without knocking a sent or activated opportunity back to a draft.
+        // Update in place without knocking a sent or activated opportunity back to a draft: its lifecycle fields
+        // are deleted here so the STORED values survive the merge.
         if(!isNew){ delete rec.published; delete rec.stage; delete rec.sent_on; }
-        // A card that already sent something never has its body or subject silently changed under it.
-        if(plan==="update_locked"){ delete rec.outreach_text; delete rec.outreach_subject; }
-        // Archived flag: a NEW card is unarchived and a RESTORE explicitly unarchives; a plain update never
-        // touches it (deleted here so the stored value survives the merge), so a re-import never silently
-        // un-archives - or un-deletes - a card. The tombstone is lifted so a re-created slug stays created.
-        if(isNew || it.decision==="restore"){ rec.archived=false; } else { delete rec.archived; }
+        // A re-upload is an act of resurrection: the opportunity is ALWAYS un-archived (it returns to the board,
+        // keeping its slug, its link and its history), and the uploaded subject and body are ALWAYS synced onto
+        // the card - a re-upload that carried a message never leaves the card message-less (the old update path
+        // discarded them, which is how a re-uploaded card came back with outreach_subject=null). A create is
+        // still never dropped (Axiom 3) and, matched by its own slug, never overwrites a different card.
+        rec.archived=false;
         liftTomb("opp", s);
         staged.push(rec);                               // stage FIRST: a create never drops the card, even if hosting fails
         if(it.host){
@@ -4720,7 +4718,6 @@ function importResultMsg(tally, skipped){
   tally=tally||{}; const parts=[];
   parts.push(boardText(getLang(),"imp_new", tally.imported||0));
   if(tally.updated) parts.push(boardText(getLang(),"imp_updated", tally.updated));
-  if(tally.pending) parts.push(boardText(getLang(),"imp_pending", tally.pending));  // R13: archived-slug rows still awaiting Thyab's restore-or-new choice
   if(tally.hosted) parts.push(boardText(getLang(),"bt_hosted", tally.hosted));
   if(tally.incomplete) parts.push(boardText(getLang(),"bt_incomplete", tally.incomplete));
   if(skipped) parts.push(boardText(getLang(),"imp_skipped", skipped));

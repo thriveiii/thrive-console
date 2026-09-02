@@ -1216,21 +1216,18 @@
      means an HTML page and a manifest entry are both present and nothing else is off. Every other
      state is warned, with its reason named, and a warned row blocks approval until the operator
      decides. Nothing here writes; it only reads and reports. */
-  /* R13 (P19) - re-import is idempotent by slug. `existing` is a map { slug: {archived, hasHistory} }
-     computed by the caller (the client, which alone can read the ledgers). importPlan is the ONE
-     classifier every surface reads, so there is one lifecycle path and no per-slug branches:
-       new           - no card with this slug exists; create it.
-       update        - a card exists with NO ledger history; refresh it in place (contacts, name,
-                       template, body), keeping its lifecycle fields.
-       update_locked - a card exists WITH ledger history; refresh the safe fields but never silently
-                       change the body or subject under a card that already sent something.
-       decision      - an ARCHIVED card exists with this slug; Thyab must pick restore-and-update or
-                       import-as-new. Never resolved silently. */
+  /* R13 (P19) - re-import is idempotent by slug: the slug is the opportunity's stable identity (one slug =
+     one public link = one card, forever). `existing` is a map { slug: {archived, hasHistory} } computed by
+     the caller (the client, which alone can read the ledgers, and which now feeds in every opportunity the
+     server knows, including archived rows pruned from the manifest). importPlan is the ONE classifier every
+     surface reads, and it has exactly two outcomes - one lifecycle path, no per-slug branch, no silent question:
+       new    - no card with this slug exists anywhere the system knows; create it.
+       update - a card with this slug exists (active OR archived); match it by slug and update it IN PLACE,
+                keeping its slug, its link and its ledger history. A re-upload is the SAME opportunity, never a
+                new slug and never a duplicate; the count of send operations lives apart in console_mail. */
   function importPlan(slug, existing) {
     var m = existing && existing[slug];
     if (!m) return "new";
-    if (m.archived) return "decision";
-    if (m.hasHistory) return "update_locked";
     return "update";
   }
 
