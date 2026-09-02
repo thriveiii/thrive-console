@@ -66,6 +66,11 @@ same tabs. That is one component with two sets of values, not two components.
 The tabs are Overview, Text, Page, Outreach, History. They are nouns, because a tab strip is a
 place you are, and a verb reads as a button you press.
 
+A row on 02 Tasks opens this window on the tab that matches its reason: a waiting reply opens
+Outreach, a card that cannot send opens Text, a page not yet live opens Page, and an approval
+or a stall opens Overview. The reason carried the operator here, so the window opens where the
+work is, not at a landing tab they must then leave. See section 13.
+
 **Law 3.7.** The window BORROWS the editor and the composer by moving their nodes into itself.
 It never copies their markup, and it returns them the moment anything else needs them.
 
@@ -276,3 +281,258 @@ implements it. Include the reasoning, not only the rule. A rule without its reas
 overridden by the next person who does not know why it existed.
 
 Rules in this document may be changed. They may not be quietly ignored.
+
+
+## 13. Three surfaces and one window
+
+Written under the section 12 protocol: the decision with its reasoning, in the same pull request
+that implements it. Nothing here overrides a law; every law is cited where it binds.
+
+Author: Claude for Thyab. Date: September 2, 2026. Status: settled. Decisions A and B are closed
+(section 11).
+
+### 0. The one sentence
+
+The console has exactly three surfaces and one window. A surface answers one question. The window
+is where an opportunity is worked, and it opens from any surface without leaving it.
+
+- **01 Operations and Access** answers: where is everything, and who may act on it. The ruling surface.
+- **02 Tasks** answers: what needs me now. The deciding surface.
+- **03 Library** answers: what do I have, and what did I do. The reading surface.
+- **The window** (law 3.6) is the workspace for one opportunity: Overview, Text, Page, Outreach, History, Discussion.
+
+Anything that is not one of these is a section inside one of them, or an item in the demoted account
+menu. A fourth surface requires rewriting section 2 diagnosis 1, and that is the guard.
+
+### 1. Why three is the cure of seven, not its return
+
+Section 2 names the disease precisely: seven destinations of **equal weight**, configuration beside
+daily work as an equal, and every action a view change that reset context. The disease was flatness
+and accretion, not the number.
+
+Three surfaces cure it because they are not equal:
+
+| Surface | Weight | Kind | Question | Configuration allowed? |
+|---|---|---|---|---|
+| 01 Operations and Access | primary | ruling | where is everything, who may act | no |
+| 02 Tasks | primary, badged | deciding | what needs me now | no |
+| 03 Library | secondary | reading | what do I have, what did I do | no |
+| account menu | demoted | configuration | Profile, Admin, Sign out | yes, only here |
+
+Law 3.5 already grants a second surface for the question the board is weak at. Law 3.6 already defines
+the window. This section names the whole set and closes it.
+
+Context never breaks (diagnosis 4): switching surfaces is a crossfade of opacity and transform (law 8,
+gate G7), each surface keeps its scroll position, and the window opens over whichever surface you are
+on and returns you to it. The URL hash carries the surface (`#ops`, `#tasks`, `#library`) so refresh,
+back, and a deep link land where you were.
+
+### 2. The data every surface reads (one store, three projections)
+
+There is one truth and three views of it. No surface stores anything of its own (law 3.4, gate G6).
+
+| Truth | Source | Read by |
+|---|---|---|
+| Opportunities and their lane | `console_board` (server-derived from `console_opps`) | 01 board, 02 queue, 03 archive |
+| Sends | `console_mail` (written by the relay on Resend acceptance; the browser merges by the same Resend id) | 01 quota and feed, 02 queue, window Outreach and History |
+| Replies and bounces | `console_inbound` (relay inbox scan) | 01 feed, 02 queue, window History |
+| Opens | `console_hits` (relay pixel and beacon, self views excluded) | window History, 01 feed |
+| People and roles | `console_members` | 01 Access, action gating everywhere |
+| Templates | the kit templates in the repo, usage derived from `console_opps` | 03 Library |
+| Actor of an action | `console_mail.actor`, `console_opps.created_by`, the activity log | every signed row |
+
+Tasks is a filter and a sort over this store. The archive is the `archived` flag over the same
+opportunities. Access is `console_members`. None of them is a new lane (section 11, "a new lane only
+for a genuinely new state"); they are Ring 2 projections, which is exactly what section 11 says a
+filter is.
+
+### 3. Surface 01, Operations and Access
+
+**Question.** Where is everything, and who may act on it.
+
+**Layout, top to bottom.**
+
+1. **The ruling strip.** One line of today's numbers that are decisions, not reports: sends today of
+   100, sends this month of 1000, replies waiting, stalled. Each number is a link into 02 Tasks
+   filtered to that reason. This is the answer to diagnosis 2: the home rules. It is small, and it is
+   the only reporting on this surface.
+2. **The board.** Unchanged in law: lanes Under Review, Live, Sent, Opened, Replied; horizontal
+   position is state (law 3.1); no lane hidden, the board scrolls horizontally on narrow screens
+   (law 3.2); won and lost in the collapsed tray (law 3.3). Two primary actions live here and nowhere
+   in the top bar: **Upload** and **New message**, the crowning gradient (law 4.2, one primary action
+   per screen, so Upload is primary and New message is secondary weight).
+3. **Access.** The people and their reach: each member with role and what the role may do (owner:
+   approve, publish, archive, delete; member: upload, activate, write, request approval), and their
+   count of actions today. This is where the approval gate becomes visible as policy, not as a
+   surprise on a button.
+4. **The signed operations feed.** The last actions across the pipeline, each with its actor and its
+   opportunity, as prose rows that wrap at spaces. This is the accountability trail: no operation is
+   anonymous.
+
+**Every card is signed.** The actor appears on the card as an avatar initial and a name. Colour is not
+used for the actor (see section 6, the colour decision); position and the lane carry state, the
+signature carries who.
+
+**Why Access lives here and not in Admin.** Access is not configuration, it is the daily fact of who is
+allowed to move what. Putting it beside the board makes the gate legible before it is enforced.
+Editing roles stays in Admin (the account menu), which is configuration.
+
+### 4. Surface 02, Tasks
+
+**Question.** What needs me now.
+
+**The queue, derived and ordered by cost of delay.**
+
+| Priority | Reason | Derived from | Primary action |
+|---|---|---|---|
+| 1 | Reply waiting | Replied lane, reply not yet answered | Reply (window, Outreach) |
+| 2 | Approval requested | member requested, owner not yet approved | Approve or return (window, Overview) |
+| 3 | Cannot send | recipient or subject missing on a Ready card | Fix (window, Text) |
+| 4 | Stalled | idle beyond `--stall-days` | Follow up or archive (window) |
+| 5 | Awaiting activation | draft uploaded, page not live | Activate (window, Page) |
+
+**Role-aware, same data.** The owner's queue is approvals, replies, stalled across everything. A
+member's queue is their own drafts needing a recipient or activation, and replies on cards they
+operate. Same rows, filtered by role and ownership. This is law 3.4 in practice: the queue is never
+stored, so it can never disagree with the board.
+
+**Each row.** Business, the reason in one phrase, the actor who created it, the age, one primary
+action. Selecting a row opens the window on the tab that matches the reason (Reply opens Outreach,
+Fix opens Text, Activate opens Page). Completing the action changes state, and the row disappears
+because it was derived; nothing is marked done.
+
+**Badge.** The Tasks segment in the top bar carries the queue count. It is the only badge in the top
+bar, so it is readable (law 4.1's logic applied to attention).
+
+**Empty state.** One sentence: nothing needs you. Diagnosis 2 again: the surface rules; it does not
+fill silence with reports.
+
+**Why a surface and not a lane.** A lane is a state. Needs-me cuts across states. Section 11 calls that
+a filter, Ring 2, and a filter with its own question and its own order is a surface.
+
+### 5. Surface 03, Library
+
+**Question.** What do I have, and what did I do.
+
+Two sub-views under one control, never mixed, because templates are things you use again and the
+archive is things you did.
+
+**Templates.** Each kit template (en-opp1, ar-opp1, later offer-v1) as a card: name, language and
+direction, a live thumbnail preview, usage count derived from `console_opps`, and three actions:
+Preview (a wide in-place preview), Open full (the standalone page in a new tab), Use (starts Upload
+with that template). The owner adds and retires templates; members use them.
+
+**Operations archive.** The finished work, promoted from the collapsed tray (law 3.3) into a surface
+that can be read: won, lost, archived, bounced. A dense list (law 9), searchable by business, person,
+outcome, and date. Each row: business, operated by (actor), outcome (replied, no reply, bounced,
+archived), signals (sends, opens, replies), closed date. Opening a row opens the window read-only on
+History. Restore is the one write allowed here (it un-archives, which returns the card to the board;
+it is an operation, so it is signed).
+
+**Reading, not deciding.** No sends from the Library. If a row needs a decision it belongs to Tasks,
+and Tasks will already have it, because both are derived from the same truth.
+
+### 6. The three together: the spine, and the two decisions
+
+**The spine is the window.** From 01 (a card), from 02 (a row), from 03 (an archive row), the same
+window opens: law 3.6's centred window, law 3.7's borrowed editor and composer, tabs Overview, Text,
+Page, Outreach, History, Discussion. Reply first when a reply is waiting, quoted history folded, a wide page
+preview with Open full page, realistic email render, role-gated actions (owner: Send, Approve,
+Archive, Delete; member: Activate, Request approval, Add justification, Archive), and a signed
+activity line. One component, opened from three doors, closing back to the door you used, at the
+scroll you left.
+
+**The sixth tab, Discussion.** Discussion is the team's own conversation about an opportunity, kept
+apart from Outreach and from History. Outreach is the exchange with the recipient; History is the
+signed record of what was done; Discussion is where the people working the card talk to each other.
+It is the home of a member's justification for a send and the owner's response to it: the reasoning
+the approval gate turns on lives with the card, in the open, and is never lost to a channel
+elsewhere. It carries no send and no external address; it is internal by construction, and like
+every other tab its lines are signed with their actor.
+
+**One action, three views move.** The owner approves in the window: the card moves to Ready on 01, the
+approval row leaves 02, nothing changes on 03. The owner archives: the card leaves 01, any row leaves
+02, the archive on 03 gains a row. This happens because every view derives from one store, not because
+views message each other.
+
+**The top bar collapses.** Logo, the segmented three (01, 02, 03) with a sliding indicator and the
+Tasks badge, the quota pill, the language switch, and the account menu (Profile, Admin, Sign out).
+Seven equal doors become three weighted surfaces and one demoted menu. Upload and New message move
+onto 01 as actions, not doors.
+
+**Decision A, actor colour: A1.** No actor colour. The signature is an avatar initial and a name. Law
+4.1 forbids a colour without a meaning, and the three proposed hues collided with the lane table (teal
+is Draft, violet is Sent, coral is near Opened). Colour stays with state, so it stays readable
+everywhere (law 4.1, 4.4).
+
+**Decision B, where performance lives: on 01.** Law 3.5 keeps "how is the messaging performing" off the
+board. Today's four numbers live in the ruling strip on 01 (decisions), and a collapsed Performance
+section at the bottom of 01 carries the charts (reading, opened on demand, never crowding the board).
+A fourth surface for it is not needed and would be diagnosis 1 returning.
+
+### 7. Visual logic, entirely on the existing tokens
+
+No second stylesheet (section 11). Everything maps to `styles.css`.
+
+| Element | Token or law |
+|---|---|
+| Surfaces | `--bg`, `--panel`, `--panel-2` (law 4.5) |
+| Lane colour on tokens and reason chips | `--lane-draft`, `--lane-live`, `--lane-sent`, `--lane-opened`, `--lane-replied`, `--state-stall` (section 4 table) |
+| Segmented control | `--panel-2` track, `--panel` indicator, three weights only (law 5), existing radii (gate G2) |
+| Crossfade between surfaces | `--t-base` with `--e-standard`, opacity and transform only (law 8, gate G7) |
+| The window | law 3.6 verbatim: `min(920px, 92vw)`, `88vh`, fixed header and tab strip, bottom sheet below 720px |
+| Type | `--font` and `--font-ar`, the weight map that steps down in Arabic (`html[dir="rtl"]`), `--fs-*` scale |
+| Numerals | Western, isolated, `--font-lat`; never Eastern (law 7) |
+| Direction | `--dir` and logical properties only; the segmented control mirrors; directional glyphs flip (law 7, gate G4) |
+| Density | law 9; the archive is a dense list, Tasks is a list, the board is the board |
+| Primary action | the gradient on Upload only, per screen (law 4.2) |
+
+Card signatures use no new colour; reason chips in Tasks use the lane colour of the state they point
+to, so a "reply waiting" chip is `--lane-replied` green and a "stalled" chip is `--state-stall` amber,
+which means the chips are already readable by a user who knows the board. Nothing new to learn (law 4.3).
+
+Side strips on cards are retired everywhere. State is position (law 3.1), so a coloured edge was
+redundant on the board and is forbidden as a device.
+
+### 8. Closing every gap, through the section 11 gates
+
+- **G1, faster decisions.** 02 exists for exactly this; 01's ruling strip links into it; the window
+  opens on the tab the reason needs. Pass.
+- **G2, weights and radii.** Nothing new. Pass.
+- **G3, colour.** No new colour under A1. Pass.
+- **G4, Arabic.** Logical properties, `--dir`, mirrored control, weight map, isolated numerals, Gulf
+  MSA copy («سنرسل» not «بنرسل»). Pass.
+- **G5, 390px, nothing hidden.** 01 scrolls the board horizontally (law 3.2); 02 is a list; 03 stacks
+  to one column; the window is a bottom sheet (law 3.6). Nothing hidden, scrolling is the answer. Pass.
+- **G6, derived, never stored.** Queue, archive, counts, badge, access reach: all derived. Pass.
+- **G7, transform and opacity.** Crossfade, indicator slide, window rise. Pass.
+- **G8, the twentieth use.** A crossfade is instant, the window is one component, the queue is a list.
+  Nothing charming once and slow forever. Pass.
+- **The relapse guard.** Three surfaces, one window, anything else is a section or a menu item; a
+  fourth surface requires rewriting diagnosis 1.
+- **The seven-door residue.** New message and Upload become actions on 01. Library becomes 03. Admin,
+  Profile, Sign out go to the account menu. Refresh becomes automatic (the store already syncs) or an
+  item in the menu. The top bar is done.
+
+### 9. What is built, in order
+
+1. **The window** (law 3.6 and 3.7). The centred window with the six tabs; borrowed editor and
+   composer; reply-first Outreach; wide Page preview with Open full; role-gated actions.
+2. **The top bar and the segmented three.** Seven doors to three surfaces plus the account menu;
+   Upload and New message onto 01; the Tasks badge; the URL hash.
+3. **02 Tasks.** The derived queue, role-aware, opening the window on the matching tab.
+4. **01 Access and the signed feed.** Members, roles, reach; the operations feed; signatures on cards.
+5. **03 Library.** Templates with preview and Use; the operations archive with search and Restore.
+6. **The ruling strip and the collapsed Performance section on 01** (Decision B).
+
+Each is one PR, one concern, on the existing tokens, both languages together, the Arabic gate run on
+device.
+
+### 10. Decisions, settled September 2, 2026
+
+- **A. Actor colour: A1.** No actor colour. The signature is an avatar initial and a name (law 4.1, 4.4).
+- **B. Performance: on 01.** The ruling strip for today's four numbers, a collapsed Performance section
+  for charts. No fourth surface (law 3.5, section 2 diagnosis 1).
+
+Changes to this section follow section 12: written down, with the reasoning, in the pull request that
+makes them.
