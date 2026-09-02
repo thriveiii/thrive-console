@@ -4667,7 +4667,11 @@ async function writeImport(items, ctx){
           const d=it.decision;
           if(d==="new"){ plan="new"; }                                            // import as a fresh, suffixed card
           else if(d==="restore"){ plan=(existing[s]&&existing[s].hasHistory)?"update_locked":"update"; }  // restore-and-update
-          else { tally.pending=(tally.pending||0)+1; continue; }                   // unresolved: not written
+          // AGREEMENT: an upload always INSERTS a new operation, it is never silently dropped. When no explicit
+          // per-row choice is given for a slug that collides with an ARCHIVED card, default to a fresh, suffixed
+          // NEW card (the archived card is left untouched as history). This replaces the old silent "pending"
+          // drop that made an upload vanish. Restore is still available as an explicit choice (d==="restore").
+          else { plan="new"; }
         }
         const isNew=(plan==="new");
         // A slug collision only matters for a NEW record; an update keeps its slug. An import-as-new over an
