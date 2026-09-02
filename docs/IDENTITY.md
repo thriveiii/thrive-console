@@ -299,7 +299,7 @@ is where an opportunity is worked, and it opens from any surface without leaving
 - **01 Operations and Access** answers: where is everything, and who may act on it. The ruling surface.
 - **02 Tasks** answers: what needs me now. The deciding surface.
 - **03 Library** answers: what do I have, and what did I do. The reading surface.
-- **The window** (law 3.6) is the workspace for one opportunity: Overview, Text, Page, Outreach, History.
+- **The window** (law 3.6) is the workspace for one opportunity: Overview, Text, Page, Outreach, History, Discussion.
 
 Anything that is not one of these is a section inside one of them, or an item in the demoted account
 menu. A fourth surface requires rewriting section 2 diagnosis 1, and that is the guard.
@@ -436,11 +436,19 @@ and Tasks will already have it, because both are derived from the same truth.
 
 **The spine is the window.** From 01 (a card), from 02 (a row), from 03 (an archive row), the same
 window opens: law 3.6's centred window, law 3.7's borrowed editor and composer, tabs Overview, Text,
-Page, Outreach, History. Reply first when a reply is waiting, quoted history folded, a wide page
+Page, Outreach, History, Discussion. Reply first when a reply is waiting, quoted history folded, a wide page
 preview with Open full page, realistic email render, role-gated actions (owner: Send, Approve,
 Archive, Delete; member: Activate, Request approval, Add justification, Archive), and a signed
 activity line. One component, opened from three doors, closing back to the door you used, at the
 scroll you left.
+
+**The sixth tab, Discussion.** Discussion is the team's own conversation about an opportunity, kept
+apart from Outreach and from History. Outreach is the exchange with the recipient; History is the
+signed record of what was done; Discussion is where the people working the card talk to each other.
+It is the home of a member's justification for a send and the owner's response to it: the reasoning
+the approval gate turns on lives with the card, in the open, and is never lost to a channel
+elsewhere. It carries no send and no external address; it is internal by construction, and like
+every other tab its lines are signed with their actor.
 
 **One action, three views move.** The owner approves in the window: the card moves to Ready on 01, the
 approval row leaves 02, nothing changes on 03. The owner archives: the card leaves 01, any row leaves
@@ -508,7 +516,7 @@ redundant on the board and is forbidden as a device.
 
 ### 9. What is built, in order
 
-1. **The window** (law 3.6 and 3.7). The centred window with the five tabs; borrowed editor and
+1. **The window** (law 3.6 and 3.7). The centred window with the six tabs; borrowed editor and
    composer; reply-first Outreach; wide Page preview with Open full; role-gated actions.
 2. **The top bar and the segmented three.** Seven doors to three surfaces plus the account menu;
    Upload and New message onto 01; the Tasks badge; the URL hash.

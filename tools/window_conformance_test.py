@@ -3,7 +3,8 @@
 The app shell ALREADY carries the centred window (#modal, console.html:1259) with the five canonical tabs and
 move-not-copy borrowing into #modalHost (app.js:12808). This gate holds that law in place and fails when broken:
 
-  1. law 3.6, the five canonical tabs in order: overview, text, page, outreach, history (a sixth may follow).
+  1. law 3.6, the five canonical tabs in order: overview, text, page, outreach, history, and the sixth
+     tab ratified by IDENTITY.md section 13, discussion (the team-internal collaboration surface).
   2. law 3.7, BORROWED not copied: exactly one #eSend in the document after open, and after close.
   3. law 3.6, centred window at 1180 (min(920px, 92vw)); bottom sheet below 720px, anchored to the bottom edge.
   4. law 3.6, only the BODY scrolls: #modalBody is the scroll container, the window itself does not scroll.
@@ -73,6 +74,8 @@ with sync_playwright() as p:
     tabs = pg.evaluate("()=>[].map.call(document.querySelectorAll('#modalTabs .modal-tab'), b=>b.getAttribute('data-tab'))")
     ck("law 3.6: the first five tabs are overview, text, page, outreach, history, in that order",
        tabs[:5] == ["overview", "text", "page", "outreach", "history"], tabs)
+    ck("IDENTITY.md section 13: the sixth tab is discussion (the ratified team-internal surface)",
+       len(tabs) >= 6 and tabs[5] == "discussion", tabs)
 
     # ---- 2 to 4. open the window: borrowing, geometry, scrolling ------------------------------------
     opened = pg.evaluate("""async ()=>{
