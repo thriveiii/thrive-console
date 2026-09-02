@@ -13327,8 +13327,14 @@ function initModal(){
     // P24: the explicit Send, offered from the card. It opens the two-path chooser (one brief / a campaign),
     // which routes into the existing composer or campaign screen. Hidden for a child card (it answers its
     // parent's campaign) and while a campaign is already in flight (the control below owns that).
-    var canSend = !(o.spawned_from && o.spawned_from.parent) && !(o.campaign && o.campaign.state==="sending");
-    var sendBar = canSend ? '<div class="ov-send"><button type="button" class="btn ov-send-btn" data-sendchoose="'+esc(o.slug)+'">'+ic("send")+esc(t("send_which_cta"))+'</button></div>' : "";
+    // THE APPROVAL GATE, made visible (IDENTITY.md section 13). A member uploads, activates and writes; the
+    // OWNER sends. Sending is therefore an owner action in the window, and a member reads one line saying so
+    // rather than being shown a button that would refuse. The role is the roster's, from console_members
+    // (isOwnerMember -> memberRole), never a guess; nothing about the send path itself changes.
+    var maySend = isOwnerMember();
+    var canSend = maySend && !(o.spawned_from && o.spawned_from.parent) && !(o.campaign && o.campaign.state==="sending");
+    var sendBar = canSend ? '<div class="ov-send"><button type="button" class="btn ov-send-btn" data-sendchoose="'+esc(o.slug)+'">'+ic("send")+esc(t("send_which_cta"))+'</button></div>'
+      : (maySend ? "" : '<p class="mw-muted mw-gate-owner">'+esc(t("mw_gate_owner_sends"))+'</p>');
     box.innerHTML=prohibitionBand(o)+recordNotes(o)+unrecordedNotice(o)+closedReplyNotice(o)+
       '<dl class="mw-rows">'+rows.join("")+'</dl>'+sendBar+extra+movesBar(o);
     try{ markCardSeen(o.slug); }catch(_){}                 // opening the card clears its badge (local only)
