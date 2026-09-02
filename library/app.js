@@ -4000,6 +4000,13 @@ async function supaConfirmMail(rec){
   if(!mailOppOk(rec)){ supaRecordDiverge("write", "console_mail", "refused: empty opp"); return { confirmed:false, refused:true }; }
   if(!supaOn()) return { confirmed:false, noServer:true };          // no server configured: the local store IS the truth
   var row=supaMailRow(rec);
+  // SINGLE SOURCE OF TRUTH, no duplicate. The relay now writes this same console_mail row server-side the
+  // moment Resend accepts (recordSend_), keyed by the Resend id. supaMailRow keys by rec.mid (a local id),
+  // so the browser and the relay used to write TWO rows for one send. Force this row's id to the Resend id
+  // (rec.id) so the browser write MERGES with the relay's by primary key instead of duplicating. The browser
+  // write stays as a durable backup for the rare case the relay's own Supabase write is unavailable; keyed
+  // identically, it can only ever be the same row. (An empty Resend id is refused by the integrity guard.)
+  if(rec && rec.id) row.id=rec.id;
   supaEnqueue({ op:"upsert", t:"console_mail", rows:[row] });        // durable: survives the direct attempt failing
   if(!supaSignedIn()) return { confirmed:false, signedOut:true };    // RLS refuses an anon write; it flushes on sign-in
   try{
@@ -4039,8 +4046,13 @@ function reconcileSendingMail(){
     });
     for(var i=0;i<a.length;i++){ var m=a[i];
       if(m && m.status==="sending" && String(m.opp||"").trim()){
-        var id=m.mid||m.id||"";
-        if(id && !queuedIds[id]){ a[i]=Object.assign({}, m, { status:"sent", confirmPending:false }); changed=true; }
+        // DEDUP-KEY consistency: the durable write now keys console_mail by the Resend id when present
+        // (supaConfirmMail), so a queued write may be keyed by the Resend id (m.id) OR the local id (m.mid).
+        // Graduate to 'sent' only when NEITHER key is still in the durable queue, so the 'sending' outbox is
+        // preserved until the write actually lands (a match by mid alone would desync from the new key).
+        var idM=String(m.mid||""), idI=String(m.id||"");
+        var stillQueued=(idM && queuedIds[idM]) || (idI && queuedIds[idI]);
+        if((idM||idI) && !stillQueued){ a[i]=Object.assign({}, m, { status:"sent", confirmPending:false }); changed=true; }
       }
     }
     if(changed){ setMailLog(a); try{ if(typeof window.thriveBoardRefresh==="function") window.thriveBoardRefresh(); }catch(_){} }
