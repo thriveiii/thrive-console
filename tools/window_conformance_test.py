@@ -43,6 +43,11 @@ ck("the approval gate: a member reads WHY, never a silent absence",
 ck("law 7: the gate line ships in BOTH languages (English and Gulf MSA)",
    i18n.count("mw_gate_owner_sends") == 2 and "الإرسال خطوة المالك" in i18n,
    "the key is missing from one of the two dictionaries")
+# law 3.6: the tabs are nouns, and law 7: a primary interface is never half-translated. Every tab key must
+# exist in BOTH dictionaries, so a tab can never render as a raw key or as English wearing Arabic.
+missing = [k for k in ("mw_overview", "mw_text", "mw_page", "mw_outreach", "mw_history")
+           if i18n.count(k + ":") != 2]
+ck("law 7: all five tab keys ship in BOTH languages", not missing, missing)
 
 class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
