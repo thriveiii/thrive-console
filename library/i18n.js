@@ -1342,6 +1342,7 @@ const I18N = {
     bdoc_readme: "README",
     bdoc_document: "Document",
     mw_o_unpub:     "Not activated",
+    mw_gate_owner_sends: "Sending is the owner's step. Your work here is ready for review.",
 
     cmp_template: "Message template",
     cmp_quick_h: "Start from",
@@ -2751,6 +2752,7 @@ const I18N = {
     bdoc_readme: "اقرأني",
     bdoc_document: "مستند",
     mw_o_unpub:     "غير مُنشّطة",
+    mw_gate_owner_sends: "الإرسال خطوة المالك. عملك هنا جاهز للمراجعة.",
 
     cmp_template: "قالب الرسالة",
     cmp_quick_h: "ابدأ من",
