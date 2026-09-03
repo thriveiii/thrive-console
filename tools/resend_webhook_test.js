@@ -1,5 +1,5 @@
 // resend-webhook gate: fails-when-broken proof of the Resend bounce webhook (defect B-2). It loads the REAL
-// relay functions resendWebhook_, supaSelectOppByMailId_ and supaInsert_ from relay/thrive-relay.gs into a
+// relay functions resendWebhook_, supaSelectMailById_ and supaInsert_ from relay/thrive-relay.gs into a
 // sandbox that stubs ONLY the Apps Script boundary (props_ and UrlFetchApp), so the real classification,
 // opp-resolution, row shape, idempotent id, secret gate, and never-throw contract all run for real.
 //
@@ -26,7 +26,7 @@ function fnSrc(src, sig) {
 // ---- the sandbox boundary: props_ (Script Properties) and UrlFetchApp (network) ----
 const SECRET = "sekret-xyz";
 let PROPS = { RESEND_WEBHOOK_SECRET: SECRET, SUPABASE_URL: "https://x.supabase.co", SUPABASE_SERVICE_KEY: "svc" };
-let MAIL = {};              // id -> opp, the console_mail read fixture
+let MAIL = {};              // id -> { opp, to_addr } (a bare opp string is accepted and normalized), the console_mail read fixture
 let WRITES = [];            // captured console_inbound upserts
 let FORCE_READ_STATUS = 200, FORCE_READ_THROW = false, FORCE_WRITE_THROW = false;
 
@@ -37,11 +37,12 @@ function makeEnv() {
       const method = (opts && opts.method) || "get";
       if (method === "get") {
         if (FORCE_READ_THROW) throw new Error("network");
-        // parse ?id=eq.<id>&select=opp
+        // parse ?id=eq.<id>&select=opp,to_addr
         const m = /id=eq\.([^&]+)/.exec(url);
         const id = m ? decodeURIComponent(m[1]) : "";
-        const opp = MAIL[id];
-        const body = (opp != null) ? JSON.stringify([{ opp: opp }]) : "[]";
+        const rec = MAIL[id];
+        const mrow = (rec == null) ? null : (typeof rec === "string" ? { opp: rec, to_addr: "" } : rec);
+        const body = mrow ? JSON.stringify([mrow]) : "[]";
         return { getResponseCode: function () { return FORCE_READ_STATUS; }, getContentText: function () { return body; } };
       }
       // post -> console_inbound upsert
@@ -51,9 +52,9 @@ function makeEnv() {
     }
   };
   const src = fnSrc(relay, "function supaInsert_(") + "\n" +
-              fnSrc(relay, "function supaSelectOppByMailId_(") + "\n" +
+              fnSrc(relay, "function supaSelectMailById_(") + "\n" +
               fnSrc(relay, "function resendWebhook_(") + "\n" +
-              "return { resendWebhook_: resendWebhook_, supaSelectOppByMailId_: supaSelectOppByMailId_ };";
+              "return { resendWebhook_: resendWebhook_, supaSelectMailById_: supaSelectMailById_ };";
   return new Function("props_", "UrlFetchApp", src)(props_, UrlFetchApp);
 }
 const ENV = makeEnv();
@@ -68,9 +69,13 @@ ck("the resend_webhook branch is placed BEFORE authOk_ (a URL-is-capability op)"
    dp.indexOf("op === 'resend_webhook'") >= 0 && dp.indexOf("op === 'resend_webhook'") < dp.indexOf("authOk_(d.auth)"));
 ck("resendWebhook_ writes only through the existing supaInsert_ (no new write path)",
    /supaInsert_\('console_inbound', \[row\]\)/.test(fnSrc(relay, "function resendWebhook_(")));
-ck("the read helper is a GET selecting only opp, limit 1, url-encoded id",
-   /console_mail\?id=eq\.'\s*\+\s*encodeURIComponent\(id\)\s*\+\s*'&select=opp&limit=1'/.test(fnSrc(relay, "function supaSelectOppByMailId_(")) &&
-   /method: 'get'/.test(fnSrc(relay, "function supaSelectOppByMailId_(")));
+ck("the read helper is a GET selecting opp AND to_addr, limit 1, url-encoded id (one read, no second query)",
+   /console_mail\?id=eq\.'\s*\+\s*encodeURIComponent\(id\)\s*\+\s*'&select=opp,to_addr&limit=1'/.test(fnSrc(relay, "function supaSelectMailById_(")) &&
+   /method: 'get'/.test(fnSrc(relay, "function supaSelectMailById_(")));
+ck("resendWebhook_ resolves the mail row ONCE and reads to_addr from it (no second query)",
+   /supaSelectMailById_\(emailId\)/.test(fnSrc(relay, "function resendWebhook_(")) &&
+   (fnSrc(relay, "function resendWebhook_(").match(/supaSelectMailById_\(/g) || []).length === 1 &&
+   /to_addr: toAddr/.test(fnSrc(relay, "function resendWebhook_(")));
 
 // ---- 1. secret gate ----
 reset();
@@ -101,11 +106,13 @@ call(SECRET, { type: "email.complained", data: { email_id: "snd_1" } });
 ck("email.complained -> bounce 'hard' (a complaint must stop outreach)", WRITES[0].rows[0].bounce === "hard", WRITES[0]);
 
 // ---- 4. row shape + opp resolution + idempotent id ----
-reset(); MAIL["snd_9"] = "underdog-coffee-bread";
+reset(); MAIL["snd_9"] = { opp: "underdog-coffee-bread", to_addr: "underdogcoffeeandbread.shop@gmail.com" };
 call(SECRET, { type: "email.bounced", created_at: "2026-09-03T01:02:03Z", data: { email_id: "snd_9", bounce: { type: "Permanent" } } });
 const row = WRITES[0].rows[0];
 ck("the row is console_inbound at kind='auto' (the view's bounce channel)", row.kind === "auto", row);
 ck("the opp is resolved from console_mail by the Resend email id", row.opp === "underdog-coffee-bread", row);
+ck("B-3.1: the row carries to_addr, resolved from the SAME console_mail row (the recipient this bounce belongs to)",
+   row.to_addr === "underdogcoffeeandbread.shop@gmail.com", row);
 ck("the id is deterministic: rb_<email_id>_<type> (idempotent on redelivery)", row.id === "rb_snd_9_email.bounced", row.id);
 ck("the row carries a bounce + ts + up, and keeps the RAW event and type in data",
    row.bounce === "hard" && row.ts === "2026-09-03T01:02:03Z" && typeof row.up === "number" &&
@@ -115,22 +122,31 @@ ck("the write targets console_inbound", /\/rest\/v1\/console_inbound$/.test(WRIT
 // ---- 5. unresolved opp: still writes a lossless null-opp row ----
 reset(); // MAIL empty -> read returns []
 call(SECRET, { type: "email.bounced", data: { email_id: "snd_unknown", bounce: { type: "Permanent" } } });
-ck("an unresolvable opp still writes a row, with opp='' (lossless, matches no card)",
-   WRITES.length === 1 && WRITES[0].rows[0].opp === "" && WRITES[0].rows[0].bounce === "hard", WRITES[0]);
+ck("an unresolvable opp still writes a row, with opp='' AND to_addr='' (lossless, never invented)",
+   WRITES.length === 1 && WRITES[0].rows[0].opp === "" && WRITES[0].rows[0].to_addr === "" && WRITES[0].rows[0].bounce === "hard", WRITES[0]);
+
+// a console_mail row with a null to_addr: opp resolves, to_addr stays '' (never invented)
+reset(); MAIL["snd_2"] = { opp: "acme", to_addr: null };
+call(SECRET, { type: "email.bounced", data: { email_id: "snd_2", bounce: { type: "Permanent" } } });
+ck("a resolved opp with a null to_addr writes opp set and to_addr='' (never invented)",
+   WRITES[0].rows[0].opp === "acme" && WRITES[0].rows[0].to_addr === "", WRITES[0]);
 
 // ---- 6. never throws (a read or write failure is a silent 200) ----
 reset(); MAIL["snd_1"] = "acme"; FORCE_READ_THROW = true;
 r = call(SECRET, { type: "email.bounced", data: { email_id: "snd_1", bounce: { type: "Permanent" } } });
-ck("a read failure never throws: 200, opp='' (null read), row still written", r.ok === true && WRITES.length === 1 && WRITES[0].rows[0].opp === "", WRITES);
+ck("a read failure never throws: 200, opp='' and to_addr='' (null read), row still written",
+   r.ok === true && WRITES.length === 1 && WRITES[0].rows[0].opp === "" && WRITES[0].rows[0].to_addr === "", WRITES);
 reset(); MAIL["snd_1"] = "acme"; FORCE_WRITE_THROW = true;
 r = call(SECRET, { type: "email.bounced", data: { email_id: "snd_1", bounce: { type: "Permanent" } } });
 ck("a write failure never throws out of the webhook: still returns 200", r && r.ok === true, r);
 
 // ---- 7. the read helper on a non-200 returns null (no throw) ----
 reset(); MAIL["snd_1"] = "acme"; FORCE_READ_STATUS = 500;
-ck("supaSelectOppByMailId_ returns null on a non-200 read", ENV.supaSelectOppByMailId_("snd_1") === null);
-reset(); MAIL["snd_1"] = "acme";
-ck("supaSelectOppByMailId_ returns the opp on a 200 read", ENV.supaSelectOppByMailId_("snd_1") === "acme");
+ck("supaSelectMailById_ returns null on a non-200 read", ENV.supaSelectMailById_("snd_1") === null);
+reset(); MAIL["snd_1"] = { opp: "acme", to_addr: "a@acme.com" };
+const got = ENV.supaSelectMailById_("snd_1");
+ck("supaSelectMailById_ returns the {opp, to_addr} row on a 200 read",
+   got && got.opp === "acme" && got.to_addr === "a@acme.com", got);
 
 console.log("");
 if (fails) { console.log(fails + " FAILED"); process.exit(1); }

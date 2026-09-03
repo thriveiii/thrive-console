@@ -450,13 +450,13 @@ function supaInsert_(table, rows) {
    SUPABASE_SERVICE_KEY as supaInsert_. Selects only the opp column of one row. Returns the slug, or null when
    the row is absent, unconfigured, or on ANY non-200 / parse failure - it NEVER throws, so a webhook that
    cannot resolve an opp still writes a lossless null-opp row rather than 5xx-ing. The key is never logged. */
-function supaSelectOppByMailId_(id) {
+function supaSelectMailById_(id) {
   var url = props_().getProperty('SUPABASE_URL');
   var key = props_().getProperty('SUPABASE_SERVICE_KEY');
   if (!url || !key || !id) return null;
   try {
     var q = String(url).replace(/\/+$/, '') + '/rest/v1/console_mail?id=eq.' +
-            encodeURIComponent(id) + '&select=opp&limit=1';
+            encodeURIComponent(id) + '&select=opp,to_addr&limit=1';
     var res = UrlFetchApp.fetch(q, {
       method: 'get',
       headers: { apikey: key, Authorization: 'Bearer ' + key },
@@ -464,7 +464,7 @@ function supaSelectOppByMailId_(id) {
     });
     if (res.getResponseCode() !== 200) return null;
     var rows = JSON.parse(res.getContentText() || '[]');
-    return (rows && rows.length && rows[0] && rows[0].opp) ? rows[0].opp : null;
+    return (rows && rows.length && rows[0]) ? rows[0] : null;   // { opp, to_addr } or null; one read, no second query
   } catch (e) {
     return null;   // never throw out of the webhook
   }
@@ -502,16 +502,21 @@ function resendWebhook_(e, d) {
       bounce = (cls.indexOf('transient') >= 0 || cls.indexOf('soft') >= 0) ? 'soft' : 'hard';
     }
 
-    // 4. resolve the opp from the Resend email id (the console_mail PK). null only when genuinely unknown.
+    // 4. resolve the opp AND the recipient from the Resend email id (the console_mail PK), in ONE read. opp is
+    //    null and to_addr is '' only when the send row is genuinely unknown; neither is ever invented.
     var emailId = String((data && (data.email_id || data.id)) || '');
-    var opp = emailId ? supaSelectOppByMailId_(emailId) : null;
+    var mailRow = emailId ? supaSelectMailById_(emailId) : null;
+    var opp = (mailRow && mailRow.opp) || null;
+    var toAddr = (mailRow && mailRow.to_addr) || '';
 
-    // 5. the console_inbound row, supaInboundRow_ shape. Deterministic id => idempotent on redelivery. The RAW
-    //    event and the event type are kept in data, so hard vs soft vs complaint stays distinguishable later.
+    // 5. the console_inbound row, supaInboundRow_ shape plus to_addr (B-3.1): the recipient this bounce belongs
+    //    to, so a later layer can attribute the bounce per recipient. Deterministic id => idempotent on
+    //    redelivery. The RAW event and the event type are kept in data, so hard/soft/complaint stays legible.
     var ts = String((d && d.created_at) || (data && data.created_at) || new Date().toISOString());
     var row = {
       id: 'rb_' + emailId + '_' + type,
       opp: opp || '',
+      to_addr: toAddr,
       kind: 'auto',
       bounce: bounce,
       ts: ts,
