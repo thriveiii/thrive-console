@@ -3904,11 +3904,11 @@ function supaMergeTemplatesToCache(rows){
    compatible), minus the page html, which becomes its own console_pages row. */
 function supaRowFromOpp(d){
   if(!d) return null;
-  var data=Object.assign({}, d); delete data.html;
+  var data=Object.assign({}, d); delete data.html; delete data.cycle;   // cycle is its own top-level column (like html is its own row); do not duplicate it inside data
   return { slug:d.slug, business:d.business||"", stage:d.stage||"",
     published:!!d.published, archived:!!d.archived,
     outreach_subject:d.outreach_subject||"", outreach_text:d.outreach_text||"",
-    channel:d.channel||null, data:data, up:d.up||Date.now() };
+    channel:d.channel||null, cycle:d.cycle||null, data:data, up:d.up||Date.now() };   // cycle: round-trip the transit column so a served-client opp edit preserves it (never minted here - the mint-on-upload concern is deferred)
 }
 function supaMirrorOpp(d){
   if(!supaOn() || !d || !d.slug) return;
@@ -3935,8 +3935,14 @@ function supaMailRow(rec){
   // actor is a first-class column now (docs/supabase-profile-phase-b.sql), mirrored from the record's own
   // stamp so per-operator sends can be aggregated server-side; it is set only at the write site, never
   // backfilled, so a record with no actor stays honestly empty.
+  // TRANSIT CYCLE (docs/sql/transit_cycle.sql): stamp the send with the opp's CURRENT cycle, read by slug from
+  // the loaded opp. The view (console_board mail_sends) counts a send only while (m.cycle = opp.cycle) OR both
+  // null, so a send must attach to the transit it was sent in (Axiom 1). Never invent a cycle: an opp with no
+  // cycle (legacy, or a served-shell upload until the deferred mint-on-upload concern lands) stamps null, so
+  // the null-null match still holds and nothing regresses (Axiom 4: a later cycle never re-scopes this send).
+  var _opp=getDraft(rec.opp||""); var _cycle=(_opp&&_opp.cycle)||null;
   return { id:rec.mid||rec.id||"", opp:rec.opp||"", status:rec.status||"", to_addr:rec.to||"",
-    subject:rec.subject||"", ts:rec.ts||new Date().toISOString(), actor:rec.actor||"", data:rec, up:rec.up||Date.now() };
+    subject:rec.subject||"", ts:rec.ts||new Date().toISOString(), actor:rec.actor||"", cycle:_cycle, data:rec, up:rec.up||Date.now() };
 }
 function mailOppOk(rec){ return !!String((rec&&rec.opp)||"").trim(); }
 function supaMirrorMail(rec){
@@ -4212,8 +4218,15 @@ async function supaConfirmInbound(list){
 /* An open (hit) becomes one console_hits row, keyed on hitKey (type|slug|ts|vid), the same key allHits
    dedupes on, so a re-mirror or a re-backfill updates in place and never doubles an open. */
 function supaHitRow(e){
+  // TRANSIT CYCLE (docs/sql/transit_cycle.sql): the open keeps the cycle the PAGE carried at open time - the
+  // beacon reads <meta name="thrive-cycle"> and sends it on the hit, so it rides inside the event (e.cycle,
+  // hydrated here from console_hits.data). An open belongs to the transit it was captured in, NOT the opp's
+  // CURRENT cycle (Axiom 4: a later re-upload never re-scopes a past open). This mirrors the relay's own hit
+  // write (relay/thrive-relay.gs supaHitRow_) byte-for-byte, so a hit mirrored by either writer collapses to
+  // ONE row. HONEST LIMITATION: an old page with no thrive-cycle meta sends no cycle, so this stays null - the
+  // open then reads as legacy (null-null match), never guessed.
   return { id:hitKey(e), slug:(e&&e.slug)||"", type:(e&&e.type)||"open", ts:(e&&e.ts)||"",
-    self:!!(e&&e.self), data:e };
+    self:!!(e&&e.self), cycle:(e&&e.cycle)||null, data:e };
 }
 function supaMirrorHits(list){
   if(!supaOn() || !list || !list.length) return;
@@ -4433,6 +4446,7 @@ function supaReadStatus(){
 function supaOppFromRow(r, pageBy){
   var d=Object.assign({}, (r&&r.data)||{});
   if(r&&r.slug) d.slug=r.slug;
+  if(r&&r.cycle!=null) d.cycle=r.cycle;   // the opp's current transit id (top-level column, not in data) - the send/hit stamp reads it by slug
   if(pageBy && r && pageBy[r.slug]!=null) d.html=pageBy[r.slug];
   return d;
 }
@@ -4505,7 +4519,7 @@ async function supaHydrate(){
     // Stage 4: push any queued local writes up FIRST, so a device that made changes offline (or whose
     // last mirror failed) syncs them before the read, and the hydrate reflects everything this device did.
     try{ await supaFlush(); }catch(_){}
-    var opps=await S.rest("console_opps", { query:"select=slug,data" });
+    var opps=await S.rest("console_opps", { query:"select=slug,data,cycle" });   // cycle: the top-level transit column the send/hit stamp reads (docs/sql/transit_cycle.sql)
     var pages=await S.rest("console_pages", { query:"select=slug,html" });
     var pageBy={}; (pages||[]).forEach(function(p){ pageBy[p.slug]=p.html; });
     __supa.opps=(opps||[]).map(function(r){ return supaOppFromRow(r, pageBy); });
