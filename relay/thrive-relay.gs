@@ -445,6 +445,86 @@ function supaInsert_(table, rows) {
   }
 }
 
+/* One minimal read: resolve an opportunity slug from a console_mail row by its id (the Resend email id, which
+   the send path already stores as console_mail.id). Read-only, service-role, the SAME SUPABASE_URL +
+   SUPABASE_SERVICE_KEY as supaInsert_. Selects only the opp column of one row. Returns the slug, or null when
+   the row is absent, unconfigured, or on ANY non-200 / parse failure - it NEVER throws, so a webhook that
+   cannot resolve an opp still writes a lossless null-opp row rather than 5xx-ing. The key is never logged. */
+function supaSelectOppByMailId_(id) {
+  var url = props_().getProperty('SUPABASE_URL');
+  var key = props_().getProperty('SUPABASE_SERVICE_KEY');
+  if (!url || !key || !id) return null;
+  try {
+    var q = String(url).replace(/\/+$/, '') + '/rest/v1/console_mail?id=eq.' +
+            encodeURIComponent(id) + '&select=opp&limit=1';
+    var res = UrlFetchApp.fetch(q, {
+      method: 'get',
+      headers: { apikey: key, Authorization: 'Bearer ' + key },
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() !== 200) return null;
+    var rows = JSON.parse(res.getContentText() || '[]');
+    return (rows && rows.length && rows[0] && rows[0].opp) ? rows[0].opp : null;
+  } catch (e) {
+    return null;   // never throw out of the webhook
+  }
+}
+
+/* Resend delivery webhook (defect B-2), the shortest path to a truthful bounce. It reconciles a REAL bounce or
+   complaint into a console_inbound row (kind='auto', bounce hard/soft) keyed deterministically by the Resend
+   email id and event type, so a redelivery upserts in place. The console_board view already surfaces such rows
+   as a bounced/failed card, so nothing here touches the view, the send path, or any SQL. It NEVER throws: every
+   exit is a 200, so Resend does not retry-storm. It catches only future bounces; a past bounce is not replayed.
+   The shared secret is a Script Property (RESEND_WEBHOOK_SECRET), read here, never echoed and never logged. */
+function resendWebhook_(e, d) {
+  try {
+    // 1. shared-secret gate. ?whkey= must equal the Script Property. Absent or wrong: a benign 200 that writes
+    //    NOTHING and never echoes the secret (200, not 401, so a probe cannot retry-storm us either).
+    var want = props_().getProperty('RESEND_WEBHOOK_SECRET');
+    var got = (e && e.parameter && e.parameter.whkey) || '';
+    if (!want || got !== want) return { ok: true };
+
+    // 2. only real delivery failures. Any other event type is a 200 no-op.
+    var type = (d && d.type) || '';
+    if (type !== 'email.bounced' && type !== 'email.complained') return { ok: true };
+
+    var data = (d && d.data) || {};
+
+    // 3. classify. A complaint always stops outreach, so it is 'hard'. A bounce reads its classification from the
+    //    event: permanent -> 'hard', transient -> 'soft', unknown -> 'hard' (surface, never hide).
+    var bounce;
+    if (type === 'email.complained') {
+      bounce = 'hard';
+    } else {
+      var cls = String(
+        (data.bounce && (data.bounce.type || data.bounce.subType || data.bounce.subtype)) || data.type || ''
+      ).toLowerCase();
+      bounce = (cls.indexOf('transient') >= 0 || cls.indexOf('soft') >= 0) ? 'soft' : 'hard';
+    }
+
+    // 4. resolve the opp from the Resend email id (the console_mail PK). null only when genuinely unknown.
+    var emailId = String((data && (data.email_id || data.id)) || '');
+    var opp = emailId ? supaSelectOppByMailId_(emailId) : null;
+
+    // 5. the console_inbound row, supaInboundRow_ shape. Deterministic id => idempotent on redelivery. The RAW
+    //    event and the event type are kept in data, so hard vs soft vs complaint stays distinguishable later.
+    var ts = String((d && d.created_at) || (data && data.created_at) || new Date().toISOString());
+    var row = {
+      id: 'rb_' + emailId + '_' + type,
+      opp: opp || '',
+      kind: 'auto',
+      bounce: bounce,
+      ts: ts,
+      data: { source: 'resend_webhook', type: type, event: d },
+      up: Date.now()
+    };
+    supaInsert_('console_inbound', [row]);   // the existing write path; upserts by PK (id)
+    return { ok: true };
+  } catch (err) {
+    return { ok: true };   // never 5xx: a failure is a silent 200, so Resend never retry-storms
+  }
+}
+
 /* One console_inbound row, shaped BYTE FOR BYTE as the old engine's supaInboundRow (library/app.js:4132-4135):
    id is the Gmail message id (inboundKey), the whole record in data, opp/kind/bounce/ts lifted from the
    attribution this relay already computed. Every reply is mirrored (autos and opp-less rows included), exactly
@@ -1034,7 +1114,10 @@ function doGet(e) {
 function doPost(e) {
   var d = {};
   try { d = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) {}
-  var op = d.op || '';
+  // op comes from the JSON body; a webhook whose body is not ours (Resend sends `type`, not `op`) names its op
+  // in the query string instead (?op=resend_webhook), so the /exec URL carries the routing. Body callers are
+  // unchanged: d.op still wins when present.
+  var op = d.op || (e && e.parameter && e.parameter.op) || '';
 
   try {
     /* §3.2 the request contract, versioned. `missing "to"` happened because a v5
@@ -1069,6 +1152,14 @@ function doPost(e) {
        slug to [a-z0-9-] and only ever writes opp/<slug>/index.html (public opp-page content), never an
        arbitrary path, workflow, or secret. The GitHub token never leaves this server. */
     if (op === 'page_publish') return json_(pagePublish_(d));
+
+    /* Resend delivery webhook (defect B-2). Answered BEFORE authOk_ for the same reason as hit and
+       page_publish: Resend carries no console SYNC_KEY, so the /exec URL plus a shared secret ARE the
+       capability. The secret is ?whkey= compared to the RESEND_WEBHOOK_SECRET Script Property; a mismatch is a
+       SILENT 200 that writes nothing. It reconciles a real bounce/complaint into a console_inbound row
+       (kind='auto', bounce hard/soft) that the console_board view already reads, so no view or SQL changes.
+       resendWebhook_ NEVER throws: any failure returns 200, so Resend never retry-storms. */
+    if (op === 'resend_webhook') return json_(resendWebhook_(e, d));
 
     authOk_(d.auth);
 
