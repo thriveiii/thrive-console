@@ -27,7 +27,10 @@ function fnSrc(src, sig) {
 // ---- run the REAL supaMailRow + the confirm-path key fix over the production shape ----
 const mrSrc = fnSrc(app, "function supaMailRow(");
 ck("supaMailRow is defined", !!mrSrc);
-const supaMailRow = new Function(mrSrc + "\nreturn supaMailRow;")();
+// supaMailRow now resolves the opp's transit cycle by slug via getDraft (the cycle-stamp change); the real
+// runtime always has getDraft in scope, so this harness provides a stub (no cycle here - this test is about
+// the dedup key, not the cycle, which has its own gate in tools/cycle_stamp_test.js).
+const supaMailRow = new Function("getDraft", mrSrc + "\nreturn supaMailRow;")(function () { return null; });
 
 // The exact confirm-row relaySend builds: it carries the LOCAL id (mid, a UUID) AND the Resend id (id: parsed.id).
 const RESEND_ID = "snd_11m6y4f10jh02p";
