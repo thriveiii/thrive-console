@@ -1264,7 +1264,14 @@ function allRecipients(data){
 // SEND-HEALTH: the free-tier provider (Resend) caps 100/day and 1000/month. The counts are SERVER TRUTH from the
 // console_mail ledger (one row per accepted send), so they never drift across devices or a reload.
 var SEND_CAP_DAY = 100, SEND_CAP_MONTH = 1000;
-var SEND_GAP_MS = 1100;   // space each relay call so a group send stays under the ~1 req/sec relay and the 6s per-call bound
+var SEND_GAP_MS = 1100;   // space each relay call so a group send stays under the ~1 req/sec relay rate
+// The relay send needs a REAL bound. The default authFetchOnce bound (FETCH_TIMEOUT_MS, 6s, board.html) cut off
+// a send that the Apps Script relay legitimately completes slower (cold start + Resend + the 302 body hop), so a
+// DELIVERED send rejected, reverted, and printed red. Resend shows every such send Delivered. 20s covers the
+// slow tail; page_publish already uses a longer bound for the same reason (see relayPost). Normal sends finish
+// in a second or two, so this only extends the wait on a genuinely slow call, turning a false failure into the
+// true success the row records.
+var RELAY_SEND_TIMEOUT_MS = 20000;
 function startOfTodayISO(){ var d=new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString(); }
 function startOfMonthISO(){ var d=new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString(); }
 // Count accepted sends today / this month from console_mail (status=sent, ts within the window). Best-effort:
@@ -1342,7 +1349,7 @@ function sendOne(slug, row, data, rcpt, mode){
   var payload = { v:REQUIRED_RELAY_L5, from:FROM_EMAIL_L5, fromName:fromName(), to:art.to, subject:art.subject,
     html:art.html, text:art.text, idempotencyKey:idem, headers:headers, slug:slug };
   if(art.attachments && art.attachments.length) payload.attachments = art.attachments;
-  return relayPost(payload).then(function(r){
+  return relayPost(payload, RELAY_SEND_TIMEOUT_MS).then(function(r){   // a real bound so a slow-but-delivered send is not cut off
     if(!r.res.ok) return { ok:false, addr:art.to };
     var d = r.data;
     if(d && d.ok===false) return { ok:false, addr:art.to };
@@ -1354,7 +1361,20 @@ function sendOne(slug, row, data, rcpt, mode){
       data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:(d && d.id) || "", provider:"endpoint", direction:"out" } };
     return confirmMail(mailRow).then(function(){ return { ok:true, addr:art.to }; },
                                      function(){ return { ok:true, addr:art.to, confirming:true }; });  // email out; the confirm-write is the 'sending' limbo, still a send
-  }, function(){ return { ok:false, addr:art.to }; });
+  }, function(err){
+    // A TIMEOUT is not a failure. With the real bound above this is the rare >20s tail; Resend still shows the
+    // send Delivered, so treat kind==="timeout" (board.html:480) as likely-delivered, mirroring the page-publish
+    // precedent (board-upload.src.js). A row MUST exist or reloadBoardData reverts the card, so write a PENDING
+    // console_mail row - the view's mail_sends counts '', sent, copied and pending - and return a non-failing
+    // 'confirming' result, so the card stays in Sent with an amber note. A genuine non-delivery flips later via
+    // the bounce webhook. Every OTHER rejection (network / aborted body) stays a real failure.
+    if(!(err && err.kind === "timeout")) return { ok:false, addr:art.to };
+    var pendRow = { id:art.token, opp:slug, status:"pending", to_addr:art.to, subject:art.subject, ts:isoNow(),
+      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null,
+      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:"", provider:"endpoint", direction:"out" } };
+    return confirmMail(pendRow).then(function(){ return { ok:true, addr:art.to, confirming:true }; },
+                                     function(){ return { ok:true, addr:art.to, confirming:true }; });   // still a send; the pending row (or the webhook) reconciles it
+  });
 }
 // runSend: REAL group send. Loops EVERY recipient (allRecipients), one throttled relay call each, settling per
 // recipient so one failure never aborts the rest, and gated by the daily/monthly send cap (server truth from
