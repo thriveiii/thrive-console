@@ -247,6 +247,31 @@ function allRecipients(data){
   }
   return out;
 }
+// ---- B2 suppression guard: the do-not-contact set (console_suppressions) ----------------------------
+// A lowercased email -> 1 map, loaded ONCE per board load via the board's OWN read helper (restGet: apikey
+// ANON + Authorization Bearer bearer(), best-effort - it resolves [] on any non-2xx, never rejects). No new
+// client, no new key. The set is consulted by runSend (list filter) and sendOne (the real chokepoint), and by
+// the upload strip (board-upload.src.js). Refreshed after each send batch so a STOP recorded mid-session (B4)
+// is seen on the next send. FAIL-OPEN by design: a read blip yields an empty set so a transient failure never
+// wrongly BLOCKS a legitimate send (mirrors sendBudget's full-budget fallback); the relay guard (B3, external
+// Code.gs) is the authoritative backstop. If the read is DENIED by RLS the set reads empty here - that is the
+// B1 RLS note to fix in Supabase, not something the client works around.
+var __suppress = null;      // the lowercased do-not-contact map; null until the first load resolves
+var __suppressP = null;     // the cached load promise, so a board load fetches the set exactly once
+function loadSuppressions(){
+  __suppressP = restGet("console_suppressions?select=email").then(function(rows){
+    var m = {};
+    (rows||[]).forEach(function(x){ var e = bareAddress((x && x.email) || "").toLowerCase(); if(e) m[e] = 1; });
+    __suppress = m;
+    return m;
+  }, function(){ __suppress = __suppress || {}; return __suppress; });   // fail-open: never block a legitimate send on a read blip
+  return __suppressP;
+}
+// Load-once: reuse the cached promise if a load is in flight or done, else start one. Awaited by runSend and by
+// the upload plan build so the set is present before any send/strip decision, even if a board-load preload has
+// not yet resolved.
+function ensureSuppress(){ return __suppressP || loadSuppressions(); }
+function isSuppressed(addr){ var e = bareAddress(String(addr||"")).toLowerCase(); return !!(e && __suppress && __suppress[e]); }
 // SEND-HEALTH: the free-tier provider (Resend) caps 100/day and 1000/month. The counts are SERVER TRUTH from the
 // console_mail ledger (one row per accepted send), so they never drift across devices or a reload.
 var SEND_CAP_DAY = 100, SEND_CAP_MONTH = 1000;
@@ -329,6 +354,11 @@ function relayPost(payload, timeoutMs){
 // abort the batch. mode/compile/idempotency/Message-ID/token are all per-recipient (unique) already.
 function sendOne(slug, row, data, rcpt, mode){
   var art = sendCompile(slug, row, data, rcpt, mode);
+  // B2 chokepoint (belt and suspenders): refuse a suppressed address and NEVER call relayPost for it. runSend
+  // already drops suppressed recipients before the cap, so in normal flow this never fires; it is the real
+  // last-line guard for any path that reaches sendOne with a suppressed address. { skipped:true } tells the
+  // batch loop to count it as skipped, never as sent and never as a failure.
+  if(isSuppressed(art.to)) return Promise.resolve({ ok:false, addr:art.to, skipped:true });
   var idem = sendIdem(slug, art.to, art.subject, art.html);
   var msgid = newMessageId();
   var headers = Object.assign({}, outboundHeaders(slug, mode), { "Message-ID": msgid });
@@ -381,13 +411,19 @@ function runSend(slug){
     // throws __kind="notlive"/"deadlink" so the catch reverts with a clear reason. Non-upload opps pass through.
     var __liveGate = (typeof upSendLiveGate==="function") ? upSendLiveGate(slug, data) : Promise.resolve();
     return __liveGate.then(function(){
+      return ensureSuppress();                                  // B2: the do-not-contact set is present before any send decision
+    }).then(function(){
       return sendBudget();
     }).then(function(budget){
+      // B2: drop any suppressed recipient BEFORE the room cap, and count them for a visible skipped line. The
+      // relay is never called for a suppressed address (allowed excludes them, and sendOne guards again).
+      var allowed = [], skipped = 0;
+      for(var si=0; si<recips.length; si++){ if(isSuppressed(recips[si].addr)) skipped++; else allowed.push(recips[si]); }
       // CAP: the send never exceeds the remaining daily/monthly budget. If a group is larger than what fits, send
       // ONLY what fits and REPORT the rest as blocked by the cap - never silently drop them.
       var room = Math.max(0, Math.min(budget.dayLeft, budget.monthLeft));
       if(room <= 0){ var ec=new Error("cap"); ec.__kind="cap"; throw ec; }
-      var toSend = recips.slice(0, room), capped = recips.length - toSend.length;
+      var toSend = allowed.slice(0, room), capped = allowed.length - toSend.length;
       var mode = sendMode(data);
       snap = JSON.parse(JSON.stringify(row));
       row.stage = "sent"; row.sent_count = Number(row.sent_count||0) + toSend.length; row.__sending = true;
@@ -396,7 +432,9 @@ function runSend(slug){
       function one(i){
         if(i >= toSend.length) return Promise.resolve();
         return sendOne(slug, row, data, toSend[i], mode).then(function(res){
-          if(res && res.ok) sent.push(res.addr); else failed.push((res && res.addr) || toSend[i].addr);
+          if(res && res.skipped) skipped++;                              // B2 belt-and-suspenders: a suppressed address is skipped, never sent, never a failure
+          else if(res && res.ok) sent.push(res.addr);
+          else failed.push((res && res.addr) || toSend[i].addr);
           if(i + 1 < toSend.length) return upDelay(SEND_GAP_MS).then(function(){ return one(i + 1); });   // THROTTLE between recipients
           return one(i + 1);
         });
@@ -405,10 +443,11 @@ function runSend(slug){
         return reloadBoardData().then(function(){}, function(){}).then(function(){
           __writing = false;
           if(sent.length === 0 && snap){ replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){} }   // nothing went out: revert (no phantom Sent)
-          var view = sendResultView(sent.length, recips.length, failed, capped);   // ONE result string+class (green / amber / red)
+          var view = sendResultView(sent.length, recips.length, failed, capped, skipped);   // ONE result string+class (green / amber / red), incl. suppressed skips
           __act[slug] = { msg:view.msg, cls:view.cls };
           if(__drawerSlug===slug) refreshDrawer(slug);
           try{ refreshSendCap(); }catch(e){}                                // the header counter reflects the new sends
+          try{ loadSuppressions(); }catch(e){}                              // B2: refresh the do-not-contact set after the batch
           return view;                                                      // resolve so a caller (the New-message overlay) can SHOW the result
         });
       });
@@ -431,14 +470,15 @@ function sendCountMsg(k, n){ return t("s_sent_n").replace("{k}", String(k)).repl
 // ONE result-tied view of a send: the same string and class everywhere. Full success is GREEN (ok); a partial
 // (some sent, but >=1 failed or cap-blocked) is the AMBER WARNING (warn), never neutral grey; nothing sent is
 // RED (bad). Returns { msg, cls, sent, failed, capped } so the overlay and the drawer render identically.
-function sendResultView(sentN, total, failedAddrs, capped){
-  failedAddrs = failedAddrs || []; capped = capped || 0;
+function sendResultView(sentN, total, failedAddrs, capped, skipped){
+  failedAddrs = failedAddrs || []; capped = capped || 0; skipped = skipped || 0;
   var failedN = failedAddrs.length;
-  if(!failedN && !capped){
-    return { msg:(sentN > 1 ? sendCountMsg(sentN, sentN) : t("s_sent")), cls:"ok", sent:sentN, failed:0, capped:0 };
+  if(!failedN && !capped && !skipped){
+    return { msg:(sentN > 1 ? sendCountMsg(sentN, sentN) : t("s_sent")), cls:"ok", sent:sentN, failed:0, capped:0, skipped:0 };
   }
   var msg = sendCountMsg(sentN, total);
   if(failedN) msg += " " + t("s_failed_n").replace("{f}", String(failedN)) + " " + failedAddrs.join(", ");
   if(capped)  msg += " " + t("s_capped_n").replace("{c}", String(capped));
-  return { msg:msg, cls:(sentN === 0 ? "bad" : "warn"), sent:sentN, failed:failedN, capped:capped };   // partial = amber warning, never neutral
+  if(skipped) msg += " " + t("s_skipped_n").replace("{s}", String(skipped));   // B2: suppressed contacts skipped, count shown beside capped
+  return { msg:msg, cls:(sentN === 0 ? "bad" : "warn"), sent:sentN, failed:failedN, capped:capped, skipped:skipped };   // partial = amber warning, never neutral
 }
