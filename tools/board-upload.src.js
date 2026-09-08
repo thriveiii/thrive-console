@@ -211,9 +211,12 @@ function upParseSections(text){
 // bare email. The only page-level warnings kept: dup_slug (two pages one slug) and no_message (a page that
 // resolved no message - the operator completes it on the card). This only reads; it writes nothing.
 function upBuildPlan(files){
-  // B2: the do-not-contact set is present before the plan is built, so a suppressed recipient is flagged in the
-  // review (a visible warning + count) and stripped at commit. ensureSuppress/isSuppressed live in board-send.src.js.
-  return ensureSuppress().then(function(){ return upReadFiles(files); }).then(function(kinds){
+  // B2: try to load the do-not-contact set before the plan is built, so a suppressed recipient is flagged in
+  // the review (warning + count) and stripped at commit. Best-effort on the LOAD only (.catch): a failed load
+  // must not break the whole upload review - the SEND path is the fail-closed backstop (runSend halts if the
+  // set never loaded), so a slip here is still caught before anything is sent. ensureSuppress/isSuppressed live
+  // in board-send.src.js.
+  return ensureSuppress().catch(function(){}).then(function(){ return upReadFiles(files); }).then(function(kinds){
     var pages = kinds.pages, texts = kinds.texts, seen = {}, rows = [];
     pages.forEach(function(pg){
       var slug = upPageSlug(pg.name);

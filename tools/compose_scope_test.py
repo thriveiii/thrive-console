@@ -60,6 +60,9 @@ with sync_playwright() as p:
         route.fulfill(status=200, headers={"content-type":"application/json"}, body="[]")
     pg.route("**/rest/v1/console_opps**", route_opps)
     pg.route("**/rest/v1/console_board**", lambda r: r.fulfill(status=200, headers={"content-type":"application/json"}, body=json.dumps(ROWS)))
+    # B2 fail-closed: the send path reads console_suppressions and blocks if it never loads; serve an empty
+    # do-not-contact list (200) so the send proceeds, as real Supabase (B1) does, and no stray real-network call.
+    pg.route("**/rest/v1/console_suppressions**", lambda r: r.fulfill(status=200, headers={"content-type":"application/json"}, body="[]"))
 
     pg.goto(f"{base}/library/board.html", wait_until="load")
     pg.wait_for_timeout(200)

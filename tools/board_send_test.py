@@ -116,6 +116,10 @@ def wire(ctx):
     ctx.route("**/rest/v1/console_opps**", route_opps)
     ctx.route("**/rest/v1/console_mail**", route_mail)
     ctx.route("**/rest/v1/console_hits**", route_empty)
+    # B2 fail-closed: the send path now reads console_suppressions and BLOCKS if it never loads. Serve an
+    # empty do-not-contact list (a 200, nobody suppressed) so a normal send proceeds, exactly as real Supabase
+    # with B1 applied and an empty table would; without this route the fail-closed guard would (correctly) halt.
+    ctx.route("**/rest/v1/console_suppressions**", route_empty)
 
 LANE_OF = """(biz)=>{ var out=''; document.querySelectorAll('.lane').forEach(function(l){ var h=l.querySelector('h2'); if(!h) return; l.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) out=h.textContent; }); }); return out; }"""
 OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ t.click(); return true; } return false; }"""

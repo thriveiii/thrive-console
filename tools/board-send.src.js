@@ -248,29 +248,49 @@ function allRecipients(data){
   return out;
 }
 // ---- B2 suppression guard: the do-not-contact set (console_suppressions) ----------------------------
-// A lowercased email -> 1 map, loaded ONCE per board load via the board's OWN read helper (restGet: apikey
-// ANON + Authorization Bearer bearer(), best-effort - it resolves [] on any non-2xx, never rejects). No new
-// client, no new key. The set is consulted by runSend (list filter) and sendOne (the real chokepoint), and by
-// the upload strip (board-upload.src.js). Refreshed after each send batch so a STOP recorded mid-session (B4)
-// is seen on the next send. FAIL-OPEN by design: a read blip yields an empty set so a transient failure never
-// wrongly BLOCKS a legitimate send (mirrors sendBudget's full-budget fallback); the relay guard (B3, external
-// Code.gs) is the authoritative backstop. If the read is DENIED by RLS the set reads empty here - that is the
-// B1 RLS note to fix in Supabase, not something the client works around.
-var __suppress = null;      // the lowercased do-not-contact map; null until the first load resolves
-var __suppressP = null;     // the cached load promise, so a board load fetches the set exactly once
-function loadSuppressions(){
-  __suppressP = restGet("console_suppressions?select=email").then(function(rows){
+// A lowercased email -> 1 map, loaded ONCE per board load and consulted by runSend (list filter) and sendOne
+// (the real chokepoint), and by the upload strip (board-upload.src.js). Refreshed after each send batch so a
+// STOP recorded mid-session (B4) is seen on the next send. No new client, no new key: the read uses the board's
+// own bearer + apikey + one-refresh-retry discipline through authFetchOnce (NOT the best-effort restGet, which
+// returns [] on BOTH a real error and an empty table and so cannot tell them apart).
+//
+// FAIL-CLOSED: this is the only suppression guard in the send path, so a send must NEVER proceed on a set that
+// never loaded. A read that returns 200 (even an EMPTY list - nobody suppressed) is a valid load and does not
+// block. Only a NEVER-loaded / failed state blocks: runSend halts the batch with a visible error, no sends, no
+// relay calls (see ensureSuppress + the runSend seam). A cached SUCCESSFUL load stays valid - a later refresh
+// that fails keeps the good set (it does not clear __suppressLoaded), so a transient blip after a good load
+// never blocks. A persistent block is the B1 RLS note (grant the operator role read on console_suppressions).
+var __suppress = null;          // the lowercased do-not-contact map; null until a load SUCCEEDS
+var __suppressLoaded = false;   // true once a read has SUCCEEDED at least once; a cached good set stays valid
+var __suppressInFlight = false; // a load is currently running (so ensureSuppress reuses it, never double-fetches)
+var __suppressP = null;         // the current load promise
+function loadSuppressions(retried){
+  __suppressInFlight = true;
+  var url = URL_BASE + "/rest/v1/console_suppressions?select=email";
+  __suppressP = authFetchOnce(url, {
+    method:"GET", headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer() }, cache:"no-store"
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return loadSuppressions(true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ throw new Error("HTTP "+r.res.status); }        // a real failure: do NOT mark loaded (fail-closed)
+    var rows = Array.isArray(r.data) ? r.data : [];
     var m = {};
-    (rows||[]).forEach(function(x){ var e = bareAddress((x && x.email) || "").toLowerCase(); if(e) m[e] = 1; });
-    __suppress = m;
+    rows.forEach(function(x){ var e = bareAddress((x && x.email) || "").toLowerCase(); if(e) m[e] = 1; });
+    __suppress = m; __suppressLoaded = true; __suppressInFlight = false;   // a 200 read (even empty) is a valid set
     return m;
-  }, function(){ __suppress = __suppress || {}; return __suppress; });   // fail-open: never block a legitimate send on a read blip
+  }, function(e){ __suppressInFlight = false; throw e; });          // keep any prior good set; a never-loaded state stays unloaded
   return __suppressP;
 }
-// Load-once: reuse the cached promise if a load is in flight or done, else start one. Awaited by runSend and by
-// the upload plan build so the set is present before any send/strip decision, even if a board-load preload has
-// not yet resolved.
-function ensureSuppress(){ return __suppressP || loadSuppressions(); }
+// A cached SUCCESSFUL load short-circuits (stays valid); an in-flight load is reused; otherwise a load is
+// (re)started. REJECTS when the set has never loaded and the load fails, so the runSend seam can block the batch.
+function ensureSuppress(){
+  if(__suppressLoaded) return Promise.resolve(__suppress);
+  if(__suppressInFlight) return __suppressP;
+  return loadSuppressions();
+}
+// True only when a set has never loaded successfully - the fail-closed block condition the send path checks.
+function suppressUnavailable(){ return !__suppressLoaded; }
 function isSuppressed(addr){ var e = bareAddress(String(addr||"")).toLowerCase(); return !!(e && __suppress && __suppress[e]); }
 // SEND-HEALTH: the free-tier provider (Resend) caps 100/day and 1000/month. The counts are SERVER TRUTH from the
 // console_mail ledger (one row per accepted send), so they never drift across devices or a reload.
@@ -411,7 +431,12 @@ function runSend(slug){
     // throws __kind="notlive"/"deadlink" so the catch reverts with a clear reason. Non-upload opps pass through.
     var __liveGate = (typeof upSendLiveGate==="function") ? upSendLiveGate(slug, data) : Promise.resolve();
     return __liveGate.then(function(){
-      return ensureSuppress();                                  // B2: the do-not-contact set is present before any send decision
+      // B2 FAIL-CLOSED: the do-not-contact set MUST be loaded before any send. If it has never loaded
+      // successfully, halt the batch here - no sends, no relay calls - with a visible error. A cached good set
+      // (or a fresh successful load) passes; only a never-loaded / failed read blocks.
+      return ensureSuppress().then(function(){
+        if(suppressUnavailable()){ var eb=new Error("suppression unavailable"); eb.__kind="suppress_block"; throw eb; }
+      }, function(){ var eb=new Error("suppression unavailable"); eb.__kind="suppress_block"; throw eb; });
     }).then(function(){
       return sendBudget();
     }).then(function(budget){
@@ -447,7 +472,7 @@ function runSend(slug){
           __act[slug] = { msg:view.msg, cls:view.cls };
           if(__drawerSlug===slug) refreshDrawer(slug);
           try{ refreshSendCap(); }catch(e){}                                // the header counter reflects the new sends
-          try{ loadSuppressions(); }catch(e){}                              // B2: refresh the do-not-contact set after the batch
+          try{ loadSuppressions().catch(function(){}); }catch(e){}          // B2: refresh the do-not-contact set after the batch (a failed refresh keeps the cached good set)
           return view;                                                      // resolve so a caller (the New-message overlay) can SHOW the result
         });
       });
@@ -458,6 +483,7 @@ function runSend(slug){
     var kind = e && e.__kind;
     var msg = (kind==="norecip") ? t("s_no_recip") : (kind==="nomsg") ? t("s_no_msg")
       : (kind==="cap") ? t("s_cap")
+      : (kind==="suppress_block") ? t("s_suppress_unavail")   // B2 fail-closed: the do-not-contact list never loaded; nothing was sent
       : (kind==="deadlink") ? t("s_dead_link")    // page activates on upload; the ONLY page block left is a definitively dead link (404/410)
       : (e && e.authRequired) ? t("err") : t("s_failed");
     __act[slug] = { msg:msg, cls:"bad" };
