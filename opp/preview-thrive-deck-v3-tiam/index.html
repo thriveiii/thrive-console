@@ -242,15 +242,36 @@ footer::before{content:"";position:absolute;left:50%;top:-1px;width:120px;height
 .wl{padding-top:10px}
 .wl::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;
  background:var(--grad);margin-right:8px;vertical-align:middle}
-.lb-cap{min-height:3.2em;text-wrap:balance;max-width:50ch;color:var(--ink-2)}
-.lb-name{position:relative}
-.lb-name::after{content:"";display:block;width:26px;height:2px;margin:10px auto 2px;
- background:var(--grad);border-radius:2px;opacity:.9}
-.lb-count{font-variant-numeric:tabular-nums}
 .s-work .lead{max-width:40ch}
 img{-webkit-user-drag:none;user-drag:none}
+
+/* ===== LIGHTBOX, rebuilt: image sizes to itself, no empty frame, caption always shown ===== */
+.lb-fig{position:relative;margin:0;width:auto;max-width:none;
+ display:flex;flex-direction:column;align-items:center;text-align:center}
+.lb-frame{position:relative;display:block;padding:0;line-height:0;border-radius:18px;overflow:hidden;
+ background:#0d0d10;border:1px solid rgba(255,255,255,.14);
+ box-shadow:0 26px 80px rgba(0,0,0,.55);max-width:100%}
+.lb-img{display:block;width:auto;height:auto;
+ max-width:min(92vw,440px);max-height:min(64vh,64dvh);
+ aspect-ratio:auto;-o-object-fit:contain;object-fit:contain;border-radius:17px;background:#0d0d10}
+.lb-ph{width:min(78vw,340px);aspect-ratio:4/5;max-height:56vh;max-width:100%}
+.lb figcaption{margin:16px auto 0;max-width:44ch;padding:0 10px}
+.lb-name{position:relative;display:block;color:var(--ink);font-weight:700;
+ font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:0}
+.lb-name::after{content:"";display:block;width:26px;height:2px;margin:9px auto 12px;
+ background:var(--grad);border-radius:2px;opacity:.9}
+.lb-cap{margin:0;min-height:0;color:var(--ink-2);font-size:15px;line-height:1.55;
+ text-wrap:balance;max-width:44ch}
+/* ROOT FIX: the template forces .lb-ph{display:flex}, which defeats the [hidden] attribute
+   the script toggles, so an empty 4:5 placeholder rendered under every real image and
+   pushed the caption off-screen. Make [hidden] authoritative. */
+.lb-ph[hidden],.lb-img[hidden]{display:none!important}
+.lb-count{font-variant-numeric:tabular-nums;-moz-font-feature-settings:"tnum";font-feature-settings:"tnum"}
+@media(max-width:640px){.lb-img{max-width:92vw;max-height:min(58vh,58dvh)}}
+@media(min-width:900px){.lb-img{max-width:420px;max-height:min(70vh,70dvh)}}
 @media(prefers-reduced-motion:reduce){.wt:hover .wf img,.wt:focus-visible .wf img{transform:none}}
 </style>
+<meta name="thrive-cycle" content="cymttu6h5ugi4a00">
 </head><body>
 <svg width="0" height="0" style="position:absolute"><defs>
 <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="4" y1="4" x2="28" y2="28"><stop offset="0" stop-color="#72BECE"/><stop offset=".5" stop-color="#9685CA"/><stop offset="1" stop-color="#EE8C9D"/></linearGradient>
