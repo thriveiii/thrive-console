@@ -40,7 +40,11 @@ function load(src, names, preamble) {
 const FNS = ["upBuildPlan", "upReadFiles", "upReadZip", "upFindEOCD", "upU16", "upU32", "upInflateRaw",
   "upParseSections", "upExtract", "upEmailFrom", "upFenceBody", "upSectionName", "upSlugify", "upPageSlug",
   "upBaseName", "upFirstHeading", "upNormTokens", "upRankTokens", "upPretty"];
-const PRE = "var UP_EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/;\n";
+// B2: upBuildPlan now awaits ensureSuppress() and flags a suppressed recipient. This harness suppresses
+// nobody, so both are pass-throughs and every existing assertion runs unchanged (the B2 test proves the strip).
+const PRE = "var UP_EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/;\n" +
+  "var ensureSuppress = function(){ return Promise.resolve({}); };\n" +
+  "var isSuppressed = function(){ return false; };\n";
 const U = load(upload, FNS, PRE);
 
 // ---- a minimal STORED (method 0) zip encoder, so upReadZip's real walk runs without inflate -------------------

@@ -211,7 +211,12 @@ function upParseSections(text){
 // bare email. The only page-level warnings kept: dup_slug (two pages one slug) and no_message (a page that
 // resolved no message - the operator completes it on the card). This only reads; it writes nothing.
 function upBuildPlan(files){
-  return upReadFiles(files).then(function(kinds){
+  // B2: try to load the do-not-contact set before the plan is built, so a suppressed recipient is flagged in
+  // the review (warning + count) and stripped at commit. Best-effort on the LOAD only (.catch): a failed load
+  // must not break the whole upload review - the SEND path is the fail-closed backstop (runSend halts if the
+  // set never loaded), so a slip here is still caught before anything is sent. ensureSuppress/isSuppressed live
+  // in board-send.src.js.
+  return ensureSuppress().catch(function(){}).then(function(){ return upReadFiles(files); }).then(function(kinds){
     var pages = kinds.pages, texts = kinds.texts, seen = {}, rows = [];
     pages.forEach(function(pg){
       var slug = upPageSlug(pg.name);
@@ -248,6 +253,9 @@ function upBuildPlan(files){
         usedUnit[bi] = 1;
         r.subject = best.subject; r.body = best.body; r.email = best.email; r.text_name = best.file;
         r.title = best.subject || upPretty(r.slug);
+        // B2: a suppressed recipient is flagged here so the review shows a visible warning + count; it is stripped
+        // from the stored recipients at upCommit. The page/message still upload; only the address is dropped.
+        if(r.email && isSuppressed(r.email) && r.warnings.indexOf("suppressed") < 0) r.warnings.push("suppressed");
       } else {
         r.title = upPretty(r.slug);
         if(r.warnings.indexOf("no_message") < 0) r.warnings.push("no_message");
@@ -335,7 +343,8 @@ function upCommit(plan){
     done[r.slug] = 1;
     var data = { source:"upload", page_title:r.title,
       outreach_subject:r.subject || "", outreach_text:r.body || "",
-      recipients: r.email ? [{ addr:r.email, name:"", lang:"en" }] : [] };
+      // B2: strip a suppressed recipient - the opp/page still commit, but the do-not-contact address is not stored.
+      recipients: (r.email && !isSuppressed(r.email)) ? [{ addr:r.email, name:"", lang:"en" }] : [] };
     var html = (r.page && r.page.html) || "";
     // TRANSIT CYCLE: every (re-)upload starts a CLEAN transit - a fresh short cycle id on the opp. The view
     // scopes sends/opens to this cycle, so an old transit's ledger rows never re-attach to the new card. The
@@ -496,7 +505,7 @@ function upSendLiveGate(slug, data){
 function upFrame(txt){ return '<div class="up-frame"><pre class="up-pre">' + esc(String(txt || "")) + '</pre></div>'; }
 function upWarnChips(ws){
   return (ws || []).map(function(w){
-    var key = w === "dup_slug" ? "up_warn_dup" : w === "no_message" ? "up_warn_nomsg" : "up_warn_generic";
+    var key = w === "dup_slug" ? "up_warn_dup" : w === "no_message" ? "up_warn_nomsg" : w === "suppressed" ? "up_warn_supp" : "up_warn_generic";
     return '<span class="up-warn">' + esc(t(key)) + '</span>';
   }).join("");
 }

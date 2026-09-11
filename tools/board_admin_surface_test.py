@@ -130,6 +130,9 @@ def wire(ctx, uid, email, lang=None):
     ctx.route("**/rest/v1/console_opps**", route_empty)
     ctx.route("**/rest/v1/console_mail**", route_empty)
     ctx.route("**/rest/v1/console_hits**", route_empty)
+    # B2 fail-closed: the send path reads console_suppressions and blocks if it never loads; serve an
+    # empty do-not-contact list (200, nobody suppressed) so sends proceed, as real Supabase (B1) does.
+    ctx.route("**/rest/v1/console_suppressions**", route_empty)
     ctx.route("**/rest/v1/console_profile_names**", route_pnames)
     ctx.route("**/rest/v1/console_team_roster**", route_team_roster)
     ctx.route("**/rest/v1/console_profiles**", route_profiles)

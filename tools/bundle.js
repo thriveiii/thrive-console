@@ -1241,8 +1241,8 @@ function buildBoard(){
           s_send:"Send email", s_sending:"Sending…", s_sent:"Sent.", s_confirming:"Email sent; confirming on the server…",
           s_failed:"Could not send. Nothing was sent.", s_no_recip:"No recipient email on this opportunity.",
           s_no_msg:"No prepared message on this opportunity.",
-          s_sent_n:"Sent {k} of {n}.", s_failed_n:"{f} failed:", s_capped_n:"{c} blocked by the daily cap.",
-          s_cap:"Daily send cap reached. Nothing was sent.", cap_today:"today", cap_month:"this month",
+          s_sent_n:"Sent {k} of {n}.", s_failed_n:"{f} failed:", s_capped_n:"{c} blocked by the daily cap.", s_skipped_n:"{s} skipped (do-not-contact).",
+          s_cap:"Daily send cap reached. Nothing was sent.", s_suppress_unavail:"Send halted: the do-not-contact list could not be loaded. Nothing was sent.", cap_today:"today", cap_month:"this month",
           s_dead_link:"The page link is not live. Nothing was sent.",
           r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
           r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
@@ -1258,7 +1258,7 @@ function buildBoard(){
           up_reading:"Reading the zip...", up_matched:"Pages matched:", up_approve:"Approve and create drafts", up_writing:"Creating drafts...",
           up_done:"Drafts created:", up_done_partial:"Created {k} of {n}. Failed:", up_read_failed:"Could not read the file.", up_not_zip:"That is not a zip file.", up_write_failed:"Could not write. Nothing was created.",
           up_col_email:"To", up_col_subject:"Subject", up_no_text:"No message matched this page.",
-          up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Message with no page", up_warn_generic:"check this row",
+          up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Message with no page", up_warn_generic:"check this row", up_warn_supp:"do-not-contact",
           up_info:"Informational (not a per-page message)",
           up_page_h:"Hosted page", up_state_pending:"Activated. Confirming the live link.",
           up_state_dead:"The page link is not live. Sending is blocked.",
@@ -1316,8 +1316,8 @@ function buildBoard(){
           s_send:"إرسال بريد", s_sending:"جارٍ الإرسال…", s_sent:"تم الإرسال.", s_confirming:"أُرسل البريد؛ يجري التأكيد على الخادم…",
           s_failed:"تعذّر الإرسال. لم يُرسل شيء.", s_no_recip:"لا يوجد بريد مستلم لهذه الفرصة.",
           s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
-          s_sent_n:"أُرسلت {k} من {n}.", s_failed_n:"أخفقت {f}:", s_capped_n:"حُجبت {c} بحدّ اليوم.",
-          s_cap:"بلغت حدّ الإرسال اليومي. لم يُرسل شيء.", cap_today:"اليوم", cap_month:"الشهر",
+          s_sent_n:"أُرسلت {k} من {n}.", s_failed_n:"أخفقت {f}:", s_capped_n:"حُجبت {c} بحدّ اليوم.", s_skipped_n:"تُخطّيت {s} (قائمة عدم التواصل).",
+          s_cap:"بلغت حدّ الإرسال اليومي. لم يُرسل شيء.", s_suppress_unavail:"توقّف الإرسال: تعذّر تحميل قائمة عدم التواصل. لم يُرسل شيء.", cap_today:"اليوم", cap_month:"الشهر",
           s_dead_link:"رابط الصفحة غير فعّال. لم يُرسل شيء.",
           r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
           r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
@@ -1333,7 +1333,7 @@ function buildBoard(){
           up_reading:"جارٍ قراءة الملف المضغوط...", up_matched:"الصفحات المطابَقة:", up_approve:"وافق وأنشئ المسودّات", up_writing:"جارٍ إنشاء المسودّات...",
           up_done:"المسودّات المنشأة:", up_done_partial:"أُنشئت {k} من {n}. أخفقت:", up_read_failed:"تعذّرت قراءة الملف.", up_not_zip:"هذا ليس ملفًا مضغوطًا.", up_write_failed:"تعذّرت الكتابة. لم يُنشأ شيء.",
           up_col_email:"إلى", up_col_subject:"الموضوع", up_no_text:"لا رسالة مطابِقة لهذه الصفحة.",
-          up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"رسالة بلا صفحة", up_warn_generic:"راجع هذا الصف",
+          up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"رسالة بلا صفحة", up_warn_generic:"راجع هذا الصف", up_warn_supp:"عدم التواصل",
           up_info:"للمعلومة (ليست رسالة لصفحة)",
           up_page_h:"الصفحة المستضافة", up_state_pending:"مُنشّطة. جارٍ تأكيد الرابط الحيّ.",
           up_state_dead:"غير مُنشّطة. رابط الصفحة لا يعمل. الإرسال متوقّف.",
@@ -2135,6 +2135,7 @@ ${UPLOAD_SRC}
   function loadBoard(){
     VIEW="board"; applyLang();
     try{ loadIdentity(); }catch(e){}   // Step 1: fire-and-forget profile/role load; NEVER gates the render
+    try{ loadSuppressions().catch(function(){}); }catch(e){}   // B2: fire-and-forget do-not-contact set load; the send/upload paths re-await it (ensureSuppress). A failed preload leaves the set unloaded, so the FAIL-CLOSED send path blocks until a load succeeds; it never gates the render.
     root.innerHTML = headerHtml() + '<div class="muted" style="padding:10px 2px">' + esc(t("loading")) + '</div>';
     wireHeader();
     reloadBoardData().catch(function(e){ if(e && e.authRequired){ signinView(); } else { redFull("board fetch", e); } });

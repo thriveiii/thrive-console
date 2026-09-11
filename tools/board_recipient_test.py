@@ -98,6 +98,9 @@ def wire(ctx):
     ctx.route("**/rest/v1/console_opps**", route_opps)
     ctx.route("**/rest/v1/console_mail**", route_mail)
     ctx.route("**/rest/v1/console_hits**", route_empty)
+    # B2 fail-closed: the send path reads console_suppressions and blocks if it never loads; serve an
+    # empty do-not-contact list (200, nobody suppressed) so sends proceed, as real Supabase (B1) does.
+    ctx.route("**/rest/v1/console_suppressions**", route_empty)
 
 OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ t.click(); return true; } return false; }"""
 CLICK_ACT = """(act)=>{ var b=document.querySelector('#drawer .act[data-act='+JSON.stringify(act)+']'); if(b){ b.click(); return true; } return false; }"""

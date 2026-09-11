@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="baa03970">
+<meta name="thrive-build" content="ffe39b71">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -258,7 +258,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build baa03970</span>
+    <span class="muted">build ffe39b71</span>
   </div>
   <div id="root"></div>
 </div>
@@ -272,7 +272,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "baa03970";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "ffe39b71";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -330,8 +330,8 @@
           s_send:"Send email", s_sending:"Sending…", s_sent:"Sent.", s_confirming:"Email sent; confirming on the server…",
           s_failed:"Could not send. Nothing was sent.", s_no_recip:"No recipient email on this opportunity.",
           s_no_msg:"No prepared message on this opportunity.",
-          s_sent_n:"Sent {k} of {n}.", s_failed_n:"{f} failed:", s_capped_n:"{c} blocked by the daily cap.",
-          s_cap:"Daily send cap reached. Nothing was sent.", cap_today:"today", cap_month:"this month",
+          s_sent_n:"Sent {k} of {n}.", s_failed_n:"{f} failed:", s_capped_n:"{c} blocked by the daily cap.", s_skipped_n:"{s} skipped (do-not-contact).",
+          s_cap:"Daily send cap reached. Nothing was sent.", s_suppress_unavail:"Send halted: the do-not-contact list could not be loaded. Nothing was sent.", cap_today:"today", cap_month:"this month",
           s_dead_link:"The page link is not live. Nothing was sent.",
           r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
           r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
@@ -347,7 +347,7 @@
           up_reading:"Reading the zip...", up_matched:"Pages matched:", up_approve:"Approve and create drafts", up_writing:"Creating drafts...",
           up_done:"Drafts created:", up_done_partial:"Created {k} of {n}. Failed:", up_read_failed:"Could not read the file.", up_not_zip:"That is not a zip file.", up_write_failed:"Could not write. Nothing was created.",
           up_col_email:"To", up_col_subject:"Subject", up_no_text:"No message matched this page.",
-          up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Message with no page", up_warn_generic:"check this row",
+          up_warn_dup:"duplicate slug", up_warn_nomsg:"no message", up_warn_orphan:"Message with no page", up_warn_generic:"check this row", up_warn_supp:"do-not-contact",
           up_info:"Informational (not a per-page message)",
           up_page_h:"Hosted page", up_state_pending:"Activated. Confirming the live link.",
           up_state_dead:"The page link is not live. Sending is blocked.",
@@ -405,8 +405,8 @@
           s_send:"إرسال بريد", s_sending:"جارٍ الإرسال…", s_sent:"تم الإرسال.", s_confirming:"أُرسل البريد؛ يجري التأكيد على الخادم…",
           s_failed:"تعذّر الإرسال. لم يُرسل شيء.", s_no_recip:"لا يوجد بريد مستلم لهذه الفرصة.",
           s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
-          s_sent_n:"أُرسلت {k} من {n}.", s_failed_n:"أخفقت {f}:", s_capped_n:"حُجبت {c} بحدّ اليوم.",
-          s_cap:"بلغت حدّ الإرسال اليومي. لم يُرسل شيء.", cap_today:"اليوم", cap_month:"الشهر",
+          s_sent_n:"أُرسلت {k} من {n}.", s_failed_n:"أخفقت {f}:", s_capped_n:"حُجبت {c} بحدّ اليوم.", s_skipped_n:"تُخطّيت {s} (قائمة عدم التواصل).",
+          s_cap:"بلغت حدّ الإرسال اليومي. لم يُرسل شيء.", s_suppress_unavail:"توقّف الإرسال: تعذّر تحميل قائمة عدم التواصل. لم يُرسل شيء.", cap_today:"اليوم", cap_month:"الشهر",
           s_dead_link:"رابط الصفحة غير فعّال. لم يُرسل شيء.",
           r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
           r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
@@ -422,7 +422,7 @@
           up_reading:"جارٍ قراءة الملف المضغوط...", up_matched:"الصفحات المطابَقة:", up_approve:"وافق وأنشئ المسودّات", up_writing:"جارٍ إنشاء المسودّات...",
           up_done:"المسودّات المنشأة:", up_done_partial:"أُنشئت {k} من {n}. أخفقت:", up_read_failed:"تعذّرت قراءة الملف.", up_not_zip:"هذا ليس ملفًا مضغوطًا.", up_write_failed:"تعذّرت الكتابة. لم يُنشأ شيء.",
           up_col_email:"إلى", up_col_subject:"الموضوع", up_no_text:"لا رسالة مطابِقة لهذه الصفحة.",
-          up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"رسالة بلا صفحة", up_warn_generic:"راجع هذا الصف",
+          up_warn_dup:"معرّف مكرّر", up_warn_nomsg:"لا رسالة", up_warn_orphan:"رسالة بلا صفحة", up_warn_generic:"راجع هذا الصف", up_warn_supp:"عدم التواصل",
           up_info:"للمعلومة (ليست رسالة لصفحة)",
           up_page_h:"الصفحة المستضافة", up_state_pending:"مُنشّطة. جارٍ تأكيد الرابط الحيّ.",
           up_state_dead:"غير مُنشّطة. رابط الصفحة لا يعمل. الإرسال متوقّف.",
@@ -1261,6 +1261,51 @@ function allRecipients(data){
   }
   return out;
 }
+// ---- B2 suppression guard: the do-not-contact set (console_suppressions) ----------------------------
+// A lowercased email -> 1 map, loaded ONCE per board load and consulted by runSend (list filter) and sendOne
+// (the real chokepoint), and by the upload strip (board-upload.src.js). Refreshed after each send batch so a
+// STOP recorded mid-session (B4) is seen on the next send. No new client, no new key: the read uses the board's
+// own bearer + apikey + one-refresh-retry discipline through authFetchOnce (NOT the best-effort restGet, which
+// returns [] on BOTH a real error and an empty table and so cannot tell them apart).
+//
+// FAIL-CLOSED: this is the only suppression guard in the send path, so a send must NEVER proceed on a set that
+// never loaded. A read that returns 200 (even an EMPTY list - nobody suppressed) is a valid load and does not
+// block. Only a NEVER-loaded / failed state blocks: runSend halts the batch with a visible error, no sends, no
+// relay calls (see ensureSuppress + the runSend seam). A cached SUCCESSFUL load stays valid - a later refresh
+// that fails keeps the good set (it does not clear __suppressLoaded), so a transient blip after a good load
+// never blocks. A persistent block is the B1 RLS note (grant the operator role read on console_suppressions).
+var __suppress = null;          // the lowercased do-not-contact map; null until a load SUCCEEDS
+var __suppressLoaded = false;   // true once a read has SUCCEEDED at least once; a cached good set stays valid
+var __suppressInFlight = false; // a load is currently running (so ensureSuppress reuses it, never double-fetches)
+var __suppressP = null;         // the current load promise
+function loadSuppressions(retried){
+  __suppressInFlight = true;
+  var url = URL_BASE + "/rest/v1/console_suppressions?select=email";
+  __suppressP = authFetchOnce(url, {
+    method:"GET", headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer() }, cache:"no-store"
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return loadSuppressions(true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ throw new Error("HTTP "+r.res.status); }        // a real failure: do NOT mark loaded (fail-closed)
+    var rows = Array.isArray(r.data) ? r.data : [];
+    var m = {};
+    rows.forEach(function(x){ var e = bareAddress((x && x.email) || "").toLowerCase(); if(e) m[e] = 1; });
+    __suppress = m; __suppressLoaded = true; __suppressInFlight = false;   // a 200 read (even empty) is a valid set
+    return m;
+  }, function(e){ __suppressInFlight = false; throw e; });          // keep any prior good set; a never-loaded state stays unloaded
+  return __suppressP;
+}
+// A cached SUCCESSFUL load short-circuits (stays valid); an in-flight load is reused; otherwise a load is
+// (re)started. REJECTS when the set has never loaded and the load fails, so the runSend seam can block the batch.
+function ensureSuppress(){
+  if(__suppressLoaded) return Promise.resolve(__suppress);
+  if(__suppressInFlight) return __suppressP;
+  return loadSuppressions();
+}
+// True only when a set has never loaded successfully - the fail-closed block condition the send path checks.
+function suppressUnavailable(){ return !__suppressLoaded; }
+function isSuppressed(addr){ var e = bareAddress(String(addr||"")).toLowerCase(); return !!(e && __suppress && __suppress[e]); }
 // SEND-HEALTH: the free-tier provider (Resend) caps 100/day and 1000/month. The counts are SERVER TRUTH from the
 // console_mail ledger (one row per accepted send), so they never drift across devices or a reload.
 var SEND_CAP_DAY = 100, SEND_CAP_MONTH = 1000;
@@ -1343,6 +1388,11 @@ function relayPost(payload, timeoutMs){
 // abort the batch. mode/compile/idempotency/Message-ID/token are all per-recipient (unique) already.
 function sendOne(slug, row, data, rcpt, mode){
   var art = sendCompile(slug, row, data, rcpt, mode);
+  // B2 chokepoint (belt and suspenders): refuse a suppressed address and NEVER call relayPost for it. runSend
+  // already drops suppressed recipients before the cap, so in normal flow this never fires; it is the real
+  // last-line guard for any path that reaches sendOne with a suppressed address. { skipped:true } tells the
+  // batch loop to count it as skipped, never as sent and never as a failure.
+  if(isSuppressed(art.to)) return Promise.resolve({ ok:false, addr:art.to, skipped:true });
   var idem = sendIdem(slug, art.to, art.subject, art.html);
   var msgid = newMessageId();
   var headers = Object.assign({}, outboundHeaders(slug, mode), { "Message-ID": msgid });
@@ -1395,13 +1445,24 @@ function runSend(slug){
     // throws __kind="notlive"/"deadlink" so the catch reverts with a clear reason. Non-upload opps pass through.
     var __liveGate = (typeof upSendLiveGate==="function") ? upSendLiveGate(slug, data) : Promise.resolve();
     return __liveGate.then(function(){
+      // B2 FAIL-CLOSED: the do-not-contact set MUST be loaded before any send. If it has never loaded
+      // successfully, halt the batch here - no sends, no relay calls - with a visible error. A cached good set
+      // (or a fresh successful load) passes; only a never-loaded / failed read blocks.
+      return ensureSuppress().then(function(){
+        if(suppressUnavailable()){ var eb=new Error("suppression unavailable"); eb.__kind="suppress_block"; throw eb; }
+      }, function(){ var eb=new Error("suppression unavailable"); eb.__kind="suppress_block"; throw eb; });
+    }).then(function(){
       return sendBudget();
     }).then(function(budget){
+      // B2: drop any suppressed recipient BEFORE the room cap, and count them for a visible skipped line. The
+      // relay is never called for a suppressed address (allowed excludes them, and sendOne guards again).
+      var allowed = [], skipped = 0;
+      for(var si=0; si<recips.length; si++){ if(isSuppressed(recips[si].addr)) skipped++; else allowed.push(recips[si]); }
       // CAP: the send never exceeds the remaining daily/monthly budget. If a group is larger than what fits, send
       // ONLY what fits and REPORT the rest as blocked by the cap - never silently drop them.
       var room = Math.max(0, Math.min(budget.dayLeft, budget.monthLeft));
       if(room <= 0){ var ec=new Error("cap"); ec.__kind="cap"; throw ec; }
-      var toSend = recips.slice(0, room), capped = recips.length - toSend.length;
+      var toSend = allowed.slice(0, room), capped = allowed.length - toSend.length;
       var mode = sendMode(data);
       snap = JSON.parse(JSON.stringify(row));
       row.stage = "sent"; row.sent_count = Number(row.sent_count||0) + toSend.length; row.__sending = true;
@@ -1410,7 +1471,9 @@ function runSend(slug){
       function one(i){
         if(i >= toSend.length) return Promise.resolve();
         return sendOne(slug, row, data, toSend[i], mode).then(function(res){
-          if(res && res.ok) sent.push(res.addr); else failed.push((res && res.addr) || toSend[i].addr);
+          if(res && res.skipped) skipped++;                              // B2 belt-and-suspenders: a suppressed address is skipped, never sent, never a failure
+          else if(res && res.ok) sent.push(res.addr);
+          else failed.push((res && res.addr) || toSend[i].addr);
           if(i + 1 < toSend.length) return upDelay(SEND_GAP_MS).then(function(){ return one(i + 1); });   // THROTTLE between recipients
           return one(i + 1);
         });
@@ -1419,10 +1482,11 @@ function runSend(slug){
         return reloadBoardData().then(function(){}, function(){}).then(function(){
           __writing = false;
           if(sent.length === 0 && snap){ replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){} }   // nothing went out: revert (no phantom Sent)
-          var view = sendResultView(sent.length, recips.length, failed, capped);   // ONE result string+class (green / amber / red)
+          var view = sendResultView(sent.length, recips.length, failed, capped, skipped);   // ONE result string+class (green / amber / red), incl. suppressed skips
           __act[slug] = { msg:view.msg, cls:view.cls };
           if(__drawerSlug===slug) refreshDrawer(slug);
           try{ refreshSendCap(); }catch(e){}                                // the header counter reflects the new sends
+          try{ loadSuppressions().catch(function(){}); }catch(e){}          // B2: refresh the do-not-contact set after the batch (a failed refresh keeps the cached good set)
           return view;                                                      // resolve so a caller (the New-message overlay) can SHOW the result
         });
       });
@@ -1433,6 +1497,7 @@ function runSend(slug){
     var kind = e && e.__kind;
     var msg = (kind==="norecip") ? t("s_no_recip") : (kind==="nomsg") ? t("s_no_msg")
       : (kind==="cap") ? t("s_cap")
+      : (kind==="suppress_block") ? t("s_suppress_unavail")   // B2 fail-closed: the do-not-contact list never loaded; nothing was sent
       : (kind==="deadlink") ? t("s_dead_link")    // page activates on upload; the ONLY page block left is a definitively dead link (404/410)
       : (e && e.authRequired) ? t("err") : t("s_failed");
     __act[slug] = { msg:msg, cls:"bad" };
@@ -1445,16 +1510,17 @@ function sendCountMsg(k, n){ return t("s_sent_n").replace("{k}", String(k)).repl
 // ONE result-tied view of a send: the same string and class everywhere. Full success is GREEN (ok); a partial
 // (some sent, but >=1 failed or cap-blocked) is the AMBER WARNING (warn), never neutral grey; nothing sent is
 // RED (bad). Returns { msg, cls, sent, failed, capped } so the overlay and the drawer render identically.
-function sendResultView(sentN, total, failedAddrs, capped){
-  failedAddrs = failedAddrs || []; capped = capped || 0;
+function sendResultView(sentN, total, failedAddrs, capped, skipped){
+  failedAddrs = failedAddrs || []; capped = capped || 0; skipped = skipped || 0;
   var failedN = failedAddrs.length;
-  if(!failedN && !capped){
-    return { msg:(sentN > 1 ? sendCountMsg(sentN, sentN) : t("s_sent")), cls:"ok", sent:sentN, failed:0, capped:0 };
+  if(!failedN && !capped && !skipped){
+    return { msg:(sentN > 1 ? sendCountMsg(sentN, sentN) : t("s_sent")), cls:"ok", sent:sentN, failed:0, capped:0, skipped:0 };
   }
   var msg = sendCountMsg(sentN, total);
   if(failedN) msg += " " + t("s_failed_n").replace("{f}", String(failedN)) + " " + failedAddrs.join(", ");
   if(capped)  msg += " " + t("s_capped_n").replace("{c}", String(capped));
-  return { msg:msg, cls:(sentN === 0 ? "bad" : "warn"), sent:sentN, failed:failedN, capped:capped };   // partial = amber warning, never neutral
+  if(skipped) msg += " " + t("s_skipped_n").replace("{s}", String(skipped));   // B2: suppressed contacts skipped, count shown beside capped
+  return { msg:msg, cls:(sentN === 0 ? "bad" : "warn"), sent:sentN, failed:failedN, capped:capped, skipped:skipped };   // partial = amber warning, never neutral
 }
 
 // ===================================================================================================
@@ -2285,7 +2351,12 @@ function upParseSections(text){
 // bare email. The only page-level warnings kept: dup_slug (two pages one slug) and no_message (a page that
 // resolved no message - the operator completes it on the card). This only reads; it writes nothing.
 function upBuildPlan(files){
-  return upReadFiles(files).then(function(kinds){
+  // B2: try to load the do-not-contact set before the plan is built, so a suppressed recipient is flagged in
+  // the review (warning + count) and stripped at commit. Best-effort on the LOAD only (.catch): a failed load
+  // must not break the whole upload review - the SEND path is the fail-closed backstop (runSend halts if the
+  // set never loaded), so a slip here is still caught before anything is sent. ensureSuppress/isSuppressed live
+  // in board-send.src.js.
+  return ensureSuppress().catch(function(){}).then(function(){ return upReadFiles(files); }).then(function(kinds){
     var pages = kinds.pages, texts = kinds.texts, seen = {}, rows = [];
     pages.forEach(function(pg){
       var slug = upPageSlug(pg.name);
@@ -2322,6 +2393,9 @@ function upBuildPlan(files){
         usedUnit[bi] = 1;
         r.subject = best.subject; r.body = best.body; r.email = best.email; r.text_name = best.file;
         r.title = best.subject || upPretty(r.slug);
+        // B2: a suppressed recipient is flagged here so the review shows a visible warning + count; it is stripped
+        // from the stored recipients at upCommit. The page/message still upload; only the address is dropped.
+        if(r.email && isSuppressed(r.email) && r.warnings.indexOf("suppressed") < 0) r.warnings.push("suppressed");
       } else {
         r.title = upPretty(r.slug);
         if(r.warnings.indexOf("no_message") < 0) r.warnings.push("no_message");
@@ -2409,7 +2483,8 @@ function upCommit(plan){
     done[r.slug] = 1;
     var data = { source:"upload", page_title:r.title,
       outreach_subject:r.subject || "", outreach_text:r.body || "",
-      recipients: r.email ? [{ addr:r.email, name:"", lang:"en" }] : [] };
+      // B2: strip a suppressed recipient - the opp/page still commit, but the do-not-contact address is not stored.
+      recipients: (r.email && !isSuppressed(r.email)) ? [{ addr:r.email, name:"", lang:"en" }] : [] };
     var html = (r.page && r.page.html) || "";
     // TRANSIT CYCLE: every (re-)upload starts a CLEAN transit - a fresh short cycle id on the opp. The view
     // scopes sends/opens to this cycle, so an old transit's ledger rows never re-attach to the new card. The
@@ -2570,7 +2645,7 @@ function upSendLiveGate(slug, data){
 function upFrame(txt){ return '<div class="up-frame"><pre class="up-pre">' + esc(String(txt || "")) + '</pre></div>'; }
 function upWarnChips(ws){
   return (ws || []).map(function(w){
-    var key = w === "dup_slug" ? "up_warn_dup" : w === "no_message" ? "up_warn_nomsg" : "up_warn_generic";
+    var key = w === "dup_slug" ? "up_warn_dup" : w === "no_message" ? "up_warn_nomsg" : w === "suppressed" ? "up_warn_supp" : "up_warn_generic";
     return '<span class="up-warn">' + esc(t(key)) + '</span>';
   }).join("");
 }
@@ -3805,6 +3880,7 @@ try{
   function loadBoard(){
     VIEW="board"; applyLang();
     try{ loadIdentity(); }catch(e){}   // Step 1: fire-and-forget profile/role load; NEVER gates the render
+    try{ loadSuppressions().catch(function(){}); }catch(e){}   // B2: fire-and-forget do-not-contact set load; the send/upload paths re-await it (ensureSuppress). A failed preload leaves the set unloaded, so the FAIL-CLOSED send path blocks until a load succeeds; it never gates the render.
     root.innerHTML = headerHtml() + '<div class="muted" style="padding:10px 2px">' + esc(t("loading")) + '</div>';
     wireHeader();
     reloadBoardData().catch(function(e){ if(e && e.authRequired){ signinView(); } else { redFull("board fetch", e); } });

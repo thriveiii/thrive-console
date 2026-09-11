@@ -42,6 +42,10 @@ function loadSendOne() {
     confirmMail: function (row) { CONFIRMED.push(row); return Promise.resolve(); },
     isoNow: function () { return "2026-09-03T00:00:00Z"; },
     currentUid: function () { return "u1"; },
+    // B2: sendOne now consults the suppression set before compiling a relay call. This harness sends to a
+    // non-suppressed address in every case, so the guard is a pass-through here (the B2 test proves the guard
+    // itself). Stub it so the real sendOne runs its unchanged timeout/success/failure paths.
+    isSuppressed: function () { return false; },
     // the module-level constant sendOne reads; the source guard below asserts the real file defines it as 20000.
     RELAY_SEND_TIMEOUT_MS: 20000
   };
