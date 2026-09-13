@@ -345,7 +345,10 @@ function upCommit(plan){
       outreach_subject:r.subject || "", outreach_text:r.body || "",
       // B2: strip a suppressed recipient - the opp/page still commit, but the do-not-contact address is not stored.
       recipients: (r.email && !isSuppressed(r.email)) ? [{ addr:r.email, name:"", lang:"en" }] : [] };
-    var html = (r.page && r.page.html) || "";
+    // Resolve {{ASSET_BASE}} on the page html ONCE, up front, so BOTH the stored console_pages row (Library
+    // preview) and the committed static file (the hosted page) carry real asset URLs. assetBaseInto lives in
+    // board-send.src.js and resolves ONLY that token, the same value the message compile uses.
+    var html = assetBaseInto((r.page && r.page.html) || "");
     // TRANSIT CYCLE: every (re-)upload starts a CLEAN transit - a fresh short cycle id on the opp. The view
     // scopes sends/opens to this cycle, so an old transit's ledger rows never re-attach to the new card. The
     // SAME cycle is stamped into the published page (withBeaconClient below), so the beacon carries it on opens.
@@ -770,7 +773,7 @@ function upCommitLibrary(plan){
     var r = rows[i];
     if(done[r.slug]){ return one(i + 1); }
     done[r.slug] = 1;
-    var html = (r.page && r.page.html) || "", title = r.title || upPretty(r.slug), task = r.task || "";
+    var html = assetBaseInto((r.page && r.page.html) || ""), title = r.title || upPretty(r.slug), task = r.task || "";   // resolve {{ASSET_BASE}} before store + commit
     if(!String(html).trim()){ results.push({ slug:r.slug, title:title, task:task, ok:false, kind:"nohtml" }); return one(i + 1); }
     return pageUpsert(r.slug, html, { title:title, task:task })                     // console_pages row ONLY (title+task) - no oppUpsert
       .then(function(){ return pagePublishRelay(r.slug, withBeaconClient(html)); }) // relay commits the static file

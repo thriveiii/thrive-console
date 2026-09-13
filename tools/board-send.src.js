@@ -72,7 +72,16 @@ function footerText(lang){                                                      
 // The merge-field tokens are built by concatenation so the shipped board.html carries no literal
 // double-brace UPPER slot (tools/verify.js forbids an unfilled merge slot in a console page); the runtime
 // values are the exact engine tokens, so behavior is byte-identical to app.js:1370-1377.
-var MF_BIZ = "{{" + "BIZ}}", MF_LINK = "{{" + "LINK}}", MF_MONTH = "{{" + "MONTH}}";
+var MF_BIZ = "{{" + "BIZ}}", MF_LINK = "{{" + "LINK}}", MF_MONTH = "{{" + "MONTH}}", MF_ASSET = "{{" + "ASSET_BASE}}";
+// ASSET_BASE is the public Supabase Storage base for the `assets` bucket, DERIVED from the same base the
+// console already holds (URL_BASE, baked from config.js at bundle.js:1186 - the base restGet/oppReadData build
+// on). A template references {{ASSET_BASE}}/opp/<file> for its images/fonts and never hardcodes a project ref
+// or the bucket name; if the host moves, ASSET_BASE follows automatically. Resolved at compile time exactly
+// like {{LINK}} -> liveUrl. Bucket: `assets` (public).
+var ASSET_BASE = URL_BASE + "/storage/v1/object/public/assets";
+// A page is not compiled through mergeFieldsInto (it is not per-recipient), but it still carries {{ASSET_BASE}}
+// references; assetBaseInto resolves ONLY that token on a page's html at publish, leaving all else untouched.
+function assetBaseInto(str){ return String(str==null?"":str).split(MF_ASSET).join(ASSET_BASE); }
 function mergeFieldsInto(str, name, ctx){                                                    // app.js:1370
   var out = String(str==null?"":str);
   if(name){ out = out.replace(/\{\{\s*NAME\s*\}\}/g, name); }
@@ -80,6 +89,7 @@ function mergeFieldsInto(str, name, ctx){                                       
   out = out.split(MF_BIZ).join((ctx&&ctx.business)||"");
   out = out.split(MF_LINK).join((ctx&&ctx.link)||"");
   out = out.split(MF_MONTH).join((ctx&&ctx.month)||"");
+  out = out.split(MF_ASSET).join(ASSET_BASE);   // {{ASSET_BASE}} -> the public assets bucket base, same compile step as {{LINK}}
   return out.replace(/<span data-m="[^"]*"[^>]*>([\s\S]*?)<\/span>/g, "$1");
 }
 function planAttachments(list){                                                              // app.js:1396

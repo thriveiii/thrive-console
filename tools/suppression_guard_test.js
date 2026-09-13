@@ -104,6 +104,7 @@ function loadUpload(supMap) {
   };
   const names = Object.keys(stubs);
   const body = "var __suppress=" + JSON.stringify(supMap) + ", __suppressLoaded=true;\n" +
+    "function assetBaseInto(h){ return h; }\n" +   // upCommit resolves {{ASSET_BASE}} on the page html; this test suppresses recipients, not assets, so pass through
     fnSrc(SEND, "function bareAddress(") + "\n" +
     fnSrc(SEND, "function isSuppressed(") + "\n" +
     fnSrc(UPLOAD, "function upCommit(") + "\n" +

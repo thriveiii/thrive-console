@@ -44,6 +44,7 @@ const UP_PRE =
   "function pageUpsert(){ return Promise.resolve(); }\n" +
   "function withBeaconClient(h){ return h; }\n" +
   "function isSuppressed(){ return false; }\n" +   // B2: upCommit now consults the suppression set; stub it so this harness (which suppresses nobody) exercises upCommit's unchanged paths
+  "function assetBaseInto(h){ return h; }\n" +   // upCommit now resolves {{ASSET_BASE}} on the page html; pass-through here (this test asserts publish order, not asset URLs)
   "function pagePublishRelay(slug, html){ __pub.push(slug); return Promise.resolve(); }\n";
 const U = load(upload, ["upCommit"], UP_PRE + "\nvar __getpub = function(){ return __pub; };");
 // Re-load exposing __pub via a getter on the sandbox.
