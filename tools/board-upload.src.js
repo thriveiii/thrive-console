@@ -383,8 +383,10 @@ function upActivateBackground(slugs){
   pend.forEach(function(slug){
     verifyLivePoll(slug).then(function(v){
       if(v && v.ok){ delete __upLive[slug]; return pageStampLive(slug).catch(function(){}); }
-      __upLive[slug] = (v && v.dead) ? "dead" : "unconfirmed";   // NAMED, never a silent permanent "publishing"
-    }).catch(function(){ __upLive[slug] = "unconfirmed"; }).then(function(){
+      // F1: a not-yet-resolving URL is an async deploy that has not landed, NOT a failure. Leave the page in
+      // the neutral transitional state (do not record "dead"/"unconfirmed"); re-verify on the next drawer open
+      // flips it to Live when the deploy arrives. No RED for a committed page.
+    }).catch(function(){}).then(function(){
       left--; if(left === 0){ reloadBoardData().then(function(){}, function(){}); }
       try{ if(__drawerSlug === slug) refreshDrawer(slug); }catch(e){}   // reflect the outcome in an open drawer
     });
@@ -606,33 +608,32 @@ function uploadActivateHtml(slug, row, detail){
   var hasPage = !!(page || (detail && detail.opp && detail.opp.data && detail.opp.data.page_slug));
   if(!hasPage) return "";                                        // no page anywhere -> nothing to activate
   var live = !!(page && page.live_verified_at);                 // the SINGLE, durable liveness truth (on the effective page)
-  // AXIOM: the state must be TRUE - live, or a NAMED failure the operator can act on, never a permanent silent
-  // "publishing". live wins. Else a recorded verify outcome names it: "dead" (a definitive 404/410, sending is
-  // blocked) or "unconfirmed" (still checking, not dead). Else the initial poll is still running -> "publishing"
-  // (transient, and re-checked on drawer open by upWireActivate). dead/unconfirmed carry a Re-check action.
-  var outcome = live ? "live" : (__upLive[pageSlug] || "publishing");
-  var stateKey = outcome === "live"        ? "up_state_live"
-               : outcome === "dead"        ? "up_state_dead"
-               : outcome === "unconfirmed" ? "up_state_checking"
-               :                             "up_state_publishing";
-  var stateCls = outcome === "live" ? "ok" : outcome === "dead" ? "bad" : "";
-  var canReverify = (outcome === "dead" || outcome === "unconfirmed");
+  // F1 PUBLISH TRUTH: a COMMITTED page is published. The only two states are live (green) or a neutral
+  // transitional "Published, going live shortly" - NEVER a RED "dead"/failed, because a not-yet-resolving URL
+  // is an async deploy that has not landed, not a publish failure. The transitional state always offers a
+  // Re-check, and the background re-verify (upWireActivate on open) flips it to green Live when the deploy
+  // lands. RED is reserved for a genuine relay/commit failure, which surfaces on the upload result panel
+  // (libDoneRowHtml), never here.
+  var stateKey = live ? "up_state_live" : "up_state_going_live";
+  var stateCls = live ? "ok" : "";                              // never "bad" for a committed page
+  var canReverify = !live;                                       // Re-check offered until it resolves live
   return '<div class="dw-sec up-act-sec" data-page-slug="' + esc(pageSlug) + '" data-live="' + (live ? "1" : "0") + '"><h3>' + esc(t("up_page_h")) + '</h3>'+
     '<div class="up-state ' + stateCls + '" id="upState">' + esc(t(stateKey)) + '</div>'+
     (canReverify ? '<div class="acts"><button class="act" id="upReverify" type="button">' + esc(t("up_reverify")) + '</button></div>' : '')+
     '<div class="act-status" id="upActStatus"></div></div>';
 }
-// A SHORT, bounded re-check (the operator is watching): ~24s, fixed spacing. On ok, stamp live_verified_at (which
-// persists across reloads) and clear the outcome; on a definitive dead or a spent budget, record the NAMED
-// outcome. Guarded by __upVerifying so a re-open never stacks polls. Always refreshes the open drawer, so the
-// result (live / dead / still checking) is shown, never a stale "publishing".
+// A SHORT, bounded re-check (the operator is watching): ~24s, fixed spacing. On ok, stamp live_verified_at
+// (which persists across reloads) and flip the badge to green Live. F1: a spent budget is NOT a failure - the
+// deploy simply has not landed yet, so the page stays in the neutral transitional state (never RED) and the
+// next re-check flips it to Live. Guarded by __upVerifying so a re-open never stacks polls; always refreshes
+// the open drawer so the state (live / going live shortly) is shown, never a stale silent "publishing".
 function upReverify(pageSlug, oppSlug){
   if(__upVerifying[pageSlug]) return Promise.resolve();
   __upVerifying[pageSlug] = 1;
   return verifyLivePoll(pageSlug, 6, 4000).then(function(v){
     if(v && v.ok){ delete __upLive[pageSlug]; return pageStampLive(pageSlug).catch(function(){}); }
-    __upLive[pageSlug] = (v && v.dead) ? "dead" : "unconfirmed";
-  }, function(){ __upLive[pageSlug] = "unconfirmed"; }).then(function(){
+    // not resolved yet: leave transitional (no RED), a later re-check flips it to Live
+  }, function(){}).then(function(){
     delete __upVerifying[pageSlug];
     try{ if(__drawerSlug === oppSlug) refreshDrawer(oppSlug); }catch(e){}
   }, function(){ delete __upVerifying[pageSlug]; });
@@ -995,8 +996,10 @@ function libReverifyPending(tries, gap){
         libSetState(p.slug, "live");
         return pageStampLive(p.slug).catch(function(){});  // persist the liveness truth (self-memory)
       }
-      libSetState(p.slug, "fault");                        // published but the live URL will not resolve: a visible RED fault
-    }, function(){ libSetState(p.slug, "fault"); });
+      // F1: not resolved within this pass is an async deploy that has not landed, NOT a fault. Leave the row in
+      // its neutral transitional "Published (going live)" state (never a RED "fault"); a later Library open
+      // re-runs this pass and flips it to Live once the deploy arrives.
+    }, function(){});
   });
   return Promise.all(jobs);
 }
