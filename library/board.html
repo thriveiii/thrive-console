@@ -2658,6 +2658,11 @@ function upSendLiveGate(slug, data){
 
 // ---- the upload overlay (its own scrim, mirroring the profile/new-message pattern) ----------------
 function upFrame(txt){ return '<div class="up-frame"><pre class="up-pre">' + esc(String(txt || "")) + '</pre></div>'; }
+// F2 INSTANT PREVIEW: render a page from the HELD html as a sandboxed srcdoc iframe (the SAME mechanism the
+// editor #edPreview and the Library .lv-frame preview use), never from the live URL - so a page previews
+// instantly, before and after upload, independent of deploy state. Tokens ({{...}}) render as-is: offers are
+// generated full in Claude and the console does not fill page tokens.
+function pageFrameIframe(html){ return '<iframe class="lv-frame" title="' + esc(t("lib_preview")) + '" sandbox="" referrerpolicy="no-referrer" srcdoc="' + esc(String(html || "")) + '"></iframe>'; }
 function upWarnChips(ws){
   return (ws || []).map(function(w){
     var key = w === "dup_slug" ? "up_warn_dup" : w === "no_message" ? "up_warn_nomsg" : w === "suppressed" ? "up_warn_supp" : "up_warn_generic";
@@ -2770,7 +2775,10 @@ function uploadActivateHtml(slug, row, detail){
   return '<div class="dw-sec up-act-sec" data-page-slug="' + esc(pageSlug) + '" data-live="' + (live ? "1" : "0") + '"><h3>' + esc(t("up_page_h")) + '</h3>'+
     '<div class="up-state ' + stateCls + '" id="upState">' + esc(t(stateKey)) + '</div>'+
     (canReverify ? '<div class="acts"><button class="act" id="upReverify" type="button">' + esc(t("up_reverify")) + '</button></div>' : '')+
-    '<div class="act-status" id="upActStatus"></div></div>';
+    '<div class="act-status" id="upActStatus"></div>'+
+    // F2: an in-place srcdoc preview of the stored page html (populated async in upWireActivate via
+    // pageReadHtml), so a landed offer previews instantly, before AND after the deploy resolves.
+    '<div class="up-preview" id="upPreview"></div></div>';
 }
 // A SHORT, bounded re-check (the operator is watching): ~24s, fixed spacing. On ok, stamp live_verified_at
 // (which persists across reloads) and flip the badge to green Live. F1: a spent budget is NOT a failure - the
@@ -2798,6 +2806,10 @@ function upWireActivate(slug){
   var btn = document.getElementById("upReverify");
   if(btn) btn.addEventListener("click", function(){ btn.disabled = true; upActStatus(t("up_verifying"), ""); upReverify(pageSlug, slug); });
   if(!live && !__upLive[pageSlug] && !__upVerifying[pageSlug]){ upActStatus(t("up_verifying"), ""); upReverify(pageSlug, slug); }
+  // F2: preview the landed offer in place from the STORED console_pages html (srcdoc), instant and independent
+  // of the deploy. Best-effort: a failed read simply leaves the preview empty, never an error in the drawer.
+  var pv = document.getElementById("upPreview");
+  if(pv){ pageReadHtml(pageSlug).then(function(html){ if(html) pv.innerHTML = pageFrameIframe(html); }, function(){}); }
 }
 function upActStatus(msg, cls){ var el=document.getElementById("upActStatus"); if(el){ el.className="act-status" + (cls ? (" " + cls) : ""); el.textContent = msg || ""; } }
 // Activation, the GitHub-Pages sacred order (mirror app.js:3586 activateAndConfirm): COMMIT the static file
@@ -2853,7 +2865,9 @@ function libRowHtml(r, i){
         '<input class="lib-in" id="libTask-' + i + '" type="text" list="libTasks" value="' + esc(task) + '" autocomplete="off" placeholder="' + esc(t("lib_task_ph")) + '"></label>'+
     '</div>'+
     '<div class="lib-rowerr" id="libErr-' + i + '"></div>'+
-    (r.page && r.page.html ? upFrame(String(r.page.html).slice(0, 320)) : '<div class="up-empty">' + esc(t("up_no_text")) + '</div>')+
+    // F2: render the actual page from the held html (srcdoc), not a source-text snippet, so the team sees the
+    // real page BEFORE uploading. Tokens render as-is (raw-template preview).
+    (r.page && r.page.html ? pageFrameIframe(r.page.html) : '<div class="up-empty">' + esc(t("up_no_text")) + '</div>')+
   '</div>';
 }
 function libTasksDatalist(tasks){
