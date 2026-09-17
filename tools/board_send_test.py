@@ -122,7 +122,7 @@ def wire(ctx):
     ctx.route("**/rest/v1/console_suppressions**", route_empty)
 
 LANE_OF = """(biz)=>{ var out=''; document.querySelectorAll('.lane').forEach(function(l){ var h=l.querySelector('h2'); if(!h) return; l.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) out=h.textContent; }); }); return out; }"""
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ t.click(); return true; } return false; }"""
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
 CLICK_ACT = """(act)=>{ var b=document.querySelector('#drawer .act[data-act='+JSON.stringify(act)+']'); if(b){ b.click(); return true; } return false; }"""
 ACT_STATUS = """()=>{ var e=document.getElementById('actStatus'); return e?{txt:e.textContent,cls:e.className}:{txt:'',cls:''}; }"""
 

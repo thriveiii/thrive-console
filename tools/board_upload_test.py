@@ -224,7 +224,7 @@ def wait_ident(pg, tries=40):
         pg.wait_for_timeout(150)
     return False
 def open_upload(pg): pg.evaluate("()=>{var b=document.getElementById('uploadBtn'); if(b) b.click();}"); pg.wait_for_timeout(300)
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ t.click(); return true; } return false; }"""
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)

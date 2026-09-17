@@ -266,7 +266,7 @@ with sync_playwright() as p:
     pgf.evaluate("()=>{ var b=document.getElementById('nmClose'); if(b) b.click(); }")   # close IMMEDIATELY, within the debounce
     pgf.wait_for_timeout(1400)                                                            # the flushed upsert settles
     pgf.goto(f"{base}/library/board.html", wait_until="load"); pgf.wait_for_timeout(600); wait_ident(pgf)
-    CLICK_CARD = """()=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf('Flush Co note')>=0) t=c; }); if(t){ t.click(); return true; } return false; }"""
+    CLICK_CARD = """()=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf('Flush Co note')>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
     opened = False
     for _ in range(20):                                                                  # poll: the reloaded board renders the card
         if pgf.evaluate(CLICK_CARD): opened = True; break

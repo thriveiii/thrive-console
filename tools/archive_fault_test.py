@@ -140,7 +140,7 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: perr.append(str(e)))
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(500); wait_ident(pg)
     pg.wait_for_function("()=>!!document.querySelector('.card[data-slug=\"promo\"]')", timeout=8000)
-    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"promo\"]'); if(c) c.click();}")
+    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"promo\"]'); if(c) window.openDrawer(c.getAttribute('data-slug'));}")
     pg.wait_for_function("()=>!!document.getElementById('upActBtn')", timeout=8000)
     ck("(c) a promoted un-live card offers a Re-activate exit", pg.evaluate("()=>!!document.getElementById('upActBtn')"))
     ck("(c) the Re-activate targets the SHARED template page (data.page_slug), not the card slug",
