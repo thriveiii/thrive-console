@@ -114,6 +114,20 @@ def route_opps(r):
         o=OPPS.get(slug)
         if o is not None and isinstance(body.get("data"), dict): o["data"]=body["data"]
         return r.fulfill(status=204, body="")
+    if req.method == "POST":
+        # G5: the window compose writer upserts (POST resolution=merge-duplicates) instead of the drawer editor's
+        # PATCH; capture each row like a write and honor the same per-slug fault.
+        try: rows=json.loads(req.post_data or "[]")
+        except Exception: rows=[]
+        for row in (rows if isinstance(rows,list) else [rows]):
+            if not isinstance(row,dict): continue
+            sl=row.get("slug", slug)
+            PATCH_CALLS.append({"slug":sl, "body":row})
+            if OPP_FAULT.get(sl) == "500":
+                return J(r, {"message":"synthetic opp write failure"}, status=500)   # store NOT updated -> no phantom
+            o=OPPS.get(sl)
+            if o is not None and isinstance(row.get("data"), dict): o["data"]=row["data"]
+        return r.fulfill(status=204, body="")
     o=OPPS.get(slug, {"slug":slug,"data":{}})
     return J(r, [{"slug":o["slug"], "data":o.get("data",{})}])
 
@@ -136,10 +150,10 @@ def wire(ctx, lang=None):
     ctx.route("**/rest/v1/console_admins**", route_empty)
     ctx.route("**/rest/v1/console_opps**", route_opps)
 
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
-HAS_SEND = "()=>!!document.querySelector('#drawer .act[data-act=\"send\"]')"
-SEND_DISABLED = "()=>{ var b=document.querySelector('#drawer .act[data-act=\"send\"]'); return b? !!b.disabled : null; }"
-ED_STATUS = "()=>{ var e=document.getElementById('edStatus'); return e?{txt:e.textContent,cls:e.className}:{txt:'',cls:''}; }"
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ var s=t.getAttribute('data-slug'); window.openOppWindow(s); window.owSelectMode('a'); return true; } return false; }"""
+HAS_SEND = "()=>!!document.querySelector('#owModeA #nmSend')"
+SEND_DISABLED = "()=>{ var b=document.querySelector('#owModeA #nmSend'); return b? !!b.disabled : null; }"
+ED_STATUS = "()=>{ var e=document.getElementById('nmStatus'); return e?{txt:e.textContent,cls:e.className}:{txt:'',cls:''}; }"
 CK = "(id)=>{ var e=document.getElementById(id); return e? e.className : ''; }"
 SRCDOC = "()=>{ var f=document.getElementById('edPreview'); return f? f.getAttribute('srcdoc') : ''; }"
 
@@ -162,8 +176,8 @@ with sync_playwright() as p:
     ck("E0: the identity preset is name / title / thriveiii.com (three lines)",
        pg.evaluate("()=>window.__thriveSignaturePreset()")==PRESET, pg.evaluate("()=>window.__thriveSignaturePreset()"))
 
-    pg.evaluate(OPEN, "Acme Co"); pg.wait_for_timeout(500)
-    ck("editor: subject + body fields render in the drawer", pg.evaluate("()=>!!(document.getElementById('edSubj')&&document.getElementById('edBody'))"))
+    pg.evaluate(OPEN, "Acme Co"); pg.wait_for_selector("#owModeA #edSubj", timeout=6000); pg.wait_for_timeout(500)
+    ck("editor: subject + body fields render in the window compose", pg.evaluate("()=>!!(document.getElementById('edSubj')&&document.getElementById('edBody'))"))
     ck("editor: pre-fills the subject from the record", pg.evaluate("()=>document.getElementById('edSubj').value")=="Acme x Thrive")
 
     # E0: a SEPARATE Signature field exists, distinct from the body, editable, and starts EMPTY (acme has no sig)
@@ -270,7 +284,7 @@ with sync_playwright() as p:
     OPPS["acme"]["data"]["outreach_text"]    = body_after_insert
     OPPS["acme"]["data"]["sig"]              = PRESET
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(500); wait_ident(pg)
-    pg.evaluate(OPEN, "Acme Co"); pg.wait_for_timeout(500)
+    pg.evaluate(OPEN, "Acme Co"); pg.wait_for_selector("#owModeA #edSubj", timeout=6000); pg.wait_for_timeout(500)
     ck("1: after a full reload the saved subject + body are still there",
        pg.evaluate("()=>document.getElementById('edSubj').value")=="Acme partnership" and "{{LINK}}" in pg.evaluate("()=>document.getElementById('edBody').value"))
     ck("E0: after a full reload the Signature FIELD restores the saved value (persisted, not lost)",
@@ -281,7 +295,7 @@ with sync_playwright() as p:
     ctx2 = b.new_context(); wire(ctx2); pg2 = ctx2.new_page(); perr2=[]
     pg2.on("pageerror", lambda e: perr2.append(str(e)))
     pg2.goto(f"{base}/library/board.html", wait_until="load"); pg2.wait_for_timeout(500); wait_ident(pg2)
-    pg2.evaluate(OPEN, "Fresh Co"); pg2.wait_for_timeout(500)
+    pg2.evaluate(OPEN, "Fresh Co"); pg2.wait_for_selector("#owModeA #edSubj", timeout=6000); pg2.wait_for_timeout(500)
     ck("5: the editor renders even when the opp has no prepared message", pg2.evaluate("()=>!!document.getElementById('edSubj')"))
     # UNIFY (c): the recipient field renders in the drawer for an editable card even when has_email is false.
     ck("5c: the recipient field #recIn renders even with no prepared message (ungated from has_email)", pg2.evaluate("()=>!!document.getElementById('recIn')"))
@@ -298,7 +312,7 @@ with sync_playwright() as p:
     # ===== 6: a reply carries the opp slug (Reply-To hi+<slug>) =====
     ctx3 = b.new_context(); wire(ctx3); pg3 = ctx3.new_page()
     pg3.goto(f"{base}/library/board.html", wait_until="load"); pg3.wait_for_timeout(500); wait_ident(pg3)
-    pg3.evaluate(OPEN, "Reply Co"); pg3.wait_for_timeout(400)
+    pg3.evaluate(OPEN, "Reply Co"); pg3.wait_for_selector("#owModeA #edSubj", timeout=6000); pg3.wait_for_timeout(400)
     rt = pg3.evaluate("()=>window.__thriveReplyTo('reply')")
     ck("6: a reply routes back to the opp slug (Reply-To hi+reply@thriveiii.com), never the campaign",
        rt=="hi+reply@thriveiii.com", rt)
@@ -309,7 +323,7 @@ with sync_playwright() as p:
     pg4.goto(f"{base}/library/board.html", wait_until="load"); pg4.wait_for_timeout(500); wait_ident(pg4)
     OPP_FAULT["failw"] = "500"
     before = OPPS["failw"]["data"]["outreach_subject"]
-    pg4.evaluate(OPEN, "Failw Co"); pg4.wait_for_timeout(400)
+    pg4.evaluate(OPEN, "Failw Co"); pg4.wait_for_selector("#owModeA #edSubj", timeout=6000); pg4.wait_for_timeout(400)
     pg4.fill("#edSubj", "Should not persist")
     pg4.wait_for_timeout(1300)
     ck("7: a forced write failure shows a visible RED status", "bad" in pg4.evaluate(ED_STATUS)["cls"], pg4.evaluate(ED_STATUS))
@@ -320,8 +334,8 @@ with sync_playwright() as p:
     # ===== 8: AR RTL =====
     ctx5 = b.new_context(); wire(ctx5, lang="ar"); pg5 = ctx5.new_page()
     pg5.goto(f"{base}/library/board.html", wait_until="load"); pg5.wait_for_timeout(500); wait_ident(pg5)
-    pg5.evaluate(OPEN, "Reply Co"); pg5.wait_for_timeout(400)
-    d = pg5.evaluate("()=>{ var dw=document.getElementById('drawer'); return { dir:getComputedStyle(dw).direction, hasEd:!!document.getElementById('edSubj') }; }")
+    pg5.evaluate(OPEN, "Reply Co"); pg5.wait_for_selector("#owModeA #edSubj", timeout=6000); pg5.wait_for_timeout(400)
+    d = pg5.evaluate("()=>{ var dw=document.getElementById('owModeA'); return { dir:dw?getComputedStyle(dw).direction:'', hasEd:!!document.getElementById('edSubj') }; }")
     ck("8: AR flips the drawer to RTL", d["dir"]=="rtl", d)
     ck("8: the editor renders under AR", d["hasEd"], d)
     pg5.close(); ctx5.close()

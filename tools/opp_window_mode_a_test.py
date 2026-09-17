@@ -103,7 +103,7 @@ with sync_playwright() as p:
 
     # ===== 1: Mode A mounts the SHARED compose inside the window, no duplicate editor =====
     open_mode_a(pg, "alpha")
-    ck("window is open (owScrim shown), drawer stays hidden", pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, dw:document.getElementById('scrim').hidden})")=={"ow":True,"dw":True})
+    ck("window is open (owScrim shown); the drawer is gone", pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, dw:!document.getElementById('scrim')})")=={"ow":True,"dw":True})
     ck("Mode A mounts subject/body/recipient/signature/preview/send inside #owModeA",
        pg.evaluate("()=>{var m=document.getElementById('owModeA'); return !!(m&&m.querySelector('#edSubj')&&m.querySelector('#edBody')&&m.querySelector('#recIn')&&m.querySelector('#edSig')&&m.querySelector('#edPreview')&&m.querySelector('#nmSend'));}"))
     ck("exactly ONE #edSubj in the DOM (shared editor by reference, no second copy)", pg.evaluate("()=>document.querySelectorAll('#edSubj').length")==1, pg.evaluate("()=>document.querySelectorAll('#edSubj').length"))
@@ -153,14 +153,16 @@ with sync_playwright() as p:
     ck("B2 fail-closed: an unreadable suppression list halts the send (zero relay calls)", len(RELAY_CALLS)==0, RELAY_CALLS)
     ck("B2 fail-closed: no console_mail row when the list is unreadable", sent_count("alpha")==0, MAIL)
 
-    # ===== 7: flag OFF - the drawer compose still works unchanged =====
+    # ===== 7: G5 - a card tap opens the WINDOW on Details (the drawer is retired) =====
     SUPP["fault"]=False; SUPP["rows"]=[]
     pg.evaluate("()=>window.closeOppWindow()")
     pg.wait_for_timeout(200)
-    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"alpha\"]'); if(c) c.click();}")   # flag off -> drawer
+    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"alpha\"]'); if(c) c.click();}")   # card tap -> window Details
     pg.wait_for_timeout(500)
-    ck("with OPP_WINDOW off, a card tap opens the DRAWER (not the window)", pg.evaluate("()=>({dw:!document.getElementById('scrim').hidden, ow:document.getElementById('owScrim').hidden})")=={"dw":True,"ow":True})
-    ck("the drawer's own compose still mounts #edSubj (unchanged)", pg.evaluate("()=>!!document.querySelector('#drawer #edSubj')"))
+    ck("a card tap opens the centered window on Details; no drawer/#scrim in the DOM",
+       pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, det:!!document.getElementById('owDetail'), noDw:!document.getElementById('drawer') && !document.getElementById('scrim')})")=={"ow":True,"det":True,"noDw":True})
+    ck("the Details view mounts the drawer's sections (not a compose editor)",
+       pg.evaluate("()=>!!document.querySelector('#owDetail .dw-sec') && !document.querySelector('#owDetail #edSubj')"))
 
     ck("no uncaught page error fired", len(perr)==0, perr)
     pg.close(); b.close()

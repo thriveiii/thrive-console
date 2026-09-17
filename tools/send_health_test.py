@@ -128,17 +128,17 @@ def wait_ident(pg, tries=40):
         pg.wait_for_timeout(150)
     return False
 def open_card(pg, slug):
-    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c) window.openDrawer(c.getAttribute('data-slug'));}", slug)
+    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c){ window.openOppWindow(s); window.owSelectMode('a'); }}", slug)
     # wait for the ENRICHED drawer paint (fetchDetail done): the editor is prefilled and the recipient field is
     # populated, so a Send click is not raced by the enrichment re-render that replaces #actStatus.
-    pg.wait_for_function("""()=>{ var b=document.querySelector('#drawer .act[data-act="send"]');
+    pg.wait_for_function("""()=>{ var b=document.querySelector('#owModeA #nmSend');
         var s=document.getElementById('edSubj'), r=document.getElementById('recIn');
         return !!b && !b.disabled && s && s.value.trim() && r && r.value.indexOf('@')>=0; }""", timeout=8000)
     pg.wait_for_timeout(200)
 def click_send(pg):
-    pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
+    pg.evaluate("()=>{var b=document.querySelector('#owModeA #nmSend'); if(b) b.click();}")
 def act_status(pg):
-    return pg.evaluate("()=>{var e=document.getElementById('actStatus'); return e?{txt:e.textContent,cls:e.className}:{};}")
+    return pg.evaluate("()=>{var e=document.getElementById('nmStatus'); return e?{txt:e.textContent,cls:e.className}:{};}")
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
@@ -151,7 +151,7 @@ with sync_playwright() as p:
     open_card(pg, "trio")
     RELAY_SEND.clear(); RELAY_TIMES.clear()
     click_send(pg)
-    pg.wait_for_function("()=>{var e=document.getElementById('actStatus'); return e && /ok|bad/.test(e.className);}", timeout=15000)
+    pg.wait_for_function("()=>{var e=document.getElementById('nmStatus'); return e && /ok|bad/.test(e.className);}", timeout=15000)
     trio_relay = [x for x in RELAY_SEND if x.get("slug")=="trio"]
     ck("(a) a 3-recipient card made 3 relay calls (one per recipient), not 1", len(trio_relay)==3, [x.get("to") for x in trio_relay])
     ck("(a) 3 console_mail rows were written for the group (not 1)", sent_count("trio")==3, sent_count("trio"))
@@ -172,7 +172,7 @@ with sync_playwright() as p:
     pg2.wait_for_function("()=>!!document.querySelector('.card[data-slug=\"mixed\"]')", timeout=8000)
     open_card(pg2, "mixed")
     click_send(pg2)
-    pg2.wait_for_function("()=>{var e=document.getElementById('actStatus'); return e && /ok|bad|[0-9]/.test(e.textContent);}", timeout=15000)
+    pg2.wait_for_function("()=>{var e=document.getElementById('nmStatus'); return e && /ok|bad|[0-9]/.test(e.textContent);}", timeout=15000)
     pg2.wait_for_timeout(500)
     ck("(b) the two good recipients still sent (2 console_mail rows), the bad one did not abort them", sent_count("mixed")==2, sent_count("mixed"))
     st = act_status(pg2)
@@ -207,7 +207,7 @@ with sync_playwright() as p:
     open_card(pg4, "capme")
     click_send(pg4)
     try:
-        pg4.wait_for_function("()=>{var e=document.getElementById('actStatus'); return e && /ok|bad|[0-9]/.test(e.textContent) && e.textContent.length>3;}", timeout=15000)
+        pg4.wait_for_function("()=>{var e=document.getElementById('nmStatus'); return e && /ok|bad|[0-9]/.test(e.textContent) && e.textContent.length>3;}", timeout=15000)
     except Exception:
         pass   # let the ck assertions below report the exact state cleanly rather than crashing
     pg4.wait_for_timeout(800)

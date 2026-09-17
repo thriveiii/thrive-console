@@ -124,10 +124,10 @@ with sync_playwright() as p:
     ck("board: the Epsilon card shows its reply N-badge (2)", epsiBadge=="2", epsiBadge)
 
     # ---- tap the replied opp -> drawer ----
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openDrawer(t.getAttribute('data-slug'));}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
     pg.wait_for_timeout(600)  # > detail fetch
     d = pg.evaluate("""()=>{
-      var dw=document.getElementById('drawer'); var scrim=document.getElementById('scrim');
+      var dw=document.getElementById('owDetail'); var scrim=document.getElementById('owScrim');
       var inb=dw.querySelectorAll('.msg.in');
       return {
         open: !scrim.hidden,
@@ -167,28 +167,28 @@ with sync_playwright() as p:
 
     # ---- close returns to the board without reload ----
     pg.evaluate("()=>{window.__alive='YES';}")
-    pg.evaluate("()=>document.getElementById('dwClose').click()")
+    pg.evaluate("()=>document.getElementById('owClose').click()")
     pg.wait_for_timeout(150)
-    closed = pg.evaluate("""()=>({ hidden:document.getElementById('scrim').hidden, board:!!document.querySelector('.lane'), alive:window.__alive||'' })""")
+    closed = pg.evaluate("""()=>({ hidden:document.getElementById('owScrim').hidden, board:!!document.querySelector('.lane'), alive:window.__alive||'' })""")
     ck("6: Close hides the drawer and the board is still mounted (no reload)", closed["hidden"] and closed["board"] and closed["alive"]=="YES", closed)
 
     # reopen + Escape
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openDrawer(t.getAttribute('data-slug'));}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
     pg.wait_for_timeout(200)
     pg.keyboard.press("Escape"); pg.wait_for_timeout(120)
-    ck("6: Escape closes the drawer", pg.evaluate("()=>document.getElementById('scrim').hidden"))
+    ck("6: Escape closes the drawer", pg.evaluate("()=>document.getElementById('owScrim').hidden"))
 
     # reopen + backdrop click
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openDrawer(t.getAttribute('data-slug'));}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
     pg.wait_for_timeout(200)
-    pg.evaluate("()=>document.getElementById('scrim').click()")
+    pg.evaluate("()=>document.getElementById('owScrim').click()")
     pg.wait_for_timeout(120)
-    ck("6: a backdrop tap closes the drawer", pg.evaluate("()=>document.getElementById('scrim').hidden"))
+    ck("6: a backdrop tap closes the drawer", pg.evaluate("()=>document.getElementById('owScrim').hidden"))
 
     # ---- tap the Sent opp -> empty reply thread ----
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Gamma Inc/.test(c.textContent))t=c;});t&&window.openDrawer(t.getAttribute('data-slug'));}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Gamma Inc/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
     pg.wait_for_timeout(500)
-    g = pg.evaluate("""()=>{var dw=document.getElementById('drawer');return {
+    g = pg.evaluate("""()=>{var dw=document.getElementById('owDetail');return {
       threadN:(dw.querySelector('[data-threadn]')||{}).textContent||'',
       inCount:dw.querySelectorAll('.msg.in').length,
       noThread: dw.textContent.indexOf('No replies yet.')>=0 };}""")
@@ -198,10 +198,10 @@ with sync_playwright() as p:
 
     # ---- AR: RTL drawer ----
     pg.click("#langBtn"); pg.wait_for_timeout(300)
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openDrawer(t.getAttribute('data-slug'));}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
     pg.wait_for_timeout(600)
     ar = pg.evaluate("""()=>{
-      var dw=document.getElementById('drawer');
+      var dw=document.getElementById('owDetail');
       var inb=dw.querySelector('.msg.in .maddr');
       return { dir:document.documentElement.getAttribute('dir'),
                arThread: dw.textContent.indexOf('محادثة الردود')>=0,
@@ -212,7 +212,7 @@ with sync_playwright() as p:
     ck("7: the reply address stays LTR-isolated in AR too", ("reply1@example.test" in ar["addr"]) and ar["addrDir"]=="ltr", ar)
 
     # ---- privacy: every address ever rendered is a synthetic *.example.test placeholder ----
-    everything = pg.evaluate("()=>document.getElementById('drawer').textContent")
+    everything = pg.evaluate("()=>document.getElementById('owDetail').textContent")
     # every '@' in the drawer is immediately followed by the synthetic domain (textContent has no separators,
     # so bound at the domain rather than trying to slice the trailing address off).
     at_segs = everything.split("@")[1:]

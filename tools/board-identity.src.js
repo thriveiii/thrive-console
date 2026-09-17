@@ -117,7 +117,7 @@ function finishIdentity(){
   // Step 2A: the profile index just settled (fire-and-forget from loadBoard, so it may finish AFTER a drawer
   // was opened). Re-paint the open drawer's notes ONCE so an actor uid that showed raw on first paint now
   // reads as the display name. One synchronous re-render, no polling, no await; guarded so it never throws.
-  try{ if(__drawerSlug && typeof renderNotesInto==="function") renderNotesInto(__drawerSlug); }catch(e){}
+  try{ if(typeof owDetailActive==="function" && owDetailActive(__owSlug) && typeof renderNotesInto==="function") renderNotesInto(__owSlug); }catch(e){}
   // Step 2D: the role just settled, so reveal (or keep hidden) the Admin header entry now that isOwner() is
   // authoritative. paintAdminSlot lives in bundle.js and is idempotent; guarded so it never throws here.
   try{ if(typeof window.__thrivePaintAdminSlot==="function") window.__thrivePaintAdminSlot(); }catch(e){}
@@ -214,7 +214,7 @@ function applyNameLocally(name){
   __identity.name = String(name==null?"":name);
   if(uid){ if(!__profileIndex.byUid[uid]) __profileIndex.byUid[uid] = { uid:uid, name:"", email:authEmail() }; __profileIndex.byUid[uid].name = __identity.name; }
   try{ if(window.__thriveIdentity) window.__thriveIdentity.name = __identity.name; }catch(e){}
-  try{ if(__drawerSlug && typeof renderNotesInto==="function") renderNotesInto(__drawerSlug); }catch(e){}
+  try{ if(typeof owDetailActive==="function" && owDetailActive(__owSlug) && typeof renderNotesInto==="function") renderNotesInto(__owSlug); }catch(e){}
 }
 // Optimistic confirm-or-revert: the person controls their own display_name (any format, first-name-only or
 // full). Nothing is applied until the server confirms; a failure shows red and leaves the runtime name as it

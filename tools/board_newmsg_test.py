@@ -141,7 +141,9 @@ def wait_ident(pg, tries=40):
         pg.wait_for_timeout(150)
     return False
 def open_nm(pg):
-    pg.evaluate("()=>{ var b=document.getElementById('newMsgBtn'); if(b) b.click(); }"); pg.wait_for_timeout(500)
+    # G5: the "New message" button now opens the WINDOW (see assertion 1). The standalone overlay is retained
+    # off-nav (same shared compose writer); this E2E drives it directly via the exposed seam.
+    pg.evaluate("()=>{ if(window.openNewMessage) window.openNewMessage(); }"); pg.wait_for_timeout(500)
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
@@ -149,13 +151,18 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: perr.append(str(e)))
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(500); wait_ident(pg)
 
-    # ===== 1: the header button opens a STANDALONE overlay (not the card drawer) =====
+    # ===== 1: the header New message button opens the WINDOW on the mode selector (G5); the drawer is gone =====
     ck("1: the header carries a New message button", pg.evaluate("()=>!!document.getElementById('newMsgBtn')"))
+    pg.evaluate("()=>{ var b=document.getElementById('newMsgBtn'); if(b) b.click(); }"); pg.wait_for_timeout(400)
+    ck("1: New message opens the centered window on the mode selector (without / with campaign)",
+       pg.evaluate("()=>!document.getElementById('owScrim').hidden && !!document.getElementById('owPickA') && !!document.getElementById('owPickB')"))
+    ck("1: there is NO card drawer anywhere in the DOM (retired at G5)",
+       pg.evaluate("()=>!document.getElementById('drawer') && !document.getElementById('scrim')"))
+    pg.evaluate("()=>window.closeOppWindow()"); pg.wait_for_timeout(150)
+    # the rest exercises the retained standalone overlay (the SAME shared compose writer the window uses) via the seam
     open_nm(pg)
-    ck("1: New message opens the overlay (#nmScrim visible)", pg.evaluate(NM_HIDDEN)==False)
-    ck("1: the editor renders INSIDE the standalone overlay (#nmPanel), not the card drawer (#drawer)",
-       pg.evaluate("()=>!!document.querySelector('#nmPanel #edSubj') && !document.querySelector('#drawer #edSubj')"))
-    ck("1: the card drawer is NOT open (this is its own process)", pg.evaluate("()=>{var s=document.getElementById('scrim'); return s? !!s.hidden : true;}"))
+    ck("1: the standalone overlay opens (#nmScrim visible) with its editor in #nmPanel",
+       pg.evaluate(NM_HIDDEN)==False and pg.evaluate("()=>!!document.querySelector('#nmPanel #edSubj')"))
     ck("1: __thriveNewMessageOpen reports open", pg.evaluate("()=>window.__thriveNewMessageOpen()")==True)
 
     # ===== 2: composing creates a lightweight opp and auto-saves subject/body to it =====
@@ -266,20 +273,22 @@ with sync_playwright() as p:
     pgf.evaluate("()=>{ var b=document.getElementById('nmClose'); if(b) b.click(); }")   # close IMMEDIATELY, within the debounce
     pgf.wait_for_timeout(1400)                                                            # the flushed upsert settles
     pgf.goto(f"{base}/library/board.html", wait_until="load"); pgf.wait_for_timeout(600); wait_ident(pgf)
-    CLICK_CARD = """()=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf('Flush Co note')>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
+    # G5: the draft is recovered by tapping its board card, which opens the window on Details; the composed message
+    # is then read by entering Compose (Mode A) for that opp.
+    CLICK_CARD = """()=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf('Flush Co note')>=0) t=c; }); if(t){ window.openOppWindow(t.getAttribute('data-slug'), 'detail'); window.owSelectMode('a'); return true; } return false; }"""
     opened = False
     for _ in range(20):                                                                  # poll: the reloaded board renders the card
         if pgf.evaluate(CLICK_CARD): opened = True; break
         pgf.wait_for_timeout(200)
     body = ""
-    for _ in range(25):                                                                  # poll: the drawer enriches (fetchDetail prefills the editor)
-        body = pgf.evaluate(VAL, "edBody") or ""
+    for _ in range(25):                                                                  # poll: Mode A enriches (oppReadData prefills the editor)
+        body = pgf.evaluate("()=>{ var e=document.querySelector('#owModeA #edBody'); return e? e.value : ''; }") or ""
         if "must survive" in body: break
         pgf.wait_for_timeout(200)
     ck("7: FLUSH - the immediately-closed draft persisted as a board card (nothing lost)", opened==True)
     ck("7: FLUSH - the body survived the immediate close", "must survive" in body, body)
     ck("7: FLUSH - the recipient survived the immediate close (data.recipients persisted)", "buyer.flush@example.test" in (pgf.evaluate(VAL, "recIn") or ""), pgf.evaluate(VAL, "recIn"))
-    sdf = pgf.evaluate("()=>{ var b=document.querySelector('#drawer .act[data-act=\"send\"]'); return b? !!b.disabled : null; }")
+    sdf = pgf.evaluate("()=>{ var b=document.querySelector('#owModeA #nmSend'); return b? !!b.disabled : null; }")
     ck("7: FLUSH - Send is ENABLED on the reopened card (subject+body+recipient all persisted)", sdf==False, {"disabled":sdf})
     pgf.close(); ctxf.close()
 

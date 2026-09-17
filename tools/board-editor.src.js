@@ -5,7 +5,7 @@
 // template escaping; this file therefore uses NO backticks and NO dollar-brace). Runs inside board.html's
 // IIFE alongside the L5 send clone (board-send.src.js) and the L5.5 recipient field (board-recipient.src.js),
 // reusing their scope: esc, t, oppReadData, oppPatch, sendCompile, firstRecipient, liveUrl, MF_LINK,
-// bareAddress, isEmail, findRow, refreshDrawer, reloadBoardData, __drawerSlug, __writing, __act, root,
+// bareAddress, isEmail, findRow, refreshOppDetail, owDetailActive, reloadBoardData, __writing, __act, root,
 // and window.__thriveIdentity (Step 2 identity).
 //
 // WHAT IT DOES (one surface for both first compose and reply):
@@ -80,10 +80,9 @@ function edRoot(){
   // G2: the centered window's "message without campaign" (Mode A) compose surface wins when it is active, so
   // every edEl/edVal/edRenderPreview lookup binds to the window's mounted nodes (the SAME editorHtml nodes,
   // mounted by reference - not a second editor). owComposeRoot lives in buildBoard.
-  if(typeof owComposeRoot==="function"){ var w=owComposeRoot(); if(w) return w; }
-  if(typeof __nmOpen!=="undefined" && __nmOpen){ var p=document.getElementById("nmPanel"); if(p) return p; }
-  var d=document.getElementById("drawer"); if(d) return d;
-  return document;
+  if(typeof owComposeRoot==="function"){ var w=owComposeRoot(); if(w) return w; }   // the window's compose surface (Mode A / Mode B Message tab)
+  if(typeof __nmOpen!=="undefined" && __nmOpen){ var p=document.getElementById("nmPanel"); if(p) return p; }   // the "New message" overlay, if open
+  return document;                                                                  // G5: the drawer is retired
 }
 function edEl(id){ try{ var r=edRoot(); return r ? r.querySelector("#"+id) : null; }catch(e){ return document.getElementById(id); } }
 function edVal(id){ var el=edEl(id); return el ? String(el.value||"") : ""; }
@@ -227,9 +226,8 @@ function edScheduleSave(slug, delay){
 // reschedule shortly so the text is never dropped. On the FIRST message that makes an opp sendable, reload
 // the board once so the L5 gate flips and Send appears; ongoing edits do not reload (undo preserved).
 function edSaveNow(slug){
-  if(__drawerSlug!==slug) return;
   var subjEl=edEl("edSubj"), bodyEl=edEl("edBody");
-  if(!subjEl || !bodyEl) return;
+  if(!subjEl || !bodyEl) return;                                        // the editor must be mounted for this opp (compose saves route to nmSaveNow via composeOwns)
   if(__writing || __edSaving){ edScheduleSave(slug, 500); return; }
   __edSaving = true;
   var subj=String(subjEl.value||""), body=String(bodyEl.value||""), sig=edSignature();
@@ -244,7 +242,7 @@ function edSaveNow(slug){
       var row = findRow(slug);
       var reveal = wasEmpty && nowHas && row && !row.has_email; // first message: flip the L5 gate so Send appears
       if(reveal){
-        return reloadBoardData().then(function(){ edSetStatus(slug, t("a_saved"), "ok"); if(__drawerSlug===slug) refreshDrawer(slug); },
+        return reloadBoardData().then(function(){ edSetStatus(slug, t("a_saved"), "ok"); refreshOppDetail(slug); },
                                      function(){ edSetStatus(slug, t("a_saved"), "ok"); });
       }
       edSetStatus(slug, t("a_saved"), "ok"); edRenderPreview(slug);

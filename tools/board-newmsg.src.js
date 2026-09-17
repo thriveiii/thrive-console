@@ -101,6 +101,7 @@ function owMsgMount(slug){
 function owMsgWire(slug){
   try{ wireEditor(slug); }catch(e){}
   var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ nmTick(slug); nmScheduleSave(slug, 700); });
+  var rs=document.getElementById("recSave"); if(rs) rs.addEventListener("click", function(){ try{ onSaveRecipient(slug); }catch(e){} });
   nmTick(slug);
 }
 function nmPanelHtml(slug, data){
@@ -187,6 +188,7 @@ function nmSaveNow(slug){
 function nmWire(slug){
   try{ wireEditor(slug); }catch(e){}
   var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ nmTick(slug); nmScheduleSave(slug, 700); });
+  var rs=document.getElementById("recSave"); if(rs) rs.addEventListener("click", function(){ try{ onSaveRecipient(slug); }catch(e){} });   // G5: the recipient Save button (recipientHtml) is now wired in every compose surface, not only the retired drawer
   var cl=document.getElementById("nmClose"); if(cl) cl.addEventListener("click", function(){ closeNewMessage(); });
   var sd=document.getElementById("nmSend"); if(sd) sd.addEventListener("click", function(){ unifiedSend(slug); });
   nmTick(slug);
@@ -197,17 +199,14 @@ function nmWire(slug){
 // This is the fix for the resume-loop: a blocked or unsent draft used to leave thrive_nm_draft set, so the
 // next New message reopened the SAME opp pre-filled with the prior subject/body, collapsing separate
 // messages onto one card (sent_count is per slug). A durable draft is not lost - it persists as its own
-// console_opps row / board card and is reopened by tapping THAT card (openDrawer), not by this button.
+// console_opps row / board card and is reopened by tapping THAT card (the window), not by this button.
 function openNewMessage(){
   if(__nmOpen) return;
   var sc=document.getElementById("nmScrim"), pn=document.getElementById("nmPanel");
   if(!sc || !pn) return;
-  // ONE compose surface at a time (COMPOSE_SURFACE_EVIDENCE A1): close any open card drawer and clear its
-  // DOM before mounting the overlay, so the drawer's #edSubj/#edBody/#edPreview cannot linger as a duplicate
-  // set of ids ahead of the overlay's in the document. closeDrawer clears __drawerSlug and hides the scrim;
-  // openDrawer rebuilds #drawer innerHTML on its next open, so emptying it here is safe.
-  try{ if(typeof closeDrawer==="function") closeDrawer(); }catch(e){}
-  var dz=document.getElementById("drawer"); if(dz) dz.innerHTML="";
+  // ONE compose surface at a time (COMPOSE_SURFACE_EVIDENCE A1): close the centered window first, so its mounted
+  // #edSubj/#edBody/#edPreview cannot linger as a duplicate set of ids ahead of the overlay's in the document.
+  try{ if(typeof closeOppWindow==="function") closeOppWindow(); }catch(e){}
   var slug = nmNewSlug();               // ALWAYS fresh: never resume nmStoredSlug() onto the generic button
   nmClearStore();                       // drop any stale pointer so it cannot hijack this or a later compose
   __nmSlug = slug; __nmOpen = true;
@@ -230,7 +229,7 @@ function closeNewMessage(){
 // Where a send-time status goes: the overlay's #nmStatus when it owns the slug, else the drawer card status.
 function sendFail(slug, msg){
   if(composeOwns(slug)){ nmSetStatus(msg, "bad"); }                      // overlay OR window Mode A: show it in #nmStatus
-  else { __act[slug] = { msg:msg, cls:"bad" }; if(__drawerSlug===slug) refreshDrawer(slug); }
+  else { __act[slug] = { msg:msg, cls:"bad" }; refreshOppDetail(slug); }
 }
 // UNIFY: the ONE send path for BOTH surfaces. Persist the live subject/body/signature/recipients to the opp,
 // reload the board so runSend's findRow(slug) resolves, then hand off to the UNCHANGED L5 runSend (which does
@@ -260,7 +259,7 @@ function unifiedSend(slug){
         nmSetStatus(result.msg, result.cls);            // green on full success, amber on partial, red on failure
         if(result.cls !== "ok"){ var sd2=document.getElementById("nmSend"); if(sd2) sd2.disabled=false; }   // let the operator retry a failed/partial send
       }
-      // a drawer-originated send (over===false) shows its result via runSend's own __act[slug] + refreshDrawer
+      // a drawer-originated send (over===false) shows its result via runSend's own __act[slug] + refreshOppDetail
     });
   }).catch(function(e){
     var b2=document.getElementById("nmSend"); if(b2) b2.disabled=false;

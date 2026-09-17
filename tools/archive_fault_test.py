@@ -140,7 +140,7 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: perr.append(str(e)))
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(500); wait_ident(pg)
     pg.wait_for_function("()=>!!document.querySelector('.card[data-slug=\"promo\"]')", timeout=8000)
-    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"promo\"]'); if(c) window.openDrawer(c.getAttribute('data-slug'));}")
+    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"promo\"]'); if(c) window.openOppWindow(c.getAttribute('data-slug'), 'detail');}")
     pg.wait_for_function("()=>!!document.getElementById('upActBtn')", timeout=8000)
     ck("(c) a promoted un-live card offers a Re-activate exit", pg.evaluate("()=>!!document.getElementById('upActBtn')"))
     ck("(c) the Re-activate targets the SHARED template page (data.page_slug), not the card slug",
@@ -164,9 +164,9 @@ with sync_playwright() as p:
 
     # (a) open full history -> the board drawer shows the note + the archive stamps
     pg2.evaluate("()=>{var b=document.querySelector('.lv-arch[data-arch-slug=\"newmsg\"] [data-lv-arch-open]'); if(b) b.click();}")
-    pg2.wait_for_function("()=>{var d=document.getElementById('drawer'); return d && d.textContent.indexOf('reached the buyer')>=0;}", timeout=8000)
+    pg2.wait_for_function("()=>{var d=document.getElementById('owDetail'); return d && d.textContent.indexOf('reached the buyer')>=0;}", timeout=8000)
     ck("(a) opening the archive card opens its FULL history (notes + archive stamps in the drawer)",
-       pg2.evaluate("""()=>{ var d=document.getElementById('drawer'); return d.textContent.indexOf('reached the buyer')>=0 && !!d.querySelector('.arch-facts'); }"""))
+       pg2.evaluate("""()=>{ var d=document.getElementById('owDetail'); return d.textContent.indexOf('reached the buyer')>=0 && !!d.querySelector('.arch-facts'); }"""))
     # close the drawer, go back to the archive tab
     pg2.evaluate("()=>{var s=document.getElementById('scrim'); if(s) s.hidden=true;}")
 

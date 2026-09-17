@@ -122,9 +122,9 @@ def wire(ctx):
     ctx.route("**/rest/v1/console_suppressions**", route_empty)
 
 LANE_OF = """(biz)=>{ var out=''; document.querySelectorAll('.lane').forEach(function(l){ var h=l.querySelector('h2'); if(!h) return; l.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) out=h.textContent; }); }); return out; }"""
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
-CLICK_ACT = """(act)=>{ var b=document.querySelector('#drawer .act[data-act='+JSON.stringify(act)+']'); if(b){ b.click(); return true; } return false; }"""
-ACT_STATUS = """()=>{ var e=document.getElementById('actStatus'); return e?{txt:e.textContent,cls:e.className}:{txt:'',cls:''}; }"""
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ var s=t.getAttribute('data-slug'); window.openOppWindow(s); window.owSelectMode('a'); return true; } return false; }"""
+CLICK_ACT = """(act)=>{ var b = act==='send' ? document.querySelector('#owModeA #nmSend') : null; if(b){ b.click(); return true; } return false; }"""
+ACT_STATUS = """()=>{ var e=document.getElementById('nmStatus'); return e?{txt:e.textContent,cls:e.className}:{txt:'',cls:''}; }"""
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
@@ -137,8 +137,8 @@ with sync_playwright() as p:
 
     # ===== gate: Send appears on an eligible opp (has_email + not closed + endpoint) =====
     ck("gate: Alpha is in the Live lane (a prepared message, ready to send)", "Live" in pg.evaluate(LANE_OF, "Alpha Co"))
-    pg.evaluate(OPEN, "Alpha Co"); pg.wait_for_timeout(400)
-    ck("gate: the drawer offers a Send action on an eligible opp", pg.evaluate("()=>!!document.querySelector('#drawer .act[data-act=\"send\"]')"))
+    pg.evaluate(OPEN, "Alpha Co"); pg.wait_for_selector("#owModeA #edSubj", timeout=6000); pg.wait_for_timeout(500)
+    ck("gate: the drawer offers a Send action on an eligible opp", pg.evaluate("()=>!!document.querySelector('#owModeA #nmSend')"))
 
     # ===== 1 + 2 + 3: happy send -> console_mail written AFTER relay, SENT lane, payload carries slug/msgid/token =====
     pg.evaluate(CLICK_ACT, "send"); pg.wait_for_timeout(1100)
@@ -183,7 +183,7 @@ with sync_playwright() as p:
     # ===== 4a: forced relay 500 -> revert + red, NO console_mail row (no phantom Sent) =====
     RELAY_FAULT["beta"] = "500"
     ck("4a: Beta starts Live", "Live" in pg.evaluate(LANE_OF, "Beta LLC"))
-    pg.evaluate(OPEN, "Beta LLC"); pg.wait_for_timeout(400)
+    pg.evaluate(OPEN, "Beta LLC"); pg.wait_for_selector("#owModeA #edSubj", timeout=6000); pg.wait_for_timeout(500)
     pg.evaluate(CLICK_ACT, "send"); pg.wait_for_timeout(1000)
     st = pg.evaluate(ACT_STATUS)
     ck("4a: a relay 500 shows a visible RED status", "bad" in st["cls"] and st["txt"].strip()!="", st)
@@ -193,7 +193,7 @@ with sync_playwright() as p:
 
     # ===== 4b: forced Resend reject ({ok:false}) -> revert + red, NO row =====
     RELAY_FAULT["gamma"] = "reject"
-    pg.evaluate(OPEN, "Gamma Inc"); pg.wait_for_timeout(400)
+    pg.evaluate(OPEN, "Gamma Inc"); pg.wait_for_selector("#owModeA #edSubj", timeout=6000); pg.wait_for_timeout(500)
     pg.evaluate(CLICK_ACT, "send"); pg.wait_for_timeout(1000)
     st2 = pg.evaluate(ACT_STATUS)
     ck("4b: a Resend reject shows RED and writes NO row", ("bad" in st2["cls"]) and sent_count("gamma")==0, {"st":st2, "n":sent_count("gamma")})
@@ -202,7 +202,7 @@ with sync_playwright() as p:
 
     # ===== 4c: aborted body-read (the exact engine hang) -> settles to revert + red, NO row =====
     RELAY_FAULT["delta"] = "abort"
-    pg.evaluate(OPEN, "Delta Ltd"); pg.wait_for_timeout(400)
+    pg.evaluate(OPEN, "Delta Ltd"); pg.wait_for_selector("#owModeA #edSubj", timeout=6000); pg.wait_for_timeout(500)
     pg.evaluate(CLICK_ACT, "send"); pg.wait_for_timeout(1400)
     st3 = pg.evaluate(ACT_STATUS)
     ck("4c: an aborted relay body settles to a RED status (never a hung promise)", "bad" in st3["cls"] and st3["txt"].strip()!="", st3)
@@ -212,8 +212,8 @@ with sync_playwright() as p:
 
     # ===== gate: no sighted recipient -> Send is DISABLED (the unified gate blocks it up front), no relay, no row =====
     relay_before = len(ORDER)
-    pg.evaluate(OPEN, "NoRecipient Co"); pg.wait_for_timeout(400)
-    sd4 = pg.evaluate("()=>{ var b=document.querySelector('#drawer .act[data-act=\"send\"]'); return b? !!b.disabled : null; }")
+    pg.evaluate(OPEN, "NoRecipient Co"); pg.wait_for_selector("#owModeA #edSubj", timeout=6000); pg.wait_for_timeout(500)
+    sd4 = pg.evaluate("()=>{ var b=document.querySelector('#owModeA #nmSend'); return b? !!b.disabled : null; }")
     pg.evaluate(CLICK_ACT, "send"); pg.wait_for_timeout(700)                # a disabled Send does nothing
     ck("gate: an opp with no sighted recipient cannot send - Send is DISABLED, no relay call, no row",
        sd4==True and sent_count("norec")==0 and len(ORDER)==relay_before, {"disabled":sd4, "order":ORDER[relay_before:]})
@@ -222,9 +222,9 @@ with sync_playwright() as p:
     # ===== 5: AR RTL + localized Send =====
     pg.evaluate("()=>{try{localStorage.setItem('thrive_lang','ar');}catch(e){}}")
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(700)
-    pg.evaluate(OPEN, "Gamma Inc"); pg.wait_for_timeout(400)
-    arr = pg.evaluate("""()=>{ var dw=document.getElementById('drawer'); return { dir:getComputedStyle(dw).direction, send:dw.textContent.indexOf('إرسال بريد')>=0 }; }""")
-    ck("5: AR flips the drawer to RTL", arr["dir"]=="rtl", arr)
+    pg.evaluate(OPEN, "Gamma Inc"); pg.wait_for_selector("#owModeA #edSubj", timeout=6000); pg.wait_for_timeout(500)
+    arr = pg.evaluate("""()=>{ var dw=document.getElementById('owModeA'); var sb=dw&&dw.querySelector('#nmSend'); return { dir:dw?getComputedStyle(dw).direction:'', send:!!sb && sb.textContent.indexOf('إرسال')>=0 }; }""")
+    ck("5: AR flips the window compose to RTL", arr["dir"]=="rtl", arr)
     ck("5: the Send action is localized in AR", arr["send"], arr)
 
     # ===== privacy + no uncaught error =====
