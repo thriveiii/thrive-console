@@ -102,7 +102,7 @@ def wire(ctx):
     # empty do-not-contact list (200, nobody suppressed) so sends proceed, as real Supabase (B1) does.
     ctx.route("**/rest/v1/console_suppressions**", route_empty)
 
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ t.click(); return true; } return false; }"""
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
 CLICK_ACT = """(act)=>{ var b=document.querySelector('#drawer .act[data-act='+JSON.stringify(act)+']'); if(b){ b.click(); return true; } return false; }"""
 REC_VAL = """()=>{ var i=document.getElementById('recIn'); return i?i.value:null; }"""
 REC_ABOVE_SEND = """()=>{ var dw=document.getElementById('drawer'); var rec=document.getElementById('recIn'); var snd=dw.querySelector('.act[data-act="send"]'); if(!rec||!snd) return false; return (rec.compareDocumentPosition(snd) & Node.DOCUMENT_POSITION_FOLLOWING)!==0; }"""

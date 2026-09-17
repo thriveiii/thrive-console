@@ -136,7 +136,7 @@ def wire(ctx, lang=None):
     ctx.route("**/rest/v1/console_admins**", route_empty)
     ctx.route("**/rest/v1/console_opps**", route_opps)
 
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ t.click(); return true; } return false; }"""
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
 HAS_SEND = "()=>!!document.querySelector('#drawer .act[data-act=\"send\"]')"
 SEND_DISABLED = "()=>{ var b=document.querySelector('#drawer .act[data-act=\"send\"]'); return b? !!b.disabled : null; }"
 ED_STATUS = "()=>{ var e=document.getElementById('edStatus'); return e?{txt:e.textContent,cls:e.className}:{txt:'',cls:''}; }"

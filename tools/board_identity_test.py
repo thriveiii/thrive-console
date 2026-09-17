@@ -120,7 +120,7 @@ def wire(ctx, uid, email, lang=None):
     ctx.route("**/rest/v1/console_members**", route_members)
     ctx.route("**/rest/v1/console_admins**", route_admins)
 
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ t.click(); return true; } return false; }"""
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
 IDENT = "()=>window.__thriveIdentity||null"
 RESOLVE = "(v)=>window.__thriveResolveActor?window.__thriveResolveActor(v):null"
 

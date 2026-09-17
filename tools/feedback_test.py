@@ -149,7 +149,7 @@ def wait_ident(pg, tries=40):
         pg.wait_for_timeout(150)
     return False
 def open_card(pg, slug):
-    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c) c.click();}", slug)
+    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c) window.openDrawer(c.getAttribute('data-slug'));}", slug)
     pg.wait_for_function("""()=>{ var b=document.querySelector('#drawer .act[data-act="send"]');
         var s=document.getElementById('edSubj'), r=document.getElementById('recIn');
         return !!b && !b.disabled && s && s.value.trim() && r && r.value.indexOf('@')>=0; }""", timeout=8000)

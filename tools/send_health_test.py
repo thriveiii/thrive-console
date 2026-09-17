@@ -128,7 +128,7 @@ def wait_ident(pg, tries=40):
         pg.wait_for_timeout(150)
     return False
 def open_card(pg, slug):
-    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c) c.click();}", slug)
+    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c) window.openDrawer(c.getAttribute('data-slug'));}", slug)
     # wait for the ENRICHED drawer paint (fetchDetail done): the editor is prefilled and the recipient field is
     # populated, so a Send click is not raced by the enrichment re-render that replaces #actStatus.
     pg.wait_for_function("""()=>{ var b=document.querySelector('#drawer .act[data-act="send"]');
