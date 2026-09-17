@@ -1011,6 +1011,7 @@ function buildBoard(){
      window's page previews are TALL (F2/F3 sizing) via a scoped override so the whole page shows, scrollable;
      the GLOBAL .lv-frame stays as-is (the drawer/Library sizing decision is separate). */
   .ow-panel{display:flex;flex-direction:column;gap:12px}
+  .ow-panel[hidden]{display:none}   /* the [hidden] attr must beat .ow-panel's display:flex, or every tab's panel stacks at once */
   .ow-page-modes{display:flex;gap:10px;flex-wrap:wrap}
   .ow-up-btn{cursor:pointer}
   .ow-pick{display:flex;flex-direction:column;gap:8px}
@@ -1023,6 +1024,23 @@ function buildBoard(){
   .ow-prev-tabs{display:flex;gap:8px}
   .ow-prev-box{min-height:60vh}
   #owPageReview .lv-frame,.ow-prev-box .lv-frame{height:62vh;min-height:360px}
+  /* G4 Recipients tab: a scannable list, one row per recipient, one status chip. Equal padding on each row;
+     the status colors echo the board lanes (sent neutral, opened blue, replied green, bounced red, queued amber,
+     suppressed/none muted). A suppressed row is dimmed (B2 posture - it will be refused at send regardless). */
+  .ow-recip-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .ow-recip{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #22222e;border-radius:10px;padding:14px;background:#0e0e14}
+  .ow-recip.supp{opacity:.72}
+  .ow-recip-who{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .ow-recip-name{font-weight:650;color:#eef;word-break:break-word}
+  .ow-recip-addr{font-size:12px;color:#8a8a93}
+  .ow-rs{flex:0 0 auto;font-size:12px;font-weight:650;padding:4px 10px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+  .ow-rs-sent{background:#15151d;color:#a9a9b4;border-color:#2a2a36}
+  .ow-rs-queued{background:#241f0e;color:#e3c163;border-color:#4a4021}
+  .ow-rs-opened{background:#0e2130;color:#63b7e3;border-color:#214a5c}
+  .ow-rs-replied{background:#0e2417;color:#63e39a;border-color:#215c3a}
+  .ow-rs-bounced_hard,.ow-rs-bounced_soft{background:#2a1214;color:#e37a7a;border-color:#5c2121}
+  .ow-rs-suppressed,.ow-rs-none{background:#15151d;color:#7a7a85;border-color:#2a2a36}
+  html[dir="rtl"] .ow-recip-name,html[dir="rtl"] .ow-rs{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .ow-pick-t,html[dir="rtl"] .ow-pick-s{letter-spacing:normal}
   .ow-mode-h{font-size:14px;color:#9a9aa6;margin:0 0 4px}
   .ow-mode-btn{display:block;width:100%;text-align:start;background:#0e0e14;border:1px solid #22222e;border-radius:12px;padding:16px 18px;color:#eef;font:inherit;font-size:15px;font-weight:650;cursor:pointer}
@@ -1312,7 +1330,9 @@ function buildBoard(){
           ow_tab_msg:"Message", ow_tab_page:"Page", ow_tab_recip:"Recipients", ow_tab_preview:"Preview",
           ow_commit:"Create campaign", ow_committed:"Campaign created.", ow_need_page:"Add a page first.",
           ow_page_upload:"Upload a page", ow_page_pick:"Pick from Library", ow_use:"Use", ow_duplicate:"Duplicate",
-          ow_prev_msg:"Message", ow_prev_page:"Page", ow_recip_soon:"Per-recipient management arrives next.",
+          ow_prev_msg:"Message", ow_prev_page:"Page", ow_recip_none:"No recipients yet.",
+          ow_rs_suppressed:"Do not contact", ow_rs_bounced_hard:"Bounced (hard)", ow_rs_bounced_soft:"Bounced (soft)",
+          ow_rs_replied:"Replied", ow_rs_opened:"Opened", ow_rs_sent:"Sent", ow_rs_queued:"Queued", ow_rs_none:"Not sent",
           lib_fix_rows:"Fix the highlighted fields first.",
           nm_send:"Send message", nm_need_msg:"Add a subject and body first.", nm_need_to:"Add a recipient email first.",
           up_open:"Upload campaign", up_h:"Upload a campaign zip", up_hint:"A zip of html pages plus message texts and recipient emails. Nothing is written until you approve.",
@@ -1395,7 +1415,9 @@ function buildBoard(){
           ow_tab_msg:"النص", ow_tab_page:"الصفحة", ow_tab_recip:"المستلمون", ow_tab_preview:"المعاينة",
           ow_commit:"إنشاء الحملة", ow_committed:"أُنشئت الحملة.", ow_need_page:"أضف صفحة أولًا.",
           ow_page_upload:"رفع صفحة", ow_page_pick:"اختر من المكتبة", ow_use:"استخدام", ow_duplicate:"نسخ",
-          ow_prev_msg:"الرسالة", ow_prev_page:"الصفحة", ow_recip_soon:"إدارة المستلمين قادمة قريبًا.",
+          ow_prev_msg:"الرسالة", ow_prev_page:"الصفحة", ow_recip_none:"لا مستلمين بعد.",
+          ow_rs_suppressed:"عدم التواصل", ow_rs_bounced_hard:"ارتداد نهائي", ow_rs_bounced_soft:"ارتداد مؤقت",
+          ow_rs_replied:"ردّ", ow_rs_opened:"فتحت", ow_rs_sent:"أُرسلت", ow_rs_queued:"في الانتظار", ow_rs_none:"لم تُرسل",
           lib_fix_rows:"صحّح الحقول المميّزة أولًا.",
           nm_send:"إرسال الرسالة", nm_need_msg:"أضف موضوعًا ونصًا أولًا.", nm_need_to:"أضف بريد المستلم أولًا.",
           up_open:"رفع حملة", up_h:"ارفع ملف حملة مضغوط", up_hint:"ملف مضغوط يضم صفحات html ونصوص الرسائل وبريد المستلمين. لا يُكتب شيء حتى توافق.",
@@ -2040,7 +2062,7 @@ ${UPLOAD_SRC}
   function owModeBBodyHtml(){
     return '<div class="ow-panel" id="owMsgPanel"'+(__owTab==="msg"?"":" hidden")+'></div>'+
       '<div class="ow-panel" id="owPagePanel"'+(__owTab==="page"?"":" hidden")+'></div>'+
-      '<div class="ow-panel" id="owRecipPanel"'+(__owTab==="recip"?"":" hidden")+'><div class="up-empty">'+esc(t("ow_recip_soon"))+'</div></div>'+
+      '<div class="ow-panel" id="owRecipPanel"'+(__owTab==="recip"?"":" hidden")+'></div>'+   // G4: lazily filled on first switch (owRecipMount)
       '<div class="ow-panel" id="owPreviewPanel"'+(__owTab==="preview"?"":" hidden")+'></div>'+
       '<div class="ow-foot"><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
         '<div class="act-status" id="owCommitStatus" role="status" aria-live="polite"></div></div>';
@@ -2054,6 +2076,7 @@ ${UPLOAD_SRC}
     var map={ msg:"owMsgPanel", page:"owPagePanel", recip:"owRecipPanel", preview:"owPreviewPanel" };
     Object.keys(map).forEach(function(k){ var el=document.getElementById(map[k]); if(el) el.hidden = (k!==tab); });
     if(tab==="preview" && typeof owPreviewMount==="function") owPreviewMount(__owSlug);   // compile fresh from the current compose
+    if(tab==="recip" && typeof owRecipMount==="function") owRecipMount(__owSlug);         // G4: read the ledger fresh each open
   }
   function owModeBMount(slug){
     __owTab = "msg";

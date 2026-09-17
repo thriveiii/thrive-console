@@ -146,6 +146,10 @@ with sync_playwright() as p:
     pg.click("#owTabs [data-ow-tab='page']"); pg.wait_for_timeout(300)
     ck("clicking the Page tab shows #owPagePanel and hides #owMsgPanel",
        pg.evaluate("()=>({page:!document.getElementById('owPagePanel').hidden, msg:document.getElementById('owMsgPanel').hidden})")=={"page":True,"msg":True})
+    # visibility, not just the [hidden] property: a hidden panel must not actually render (offsetParent===null),
+    # so the tabs never stack on screen (the [hidden] attr must beat .ow-panel's display:flex).
+    ck("only the active panel is visible on screen (hidden panels do not render)",
+       pg.evaluate("()=>({page:document.getElementById('owPagePanel').offsetParent!==null, msg:document.getElementById('owMsgPanel').offsetParent!==null, prev:document.getElementById('owPreviewPanel').offsetParent!==null})")=={"page":True,"msg":False,"prev":False})
     ck("the compose fields stay mounted while the Page tab is active (still ONE #edSubj)", pg.evaluate("()=>document.querySelectorAll('#edSubj').length")==1)
     ck("the Page tab offers Upload + Pick entry modes", pg.evaluate("()=>!!(document.getElementById('owPageFile')&&document.getElementById('owPickBtn'))"))
 
@@ -164,6 +168,7 @@ with sync_playwright() as p:
 
     # ===== 5: the ONE Commit writes the campaign shape (FAILS-WHEN-BROKEN) =====
     SUPP["rows"]=[]; SUPP["fault"]=False
+    pg.click("#owTabs [data-ow-tab='msg']"); pg.wait_for_timeout(200)   # type the message on its own tab (only the active panel is visible)
     pg.fill("#owMsgPanel #edBody", "Ramadan Kareem. A small gift from Thrive: {{LINK}}.")
     pg.eval_on_selector("#owMsgPanel #edBody", "e=>e.dispatchEvent(new Event('input',{bubbles:true}))"); pg.wait_for_timeout(200)
     ok = pg.evaluate("()=>window.__thriveOppCommitCampaign('alpha')")   # await the real commit
@@ -214,8 +219,9 @@ with sync_playwright() as p:
        len(PAGE_WRITES)==0 and len(OPP_WRITES)==0 and len(relay_ops("page_publish"))==0, {"pages":PAGE_WRITES,"opps":OPP_WRITES,"relay":RELAY_CALLS})
 
     # ===== 8: the Preview tab renders the exact-send message AND the page =====
-    pg.fill("#owPageReview #libSlug-0", "alpha")
+    pg.fill("#owPageReview #libSlug-0", "alpha")   # Page tab still active from section 7
     pg.eval_on_selector("#owPageReview #libSlug-0", "e=>e.dispatchEvent(new Event('input',{bubbles:true}))"); pg.wait_for_timeout(200)
+    pg.click("#owTabs [data-ow-tab='msg']"); pg.wait_for_timeout(200)   # type the message on its own tab (only the active panel is visible)
     pg.fill("#owMsgPanel #edBody", "Preview body line for {{LINK}}.")
     pg.eval_on_selector("#owMsgPanel #edBody", "e=>e.dispatchEvent(new Event('input',{bubbles:true}))"); pg.wait_for_timeout(200)
     pg.click("#owTabs [data-ow-tab='preview']"); pg.wait_for_timeout(500)
