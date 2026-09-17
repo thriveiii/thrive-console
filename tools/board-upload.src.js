@@ -1302,8 +1302,107 @@ function owCommitCampaign(slug){
   });
 }
 
+// ===================================================================================================
+// G4: the window's Mode B RECIPIENTS tab - the opp's recipient list, each with ONE derived status.
+// READ-ONLY. No relay, no schema, no write. It REUSES the board's existing ledger reads (restGet /
+// fetchInbound / oppReadData / ensureSuppress+isSuppressed) and MIRRORS the app engine's per-recipient
+// derivation (library/app.js recipientState + campaignStats P2), so the window and the app agree:
+//   - sent/queued  : console_mail rows for this opp, keyed by to_addr (status buckets per the board view:
+//                    ''/sent/copied/pending = a dispatched send; queued/held/sending = still in flight);
+//   - opened       : the P2 token join console_hits.data.r -> console_mail.id -> to_addr (a hit with no
+//                    token stays anonymous, never guessed onto a person);
+//   - replied      : a console_inbound reply (kind != auto) whose data.from matches the address;
+//   - bounced       : a console_inbound auto+bounce row whose text names the address (hard vs soft from
+//                    the bounce value); an unattributable bounce is never pinned onto a recipient;
+//   - suppressed   : the B2 do-not-contact set (isSuppressed) - shown distinctly; B2 still refuses it at send.
+// Precedence (one clear status): suppressed > hard-bounced > soft-bounced > replied > opened > sent > queued > none.
+var OW_RS_KEY = { suppressed:"ow_rs_suppressed", bounced_hard:"ow_rs_bounced_hard", bounced_soft:"ow_rs_bounced_soft",
+  replied:"ow_rs_replied", opened:"ow_rs_opened", sent:"ow_rs_sent", queued:"ow_rs_queued", none:"ow_rs_none" };
+// Build the join structures ONCE from the three ledgers (mail/hits/inbound), then classify each address against them.
+function owRecipContext(mail, inbound, hits){
+  var tokTo = {}, sentSet = {}, queuedSet = {};
+  (mail || []).forEach(function(m){ m = m || {}; var d = m.data || {};
+    if(d.direction === "in") return;                                      // an inbound-mirrored row is not a send
+    var addr = String(m.to_addr || d.to || "").trim().toLowerCase(); if(!addr) return;
+    var id = m.id || d.mid; if(id) tokTo[id] = addr;                      // P2: the mail row id is the open token
+    var st = String(m.status || "").toLowerCase();
+    if(st === "" || st === "sent" || st === "copied" || st === "pending") sentSet[addr] = 1;   // dispatched (view counts these)
+    else if(st === "queued" || st === "held" || st === "sending") queuedSet[addr] = 1;         // committed / in flight
+  });
+  var openedSet = {};
+  (hits || []).forEach(function(h){ h = h || {}; var d = h.data || {};
+    if(h.self || d.self) return;                                          // the operator's own visit is excluded
+    if((h.type || d.type || "open") !== "open") return;
+    var ref = d.r || d.token || d.mid; if(ref && tokTo[ref]) openedSet[tokTo[ref]] = 1;         // token -> to_addr
+  });
+  var repliedSet = {}, bounces = [];
+  (inbound || []).forEach(function(r){ r = r || {}; var d = r.data || {};
+    if(r.kind === "auto"){
+      if(r.bounce){
+        var text = ((d.snippet || "") + " " + (d.subject || "") + " " + (d.body || d.text || "")).toLowerCase();
+        bounces.push({ hard: String(r.bounce).toLowerCase().indexOf("hard") >= 0, text: text });
+      }
+      return;                                                             // an auto row (bounce / vacation) is never a reply
+    }
+    var from = String(d.from || r.from || "").trim().toLowerCase(); if(from) repliedSet[from] = 1;
+  });
+  return { sentSet: sentSet, queuedSet: queuedSet, openedSet: openedSet, repliedSet: repliedSet, bounces: bounces };
+}
+function owRecipStatus(addr, ctx){
+  addr = String(addr || "").trim().toLowerCase();
+  if(!addr) return "none";
+  if(typeof isSuppressed === "function" && isSuppressed(addr)) return "suppressed";   // B2 posture: refused at send regardless
+  var hard = false, soft = false;
+  (ctx.bounces || []).forEach(function(b){ if(b.text.indexOf(addr) >= 0){ if(b.hard) hard = true; else soft = true; } });
+  if(hard) return "bounced_hard";
+  if(soft) return "bounced_soft";
+  if(ctx.repliedSet[addr]) return "replied";
+  if(ctx.openedSet[addr]) return "opened";
+  if(ctx.sentSet[addr]) return "sent";
+  if(ctx.queuedSet[addr]) return "queued";
+  return "none";
+}
+// Read the opp's recipients + the three ledgers (scoped to this opp / its effective page), then classify each.
+function owRecipLoad(slug){
+  return oppReadData(slug).then(function(d){ return d || {}; }, function(){ return {}; }).then(function(data){
+    var recips = Array.isArray(data.recipients) ? data.recipients : [];
+    var pageSlug = data.page_slug || slug;                                // opens live on the effective page (a promoted card shares it)
+    return Promise.all([
+      restGet("console_mail?opp=eq." + enc(slug) + "&select=id,opp,to_addr,status,ts,data&order=ts.asc"),
+      (typeof fetchInbound === "function" ? fetchInbound() : Promise.resolve([])),
+      restGet("console_hits?slug=eq." + enc(pageSlug) + "&select=id,slug,ts,self,data&order=ts.asc"),
+      (typeof ensureSuppress === "function" ? ensureSuppress().catch(function(){}) : Promise.resolve())
+    ]).then(function(a){
+      var mail = a[0] || [], inbound = (a[1] || []).filter(function(r){ return r && r.opp === slug; }), hits = a[2] || [];
+      var ctx = owRecipContext(mail, inbound, hits);
+      return recips.map(function(r){
+        return { addr: (r && r.addr) || "", name: (r && r.name) || "", status: owRecipStatus((r && r.addr) || "", ctx) };
+      });
+    });
+  });
+}
+function owRecipRowHtml(r){
+  var name = String(r.name || "").trim(), supp = r.status === "suppressed";
+  return '<li class="ow-recip' + (supp ? " supp" : "") + '">' +
+      '<div class="ow-recip-who">' +
+        (name ? '<span class="ow-recip-name" dir="auto">' + esc(name) + '</span>' : '') +
+        '<span class="ow-recip-addr mono-iso" dir="ltr">' + esc(r.addr) + '</span>' +
+      '</div>' +
+      '<span class="ow-rs ow-rs-' + esc(r.status) + '">' + esc(t(OW_RS_KEY[r.status] || "ow_rs_none")) + '</span>' +
+    '</li>';
+}
+function owRecipMount(slug){
+  var host = document.getElementById("owRecipPanel"); if(!host) return;
+  host.innerHTML = '<div class="up-empty">' + esc(t("d_loading")) + '</div>';
+  owRecipLoad(slug).then(function(rows){
+    if(!rows || !rows.length){ host.innerHTML = '<div class="up-empty">' + esc(t("ow_recip_none")) + '</div>'; return; }
+    host.innerHTML = '<ul class="ow-recip-list">' + rows.map(owRecipRowHtml).join("") + '</ul>';
+  }, function(){ host.innerHTML = '<div class="up-empty">' + esc(t("ow_recip_none")) + '</div>'; });
+}
+
 // Read-only hooks for board_upload_test:
 try{
+  window.__thriveOppRecipients = function(slug){ return owRecipLoad(slug); };              // G4: await the recipient ledger
   window.__thriveOppCommitCampaign = function(slug){ return owCommitCampaign(slug); };   // G3: await the campaign commit
   window.__thriveUploadPlan = function(){ return __upPlan; };
   window.__thriveUploadVerify = function(slug){ return verifyLive(slug); };
