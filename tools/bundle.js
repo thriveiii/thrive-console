@@ -1005,6 +1005,7 @@ function buildBoard(){
   .ow-tab{background:none;border:none;border-bottom:2px solid transparent;color:#8a8a93;font:inherit;font-size:14px;padding:6px 4px 10px;cursor:pointer;white-space:nowrap}
   .ow-tab.on{color:#eef;border-bottom-color:#71BFCC}
   .ow-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px}
+  .ow-mode{display:flex;flex-direction:column;gap:12px}
   .ow-modes{display:flex;flex-direction:column;gap:12px}
   .ow-mode-h{font-size:14px;color:#9a9aa6;margin:0 0 4px}
   .ow-mode-btn{display:block;width:100%;text-align:start;background:#0e0e14;border:1px solid #22222e;border-radius:12px;padding:16px 18px;color:#eef;font:inherit;font-size:15px;font-weight:650;cursor:pointer}
@@ -1969,7 +1970,7 @@ ${UPLOAD_SRC}
   // suppression guard and F1 publish-truth states are inherited); G3 (Mode B) mounts the one upload engine +
   // pageFrameIframe; G4 adds recipients. The drawer stays callable until G5. OPP_WINDOW is the fallback flag:
   // flip it off to fall back to the drawer without removing anything.
-  var OPP_WINDOW = true;
+  var OPP_WINDOW = false;   // G2: the window is built (Mode A live behind it) but NOT the default open path yet; the drawer stays default. Flipped on at G5.
   var __owSlug = null, __owMode = null;   // the open opp; the chosen mode ("a" | "b"), or null = show the selector
   function owModeSelectHtml(){
     return '<div class="ow-modes"><p class="ow-mode-h">'+esc(t("ow_pick"))+'</p>'+
@@ -1991,27 +1992,34 @@ ${UPLOAD_SRC}
       }
       return;
     }
-    // A mode is chosen: G1 mounts EMPTY containers only (G2/G3 fill them by reference).
-    if(__owMode==="a"){                                            // Mode A: a single surface, no tab strip
+    // A mode is chosen.
+    if(__owMode==="a"){                                            // G2 Mode A: a single lean compose surface, no tab strip
       if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
-      if(body){ body.innerHTML = '<div class="ow-mode" id="owModeA"></div>'; }
-    } else {                                                        // Mode B: a tab strip (scaffold) + its container
+      if(body){ body.innerHTML = '<div class="ow-mode" id="owModeA"></div>'; if(typeof owModeAMount==="function") owModeAMount(__owSlug); }
+    } else {                                                        // Mode B: a tab strip (scaffold) + its container (filled in G3)
       if(tabs){ tabs.hidden=false; tabs.innerHTML=""; }
       if(body){ body.innerHTML = '<div class="ow-mode" id="owModeB"></div>'; }
     }
   }
   function owSelectMode(mode){ __owMode = mode; owRender(); }
+  // G2: the window's Mode A is a recognized compose surface. edRoot (board-editor) resolves compose lookups to
+  // #owModeA while this is true, and composeOwns (board-newmsg) routes save/send here - the SAME shared path.
+  function owComposeActive(){ return !!(__owSlug && __owMode==="a"); }
+  function owComposeRoot(){ return owComposeActive() ? document.getElementById("owModeA") : null; }
   function openOppWindow(slug){
     __owSlug = slug; __owMode = null;                              // always open on the selector
     var sc=document.getElementById("owScrim"); if(!sc){ openDrawer(slug); return; }   // fallback if the shell is absent
     sc.hidden=false; var body=document.getElementById("owBody"); if(body) body.scrollTop=0;
     owRender();
   }
-  function closeOppWindow(){ __owSlug=null; __owMode=null; var sc=document.getElementById("owScrim"); if(sc) sc.hidden=true; }
-  // Stable seams for the G-series transition and its tests: the window is the default card-open path, but the
-  // drawer stays fully callable until G5 removes it. Exposing openDrawer lets a drawer-content test reach the
-  // (unchanged) drawer directly rather than through a card tap, which now opens the window.
-  try{ window.openOppWindow = openOppWindow; window.openDrawer = openDrawer; }catch(e){}
+  function closeOppWindow(){
+    try{ if(typeof owComposeFlush==="function" && owComposeActive()) owComposeFlush(__owSlug); }catch(e){}   // flush a pending Mode A autosave
+    __owSlug=null; __owMode=null; var sc=document.getElementById("owScrim"); if(sc) sc.hidden=true;
+  }
+  // Stable seams for the G-series transition and its tests: the drawer stays fully callable until G5 removes it,
+  // and owSelectMode lets a test drive the window's mode directly. Exposing openDrawer lets a drawer-content
+  // test reach the (unchanged) drawer directly.
+  try{ window.openOppWindow = openOppWindow; window.closeOppWindow = closeOppWindow; window.openDrawer = openDrawer; window.owSelectMode = owSelectMode; }catch(e){}
   function runOppWrite(slug, optimistic, patch, after){
     if(__writing) return; __writing=true;
     var row=findRow(slug); if(!row){ __writing=false; return; }
