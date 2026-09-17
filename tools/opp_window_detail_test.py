@@ -108,7 +108,7 @@ with sync_playwright() as p:
     # ===== 1: the Details view renders the drawer's lower-half sections =====
     open_detail(pg)
     ck("window open on Details (#owDetail present), drawer stays hidden",
-       pg.evaluate("()=>({d:!!document.getElementById('owDetail'), dw:document.getElementById('scrim').hidden, ow:!document.getElementById('owScrim').hidden})")=={"d":True,"dw":True,"ow":True})
+       pg.evaluate("()=>({d:!!document.getElementById('owDetail'), dw:!document.getElementById('scrim'), ow:!document.getElementById('owScrim').hidden})")=={"d":True,"dw":True,"ow":True})
     ck("signals section renders (dw-nums)", pg.evaluate("()=>!!document.querySelector('#owDetail .dw-nums')"))
     ck("the reply thread (the heart) shows the inbound reply", pg.evaluate("()=>{var m=document.querySelector('#owDetail .thread .msg.in'); return !!(m && m.textContent.indexOf('sounds great')>=0);}"),
        pg.evaluate("()=>{var t=document.querySelector('#owDetail .thread'); return t?t.textContent.slice(0,120):'no thread';}"))

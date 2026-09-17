@@ -4,7 +4,7 @@
 // each page to console_pages. A ported subset of the old engine's proven ingest (library/intake.js), inlined
 // into library/board.html by tools/bundle.js AFTER the send + editor + new-message clones, so it reuses their
 // IIFE scope: esc, t, liveUrl, oppReadData, oppPatch, authFetchOnce, URL_BASE, ANON, bearer, session, refresh,
-// reloadBoardData, findRow, refreshDrawer, __drawerSlug, __writing, root; and oppUpsert (board-newmsg.src.js).
+// reloadBoardData, findRow, refreshOppDetail, __writing, root; and oppUpsert (board-newmsg.src.js).
 //
 // GROUNDED IN E2_EVIDENCE.md, porting the cited old-engine logic (never rewritten):
 //   * zip read: intake.js:1052-1128 (readZip / readFiles, native DecompressionStream).
@@ -388,7 +388,7 @@ function upActivateBackground(slugs){
       // flips it to Live when the deploy arrives. No RED for a committed page.
     }).catch(function(){}).then(function(){
       left--; if(left === 0){ reloadBoardData().then(function(){}, function(){}); }
-      try{ if(__drawerSlug === slug) refreshDrawer(slug); }catch(e){}   // reflect the outcome in an open drawer
+      try{ refreshOppDetail(slug); }catch(e){}   // reflect the outcome in an open drawer
     });
   });
 }
@@ -643,14 +643,14 @@ function upReverify(pageSlug, oppSlug){
     // not resolved yet: leave transitional (no RED), a later re-check flips it to Live
   }, function(){}).then(function(){
     delete __upVerifying[pageSlug];
-    try{ if(__drawerSlug === oppSlug) refreshDrawer(oppSlug); }catch(e){}
+    try{ refreshOppDetail(oppSlug); }catch(e){}
   }, function(){ delete __upVerifying[pageSlug]; });
 }
-// Wire the upload-page section AFTER the drawer renders (called from wireDrawer): the Re-check button, and a
-// RE-VERIFY ON DRAWER OPEN. A page refresh drops the in-page background promise, so a page that is un-live with
-// no recorded outcome yet is re-checked here (bounded), resolving its true state instead of a stale "publishing".
+// Wire the upload-page section AFTER the Details view renders (called from owDetailWire): the Re-check button, and
+// a RE-VERIFY ON OPEN. A page refresh drops the in-page background promise, so a page that is un-live with no
+// recorded outcome yet is re-checked here (bounded), resolving its true state instead of a stale "publishing".
 function upWireActivate(slug){
-  var sec = document.querySelector("#drawer .up-act-sec"); if(!sec) return;
+  var sec = document.querySelector("#owDetail .up-act-sec"); if(!sec) return;
   var pageSlug = sec.getAttribute("data-page-slug") || slug;
   var live = sec.getAttribute("data-live") === "1";
   var btn = document.getElementById("upReverify");
@@ -971,12 +971,12 @@ function libArchWire(){
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-arch-open]"), function(b){ b.addEventListener("click", function(){ libArchOpenHistory(b.getAttribute("data-lv-arch-open")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-restore]"), function(b){ b.addEventListener("click", function(){ libRestore(b.getAttribute("data-lv-restore"), b); }); });
 }
-// Open the full history: close the Library and open the board drawer for this slug (it renders the archive stamps
-// via archivedInfoHtml + the notes + the conversation from fetchDetail). Reload first so the row is in board memory.
+// Open the full history: close the Library and open the opp window on Details for this slug (it renders the archive
+// stamps via archivedInfoHtml + the notes + the conversation from fetchDetail). Reload first so the row is in memory.
 function libArchOpenHistory(slug){
   closeLibraryView();
-  if(typeof openDrawer !== "function") return;
-  reloadBoardData().then(function(){ openDrawer(slug); }, function(){ openDrawer(slug); });
+  if(typeof openOppWindow !== "function") return;
+  reloadBoardData().then(function(){ openOppWindow(slug, "detail"); }, function(){ openOppWindow(slug, "detail"); });
 }
 // Restore: un-archive (archived=false), clearing a legacy terminal stage exactly like the drawer's reopen, so the
 // card returns to its lane; then refresh the archive list (the card is gone from it). Reuses oppPatch.

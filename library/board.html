@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="dd556f2c">
+<meta name="thrive-build" content="4866e115">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -140,11 +140,8 @@
     .ow-scrim{padding:0;align-items:flex-end}
     .ow{width:100%;max-height:92vh;height:92vh;border-radius:16px 16px 0 0}
   }
-  .dw-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border-bottom:1px solid #17171f;padding-bottom:12px}
-  .dw-name{font-weight:800;font-size:18px;word-break:break-word}
-  .dw-stage{display:inline-block;margin-top:6px;font-size:11px;color:#9a9aa6;border:1px solid #26262f;border-radius:999px;padding:1px 9px;text-transform:uppercase;letter-spacing:.06em}
-  html[dir="rtl"] .dw-stage{text-transform:none;letter-spacing:normal}
-  .dw-close{font-size:22px;line-height:1;color:#9a9aa6;background:none;border:0;cursor:pointer;padding:0 6px}
+  /* G5: the drawer chrome (.dw-top/.dw-name/.dw-stage/.dw-close) is retired; the shared section styles below
+     (.dw-sec, signals, thread, notes, activity) now render inside the window's Details view. */
   .dw-sec{margin:16px 0 0}
   .dw-sec h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:0 0 8px;display:flex;gap:8px;align-items:center}
   html[dir="rtl"] .dw-sec h3{text-transform:none;letter-spacing:normal}
@@ -319,11 +316,10 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build dd556f2c</span>
+    <span class="muted">build 4866e115</span>
   </div>
   <div id="root"></div>
 </div>
-<div id="scrim" class="scrim" hidden><div id="drawer" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="pfScrim" class="scrim" hidden><div id="pfPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="admScrim" class="scrim" hidden><div id="admPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="nmScrim" class="scrim" hidden><div id="nmPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
@@ -343,7 +339,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "dd556f2c";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "4866e115";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -861,7 +857,7 @@ function finishIdentity(){
   // Step 2A: the profile index just settled (fire-and-forget from loadBoard, so it may finish AFTER a drawer
   // was opened). Re-paint the open drawer's notes ONCE so an actor uid that showed raw on first paint now
   // reads as the display name. One synchronous re-render, no polling, no await; guarded so it never throws.
-  try{ if(__drawerSlug && typeof renderNotesInto==="function") renderNotesInto(__drawerSlug); }catch(e){}
+  try{ if(typeof owDetailActive==="function" && owDetailActive(__owSlug) && typeof renderNotesInto==="function") renderNotesInto(__owSlug); }catch(e){}
   // Step 2D: the role just settled, so reveal (or keep hidden) the Admin header entry now that isOwner() is
   // authoritative. paintAdminSlot lives in bundle.js and is idempotent; guarded so it never throws here.
   try{ if(typeof window.__thrivePaintAdminSlot==="function") window.__thrivePaintAdminSlot(); }catch(e){}
@@ -958,7 +954,7 @@ function applyNameLocally(name){
   __identity.name = String(name==null?"":name);
   if(uid){ if(!__profileIndex.byUid[uid]) __profileIndex.byUid[uid] = { uid:uid, name:"", email:authEmail() }; __profileIndex.byUid[uid].name = __identity.name; }
   try{ if(window.__thriveIdentity) window.__thriveIdentity.name = __identity.name; }catch(e){}
-  try{ if(__drawerSlug && typeof renderNotesInto==="function") renderNotesInto(__drawerSlug); }catch(e){}
+  try{ if(typeof owDetailActive==="function" && owDetailActive(__owSlug) && typeof renderNotesInto==="function") renderNotesInto(__owSlug); }catch(e){}
 }
 // Optimistic confirm-or-revert: the person controls their own display_name (any format, first-name-only or
 // full). Nothing is applied until the server confirms; a failure shows red and leaves the runtime name as it
@@ -1110,8 +1106,8 @@ try{ window.__thriveOpenAdmin = openAdmin; window.__thriveCloseAdmin = closeAdmi
 // recipient. This file is INLINED verbatim into library/board.html by tools/bundle.js (interpolated as a
 // string, so its backslashes/regexes need no template escaping) and runs inside board.html's IIFE, using
 // its scope: esc, authFetchOnce, bearer, session, refresh, URL_BASE, ANON, t, LANG, __data, findRow,
-// replaceRow, renderBoard, reloadBoardData, __act, __writing, __drawerSlug, refreshDrawer,
-// drawerActsDisabled, redInto, root, TRAY_STAGES, oppReadData, isoNow, authEmail, and RELAY_EP (baked from
+// replaceRow, renderBoard, reloadBoardData, __act, __writing, refreshOppDetail, owDetailActive,
+// owActsDisabled, redInto, root, TRAY_STAGES, oppReadData, isoNow, authEmail, and RELAY_EP (baked from
 // library/sync.json). Grounded in L5_SEND_PATH_EVIDENCE.md; every clone below cites its engine source line.
 //
 // THE FIX (why L5 is a clone, not a call): the engine reads the relay body with a bare await r.text()
@@ -1538,7 +1534,7 @@ function runSend(slug){
   var row = findRow(slug);
   if(!row){ __writing = false; return Promise.resolve(null); }
   __act[slug] = { msg:t("s_sending"), cls:"" };
-  drawerActsDisabled(true);
+  owActsDisabled(true);
   var snap = null;
   return oppReadData(slug).then(function(data){
     var recips = allRecipients(data);
@@ -1587,7 +1583,7 @@ function runSend(slug){
           if(sent.length === 0 && snap){ replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){} }   // nothing went out: revert (no phantom Sent)
           var view = sendResultView(sent.length, recips.length, failed, capped, skipped);   // ONE result string+class (green / amber / red), incl. suppressed skips
           __act[slug] = { msg:view.msg, cls:view.cls };
-          if(__drawerSlug===slug) refreshDrawer(slug);
+          refreshOppDetail(slug);
           try{ refreshSendCap(); }catch(e){}                                // the header counter reflects the new sends
           try{ loadSuppressions().catch(function(){}); }catch(e){}          // B2: refresh the do-not-contact set after the batch (a failed refresh keeps the cached good set)
           return view;                                                      // resolve so a caller (the New-message overlay) can SHOW the result
@@ -1604,7 +1600,7 @@ function runSend(slug){
       : (kind==="deadlink") ? t("s_dead_link")    // page activates on upload; the ONLY page block left is a definitively dead link (404/410)
       : (e && e.authRequired) ? t("err") : t("s_failed");
     __act[slug] = { msg:msg, cls:"bad" };
-    if(__drawerSlug===slug) refreshDrawer(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
+    if(owDetailActive(slug)) refreshOppDetail(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
     return { msg:msg, cls:"bad", sent:0, failed:1, capped:0 };              // resolve (never reject) so the caller can render the reason
   });
 }
@@ -1630,8 +1626,8 @@ function sendResultView(sentN, total, failedAddrs, capped, skipped){
 // L5.5 RECIPIENT FIELD - put a recipient email on an opp so L5's Send gate can clear. Inlined verbatim into
 // library/board.html by tools/bundle.js (interpolated as a string, so its regexes need no template escaping)
 // and runs inside board.html's IIFE alongside the L5 send clone (board-send.src.js). It reuses that file's
-// esc, t, bareAddress, isEmail, sendEligible, oppReadData, oppPatch, isoNow, reloadBoardData, refreshDrawer,
-// __drawerSlug, __writing, __act, findRow, redInto, root.
+// esc, t, bareAddress, isEmail, sendEligible, oppReadData, oppPatch, isoNow, reloadBoardData, refreshOppDetail, owDetailActive,
+// __writing, __act, findRow, redInto, root.
 //
 // The write goes through the SAME column the engine's saveDraft({slug, recipients:list}) writes: recipients
 // live inside console_opps.data (supaRowFromOpp puts them there, app.js:3882-3886), and the engine's roster
@@ -1731,7 +1727,9 @@ function onSaveRecipient(slug){
     __writing = false;
     if(__act[slug] && __act[slug].cls==="bad"){ delete __act[slug]; }    // clear a stale L5 "no recipient email" red
     __recSaved[slug] = { msg:t("r_saved"), cls:"ok" };
-    if(__drawerSlug===slug) refreshDrawer(slug);
+    setRecStatus(t("r_saved"), "ok");                                    // G5: show it directly - the compose surface has no re-render funnel
+    var b3=document.getElementById("recSave"); if(b3) b3.disabled=false;
+    refreshOppDetail(slug);                                             // and refresh the Details view if it happens to be open
   }).catch(function(e){
     __writing = false; var b2=document.getElementById("recSave"); if(b2) b2.disabled=false;
     setRecStatus((e && e.authRequired) ? t("err") : t("r_failed"), "bad");
@@ -1745,7 +1743,7 @@ function onSaveRecipient(slug){
 // template escaping; this file therefore uses NO backticks and NO dollar-brace). Runs inside board.html's
 // IIFE alongside the L5 send clone (board-send.src.js) and the L5.5 recipient field (board-recipient.src.js),
 // reusing their scope: esc, t, oppReadData, oppPatch, sendCompile, firstRecipient, liveUrl, MF_LINK,
-// bareAddress, isEmail, findRow, refreshDrawer, reloadBoardData, __drawerSlug, __writing, __act, root,
+// bareAddress, isEmail, findRow, refreshOppDetail, owDetailActive, reloadBoardData, __writing, __act, root,
 // and window.__thriveIdentity (Step 2 identity).
 //
 // WHAT IT DOES (one surface for both first compose and reply):
@@ -1820,10 +1818,9 @@ function edRoot(){
   // G2: the centered window's "message without campaign" (Mode A) compose surface wins when it is active, so
   // every edEl/edVal/edRenderPreview lookup binds to the window's mounted nodes (the SAME editorHtml nodes,
   // mounted by reference - not a second editor). owComposeRoot lives in buildBoard.
-  if(typeof owComposeRoot==="function"){ var w=owComposeRoot(); if(w) return w; }
-  if(typeof __nmOpen!=="undefined" && __nmOpen){ var p=document.getElementById("nmPanel"); if(p) return p; }
-  var d=document.getElementById("drawer"); if(d) return d;
-  return document;
+  if(typeof owComposeRoot==="function"){ var w=owComposeRoot(); if(w) return w; }   // the window's compose surface (Mode A / Mode B Message tab)
+  if(typeof __nmOpen!=="undefined" && __nmOpen){ var p=document.getElementById("nmPanel"); if(p) return p; }   // the "New message" overlay, if open
+  return document;                                                                  // G5: the drawer is retired
 }
 function edEl(id){ try{ var r=edRoot(); return r ? r.querySelector("#"+id) : null; }catch(e){ return document.getElementById(id); } }
 function edVal(id){ var el=edEl(id); return el ? String(el.value||"") : ""; }
@@ -1967,9 +1964,8 @@ function edScheduleSave(slug, delay){
 // reschedule shortly so the text is never dropped. On the FIRST message that makes an opp sendable, reload
 // the board once so the L5 gate flips and Send appears; ongoing edits do not reload (undo preserved).
 function edSaveNow(slug){
-  if(__drawerSlug!==slug) return;
   var subjEl=edEl("edSubj"), bodyEl=edEl("edBody");
-  if(!subjEl || !bodyEl) return;
+  if(!subjEl || !bodyEl) return;                                        // the editor must be mounted for this opp (compose saves route to nmSaveNow via composeOwns)
   if(__writing || __edSaving){ edScheduleSave(slug, 500); return; }
   __edSaving = true;
   var subj=String(subjEl.value||""), body=String(bodyEl.value||""), sig=edSignature();
@@ -1984,7 +1980,7 @@ function edSaveNow(slug){
       var row = findRow(slug);
       var reveal = wasEmpty && nowHas && row && !row.has_email; // first message: flip the L5 gate so Send appears
       if(reveal){
-        return reloadBoardData().then(function(){ edSetStatus(slug, t("a_saved"), "ok"); if(__drawerSlug===slug) refreshDrawer(slug); },
+        return reloadBoardData().then(function(){ edSetStatus(slug, t("a_saved"), "ok"); refreshOppDetail(slug); },
                                      function(){ edSetStatus(slug, t("a_saved"), "ok"); });
       }
       edSetStatus(slug, t("a_saved"), "ok"); edRenderPreview(slug);
@@ -2128,6 +2124,7 @@ function owMsgMount(slug){
 function owMsgWire(slug){
   try{ wireEditor(slug); }catch(e){}
   var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ nmTick(slug); nmScheduleSave(slug, 700); });
+  var rs=document.getElementById("recSave"); if(rs) rs.addEventListener("click", function(){ try{ onSaveRecipient(slug); }catch(e){} });
   nmTick(slug);
 }
 function nmPanelHtml(slug, data){
@@ -2214,6 +2211,7 @@ function nmSaveNow(slug){
 function nmWire(slug){
   try{ wireEditor(slug); }catch(e){}
   var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ nmTick(slug); nmScheduleSave(slug, 700); });
+  var rs=document.getElementById("recSave"); if(rs) rs.addEventListener("click", function(){ try{ onSaveRecipient(slug); }catch(e){} });   // G5: the recipient Save button (recipientHtml) is now wired in every compose surface, not only the retired drawer
   var cl=document.getElementById("nmClose"); if(cl) cl.addEventListener("click", function(){ closeNewMessage(); });
   var sd=document.getElementById("nmSend"); if(sd) sd.addEventListener("click", function(){ unifiedSend(slug); });
   nmTick(slug);
@@ -2224,17 +2222,14 @@ function nmWire(slug){
 // This is the fix for the resume-loop: a blocked or unsent draft used to leave thrive_nm_draft set, so the
 // next New message reopened the SAME opp pre-filled with the prior subject/body, collapsing separate
 // messages onto one card (sent_count is per slug). A durable draft is not lost - it persists as its own
-// console_opps row / board card and is reopened by tapping THAT card (openDrawer), not by this button.
+// console_opps row / board card and is reopened by tapping THAT card (the window), not by this button.
 function openNewMessage(){
   if(__nmOpen) return;
   var sc=document.getElementById("nmScrim"), pn=document.getElementById("nmPanel");
   if(!sc || !pn) return;
-  // ONE compose surface at a time (COMPOSE_SURFACE_EVIDENCE A1): close any open card drawer and clear its
-  // DOM before mounting the overlay, so the drawer's #edSubj/#edBody/#edPreview cannot linger as a duplicate
-  // set of ids ahead of the overlay's in the document. closeDrawer clears __drawerSlug and hides the scrim;
-  // openDrawer rebuilds #drawer innerHTML on its next open, so emptying it here is safe.
-  try{ if(typeof closeDrawer==="function") closeDrawer(); }catch(e){}
-  var dz=document.getElementById("drawer"); if(dz) dz.innerHTML="";
+  // ONE compose surface at a time (COMPOSE_SURFACE_EVIDENCE A1): close the centered window first, so its mounted
+  // #edSubj/#edBody/#edPreview cannot linger as a duplicate set of ids ahead of the overlay's in the document.
+  try{ if(typeof closeOppWindow==="function") closeOppWindow(); }catch(e){}
   var slug = nmNewSlug();               // ALWAYS fresh: never resume nmStoredSlug() onto the generic button
   nmClearStore();                       // drop any stale pointer so it cannot hijack this or a later compose
   __nmSlug = slug; __nmOpen = true;
@@ -2257,7 +2252,7 @@ function closeNewMessage(){
 // Where a send-time status goes: the overlay's #nmStatus when it owns the slug, else the drawer card status.
 function sendFail(slug, msg){
   if(composeOwns(slug)){ nmSetStatus(msg, "bad"); }                      // overlay OR window Mode A: show it in #nmStatus
-  else { __act[slug] = { msg:msg, cls:"bad" }; if(__drawerSlug===slug) refreshDrawer(slug); }
+  else { __act[slug] = { msg:msg, cls:"bad" }; refreshOppDetail(slug); }
 }
 // UNIFY: the ONE send path for BOTH surfaces. Persist the live subject/body/signature/recipients to the opp,
 // reload the board so runSend's findRow(slug) resolves, then hand off to the UNCHANGED L5 runSend (which does
@@ -2287,7 +2282,7 @@ function unifiedSend(slug){
         nmSetStatus(result.msg, result.cls);            // green on full success, amber on partial, red on failure
         if(result.cls !== "ok"){ var sd2=document.getElementById("nmSend"); if(sd2) sd2.disabled=false; }   // let the operator retry a failed/partial send
       }
-      // a drawer-originated send (over===false) shows its result via runSend's own __act[slug] + refreshDrawer
+      // a drawer-originated send (over===false) shows its result via runSend's own __act[slug] + refreshOppDetail
     });
   }).catch(function(e){
     var b2=document.getElementById("nmSend"); if(b2) b2.disabled=false;
@@ -2307,7 +2302,7 @@ try{
 // each page to console_pages. A ported subset of the old engine's proven ingest (library/intake.js), inlined
 // into library/board.html by tools/bundle.js AFTER the send + editor + new-message clones, so it reuses their
 // IIFE scope: esc, t, liveUrl, oppReadData, oppPatch, authFetchOnce, URL_BASE, ANON, bearer, session, refresh,
-// reloadBoardData, findRow, refreshDrawer, __drawerSlug, __writing, root; and oppUpsert (board-newmsg.src.js).
+// reloadBoardData, findRow, refreshOppDetail, __writing, root; and oppUpsert (board-newmsg.src.js).
 //
 // GROUNDED IN E2_EVIDENCE.md, porting the cited old-engine logic (never rewritten):
 //   * zip read: intake.js:1052-1128 (readZip / readFiles, native DecompressionStream).
@@ -2691,7 +2686,7 @@ function upActivateBackground(slugs){
       // flips it to Live when the deploy arrives. No RED for a committed page.
     }).catch(function(){}).then(function(){
       left--; if(left === 0){ reloadBoardData().then(function(){}, function(){}); }
-      try{ if(__drawerSlug === slug) refreshDrawer(slug); }catch(e){}   // reflect the outcome in an open drawer
+      try{ refreshOppDetail(slug); }catch(e){}   // reflect the outcome in an open drawer
     });
   });
 }
@@ -2946,14 +2941,14 @@ function upReverify(pageSlug, oppSlug){
     // not resolved yet: leave transitional (no RED), a later re-check flips it to Live
   }, function(){}).then(function(){
     delete __upVerifying[pageSlug];
-    try{ if(__drawerSlug === oppSlug) refreshDrawer(oppSlug); }catch(e){}
+    try{ refreshOppDetail(oppSlug); }catch(e){}
   }, function(){ delete __upVerifying[pageSlug]; });
 }
-// Wire the upload-page section AFTER the drawer renders (called from wireDrawer): the Re-check button, and a
-// RE-VERIFY ON DRAWER OPEN. A page refresh drops the in-page background promise, so a page that is un-live with
-// no recorded outcome yet is re-checked here (bounded), resolving its true state instead of a stale "publishing".
+// Wire the upload-page section AFTER the Details view renders (called from owDetailWire): the Re-check button, and
+// a RE-VERIFY ON OPEN. A page refresh drops the in-page background promise, so a page that is un-live with no
+// recorded outcome yet is re-checked here (bounded), resolving its true state instead of a stale "publishing".
 function upWireActivate(slug){
-  var sec = document.querySelector("#drawer .up-act-sec"); if(!sec) return;
+  var sec = document.querySelector("#owDetail .up-act-sec"); if(!sec) return;
   var pageSlug = sec.getAttribute("data-page-slug") || slug;
   var live = sec.getAttribute("data-live") === "1";
   var btn = document.getElementById("upReverify");
@@ -3274,12 +3269,12 @@ function libArchWire(){
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-arch-open]"), function(b){ b.addEventListener("click", function(){ libArchOpenHistory(b.getAttribute("data-lv-arch-open")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-restore]"), function(b){ b.addEventListener("click", function(){ libRestore(b.getAttribute("data-lv-restore"), b); }); });
 }
-// Open the full history: close the Library and open the board drawer for this slug (it renders the archive stamps
-// via archivedInfoHtml + the notes + the conversation from fetchDetail). Reload first so the row is in board memory.
+// Open the full history: close the Library and open the opp window on Details for this slug (it renders the archive
+// stamps via archivedInfoHtml + the notes + the conversation from fetchDetail). Reload first so the row is in memory.
 function libArchOpenHistory(slug){
   closeLibraryView();
-  if(typeof openDrawer !== "function") return;
-  reloadBoardData().then(function(){ openDrawer(slug); }, function(){ openDrawer(slug); });
+  if(typeof openOppWindow !== "function") return;
+  reloadBoardData().then(function(){ openOppWindow(slug, "detail"); }, function(){ openOppWindow(slug, "detail"); });
 }
 // Restore: un-archive (archived=false), clearing a legacy terminal stage exactly like the drawer's reopen, so the
 // card returns to its lane; then refresh the archive list (the card is gone from it). Reuses oppPatch.
@@ -3822,11 +3817,10 @@ try{
         // for an owner. isOwner() resolves async (loadIdentity), so paintAdminSlot() runs both now and again
         // from finishIdentity once the role settles. A member never sees this control, and openAdmin() is a
         // no-op for a non-owner besides, so the real gate stays the RLS policy on the write.
-        // E1: New message opens the editor as its own overlay (compose to any recipient, with or without an
-        // opp link). Visible to every signed-in operator, beside Profile.
+        // New message: the ONE compose entry. It opens the centered window on the mode selector (message without
+        // campaign / message with campaign). G5: the separate "Upload campaign" entry is retired - uploading a
+        // campaign now lives in the window's Page tab (Mode B).
         '<button class="link" id="newMsgBtn" type="button">' + esc(t("nm_open")) + '</button>' +
-        // E2: upload a campaign zip from the device (html pages + message texts + emails).
-        '<button class="link" id="uploadBtn" type="button">' + esc(t("up_open")) + '</button>' +
         // PR1 Library: upload html templates for documentation + activation only (no message, no recipient, no card).
         '<button class="link" id="libBtn" type="button">' + esc(t("lib_open")) + '</button>' +
         '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
@@ -3844,8 +3838,7 @@ try{
   try{ window.__thrivePaintAdminSlot = paintAdminSlot; }catch(e){}
   function wireHeader(){
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
-    var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ openNewMessage(); });   // E1
-    var up=document.getElementById("uploadBtn"); if(up) up.addEventListener("click", function(){ openUpload(); });   // E2
+    var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ owNewMessage(); });   // opens the window on the mode selector
     var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibraryView(); });   // PR-L1: the Library surface (Add templates inside opens the upload)
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
@@ -4021,79 +4014,33 @@ try{
       '<div class="acts"><button class="act note-add" id="noteAdd" type="button">'+esc(t("a_note_add"))+'</button></div>'+
       '<div class="act-status" id="noteStatus"></div></div></div>';
   }
-  function drawerHtml(row, detail){
-    var slug=row.slug||"";
-    return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
-      '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
-      '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\u00d7</button></div>'+
-      numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+editorHtml(slug, row, detail)+uploadActivateHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
-  }
-  var __drawerSlug=null, __writing=false;
-  function wireDrawer(){
-    var b=document.getElementById("dwClose"); if(b) b.addEventListener("click", closeDrawer);
-    var slug=__drawerSlug;
-    [].forEach.call(document.querySelectorAll("#drawer .act[data-act]"), function(btn){
-      btn.addEventListener("click", function(){ onAction(slug, btn.getAttribute("data-act")); });
-    });
-    var na=document.getElementById("noteAdd");
-    if(na) na.addEventListener("click", function(){ onAddNote(slug); });
-    var rs=document.getElementById("recSave");                          // L5.5 recipient save
-    if(rs) rs.addEventListener("click", function(){ onSaveRecipient(slug); });
-    var ri=document.getElementById("recIn");                            // UNIFY: typing a recipient re-runs the shared Send gate
-    if(ri) ri.addEventListener("input", function(){ try{ if(typeof sendApplyGate==="function") sendApplyGate(slug); }catch(e){} });
-    try{ wireEditor(slug); }catch(e){}                                  // unified message editor (compose + reply)
-    try{ upWireActivate(slug); }catch(e){}                              // upload-page section: Re-check button + re-verify on drawer open (never a stuck "publishing")
-  }
-  function openDrawer(slug){
-    __drawerSlug=slug;
-    var scrim=document.getElementById("scrim"), dw=document.getElementById("drawer");
-    if(!scrim || !dw) return;
-    var row=null; if(__data && __data.rows) __data.rows.forEach(function(r){ if(r && r.slug===slug) row=r; });
-    if(!row) return;
-    try{
-      dw.innerHTML = drawerHtml(row, null);      // the heart renders instantly from in-memory data + the resolver
-      scrim.hidden=false; dw.scrollTop=0; wireDrawer();
-      fetchDetail(slug).then(function(detail){   // then enrich: record notes, outbound sends, activity timeline
-        if(__drawerSlug!==slug) return;
-        // Cache the freshest server notes so a later note re-render (finishIdentity, Step 2A) has a source;
-        // notesFor already prioritizes __notes[slug], and this keeps it in sync with the latest detail.
-        try{ var dn=detail && detail.opp && detail.opp.data && detail.opp.data.notes; if(Array.isArray(dn)) __notes[slug]=dn; }catch(e){}
-        try{ dw.innerHTML = drawerHtml(row, detail); wireDrawer(); }catch(e){ redFull("drawer detail", e); }
-      }, function(){});
-    }catch(e){ redFull("drawer", e); }
-  }
-  function closeDrawer(){ var s=__drawerSlug; if(s){ delete __act[s]; delete __recSaved[s]; } __drawerSlug=null; var sc=document.getElementById("scrim"); if(sc) sc.hidden=true; }
-
+  // G5: the drawer is retired. drawerHtml / openDrawer / wireDrawer / closeDrawer are gone; the window's Details
+  // view (owDetailHtml/owDetailMount/owDetailWire, below) is the ONE opp-detail surface. The section builders
+  // (numsHtml/factsHtml/archivedInfoHtml/actionsHtml/threadHtml/recordHtml/notesHtml/activityHtml) and the write
+  // handlers (onAction/onAddNote/runOppWrite/runOppDelete) live on unchanged; only their host moved.
+  var __writing=false;
   // ---- L4 optimistic confirm-or-revert runner (spec item 4). The card updates IMMEDIATELY (mutate the in-memory
   //      row + repaint), then the write confirms; on confirm the board RE-READS console_board and paints from
   //      server truth (§3 - the optimistic stage is never the authority); on failure the row is restored, the
   //      board repaints (the card jumps back), and a visible RED status shows - never a silent wrong state. ----
   function findRow(slug){ var r=null; if(__data && __data.rows) __data.rows.forEach(function(x){ if(x && x.slug===slug) r=x; }); return r; }
   function replaceRow(slug, snap){ if(!__data || !__data.rows) return; for(var i=0;i<__data.rows.length;i++){ if(__data.rows[i] && __data.rows[i].slug===slug){ __data.rows[i]=snap; return; } } }
-  function drawerActsDisabled(on){                                     // disable action buttons on whichever surface is showing this opp
-    [document.getElementById("drawer"), document.getElementById("owDetail")].forEach(function(node){
-      if(node) [].forEach.call(node.querySelectorAll(".act"), function(b){ b.disabled=!!on; });
-    });
+  function owActsDisabled(on){                                         // disable the Details view's action buttons during a write
+    var node=document.getElementById("owDetail"); if(node) [].forEach.call(node.querySelectorAll(".act"), function(b){ b.disabled=!!on; });
   }
-  // The single re-render funnel after a write / a delete-arm. G4.5: it also serves the window Details view, so the
-  // shared onAction / runOppWrite / runOppDelete need no per-surface branching - they call refreshDrawer as before.
-  function refreshDrawer(slug){
-    if(typeof owDetailActive==="function" && owDetailActive(slug)){ owDetailRefresh(slug); return; }
-    if(__drawerSlug!==slug) return; if(!findRow(slug)){ closeDrawer(); return; } openDrawer(slug);
-  }
-  // Is EITHER opp surface (the drawer, or the window Details view) currently showing this opp? Used by the write
-  // handlers to decide whether an inline re-render suffices or a board-level red must show instead.
-  function oppSurfaceActive(slug){ return __drawerSlug===slug || (typeof owDetailActive==="function" && owDetailActive(slug)); }
+  // The single re-render funnel after a write / a delete-arm: re-render the window Details view when it is showing
+  // this opp (owDetailRefresh self-guards on owDetailActive and closes the window if the row is gone).
+  function refreshOppDetail(slug){ if(typeof owDetailRefresh==="function") owDetailRefresh(slug); }
+  // Is the opp Details surface currently showing this opp? Gates whether an inline re-render suffices on failure.
+  function oppSurfaceActive(slug){ return typeof owDetailActive==="function" && owDetailActive(slug); }
 
-  // ---- G1: the centered opportunity window (#oppWindow) -------------------------------------------------
-  // The default opp-open path. This step is the SHELL + mode selector ONLY: the mode containers are empty and
-  // the Mode B tab strip is a scaffold. Later steps mount the SHARED nodes here BY REFERENCE, never re-copied:
-  // G2 (Mode A) mounts editorHtml/recipientHtml/#edPreview and sends through the same runSend (so the B2
-  // suppression guard and F1 publish-truth states are inherited); G3 (Mode B) mounts the one upload engine +
-  // pageFrameIframe; G4 adds recipients. The drawer stays callable until G5. OPP_WINDOW is the fallback flag:
-  // flip it off to fall back to the drawer without removing anything.
-  var OPP_WINDOW = false;   // G2: the window is built (Mode A live behind it) but NOT the default open path yet; the drawer stays default. Flipped on at G5.
-  var __owSlug = null, __owMode = null;   // the open opp; the chosen mode ("a" | "b"), or null = show the selector
+  // ---- The centered opportunity window (#oppWindow): the ONE opp surface (G5 - the drawer is retired) ---------
+  // A card tap opens it detail-first (Details); "New message" opens it on the mode selector. It mounts the SHARED
+  // nodes BY REFERENCE, never re-copied: the compose editor/recipient/#edPreview (Mode A + Mode B Message tab,
+  // sending through the same runSend so B2 + F1 are inherited), the one upload engine + pageFrameIframe (Mode B
+  // Page tab), per-recipient status (Recipients tab), and the drawer's former detail/management half - signals,
+  // reply thread, record, notes, activity, and the fate actions - in the Details view (owDetail*).
+  var __owSlug = null, __owMode = null;   // the open opp; the chosen view ("detail" | "a" | "b"), or null = the selector
   function owModeSelectHtml(){
     return '<div class="ow-modes"><p class="ow-mode-h">'+esc(t("ow_pick"))+'</p>'+
       '<button class="ow-mode-btn" id="owPickA" type="button">'+esc(t("ow_mode_a"))+
@@ -4188,16 +4135,17 @@ try{
     if(__owMode==="b") return document.getElementById("owMsgPanel");
     return null;
   }
-  // ---- G4.5 detail-first: the drawer's DETAIL + MANAGEMENT half, brought into the window and mounted BY
-  //      REFERENCE. The upper (compose) half already lives in the compose modes; this view carries the lower
-  //      half the drawer stacked - signals + channels + archived stamp + fate actions + the reply thread + the
-  //      record + notes + the activity timeline - reusing numsHtml/factsHtml/archivedInfoHtml/actionsHtml/
-  //      threadHtml/recordHtml/notesHtml/activityHtml and the same fetchDetail read, onAction / onAddNote /
-  //      runOppWrite / runOppDelete handlers, unchanged. No second read path, no forked handler. The compose
-  //      surface (editor/upload/recipient) is NOT mounted here - composing is a mode you enter via "Compose".
+  // ---- Detail-first (G4.5) + the flip (G5): the drawer's DETAIL + MANAGEMENT half, in the window and mounted BY
+  //      REFERENCE. The compose half lives in the compose modes; this view carries the lower half the drawer
+  //      stacked - signals + channels + archived stamp + the hosted-page publish-truth/re-check (uploadActivateHtml,
+  //      F1) + fate actions + the reply thread + the record + notes + the activity timeline - reusing
+  //      numsHtml/factsHtml/archivedInfoHtml/uploadActivateHtml/actionsHtml/threadHtml/recordHtml/notesHtml/
+  //      activityHtml and the same fetchDetail read + onAction/onAddNote/upWireActivate/runOppWrite/runOppDelete
+  //      handlers, unchanged. No second read path, no forked handler. The compose EDITOR/RECIPIENT is NOT mounted
+  //      here - composing is a mode you enter via "Compose".
   function owDetailHtml(row, detail){
     var slug=row.slug||"";
-    return numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+
+    return numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+uploadActivateHtml(slug, row, detail)+
       actionsHtml(row, { noSend:true })+threadHtml(slug, detail)+recordHtml(detail)+
       notesHtml(slug, detail)+activityHtml(slug, detail);
   }
@@ -4207,6 +4155,7 @@ try{
       btn.addEventListener("click", function(){ onAction(slug, btn.getAttribute("data-act")); });   // promote/revert/archive/reopen/delete (+confirm)
     });
     var na=document.getElementById("noteAdd"); if(na) na.addEventListener("click", function(){ onAddNote(slug); });
+    try{ if(typeof upWireActivate==="function") upWireActivate(slug); }catch(e){}      // F1: the hosted-page Re-check button + re-verify on open
   }
   function owDetailMount(slug){
     var host=document.getElementById("owDetail"); if(!host) return;
@@ -4219,7 +4168,7 @@ try{
       try{ host.innerHTML = owDetailHtml(r2, detail); owDetailWire(slug); }catch(e){}
     }, function(){});
   }
-  // The window twin of refreshDrawer: re-render after a write / a delete-arm. A deleted row closes the window.
+  // Re-render the Details view after a write / a delete-arm. A deleted row closes the window.
   function owDetailRefresh(slug){
     if(!owDetailActive(slug)) return;
     if(!findRow(slug)){ closeOppWindow(); return; }
@@ -4227,37 +4176,54 @@ try{
   }
   function openOppWindow(slug, mode){
     __owSlug = slug; __owMode = mode || null;                      // a card tap passes "detail"; "New message" opens the selector
-    var sc=document.getElementById("owScrim"); if(!sc){ openDrawer(slug); return; }   // fallback if the shell is absent
+    var sc=document.getElementById("owScrim"); if(!sc) return;         // no window shell -> nothing to open (the drawer is gone)
     sc.hidden=false; var body=document.getElementById("owBody"); if(body) body.scrollTop=0;
     owRender();
   }
   function closeOppWindow(){
     try{ if(typeof owComposeFlush==="function" && owComposeActive()) owComposeFlush(__owSlug); }catch(e){}   // flush a pending Mode A autosave
     __owSlug=null; __owMode=null; var sc=document.getElementById("owScrim"); if(sc) sc.hidden=true;
+    var bd=document.getElementById("owBody"); if(bd) bd.innerHTML="";   // clear the mounted compose/detail so its #edSubj/#edBody cannot linger as a duplicate-id set behind another surface
   }
-  // Stable seams for the G-series transition and its tests: the drawer stays fully callable until G5 removes it,
-  // and owSelectMode lets a test drive the window's mode directly. Exposing openDrawer lets a drawer-content
-  // test reach the (unchanged) drawer directly.
-  try{ window.openOppWindow = openOppWindow; window.closeOppWindow = closeOppWindow; window.openDrawer = openDrawer; window.owSelectMode = owSelectMode; }catch(e){}
+  // "New message": compose from scratch. Mint a fresh opp slug (never resume a stale pointer), then open the
+  // window on the mode selector; picking a mode mounts an empty compose for that slug, and the first send/commit
+  // creates the opp (the same path the old overlay used, now in the window).
+  function owNewMessage(){
+    var slug = (typeof nmNewSlug==="function") ? nmNewSlug() : ("new-"+Date.now());
+    try{ if(typeof nmClearStore==="function") nmClearStore(); }catch(e){}
+    try{ __edBase[slug] = {}; }catch(e){}
+    openOppWindow(slug, null);                                         // null mode -> the mode selector
+  }
+  // Stable seams for the window and its tests: owSelectMode lets a test drive the window's mode directly; the
+  // card tap and "New message" reach the window through openOppWindow.
+  try{ window.openOppWindow = openOppWindow; window.closeOppWindow = closeOppWindow; window.owSelectMode = owSelectMode; window.owNewMessage = owNewMessage; }catch(e){}
+  // G5: the standalone campaign-upload overlay lost its nav entry (campaign upload now lives in the window's Page
+  // tab), but the overlay + its shared parser/commit engine are retained; expose openUpload as a utility seam so
+  // the upload-engine E2E can still drive it. (Not a user path - the nav no longer surfaces it.)
+  try{ if(typeof openUpload==="function") window.openUpload = openUpload; }catch(e){}
+  // The standalone New-message overlay is retained (its shared compose writer is the same one the window uses),
+  // but off-nav - the "New message" button now opens the window. Expose openNewMessage as a utility seam so the
+  // overlay-mechanics E2E can still drive it directly.
+  try{ if(typeof openNewMessage==="function") window.openNewMessage = openNewMessage; }catch(e){}
   function runOppWrite(slug, optimistic, patch, after){
     if(__writing) return; __writing=true;
     var row=findRow(slug); if(!row){ __writing=false; return; }
     var snap=JSON.parse(JSON.stringify(row));                            // exact pre-write state for a clean revert
     try{ optimistic(row); }catch(e){}
     __act[slug]={ msg:t("a_saving"), cls:"" };
-    drawerActsDisabled(true);
+    owActsDisabled(true);
     try{ renderBoard(__data); }catch(e){}                               // optimistic paint: the card jumps at once
     oppPatch(slug, patch).then(function(){
       return after ? Promise.resolve().then(after) : null;             // optional follow-up write (e.g. an approval note into data.notes)
     }).then(function(){
       return reloadBoardData();                                         // confirmed: adopt server truth
     }).then(function(){
-      __writing=false; __act[slug]={ msg:t("a_saved"), cls:"ok" }; refreshDrawer(slug);
+      __writing=false; __act[slug]={ msg:t("a_saved"), cls:"ok" }; refreshOppDetail(slug);
     }).catch(function(e){
       __writing=false;
       replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){}     // revert the optimistic change
       __act[slug]={ msg:((e&&e.authRequired)? t("err") : t("a_failed")), cls:"bad" };
-      if(oppSurfaceActive(slug)) refreshDrawer(slug); else redInto(root, "write", new Error(t("a_failed")));
+      if(oppSurfaceActive(slug)) refreshOppDetail(slug); else redInto(root, "write", new Error(t("a_failed")));
     });
   }
   // Bounded DELETE through the same authFetchOnce discipline as oppPatch (settles always, one refresh-retry). The
@@ -4291,17 +4257,17 @@ try{
   }
   function runOppDelete(slug){
     if(__writing) return; __writing=true;
-    __act[slug]={ msg:t("a_deleting"), cls:"" }; drawerActsDisabled(true);
-    if(oppSurfaceActive(slug)){ try{ refreshDrawer(slug); }catch(e){} }
+    __act[slug]={ msg:t("a_deleting"), cls:"" }; owActsDisabled(true);
+    if(oppSurfaceActive(slug)){ try{ refreshOppDetail(slug); }catch(e){} }
     oppDelete(slug).then(function(){
       delete __delConfirm[slug]; delete __act[slug];
-      __writing=false; closeDrawer();                                   // the card is gone; leave the board
-      if(typeof owDetailActive==="function" && owDetailActive(slug)) closeOppWindow();   // G4.5: close the window Details too
+      __writing=false;
+      if(owDetailActive(slug)) closeOppWindow();                       // the card is gone; leave the window
       return reloadBoardData();
     }).catch(function(e){
       __writing=false;
       __act[slug]={ msg:((e&&e.authRequired)? t("err") : t("a_del_failed")), cls:"bad" };
-      if(oppSurfaceActive(slug)) refreshDrawer(slug); else redInto(root, "delete", new Error(t("a_del_failed")));
+      if(oppSurfaceActive(slug)) refreshOppDetail(slug); else redInto(root, "delete", new Error(t("a_del_failed")));
     });
   }
   // The localized name of the lane a card was archived from (archived_from stores a laneOf() key). Falls back to
@@ -4344,8 +4310,8 @@ try{
       return runOppWrite(slug, function(r){ r.archived=false; if(clear) r.stage=""; }, clear ? { archived:false, stage:"", up:m } : { archived:false, up:m });
     }
     // FULL DELETE, two-tap confirmed: first tap arms the confirm, the "delete_go" tap performs it, "delete_cancel" clears.
-    if(act==="delete"){ __delConfirm[slug]=true; refreshDrawer(slug); return; }          // refreshDrawer self-routes to the active surface
-    if(act==="delete_cancel"){ delete __delConfirm[slug]; refreshDrawer(slug); return; }
+    if(act==="delete"){ __delConfirm[slug]=true; refreshOppDetail(slug); return; }          // re-render to show the two-tap confirm
+    if(act==="delete_cancel"){ delete __delConfirm[slug]; refreshOppDetail(slug); return; }
     if(act==="delete_go") return runOppDelete(slug);
   }
   function setNoteStatus(msg, cls){ var el=document.getElementById("noteStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
@@ -4358,7 +4324,7 @@ try{
     setNoteStatus(t("a_note_saving"), ""); var na=document.getElementById("noteAdd"); if(na) na.disabled=true;
     addNote(slug, text).then(function(notes){                            // confirmed via read-back (count grew)
       __writing=false; __notes[slug]=notes;
-      if(__drawerSlug===slug){ var i2=document.getElementById("noteIn"); if(i2) i2.value=""; renderNotesInto(slug); setNoteStatus(t("a_note_saved"), "ok"); var n2=document.getElementById("noteAdd"); if(n2) n2.disabled=false; }
+      if(owDetailActive(slug)){ var i2=document.getElementById("noteIn"); if(i2) i2.value=""; renderNotesInto(slug); setNoteStatus(t("a_note_saved"), "ok"); var n2=document.getElementById("noteAdd"); if(n2) n2.disabled=false; }
     }).catch(function(e){
       __writing=false; var n3=document.getElementById("noteAdd"); if(n3) n3.disabled=false;
       setNoteStatus((e&&e.authRequired)? t("err") : t("a_note_failed"), "bad");
@@ -4427,11 +4393,11 @@ try{
     wireHeader();
     var tt=document.getElementById("trayToggle"), tb=document.getElementById("trayBody");
     if(tt && tb) tt.addEventListener("click", function(){ var open=tb.hidden; tb.hidden=!open; tt.setAttribute("aria-expanded", String(open)); });
-    // L3: tap any card (open lane OR tray) to open the opportunity. G1: the CENTERED window is the default open
-    // path; openDrawer stays callable (OPP_WINDOW fallback flag) so nothing breaks before G5 removes the drawer.
+    // L3: tap any card (open lane OR tray) to open the opportunity. G5: the centered window is the ONE open path,
+    // opened detail-first (the drawer is retired), so a card tap manages the existing opp.
     [].forEach.call(root.querySelectorAll(".card[data-slug]"), function(c){
       var slug=c.getAttribute("data-slug");
-      var open=function(){ if(OPP_WINDOW) openOppWindow(slug, "detail"); else openDrawer(slug); };   // G4.5 detail-first: a card tap manages an existing opp
+      var open=function(){ openOppWindow(slug, "detail"); };
       c.addEventListener("click", open);
       c.addEventListener("keydown", function(e){ if(e.key==="Enter" || e.key===" "){ e.preventDefault(); open(); } });
     });
@@ -4476,10 +4442,8 @@ try{
       refresh().then(function(ok){ ok ? loadBoard() : signinView(); }).catch(function(){ signinView(); });
     }catch(e){ redFull("boot", e); }
   }
-  // Drawer dismissal wired once: a backdrop tap or Escape closes it and returns to the board (no reload).
+  // Overlay dismissal wired once: a backdrop tap or Escape closes the open surface and returns to the board.
   (function(){ try{
-    var s=document.getElementById("scrim");
-    if(s) s.addEventListener("click", function(e){ if(e.target===s) closeDrawer(); });
     var ps=document.getElementById("pfScrim");                                            // Step 2B profile overlay
     if(ps) ps.addEventListener("click", function(e){ if(e.target===ps) closeProfile(); });
     var as=document.getElementById("admScrim");                                           // Step 2D admin overlay
@@ -4494,7 +4458,7 @@ try{
     if(ow) ow.addEventListener("click", function(e){ if(e.target===ow) closeOppWindow(); });
     var owc=document.getElementById("owClose"); if(owc) owc.addEventListener("click", function(){ closeOppWindow(); });
     var owm=document.getElementById("owChangeMode"); if(owm) owm.addEventListener("click", function(){ __owMode=null; owRender(); });   // switch mode back from the header
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeOppWindow(); closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); } });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeOppWindow(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); } });
   }catch(e){} })();
   boot();
 })();

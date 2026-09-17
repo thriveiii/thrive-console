@@ -69,36 +69,30 @@ with sync_playwright() as p:
     pg.fill("#em", "op@thrive.test"); pg.fill("#pw", "correct horse"); pg.click("#go")
     pg.wait_for_selector(".card[data-slug]", timeout=8000)
 
-    # ---- open the DRAWER for the seeded opp: its editor mounts #edBody ----
-    pg.click(f".card[data-slug='{DRAWER_SLUG}']")
-    pg.wait_for_selector("#edBody", timeout=6000)
-    ck("the drawer mounts its editor (one #edBody)", pg.eval_on_selector_all("#edBody", "e=>e.length")==1)
+    # ---- open the WINDOW compose (Mode A) for the seeded opp: its editor mounts #edBody ----
+    pg.evaluate("(s)=>{ window.openOppWindow(s); window.owSelectMode('a'); }", DRAWER_SLUG)
+    pg.wait_for_selector("#owModeA #edBody", timeout=6000)
+    ck("the window compose mounts its editor (one #edBody)", pg.eval_on_selector_all("#edBody", "e=>e.length")==1)
     ck("the overlay is not open yet", pg.evaluate("()=>window.__thriveNewMessageOpen()")==False)
 
-    # The real repro: closeDrawer hides the scrim but historically left #drawer's editor DOM in place, so its
-    # #edSubj/#edBody/#edPreview LINGER as a first-in-DOM duplicate set when the overlay opens next.
-    pg.eval_on_selector("#scrim", "s=>s.dispatchEvent(new MouseEvent('click',{bubbles:true}))")  # backdrop tap closes the drawer
-    pg.wait_for_timeout(150)
-    ck("the drawer scrim is hidden after closing", pg.eval_on_selector("#scrim", "s=>s.hidden")==True)
-    ck("after closing, the drawer's #edBody still lingers in the DOM (the duplicate-id precondition)",
-       pg.eval_on_selector_all("#edBody", "e=>e.length")==1)
-
-    # ---- open NEW MESSAGE (header button now reachable; the closed drawer's DOM still lingers) ----
-    pg.click("#newMsgBtn")
+    # G5: the two compose surfaces are the window (Mode A) and the standalone overlay. Opening the overlay must
+    # CLOSE the window first (closeOppWindow clears #owBody), so the window's #edSubj/#edBody/#edPreview cannot
+    # linger as a first-in-DOM duplicate set (COMPOSE_SURFACE_EVIDENCE A1, post-flip).
+    pg.evaluate("()=>{ if(window.openNewMessage) window.openNewMessage(); }")
     pg.wait_for_function("()=>window.__thriveNewMessageOpen()===true", timeout=6000)
     pg.wait_for_selector("#nmPanel #edBody", timeout=6000)
 
     # (a) one compose surface, bound to a fresh opp, empty
-    ck("Fix 1: exactly one #edBody exists after opening the overlay (drawer cleared)",
+    ck("Fix 1: exactly one #edBody exists after opening the overlay (the window compose was cleared)",
        pg.eval_on_selector_all("#edBody", "e=>e.length")==1, pg.eval_on_selector_all("#edBody","e=>e.length"))
     nm_slug = pg.evaluate("()=>window.__thriveNewMessageSlug()")
-    ck("the overlay is bound to a FRESH opp id, not the drawer's slug",
+    ck("the overlay is bound to a FRESH opp id, not the window's slug",
        isinstance(nm_slug, str) and nm_slug.startswith("msg-") and nm_slug != DRAWER_SLUG, nm_slug)
-    ck("the composer opens empty (no subject, no body carried from the drawer)",
+    ck("the composer opens empty (no subject, no body carried from the window)",
        pg.evaluate("()=>document.querySelector('#nmPanel #edSubj').value===''")
        and pg.evaluate("()=>document.querySelector('#nmPanel #edBody').value===''"))
 
-    # the single live #edBody must be the overlay's, so scoped reads bind to it (not a drawer copy)
+    # the single live #edBody must be the overlay's, so scoped reads bind to it (not a window copy)
     ck("the live #edBody lives inside the overlay (#nmPanel), so reads bind to it",
        pg.evaluate("()=>{var b=document.querySelectorAll('#edBody'); return b.length===1 && !!b[0].closest('#nmPanel');}"))
 

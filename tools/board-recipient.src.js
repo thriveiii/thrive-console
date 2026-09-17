@@ -2,8 +2,8 @@
 // L5.5 RECIPIENT FIELD - put a recipient email on an opp so L5's Send gate can clear. Inlined verbatim into
 // library/board.html by tools/bundle.js (interpolated as a string, so its regexes need no template escaping)
 // and runs inside board.html's IIFE alongside the L5 send clone (board-send.src.js). It reuses that file's
-// esc, t, bareAddress, isEmail, sendEligible, oppReadData, oppPatch, isoNow, reloadBoardData, refreshDrawer,
-// __drawerSlug, __writing, __act, findRow, redInto, root.
+// esc, t, bareAddress, isEmail, sendEligible, oppReadData, oppPatch, isoNow, reloadBoardData, refreshOppDetail, owDetailActive,
+// __writing, __act, findRow, redInto, root.
 //
 // The write goes through the SAME column the engine's saveDraft({slug, recipients:list}) writes: recipients
 // live inside console_opps.data (supaRowFromOpp puts them there, app.js:3882-3886), and the engine's roster
@@ -103,7 +103,9 @@ function onSaveRecipient(slug){
     __writing = false;
     if(__act[slug] && __act[slug].cls==="bad"){ delete __act[slug]; }    // clear a stale L5 "no recipient email" red
     __recSaved[slug] = { msg:t("r_saved"), cls:"ok" };
-    if(__drawerSlug===slug) refreshDrawer(slug);
+    setRecStatus(t("r_saved"), "ok");                                    // G5: show it directly - the compose surface has no re-render funnel
+    var b3=document.getElementById("recSave"); if(b3) b3.disabled=false;
+    refreshOppDetail(slug);                                             // and refresh the Details view if it happens to be open
   }).catch(function(e){
     __writing = false; var b2=document.getElementById("recSave"); if(b2) b2.disabled=false;
     setRecStatus((e && e.authRequired) ? t("err") : t("r_failed"), "bad");

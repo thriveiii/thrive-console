@@ -135,8 +135,8 @@ LANE_OF = """(biz)=>{ // return the lane <h2> text that contains the card for th
     var h=l.querySelector('h2'); if(!h) return;
     l.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) out=h.textContent; });
   }); return out; }"""
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
-CLICK_ACT = """(act)=>{ var b=document.querySelector('#drawer .act[data-act='+JSON.stringify(act)+']'); if(b){ b.click(); return true; } return false; }"""
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openOppWindow(t.getAttribute('data-slug'), 'detail'); return true; } return false; }"""
+CLICK_ACT = """(act)=>{ var b=document.querySelector('#owDetail .act[data-act='+JSON.stringify(act)+']'); if(b){ b.click(); return true; } return false; }"""
 REPLIED_N = """()=>{ var n=''; document.querySelectorAll('.lane h2').forEach(function(h){ if(/Replied|مُجاب/.test(h.textContent)){ var s=h.querySelector('.n'); n=s?s.textContent.trim():''; } }); return n; }"""
 TRAY_N = """()=>{ var t=document.getElementById('trayToggle'); return t?(t.querySelector('.n')||{}).textContent||'':''; }"""
 ACT_STATUS = """()=>{ var e=document.getElementById('actStatus'); return e?{txt:e.textContent,cls:e.className}:{txt:'',cls:''}; }"""
@@ -156,7 +156,7 @@ with sync_playwright() as p:
     # The card moves ONLY via the server re-read of the view's approved_at derivation - the client never sets 'live'.
     ck("1: Delta starts in the Under review lane", "Under review" in pg.evaluate(LANE_OF, "Delta Co"))
     pg.evaluate(OPEN, "Delta Co"); pg.wait_for_timeout(400)
-    ck("1: the drawer offers an Approve action on an under-review card", pg.evaluate("()=>!!document.querySelector('#drawer .act[data-act=\"promote\"]')"))
+    ck("1: the drawer offers an Approve action on an under-review card", pg.evaluate("()=>!!document.querySelector('#owDetail .act[data-act=\"promote\"]')"))
     pg.evaluate(CLICK_ACT, "promote"); pg.wait_for_timeout(700)   # approve write (approved_at) + PATCH + re-read
     ck("1: after approve, Delta is in the Live lane (server re-read of approved_at, not fabricated)", "Live" in pg.evaluate(LANE_OF, "Delta Co"))
     ck("1: the approval was written (approved_at set); the client wrote NO stage", OPPS["delta"].get("approved_at") and OPPS["delta"].get("stage","")!="live")
@@ -178,14 +178,14 @@ with sync_playwright() as p:
        any(n.get("text")=="Synthetic follow-up note" for n in OPPS["delta"]["data"].get("notes",[])), OPPS["delta"]["data"])
     ck("3: the note author is the OPERATOR uid (Step 1 identity), never a prospect",
        (OPPS["delta"]["data"].get("notes",[{}])[-1].get("by")=="u"))
-    pg.evaluate("()=>{var s=document.getElementById('scrim'); if(s){var e=new KeyboardEvent('keydown',{key:'Escape'});document.dispatchEvent(e);}}")
+    pg.evaluate("()=>{var e=new KeyboardEvent('keydown',{key:'Escape'});document.dispatchEvent(e);}")
     pg.wait_for_timeout(200)
 
     # ===== 2. ARCHIVE: a replied opp archives to the tray; its Replied count is UNCHANGED =====
     repBefore = pg.evaluate(REPLIED_N)
     ck("2: Epsilon (replied) is in the Replied lane before archiving", "Replied" in pg.evaluate(LANE_OF, "Epsilon"))
     pg.evaluate(OPEN, "Epsilon"); pg.wait_for_timeout(400)
-    ck("2: the drawer offers Archive on an open card", pg.evaluate("()=>!!document.querySelector('#drawer .act[data-act=\"archive\"]')"))
+    ck("2: the drawer offers Archive on an open card", pg.evaluate("()=>!!document.querySelector('#owDetail .act[data-act=\"archive\"]')"))
     pg.evaluate(CLICK_ACT, "archive"); pg.wait_for_timeout(700)
     repAfter = pg.evaluate(REPLIED_N)
     ck("2: the server marked Epsilon archived", OPPS["epsi"]["archived"] is True)
@@ -199,7 +199,7 @@ with sync_playwright() as p:
     # open Gamma from the tray
     pg.evaluate("""()=>{ var t=document.getElementById('trayToggle'); if(t) t.click(); }"""); pg.wait_for_timeout(200)
     pg.evaluate(OPEN, "Gamma Inc"); pg.wait_for_timeout(400)
-    ck("2b: the drawer offers Reopen on a closed card", pg.evaluate("()=>!!document.querySelector('#drawer .act[data-act=\"reopen\"]')"))
+    ck("2b: the drawer offers Reopen on a closed card", pg.evaluate("()=>!!document.querySelector('#owDetail .act[data-act=\"reopen\"]')"))
     pg.evaluate(CLICK_ACT, "reopen"); pg.wait_for_timeout(700)
     ck("2b: the server cleared the terminal stage on reopen", OPPS["gamm"]["stage"]=="")
     ck("2b: Gamma returned to an open lane (derived Sent from its one send)", pg.evaluate(LANE_OF, "Gamma Inc")!="")
@@ -228,7 +228,7 @@ with sync_playwright() as p:
     pg.evaluate("()=>{try{localStorage.setItem('thrive_lang','ar');}catch(e){}}")
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(700)
     pg.evaluate(OPEN, "Epsilon"); pg.wait_for_timeout(400)
-    arr = pg.evaluate("""()=>{ var dw=document.getElementById('drawer');
+    arr = pg.evaluate("""()=>{ var dw=document.getElementById('owDetail');
       return { dir: getComputedStyle(dw).direction, hasActions: dw.textContent.indexOf('إجراءات')>=0,
                hasReopen: !!dw.querySelector('.act[data-act=\"reopen\"]') }; }""")
     ck("5: AR flips the drawer to RTL", arr["dir"]=="rtl", arr)

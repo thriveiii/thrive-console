@@ -1051,11 +1051,8 @@ function buildBoard(){
     .ow-scrim{padding:0;align-items:flex-end}
     .ow{width:100%;max-height:92vh;height:92vh;border-radius:16px 16px 0 0}
   }
-  .dw-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border-bottom:1px solid #17171f;padding-bottom:12px}
-  .dw-name{font-weight:800;font-size:18px;word-break:break-word}
-  .dw-stage{display:inline-block;margin-top:6px;font-size:11px;color:#9a9aa6;border:1px solid #26262f;border-radius:999px;padding:1px 9px;text-transform:uppercase;letter-spacing:.06em}
-  html[dir="rtl"] .dw-stage{text-transform:none;letter-spacing:normal}
-  .dw-close{font-size:22px;line-height:1;color:#9a9aa6;background:none;border:0;cursor:pointer;padding:0 6px}
+  /* G5: the drawer chrome (.dw-top/.dw-name/.dw-stage/.dw-close) is retired; the shared section styles below
+     (.dw-sec, signals, thread, notes, activity) now render inside the window's Details view. */
   .dw-sec{margin:16px 0 0}
   .dw-sec h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:0 0 8px;display:flex;gap:8px;align-items:center}
   html[dir="rtl"] .dw-sec h3{text-transform:none;letter-spacing:normal}
@@ -1234,7 +1231,6 @@ function buildBoard(){
   </div>
   <div id="root"></div>
 </div>
-<div id="scrim" class="scrim" hidden><div id="drawer" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="pfScrim" class="scrim" hidden><div id="pfPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="admScrim" class="scrim" hidden><div id="admPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="nmScrim" class="scrim" hidden><div id="nmPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
@@ -1764,11 +1760,10 @@ ${UPLOAD_SRC}
         // for an owner. isOwner() resolves async (loadIdentity), so paintAdminSlot() runs both now and again
         // from finishIdentity once the role settles. A member never sees this control, and openAdmin() is a
         // no-op for a non-owner besides, so the real gate stays the RLS policy on the write.
-        // E1: New message opens the editor as its own overlay (compose to any recipient, with or without an
-        // opp link). Visible to every signed-in operator, beside Profile.
+        // New message: the ONE compose entry. It opens the centered window on the mode selector (message without
+        // campaign / message with campaign). G5: the separate "Upload campaign" entry is retired - uploading a
+        // campaign now lives in the window's Page tab (Mode B).
         '<button class="link" id="newMsgBtn" type="button">' + esc(t("nm_open")) + '</button>' +
-        // E2: upload a campaign zip from the device (html pages + message texts + emails).
-        '<button class="link" id="uploadBtn" type="button">' + esc(t("up_open")) + '</button>' +
         // PR1 Library: upload html templates for documentation + activation only (no message, no recipient, no card).
         '<button class="link" id="libBtn" type="button">' + esc(t("lib_open")) + '</button>' +
         '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
@@ -1786,8 +1781,7 @@ ${UPLOAD_SRC}
   try{ window.__thrivePaintAdminSlot = paintAdminSlot; }catch(e){}
   function wireHeader(){
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
-    var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ openNewMessage(); });   // E1
-    var up=document.getElementById("uploadBtn"); if(up) up.addEventListener("click", function(){ openUpload(); });   // E2
+    var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ owNewMessage(); });   // opens the window on the mode selector
     var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibraryView(); });   // PR-L1: the Library surface (Add templates inside opens the upload)
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
@@ -1963,79 +1957,33 @@ ${UPLOAD_SRC}
       '<div class="acts"><button class="act note-add" id="noteAdd" type="button">'+esc(t("a_note_add"))+'</button></div>'+
       '<div class="act-status" id="noteStatus"></div></div></div>';
   }
-  function drawerHtml(row, detail){
-    var slug=row.slug||"";
-    return '<div class="dw-top"><div><div class="dw-name">'+esc(row.business||row.slug||t("unnamed"))+'</div>'+
-      '<span class="dw-stage">'+esc(row.stage||"")+'</span></div>'+
-      '<button class="dw-close" id="dwClose" type="button" aria-label="'+esc(t("d_close"))+'">\\u00d7</button></div>'+
-      numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+editorHtml(slug, row, detail)+uploadActivateHtml(slug, row, detail)+recipientHtml(slug, row, detail)+actionsHtml(row)+threadHtml(slug, detail)+recordHtml(detail)+notesHtml(slug, detail)+activityHtml(slug, detail);
-  }
-  var __drawerSlug=null, __writing=false;
-  function wireDrawer(){
-    var b=document.getElementById("dwClose"); if(b) b.addEventListener("click", closeDrawer);
-    var slug=__drawerSlug;
-    [].forEach.call(document.querySelectorAll("#drawer .act[data-act]"), function(btn){
-      btn.addEventListener("click", function(){ onAction(slug, btn.getAttribute("data-act")); });
-    });
-    var na=document.getElementById("noteAdd");
-    if(na) na.addEventListener("click", function(){ onAddNote(slug); });
-    var rs=document.getElementById("recSave");                          // L5.5 recipient save
-    if(rs) rs.addEventListener("click", function(){ onSaveRecipient(slug); });
-    var ri=document.getElementById("recIn");                            // UNIFY: typing a recipient re-runs the shared Send gate
-    if(ri) ri.addEventListener("input", function(){ try{ if(typeof sendApplyGate==="function") sendApplyGate(slug); }catch(e){} });
-    try{ wireEditor(slug); }catch(e){}                                  // unified message editor (compose + reply)
-    try{ upWireActivate(slug); }catch(e){}                              // upload-page section: Re-check button + re-verify on drawer open (never a stuck "publishing")
-  }
-  function openDrawer(slug){
-    __drawerSlug=slug;
-    var scrim=document.getElementById("scrim"), dw=document.getElementById("drawer");
-    if(!scrim || !dw) return;
-    var row=null; if(__data && __data.rows) __data.rows.forEach(function(r){ if(r && r.slug===slug) row=r; });
-    if(!row) return;
-    try{
-      dw.innerHTML = drawerHtml(row, null);      // the heart renders instantly from in-memory data + the resolver
-      scrim.hidden=false; dw.scrollTop=0; wireDrawer();
-      fetchDetail(slug).then(function(detail){   // then enrich: record notes, outbound sends, activity timeline
-        if(__drawerSlug!==slug) return;
-        // Cache the freshest server notes so a later note re-render (finishIdentity, Step 2A) has a source;
-        // notesFor already prioritizes __notes[slug], and this keeps it in sync with the latest detail.
-        try{ var dn=detail && detail.opp && detail.opp.data && detail.opp.data.notes; if(Array.isArray(dn)) __notes[slug]=dn; }catch(e){}
-        try{ dw.innerHTML = drawerHtml(row, detail); wireDrawer(); }catch(e){ redFull("drawer detail", e); }
-      }, function(){});
-    }catch(e){ redFull("drawer", e); }
-  }
-  function closeDrawer(){ var s=__drawerSlug; if(s){ delete __act[s]; delete __recSaved[s]; } __drawerSlug=null; var sc=document.getElementById("scrim"); if(sc) sc.hidden=true; }
-
+  // G5: the drawer is retired. drawerHtml / openDrawer / wireDrawer / closeDrawer are gone; the window's Details
+  // view (owDetailHtml/owDetailMount/owDetailWire, below) is the ONE opp-detail surface. The section builders
+  // (numsHtml/factsHtml/archivedInfoHtml/actionsHtml/threadHtml/recordHtml/notesHtml/activityHtml) and the write
+  // handlers (onAction/onAddNote/runOppWrite/runOppDelete) live on unchanged; only their host moved.
+  var __writing=false;
   // ---- L4 optimistic confirm-or-revert runner (spec item 4). The card updates IMMEDIATELY (mutate the in-memory
   //      row + repaint), then the write confirms; on confirm the board RE-READS console_board and paints from
   //      server truth (§3 - the optimistic stage is never the authority); on failure the row is restored, the
   //      board repaints (the card jumps back), and a visible RED status shows - never a silent wrong state. ----
   function findRow(slug){ var r=null; if(__data && __data.rows) __data.rows.forEach(function(x){ if(x && x.slug===slug) r=x; }); return r; }
   function replaceRow(slug, snap){ if(!__data || !__data.rows) return; for(var i=0;i<__data.rows.length;i++){ if(__data.rows[i] && __data.rows[i].slug===slug){ __data.rows[i]=snap; return; } } }
-  function drawerActsDisabled(on){                                     // disable action buttons on whichever surface is showing this opp
-    [document.getElementById("drawer"), document.getElementById("owDetail")].forEach(function(node){
-      if(node) [].forEach.call(node.querySelectorAll(".act"), function(b){ b.disabled=!!on; });
-    });
+  function owActsDisabled(on){                                         // disable the Details view's action buttons during a write
+    var node=document.getElementById("owDetail"); if(node) [].forEach.call(node.querySelectorAll(".act"), function(b){ b.disabled=!!on; });
   }
-  // The single re-render funnel after a write / a delete-arm. G4.5: it also serves the window Details view, so the
-  // shared onAction / runOppWrite / runOppDelete need no per-surface branching - they call refreshDrawer as before.
-  function refreshDrawer(slug){
-    if(typeof owDetailActive==="function" && owDetailActive(slug)){ owDetailRefresh(slug); return; }
-    if(__drawerSlug!==slug) return; if(!findRow(slug)){ closeDrawer(); return; } openDrawer(slug);
-  }
-  // Is EITHER opp surface (the drawer, or the window Details view) currently showing this opp? Used by the write
-  // handlers to decide whether an inline re-render suffices or a board-level red must show instead.
-  function oppSurfaceActive(slug){ return __drawerSlug===slug || (typeof owDetailActive==="function" && owDetailActive(slug)); }
+  // The single re-render funnel after a write / a delete-arm: re-render the window Details view when it is showing
+  // this opp (owDetailRefresh self-guards on owDetailActive and closes the window if the row is gone).
+  function refreshOppDetail(slug){ if(typeof owDetailRefresh==="function") owDetailRefresh(slug); }
+  // Is the opp Details surface currently showing this opp? Gates whether an inline re-render suffices on failure.
+  function oppSurfaceActive(slug){ return typeof owDetailActive==="function" && owDetailActive(slug); }
 
-  // ---- G1: the centered opportunity window (#oppWindow) -------------------------------------------------
-  // The default opp-open path. This step is the SHELL + mode selector ONLY: the mode containers are empty and
-  // the Mode B tab strip is a scaffold. Later steps mount the SHARED nodes here BY REFERENCE, never re-copied:
-  // G2 (Mode A) mounts editorHtml/recipientHtml/#edPreview and sends through the same runSend (so the B2
-  // suppression guard and F1 publish-truth states are inherited); G3 (Mode B) mounts the one upload engine +
-  // pageFrameIframe; G4 adds recipients. The drawer stays callable until G5. OPP_WINDOW is the fallback flag:
-  // flip it off to fall back to the drawer without removing anything.
-  var OPP_WINDOW = false;   // G2: the window is built (Mode A live behind it) but NOT the default open path yet; the drawer stays default. Flipped on at G5.
-  var __owSlug = null, __owMode = null;   // the open opp; the chosen mode ("a" | "b"), or null = show the selector
+  // ---- The centered opportunity window (#oppWindow): the ONE opp surface (G5 - the drawer is retired) ---------
+  // A card tap opens it detail-first (Details); "New message" opens it on the mode selector. It mounts the SHARED
+  // nodes BY REFERENCE, never re-copied: the compose editor/recipient/#edPreview (Mode A + Mode B Message tab,
+  // sending through the same runSend so B2 + F1 are inherited), the one upload engine + pageFrameIframe (Mode B
+  // Page tab), per-recipient status (Recipients tab), and the drawer's former detail/management half - signals,
+  // reply thread, record, notes, activity, and the fate actions - in the Details view (owDetail*).
+  var __owSlug = null, __owMode = null;   // the open opp; the chosen view ("detail" | "a" | "b"), or null = the selector
   function owModeSelectHtml(){
     return '<div class="ow-modes"><p class="ow-mode-h">'+esc(t("ow_pick"))+'</p>'+
       '<button class="ow-mode-btn" id="owPickA" type="button">'+esc(t("ow_mode_a"))+
@@ -2130,16 +2078,17 @@ ${UPLOAD_SRC}
     if(__owMode==="b") return document.getElementById("owMsgPanel");
     return null;
   }
-  // ---- G4.5 detail-first: the drawer's DETAIL + MANAGEMENT half, brought into the window and mounted BY
-  //      REFERENCE. The upper (compose) half already lives in the compose modes; this view carries the lower
-  //      half the drawer stacked - signals + channels + archived stamp + fate actions + the reply thread + the
-  //      record + notes + the activity timeline - reusing numsHtml/factsHtml/archivedInfoHtml/actionsHtml/
-  //      threadHtml/recordHtml/notesHtml/activityHtml and the same fetchDetail read, onAction / onAddNote /
-  //      runOppWrite / runOppDelete handlers, unchanged. No second read path, no forked handler. The compose
-  //      surface (editor/upload/recipient) is NOT mounted here - composing is a mode you enter via "Compose".
+  // ---- Detail-first (G4.5) + the flip (G5): the drawer's DETAIL + MANAGEMENT half, in the window and mounted BY
+  //      REFERENCE. The compose half lives in the compose modes; this view carries the lower half the drawer
+  //      stacked - signals + channels + archived stamp + the hosted-page publish-truth/re-check (uploadActivateHtml,
+  //      F1) + fate actions + the reply thread + the record + notes + the activity timeline - reusing
+  //      numsHtml/factsHtml/archivedInfoHtml/uploadActivateHtml/actionsHtml/threadHtml/recordHtml/notesHtml/
+  //      activityHtml and the same fetchDetail read + onAction/onAddNote/upWireActivate/runOppWrite/runOppDelete
+  //      handlers, unchanged. No second read path, no forked handler. The compose EDITOR/RECIPIENT is NOT mounted
+  //      here - composing is a mode you enter via "Compose".
   function owDetailHtml(row, detail){
     var slug=row.slug||"";
-    return numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+
+    return numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+uploadActivateHtml(slug, row, detail)+
       actionsHtml(row, { noSend:true })+threadHtml(slug, detail)+recordHtml(detail)+
       notesHtml(slug, detail)+activityHtml(slug, detail);
   }
@@ -2149,6 +2098,7 @@ ${UPLOAD_SRC}
       btn.addEventListener("click", function(){ onAction(slug, btn.getAttribute("data-act")); });   // promote/revert/archive/reopen/delete (+confirm)
     });
     var na=document.getElementById("noteAdd"); if(na) na.addEventListener("click", function(){ onAddNote(slug); });
+    try{ if(typeof upWireActivate==="function") upWireActivate(slug); }catch(e){}      // F1: the hosted-page Re-check button + re-verify on open
   }
   function owDetailMount(slug){
     var host=document.getElementById("owDetail"); if(!host) return;
@@ -2161,7 +2111,7 @@ ${UPLOAD_SRC}
       try{ host.innerHTML = owDetailHtml(r2, detail); owDetailWire(slug); }catch(e){}
     }, function(){});
   }
-  // The window twin of refreshDrawer: re-render after a write / a delete-arm. A deleted row closes the window.
+  // Re-render the Details view after a write / a delete-arm. A deleted row closes the window.
   function owDetailRefresh(slug){
     if(!owDetailActive(slug)) return;
     if(!findRow(slug)){ closeOppWindow(); return; }
@@ -2169,37 +2119,54 @@ ${UPLOAD_SRC}
   }
   function openOppWindow(slug, mode){
     __owSlug = slug; __owMode = mode || null;                      // a card tap passes "detail"; "New message" opens the selector
-    var sc=document.getElementById("owScrim"); if(!sc){ openDrawer(slug); return; }   // fallback if the shell is absent
+    var sc=document.getElementById("owScrim"); if(!sc) return;         // no window shell -> nothing to open (the drawer is gone)
     sc.hidden=false; var body=document.getElementById("owBody"); if(body) body.scrollTop=0;
     owRender();
   }
   function closeOppWindow(){
     try{ if(typeof owComposeFlush==="function" && owComposeActive()) owComposeFlush(__owSlug); }catch(e){}   // flush a pending Mode A autosave
     __owSlug=null; __owMode=null; var sc=document.getElementById("owScrim"); if(sc) sc.hidden=true;
+    var bd=document.getElementById("owBody"); if(bd) bd.innerHTML="";   // clear the mounted compose/detail so its #edSubj/#edBody cannot linger as a duplicate-id set behind another surface
   }
-  // Stable seams for the G-series transition and its tests: the drawer stays fully callable until G5 removes it,
-  // and owSelectMode lets a test drive the window's mode directly. Exposing openDrawer lets a drawer-content
-  // test reach the (unchanged) drawer directly.
-  try{ window.openOppWindow = openOppWindow; window.closeOppWindow = closeOppWindow; window.openDrawer = openDrawer; window.owSelectMode = owSelectMode; }catch(e){}
+  // "New message": compose from scratch. Mint a fresh opp slug (never resume a stale pointer), then open the
+  // window on the mode selector; picking a mode mounts an empty compose for that slug, and the first send/commit
+  // creates the opp (the same path the old overlay used, now in the window).
+  function owNewMessage(){
+    var slug = (typeof nmNewSlug==="function") ? nmNewSlug() : ("new-"+Date.now());
+    try{ if(typeof nmClearStore==="function") nmClearStore(); }catch(e){}
+    try{ __edBase[slug] = {}; }catch(e){}
+    openOppWindow(slug, null);                                         // null mode -> the mode selector
+  }
+  // Stable seams for the window and its tests: owSelectMode lets a test drive the window's mode directly; the
+  // card tap and "New message" reach the window through openOppWindow.
+  try{ window.openOppWindow = openOppWindow; window.closeOppWindow = closeOppWindow; window.owSelectMode = owSelectMode; window.owNewMessage = owNewMessage; }catch(e){}
+  // G5: the standalone campaign-upload overlay lost its nav entry (campaign upload now lives in the window's Page
+  // tab), but the overlay + its shared parser/commit engine are retained; expose openUpload as a utility seam so
+  // the upload-engine E2E can still drive it. (Not a user path - the nav no longer surfaces it.)
+  try{ if(typeof openUpload==="function") window.openUpload = openUpload; }catch(e){}
+  // The standalone New-message overlay is retained (its shared compose writer is the same one the window uses),
+  // but off-nav - the "New message" button now opens the window. Expose openNewMessage as a utility seam so the
+  // overlay-mechanics E2E can still drive it directly.
+  try{ if(typeof openNewMessage==="function") window.openNewMessage = openNewMessage; }catch(e){}
   function runOppWrite(slug, optimistic, patch, after){
     if(__writing) return; __writing=true;
     var row=findRow(slug); if(!row){ __writing=false; return; }
     var snap=JSON.parse(JSON.stringify(row));                            // exact pre-write state for a clean revert
     try{ optimistic(row); }catch(e){}
     __act[slug]={ msg:t("a_saving"), cls:"" };
-    drawerActsDisabled(true);
+    owActsDisabled(true);
     try{ renderBoard(__data); }catch(e){}                               // optimistic paint: the card jumps at once
     oppPatch(slug, patch).then(function(){
       return after ? Promise.resolve().then(after) : null;             // optional follow-up write (e.g. an approval note into data.notes)
     }).then(function(){
       return reloadBoardData();                                         // confirmed: adopt server truth
     }).then(function(){
-      __writing=false; __act[slug]={ msg:t("a_saved"), cls:"ok" }; refreshDrawer(slug);
+      __writing=false; __act[slug]={ msg:t("a_saved"), cls:"ok" }; refreshOppDetail(slug);
     }).catch(function(e){
       __writing=false;
       replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){}     // revert the optimistic change
       __act[slug]={ msg:((e&&e.authRequired)? t("err") : t("a_failed")), cls:"bad" };
-      if(oppSurfaceActive(slug)) refreshDrawer(slug); else redInto(root, "write", new Error(t("a_failed")));
+      if(oppSurfaceActive(slug)) refreshOppDetail(slug); else redInto(root, "write", new Error(t("a_failed")));
     });
   }
   // Bounded DELETE through the same authFetchOnce discipline as oppPatch (settles always, one refresh-retry). The
@@ -2233,17 +2200,17 @@ ${UPLOAD_SRC}
   }
   function runOppDelete(slug){
     if(__writing) return; __writing=true;
-    __act[slug]={ msg:t("a_deleting"), cls:"" }; drawerActsDisabled(true);
-    if(oppSurfaceActive(slug)){ try{ refreshDrawer(slug); }catch(e){} }
+    __act[slug]={ msg:t("a_deleting"), cls:"" }; owActsDisabled(true);
+    if(oppSurfaceActive(slug)){ try{ refreshOppDetail(slug); }catch(e){} }
     oppDelete(slug).then(function(){
       delete __delConfirm[slug]; delete __act[slug];
-      __writing=false; closeDrawer();                                   // the card is gone; leave the board
-      if(typeof owDetailActive==="function" && owDetailActive(slug)) closeOppWindow();   // G4.5: close the window Details too
+      __writing=false;
+      if(owDetailActive(slug)) closeOppWindow();                       // the card is gone; leave the window
       return reloadBoardData();
     }).catch(function(e){
       __writing=false;
       __act[slug]={ msg:((e&&e.authRequired)? t("err") : t("a_del_failed")), cls:"bad" };
-      if(oppSurfaceActive(slug)) refreshDrawer(slug); else redInto(root, "delete", new Error(t("a_del_failed")));
+      if(oppSurfaceActive(slug)) refreshOppDetail(slug); else redInto(root, "delete", new Error(t("a_del_failed")));
     });
   }
   // The localized name of the lane a card was archived from (archived_from stores a laneOf() key). Falls back to
@@ -2286,8 +2253,8 @@ ${UPLOAD_SRC}
       return runOppWrite(slug, function(r){ r.archived=false; if(clear) r.stage=""; }, clear ? { archived:false, stage:"", up:m } : { archived:false, up:m });
     }
     // FULL DELETE, two-tap confirmed: first tap arms the confirm, the "delete_go" tap performs it, "delete_cancel" clears.
-    if(act==="delete"){ __delConfirm[slug]=true; refreshDrawer(slug); return; }          // refreshDrawer self-routes to the active surface
-    if(act==="delete_cancel"){ delete __delConfirm[slug]; refreshDrawer(slug); return; }
+    if(act==="delete"){ __delConfirm[slug]=true; refreshOppDetail(slug); return; }          // re-render to show the two-tap confirm
+    if(act==="delete_cancel"){ delete __delConfirm[slug]; refreshOppDetail(slug); return; }
     if(act==="delete_go") return runOppDelete(slug);
   }
   function setNoteStatus(msg, cls){ var el=document.getElementById("noteStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
@@ -2300,7 +2267,7 @@ ${UPLOAD_SRC}
     setNoteStatus(t("a_note_saving"), ""); var na=document.getElementById("noteAdd"); if(na) na.disabled=true;
     addNote(slug, text).then(function(notes){                            // confirmed via read-back (count grew)
       __writing=false; __notes[slug]=notes;
-      if(__drawerSlug===slug){ var i2=document.getElementById("noteIn"); if(i2) i2.value=""; renderNotesInto(slug); setNoteStatus(t("a_note_saved"), "ok"); var n2=document.getElementById("noteAdd"); if(n2) n2.disabled=false; }
+      if(owDetailActive(slug)){ var i2=document.getElementById("noteIn"); if(i2) i2.value=""; renderNotesInto(slug); setNoteStatus(t("a_note_saved"), "ok"); var n2=document.getElementById("noteAdd"); if(n2) n2.disabled=false; }
     }).catch(function(e){
       __writing=false; var n3=document.getElementById("noteAdd"); if(n3) n3.disabled=false;
       setNoteStatus((e&&e.authRequired)? t("err") : t("a_note_failed"), "bad");
@@ -2369,11 +2336,11 @@ ${UPLOAD_SRC}
     wireHeader();
     var tt=document.getElementById("trayToggle"), tb=document.getElementById("trayBody");
     if(tt && tb) tt.addEventListener("click", function(){ var open=tb.hidden; tb.hidden=!open; tt.setAttribute("aria-expanded", String(open)); });
-    // L3: tap any card (open lane OR tray) to open the opportunity. G1: the CENTERED window is the default open
-    // path; openDrawer stays callable (OPP_WINDOW fallback flag) so nothing breaks before G5 removes the drawer.
+    // L3: tap any card (open lane OR tray) to open the opportunity. G5: the centered window is the ONE open path,
+    // opened detail-first (the drawer is retired), so a card tap manages the existing opp.
     [].forEach.call(root.querySelectorAll(".card[data-slug]"), function(c){
       var slug=c.getAttribute("data-slug");
-      var open=function(){ if(OPP_WINDOW) openOppWindow(slug, "detail"); else openDrawer(slug); };   // G4.5 detail-first: a card tap manages an existing opp
+      var open=function(){ openOppWindow(slug, "detail"); };
       c.addEventListener("click", open);
       c.addEventListener("keydown", function(e){ if(e.key==="Enter" || e.key===" "){ e.preventDefault(); open(); } });
     });
@@ -2418,10 +2385,8 @@ ${UPLOAD_SRC}
       refresh().then(function(ok){ ok ? loadBoard() : signinView(); }).catch(function(){ signinView(); });
     }catch(e){ redFull("boot", e); }
   }
-  // Drawer dismissal wired once: a backdrop tap or Escape closes it and returns to the board (no reload).
+  // Overlay dismissal wired once: a backdrop tap or Escape closes the open surface and returns to the board.
   (function(){ try{
-    var s=document.getElementById("scrim");
-    if(s) s.addEventListener("click", function(e){ if(e.target===s) closeDrawer(); });
     var ps=document.getElementById("pfScrim");                                            // Step 2B profile overlay
     if(ps) ps.addEventListener("click", function(e){ if(e.target===ps) closeProfile(); });
     var as=document.getElementById("admScrim");                                           // Step 2D admin overlay
@@ -2436,7 +2401,7 @@ ${UPLOAD_SRC}
     if(ow) ow.addEventListener("click", function(e){ if(e.target===ow) closeOppWindow(); });
     var owc=document.getElementById("owClose"); if(owc) owc.addEventListener("click", function(){ closeOppWindow(); });
     var owm=document.getElementById("owChangeMode"); if(owm) owm.addEventListener("click", function(){ __owMode=null; owRender(); });   // switch mode back from the header
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeOppWindow(); closeDrawer(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); } });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeOppWindow(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); } });
   }catch(e){} })();
   boot();
 })();

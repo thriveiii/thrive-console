@@ -62,7 +62,7 @@ with sync_playwright() as p:
 
     # (a) a stale pointer must NOT be resumed onto the New-message button ------------------------------
     pg.evaluate("s=>localStorage.setItem('thrive_nm_draft', s)", STORED)
-    pg.click("#newMsgBtn")
+    pg.evaluate("()=>{ if(window.openNewMessage) window.openNewMessage(); }")
     pg.wait_for_function("()=>window.__thriveNewMessageOpen()===true", timeout=6000)
     pg.wait_for_timeout(700)   # allow any (now removed) async resume re-render a chance to fire
     slug_a = pg.evaluate("()=>window.__thriveNewMessageSlug()")
@@ -80,7 +80,7 @@ with sync_playwright() as p:
     # close this one (non-empty: it persists as its own draft), then open a second New message
     pg.evaluate("()=>{ var b=document.getElementById('nmClose'); if(b) b.click(); }")
     pg.wait_for_timeout(400)
-    pg.click("#newMsgBtn")
+    pg.evaluate("()=>{ if(window.openNewMessage) window.openNewMessage(); }")
     pg.wait_for_function("()=>window.__thriveNewMessageOpen()===true", timeout=6000)
     pg.wait_for_timeout(300)
     slug_b = pg.evaluate("()=>window.__thriveNewMessageSlug()")
@@ -96,7 +96,7 @@ with sync_playwright() as p:
     pg.evaluate("()=>{ var b=document.getElementById('nmClose'); if(b) b.click(); }")
     pg.wait_for_timeout(300)
     pg.evaluate("s=>localStorage.setItem('thrive_nm_draft', s)", STORED)   # simulate a stale pointer present
-    pg.click("#newMsgBtn")
+    pg.evaluate("()=>{ if(window.openNewMessage) window.openNewMessage(); }")
     pg.wait_for_function("()=>window.__thriveNewMessageOpen()===true", timeout=6000)
     pg.wait_for_timeout(200)
     # type nothing; close immediately

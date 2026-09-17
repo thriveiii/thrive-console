@@ -145,12 +145,12 @@ def wait_ident(pg, tries=40):
         pg.wait_for_timeout(150)
     return False
 def open_card(pg, slug):
-    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c) window.openDrawer(c.getAttribute('data-slug'));}", slug)
-    pg.wait_for_function("()=>!!document.getElementById('drawer') && document.getElementById('drawer').querySelector('.act[data-act]')", timeout=8000)
+    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c) window.openOppWindow(c.getAttribute('data-slug'), 'detail');}", slug)
+    pg.wait_for_function("()=>!!document.getElementById('owDetail') && document.getElementById('owDetail').querySelector('.act[data-act]')", timeout=8000)
 def has_act(pg, act):
-    return pg.evaluate("(a)=>!!document.querySelector('#drawer .act[data-act='+JSON.stringify(a)+']')", act)
+    return pg.evaluate("(a)=>!!document.querySelector('#owDetail .act[data-act='+JSON.stringify(a)+']')", act)
 def click_act(pg, act):
-    pg.evaluate("(a)=>{var b=document.querySelector('#drawer .act[data-act='+JSON.stringify(a)+']'); if(b) b.click();}", act)
+    pg.evaluate("(a)=>{var b=document.querySelector('#owDetail .act[data-act='+JSON.stringify(a)+']'); if(b) b.click();}", act)
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
@@ -168,14 +168,14 @@ with sync_playwright() as p:
     ck("(a) delete action IS present", has_act(pg, "delete"))
     # the exhaustive action set on an open 'live' card is exactly {revert, archive, delete} (+ send when eligible) -
     # no fate declarations remain
-    acts = pg.evaluate("""()=>[].map.call(document.querySelectorAll('#drawer .act[data-act]'), function(b){return b.getAttribute('data-act');})""")
+    acts = pg.evaluate("""()=>[].map.call(document.querySelectorAll('#owDetail .act[data-act]'), function(b){return b.getAttribute('data-act');})""")
     ck("(a) the action set carries none of won/lost/drop", not any(a in acts for a in ("won","lost","drop")), acts)
 
     # ===== (b) archive stamps archived_at + archived_from and keeps notes + conversation =====
     # the note + thread render on the ENRICHED drawer paint (after fetchDetail resolves), so wait for them
-    pg.wait_for_function("()=>{var d=document.getElementById('drawer'); return d && d.textContent.indexOf('first contact made')>=0 && d.textContent.indexOf('Hello')>=0;}", timeout=8000)
-    ck("(b) the open card shows its note before archiving", ("first contact made" in (pg.text_content("#drawer") or "")))
-    ck("(b) the open card shows its sent conversation before archiving", ("Hello" in (pg.text_content("#drawer") or "")))
+    pg.wait_for_function("()=>{var d=document.getElementById('owDetail'); return d && d.textContent.indexOf('first contact made')>=0 && d.textContent.indexOf('Hello')>=0;}", timeout=8000)
+    ck("(b) the open card shows its note before archiving", ("first contact made" in (pg.text_content("#owDetail") or "")))
+    ck("(b) the open card shows its sent conversation before archiving", ("Hello" in (pg.text_content("#owDetail") or "")))
     click_act(pg, "archive")
     pg.wait_for_timeout(900)
     o = OPPS.get("alpha") or {}
@@ -185,12 +185,12 @@ with sync_playwright() as p:
     # re-open from the tray: the archived card keeps its note + conversation, and shows the archived facts
     pg.evaluate("()=>{var t=document.getElementById('trayToggle'); if(t) t.click();}"); pg.wait_for_timeout(300)
     open_card(pg, "alpha")
-    pg.wait_for_function("()=>{var d=document.getElementById('drawer'); return d && d.textContent.indexOf('first contact made')>=0 && d.textContent.indexOf('Hello')>=0 && !!d.querySelector('.arch-facts');}", timeout=8000)
-    dtxt = pg.text_content("#drawer") or ""
+    pg.wait_for_function("()=>{var d=document.getElementById('owDetail'); return d && d.textContent.indexOf('first contact made')>=0 && d.textContent.indexOf('Hello')>=0 && !!d.querySelector('.arch-facts');}", timeout=8000)
+    dtxt = pg.text_content("#owDetail") or ""
     ck("(b) archived card RETAINS its note", "first contact made" in dtxt)
     ck("(b) archived card RETAINS its conversation", "Hello" in dtxt)
     ck("(b) archived card shows the archived-facts section (when + from column)",
-       pg.evaluate("()=>{var s=document.querySelector('#drawer .arch-facts'); return !!s && s.textContent.length>0;}"))
+       pg.evaluate("()=>{var s=document.querySelector('#owDetail .arch-facts'); return !!s && s.textContent.length>0;}"))
 
     # ===== (c) delete: confirm gate, opp removed, page only when unshared =====
     # c1: a card that OWNS its page -> delete removes BOTH console_opps and console_pages

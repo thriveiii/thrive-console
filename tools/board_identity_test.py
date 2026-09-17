@@ -120,7 +120,7 @@ def wire(ctx, uid, email, lang=None):
     ctx.route("**/rest/v1/console_members**", route_members)
     ctx.route("**/rest/v1/console_admins**", route_admins)
 
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openOppWindow(t.getAttribute('data-slug'), 'detail'); return true; } return false; }"""
 IDENT = "()=>window.__thriveIdentity||null"
 RESOLVE = "(v)=>window.__thriveResolveActor?window.__thriveResolveActor(v):null"
 
@@ -175,7 +175,9 @@ with sync_playwright() as p:
 
     # 1. a NEW mail write stamps the uid as actor (send -> console_mail.actor)
     mail_before = len(MAIL_CALLS)
-    pg.evaluate("""(act)=>{ var el=document.querySelector('#drawer .act[data-act='+JSON.stringify(act)+']'); if(el) el.click(); }""", "send")
+    pg.evaluate("()=>window.owSelectMode('a')")   # switch to compose to send
+    pg.wait_for_selector("#owModeA #nmSend", timeout=6000); pg.wait_for_timeout(400)
+    pg.evaluate("""()=>{ var el=document.querySelector('#owModeA #nmSend'); if(el) el.click(); }""")
     for _ in range(20):
         if len(MAIL_CALLS) > mail_before: break
         pg.wait_for_timeout(150)

@@ -132,7 +132,7 @@ with sync_playwright() as p:
 
     # ===== 1: Mode B renders the tab strip + mounts the SHARED compose in the Message panel =====
     open_mode_b(pg, "alpha")
-    ck("window is open (owScrim shown), drawer stays hidden", pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, dw:document.getElementById('scrim').hidden})")=={"ow":True,"dw":True})
+    ck("window is open (owScrim shown), drawer stays hidden", pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, dw:!document.getElementById('scrim')})")=={"ow":True,"dw":True})
     ck("the four-tab strip is shown (Message/Page/Recipients/Preview)",
        pg.evaluate("()=>{var t=document.getElementById('owTabs'); return !!t && !t.hidden && t.querySelectorAll('[data-ow-tab]').length===4;}"),
        pg.evaluate("()=>document.getElementById('owTabs') && document.getElementById('owTabs').innerText"))
@@ -232,11 +232,11 @@ with sync_playwright() as p:
     ck("the Preview tab can switch to the PAGE (its srcdoc shows the uploaded page)",
        pg.evaluate("()=>{var f=document.querySelector('#owPrevBox .lv-frame'); return !!(f && (f.getAttribute('srcdoc')||'').indexOf('Ramadan Offer')>=0);}"))
 
-    # ===== 9: flag OFF - a card tap still opens the DRAWER unchanged =====
+    # ===== 9: G5 - a card tap opens the WINDOW on Details (the drawer is retired) =====
     pg.evaluate("()=>window.closeOppWindow()"); pg.wait_for_timeout(200)
     pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"alpha\"]'); if(c) c.click();}"); pg.wait_for_timeout(500)
-    ck("with OPP_WINDOW off, a card tap opens the DRAWER (not the window)", pg.evaluate("()=>({dw:!document.getElementById('scrim').hidden, ow:document.getElementById('owScrim').hidden})")=={"dw":True,"ow":True})
-    ck("the drawer's own compose still mounts #edSubj (unchanged)", pg.evaluate("()=>!!document.querySelector('#drawer #edSubj')"))
+    ck("a card tap opens the centered window on Details; no drawer/#scrim in the DOM",
+       pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, det:!!document.getElementById('owDetail'), noDw:!document.getElementById('drawer') && !document.getElementById('scrim')})")=={"ow":True,"det":True,"noDw":True})
 
     ck("no uncaught page error fired", len(perr)==0, perr)
     pg.close(); b.close()

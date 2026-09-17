@@ -3,8 +3,8 @@
 // recipient. This file is INLINED verbatim into library/board.html by tools/bundle.js (interpolated as a
 // string, so its backslashes/regexes need no template escaping) and runs inside board.html's IIFE, using
 // its scope: esc, authFetchOnce, bearer, session, refresh, URL_BASE, ANON, t, LANG, __data, findRow,
-// replaceRow, renderBoard, reloadBoardData, __act, __writing, __drawerSlug, refreshDrawer,
-// drawerActsDisabled, redInto, root, TRAY_STAGES, oppReadData, isoNow, authEmail, and RELAY_EP (baked from
+// replaceRow, renderBoard, reloadBoardData, __act, __writing, refreshOppDetail, owDetailActive,
+// owActsDisabled, redInto, root, TRAY_STAGES, oppReadData, isoNow, authEmail, and RELAY_EP (baked from
 // library/sync.json). Grounded in L5_SEND_PATH_EVIDENCE.md; every clone below cites its engine source line.
 //
 // THE FIX (why L5 is a clone, not a call): the engine reads the relay body with a bare await r.text()
@@ -431,7 +431,7 @@ function runSend(slug){
   var row = findRow(slug);
   if(!row){ __writing = false; return Promise.resolve(null); }
   __act[slug] = { msg:t("s_sending"), cls:"" };
-  drawerActsDisabled(true);
+  owActsDisabled(true);
   var snap = null;
   return oppReadData(slug).then(function(data){
     var recips = allRecipients(data);
@@ -480,7 +480,7 @@ function runSend(slug){
           if(sent.length === 0 && snap){ replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){} }   // nothing went out: revert (no phantom Sent)
           var view = sendResultView(sent.length, recips.length, failed, capped, skipped);   // ONE result string+class (green / amber / red), incl. suppressed skips
           __act[slug] = { msg:view.msg, cls:view.cls };
-          if(__drawerSlug===slug) refreshDrawer(slug);
+          refreshOppDetail(slug);
           try{ refreshSendCap(); }catch(e){}                                // the header counter reflects the new sends
           try{ loadSuppressions().catch(function(){}); }catch(e){}          // B2: refresh the do-not-contact set after the batch (a failed refresh keeps the cached good set)
           return view;                                                      // resolve so a caller (the New-message overlay) can SHOW the result
@@ -497,7 +497,7 @@ function runSend(slug){
       : (kind==="deadlink") ? t("s_dead_link")    // page activates on upload; the ONLY page block left is a definitively dead link (404/410)
       : (e && e.authRequired) ? t("err") : t("s_failed");
     __act[slug] = { msg:msg, cls:"bad" };
-    if(__drawerSlug===slug) refreshDrawer(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
+    if(owDetailActive(slug)) refreshOppDetail(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
     return { msg:msg, cls:"bad", sent:0, failed:1, capped:0 };              // resolve (never reject) so the caller can render the reason
   });
 }

@@ -223,8 +223,8 @@ def wait_ident(pg, tries=40):
         if pg.evaluate("()=>!!(window.__thriveIdentity && window.__thriveIdentity.loaded)"): return True
         pg.wait_for_timeout(150)
     return False
-def open_upload(pg): pg.evaluate("()=>{var b=document.getElementById('uploadBtn'); if(b) b.click();}"); pg.wait_for_timeout(300)
-OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openDrawer(t.getAttribute('data-slug')); return true; } return false; }"""
+def open_upload(pg): pg.evaluate("()=>{ if(window.openUpload) window.openUpload(); }"); pg.wait_for_timeout(300)
+OPEN = """(biz)=>{ var t=null; document.querySelectorAll('.card').forEach(function(c){ if(c.textContent.indexOf(biz)>=0) t=c; }); if(t){ window.openOppWindow(t.getAttribute('data-slug'), 'detail'); return true; } return false; }"""
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
@@ -233,7 +233,7 @@ with sync_playwright() as p:
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(500); wait_ident(pg)
 
     # ===== 1: the header offers Upload; the zip yields a match table; nothing written yet =====
-    ck("1: the header carries an Upload button", pg.evaluate("()=>!!document.getElementById('uploadBtn')"))
+    ck("1: the separate Upload button is retired from the nav (G5); the upload engine opens via the seam", pg.evaluate("()=>!document.getElementById('uploadBtn') && !!window.openUpload"))
     open_upload(pg)
     ck("1: Upload opens a standalone overlay (#upScrim)", pg.evaluate("()=>{var s=document.getElementById('upScrim'); return s? !s.hidden : false;}"))
     pg.set_input_files("#upFile", ZIP_PATH)
@@ -283,11 +283,13 @@ with sync_playwright() as p:
     # ===== 5: send is NOT blocked for a live-on-upload page; blocked ONLY for a definitively dead page (404) =====
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(600); wait_ident(pg)
     # 5a: acme-co is live on upload -> the send goes straight through, no manual activate, no re-activate button
-    pg.evaluate(OPEN, "A quick note for Acme Co")   # business == subject/title
-    pg.wait_for_timeout(400)
+    pg.evaluate(OPEN, "A quick note for Acme Co")   # business == subject/title -> opens the Details view
+    pg.wait_for_selector("#owDetail", timeout=6000); pg.wait_for_timeout(400)
     ck("5: no re-activate button on a live upload card (activation happened on upload)",
        pg.evaluate("()=>!document.getElementById('upActBtn')"))
-    pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
+    pg.evaluate("()=>window.owSelectMode('a')")   # switch to compose to send
+    pg.wait_for_selector("#owModeA #nmSend", timeout=6000); pg.wait_for_timeout(400)
+    pg.evaluate("()=>{var b=document.querySelector('#owModeA #nmSend'); if(b) b.click();}")
     pg.wait_for_timeout(1600)
     ck("5: a live-on-upload page sends directly (one console_mail row via L5, no activate step)", sent_count("acme-co")==1, MAIL)
 
@@ -295,12 +297,14 @@ with sync_playwright() as p:
     LIVE["fresh-labs"] = "dead"; STAMP.pop("fresh-labs", None)   # force the live /opp/fresh-labs to 404
     pg.evaluate("()=>location.reload()"); pg.wait_for_timeout(700); wait_ident(pg)
     pg.evaluate(OPEN, "Fresh Labs intro")
-    pg.wait_for_timeout(400)
+    pg.wait_for_selector("#owDetail", timeout=6000); pg.wait_for_timeout(200)
+    pg.evaluate("()=>window.owSelectMode('a')")
+    pg.wait_for_selector("#owModeA #nmSend", timeout=6000); pg.wait_for_timeout(400)
     n_before = sent_count("fresh-labs")
-    pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
+    pg.evaluate("()=>{var b=document.querySelector('#owModeA #nmSend'); if(b) b.click();}")
     pg.wait_for_timeout(2400)   # gate: verifyLive 404 -> retry 1.5s -> 404 -> deadlink, no send
     ck("5: a 404/410 dead page still BLOCKS the send (no console_mail)", sent_count("fresh-labs")==n_before, {"mail":sent_count("fresh-labs")})
-    stD = pg.evaluate("()=>{var e=document.getElementById('actStatus'); return e?{txt:e.textContent,cls:e.className}:{};}")
+    stD = pg.evaluate("()=>{var e=document.getElementById('nmStatus'); return e?{txt:e.textContent,cls:e.className}:{};}")
     ck("5: the dead-page block shows a RED reason (not a phantom success)", "bad" in (stD.get("cls") or ""), stD)
 
     pg.close(); ctx.close()

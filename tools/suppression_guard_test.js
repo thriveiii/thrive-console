@@ -62,11 +62,11 @@ function loadSend() {
     currentUid: function () { return "u1"; }, RELAY_SEND_TIMEOUT_MS: 20000,
     // runSend env
     findRow: function (slug) { return { slug: slug, cycle: "cy1", sent_count: 0 }; },
-    drawerActsDisabled: function () {}, renderBoard: function () {}, replaceRow: function () {},
+    drawerActsDisabled: function () {}, owActsDisabled: function () {}, owDetailActive: function () { return false; }, renderBoard: function () {}, replaceRow: function () {},
     oppReadData: function () { return Promise.resolve({ recipients: CUR_RECIPS, outreach_subject: "S", outreach_text: "B" }); },
     sendBudget: function () { return Promise.resolve({ dayLeft: 100, monthLeft: 1000, dayUsed: 0, monthUsed: 0 }); },
     sendMode: function () { return "single"; }, upDelay: function () { return Promise.resolve(); }, SEND_GAP_MS: 0,
-    refreshDrawer: function () {}, refreshSendCap: function () {}, redInto: function () {}, root: {}, reloadBoardData: function () { return Promise.resolve(); },
+    refreshDrawer: function () {}, refreshOppDetail: function () {}, refreshSendCap: function () {}, redInto: function () {}, root: {}, reloadBoardData: function () { return Promise.resolve(); },
     t: function (k) {
       var M = { s_sending: "...", s_no_recip: "NORECIP", s_no_msg: "NOMSG", s_cap: "CAP", s_dead_link: "DEAD", err: "ERR",
         s_failed: "FAILED", s_suppress_unavail: "SUPPRESS_BLOCK",

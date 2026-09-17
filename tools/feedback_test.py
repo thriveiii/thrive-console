@@ -149,15 +149,17 @@ def wait_ident(pg, tries=40):
         pg.wait_for_timeout(150)
     return False
 def open_card(pg, slug):
-    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c) window.openDrawer(c.getAttribute('data-slug'));}", slug)
-    pg.wait_for_function("""()=>{ var b=document.querySelector('#drawer .act[data-act="send"]');
-        var s=document.getElementById('edSubj'), r=document.getElementById('recIn');
-        return !!b && !b.disabled && s && s.value.trim() && r && r.value.indexOf('@')>=0; }""", timeout=8000)
+    pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c){ window.openOppWindow(s); window.owSelectMode('a'); }}", slug)
+    pg.wait_for_selector("#owModeA #edSubj", timeout=8000)
+    # the Send button enables once the async prefill lands (subject+body+recipient); poll for the ready state
+    for _ in range(40):
+        if pg.evaluate("""()=>{ var b=document.querySelector('#owModeA #nmSend'); var s=document.getElementById('edSubj'), r=document.getElementById('recIn'); return !!b && !b.disabled && s && s.value.trim() && r && r.value.indexOf('@')>=0; }"""): break
+        pg.wait_for_timeout(150)
     pg.wait_for_timeout(200)
 def click_send_drawer(pg):
-    pg.evaluate("()=>{var b=document.querySelector('#drawer .act[data-act=\"send\"]'); if(b) b.click();}")
+    pg.evaluate("()=>{var b=document.querySelector('#owModeA #nmSend'); if(b) b.click();}")
 def act_status(pg):
-    return pg.evaluate("()=>{var e=document.getElementById('actStatus'); return e?{txt:e.textContent,cls:e.className,live:e.getAttribute('aria-live')}:{};}")
+    return pg.evaluate("()=>{var e=document.getElementById('nmStatus'); return e?{txt:e.textContent,cls:e.className,live:e.getAttribute('aria-live')}:{};}")
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
@@ -171,7 +173,7 @@ with sync_playwright() as p:
     open_card(pg, "trio")   # 3 recipients, one rejects -> partial
     click_send_drawer(pg)
     try:
-        pg.wait_for_function("()=>{var e=document.getElementById('actStatus'); return e && /ok|bad|warn/.test(e.className) && e.textContent.trim().length>0;}", timeout=15000)
+        pg.wait_for_function("()=>{var e=document.getElementById('nmStatus'); return e && /ok|bad|warn/.test(e.className) && e.textContent.trim().length>0;}", timeout=15000)
     except Exception:
         pg.wait_for_timeout(1000)   # let the ck assertions report the exact class cleanly rather than crashing
     stp = act_status(pg)
@@ -183,7 +185,7 @@ with sync_playwright() as p:
 
     open_card(pg, "solo")   # single good recipient -> full success
     click_send_drawer(pg)
-    pg.wait_for_function("()=>{var e=document.getElementById('actStatus'); return e && /ok|bad|warn/.test(e.className);}", timeout=15000)
+    pg.wait_for_function("()=>{var e=document.getElementById('nmStatus'); return e && /ok|bad|warn/.test(e.className);}", timeout=15000)
     sts = act_status(pg)
     ck("(d) a FULL success renders GREEN (ok), never warn/bad", ("ok" in sts.get("cls","")) and ("warn" not in sts.get("cls","")) and ("bad" not in sts.get("cls","")), sts)
     ck("no uncaught page error (drawer sends)", not perr, perr)
@@ -194,43 +196,29 @@ with sync_playwright() as p:
     ctx2 = b.new_context(); wire(ctx2); pg2 = ctx2.new_page(); perr2=[]
     pg2.on("pageerror", lambda e: perr2.append(str(e)))
     pg2.goto(f"{base}/library/board.html", wait_until="load"); pg2.wait_for_timeout(500); wait_ident(pg2)
-    pg2.evaluate("()=>{var b=document.getElementById('newMsgBtn'); if(b) b.click();}")
-    pg2.wait_for_function("()=>{var s=document.getElementById('nmScrim'); return s && !s.hidden && document.getElementById('edSubj');}", timeout=8000)
-    pg2.fill("#edSubj", "A standalone note")
-    pg2.fill("#edBody", "Hello there.")
-    pg2.fill("#recIn", "standalone@buyer.example.test")
+    pg2.evaluate("()=>{var b=document.getElementById('newMsgBtn'); if(b) b.click();}")   # G5: New message opens the window on the mode selector
+    pg2.wait_for_selector("#owPickA", timeout=8000)
+    pg2.evaluate("()=>window.owSelectMode('a')")                                          # message without campaign
+    pg2.wait_for_selector("#owModeA #edSubj", timeout=8000)
+    pg2.fill("#owModeA #edSubj", "A standalone note")
+    pg2.fill("#owModeA #edBody", "Hello there.")
+    pg2.fill("#owModeA #recIn", "standalone@buyer.example.test")
     pg2.wait_for_timeout(400)
-    pg2.evaluate("()=>{var b=document.getElementById('nmSend'); if(b) b.click();}")
+    pg2.evaluate("()=>{var b=document.querySelector('#owModeA #nmSend'); if(b) b.click();}")
     pg2.wait_for_function("()=>{var e=document.getElementById('nmStatus'); return e && /ok|bad|warn/.test(e.className) && e.textContent.trim().length>0;}", timeout=15000)
-    nmst = pg2.evaluate("()=>{var e=document.getElementById('nmStatus'); var sc=document.getElementById('nmScrim'); return {txt:e?e.textContent:'', cls:e?e.className:'', open:sc? !sc.hidden : None, live:e?e.getAttribute('aria-live'):None};}")
-    ck("(a) the standalone send result is VISIBLE (the overlay stays open, not swallowed by close)", nmst.get("open")==True, nmst)
-    ck("(a) the overlay shows the real 'Sent' result in GREEN", ("Sent" in nmst.get("txt","")) and ("ok" in nmst.get("cls","")), nmst)
+    nmst = pg2.evaluate("()=>{var e=document.getElementById('nmStatus'); var sc=document.getElementById('owScrim'); return {txt:e?e.textContent:'', cls:e?e.className:'', open:sc? !sc.hidden : None, live:e?e.getAttribute('aria-live'):None};}")
+    ck("(a) the standalone send result is VISIBLE (the window stays open, not swallowed by close)", nmst.get("open")==True, nmst)
+    ck("(a) the window shows the real 'Sent' result in GREEN", ("Sent" in nmst.get("txt","")) and ("ok" in nmst.get("cls","")), nmst)
     ck("(a) exactly one relay call was made for the standalone recipient", len(RELAY_SEND)==1 and RELAY_SEND[0].get("to")=="standalone@buyer.example.test", [x.get("to") for x in RELAY_SEND])
     ck("(a) the new-message status region carries aria-live", nmst.get("live")=="polite", nmst)
     ck("no uncaught page error (standalone send)", not perr2, perr2)
     pg2.close(); ctx2.close()
 
-    # ===== (c) campaign upload with a failing file NAMES it (result-tied, overlay stays open) =====
-    ctx3 = b.new_context(); wire(ctx3); pg3 = ctx3.new_page(); perr3=[]
-    pg3.on("pageerror", lambda e: perr3.append(str(e)))
-    pg3.goto(f"{base}/library/board.html", wait_until="load"); pg3.wait_for_timeout(500); wait_ident(pg3)
-    pg3.evaluate("()=>{var b=document.getElementById('uploadBtn'); if(b) b.click();}")
-    pg3.wait_for_function("()=>!!document.getElementById('upFile')", timeout=8000)
-    pg3.set_input_files("#upFile", CAMPAIGN_ZIP)
-    pg3.wait_for_function("()=>!!document.getElementById('upApprove')", timeout=8000)
-    pg3.wait_for_timeout(400)
-    pg3.evaluate("()=>{var b=document.getElementById('upApprove'); if(b) b.click();}")
-    try:
-        pg3.wait_for_function("()=>{var e=document.getElementById('upStatus'); return e && /warn|bad|[0-9]/.test(e.textContent);}", timeout=15000)
-    except Exception:
-        pg3.wait_for_timeout(1000)   # let the ck assertions report cleanly rather than crashing (a broken build auto-closes)
-    upst = pg3.evaluate("()=>{var e=document.getElementById('upStatus'); var s=document.getElementById('upScrim'); return {txt:e?e.textContent:'', cls:e?e.className:'', open:s? !s.hidden : None};}")
-    ck("(c) a campaign upload with a failing file shows a warning, not a green success", ("warn" in upst.get("cls","")) or ("bad" in upst.get("cls","")), upst)
-    ck("(c) the failed file is NAMED in the result (not silently dropped)", ("Fail" in upst.get("txt","")) or ("fail-co" in upst.get("txt","")), upst)
-    ck("(c) the counts are shown (1 of 2 created)", ("1" in upst.get("txt","")) and ("2" in upst.get("txt","")), upst)
-    ck("(c) the upload overlay STAYS OPEN so the operator reads the failure", upst.get("open")==True, upst)
-    ck("no uncaught page error (campaign upload)", not perr3, perr3)
-    pg3.close(); ctx3.close()
+    # ===== (c) campaign upload result feedback: RETIRED as a standalone scenario at G5 =====
+    # The separate "Upload campaign" overlay (openUpload / #upScrim) was retired at the flip - campaign upload now
+    # lives in the window's Mode B Page tab. Its result-tied feedback (a failing row named, the commit status
+    # staying visible) is exercised by opp_window_mode_b_test.py (the Page-tab review + the validation-gate commit
+    # status), so it is no longer duplicated here.
     b.close()
 
 httpd.shutdown()

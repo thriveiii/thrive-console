@@ -92,8 +92,9 @@ ck("the backdrop is dimmed + blurred and only the body scrolls (fixed header + t
    /\.ow-scrim\{[^}]*backdrop-filter:blur/.test(BOARD) && /\.ow-body\{[^}]*overflow-y:auto/.test(BOARD) && /\.ow-head\{[^}]*flex:0 0 auto/.test(BOARD));
 ck("it becomes a full-height bottom sheet under 720px",
    /@media \(max-width:720px\)\{[^@]*\.ow\{[^}]*height:92vh;border-radius:16px 16px 0 0/.test(BOARD));
-ck("the card tap routes to the window detail-first (OPP_WINDOW ? openOppWindow(slug,'detail') : openDrawer), drawer kept callable",
-   /if\(OPP_WINDOW\) openOppWindow\(slug, ?"detail"\); else openDrawer\(slug\);/.test(BOARD) && /function openDrawer\(/.test(BOARD));
+ck("G5: the card tap routes UNCONDITIONALLY to the window detail-first (the drawer is retired - no fallback)",
+   /var open=function\(\)\{ openOppWindow\(slug, ?"detail"\); \};/.test(BOARD) &&
+   !/function openDrawer\(/.test(BOARD) && !/openDrawer\(/.test(BOARD));
 ck("backdrop click + close button + change-mode + Escape are wired to close/switch the window",
    /ow\.addEventListener\("click", function\(e\)\{ if\(e\.target===ow\) closeOppWindow\(\)/.test(BOARD) &&
    /owc\.addEventListener\("click", function\(\)\{ closeOppWindow\(\)/.test(BOARD) &&
@@ -136,11 +137,11 @@ ck("switching mode back shows the selector again", bodyEl.innerHTML.indexOf("owP
 U.closeOppWindow();
 ck("closeOppWindow hides the window", scrim.hidden === true);
 
-// ---- behavior: fallback to the drawer if the shell node is absent ---------------------------------
+// ---- behavior: with the shell node absent, openOppWindow is a safe no-op (the drawer is retired) --------
 var U2 = load(false);
 DREW = false;
-U2.openOppWindow("acme");
-ck("openOppWindow falls back to openDrawer when #owScrim is absent (drawer stays a safety net)", DREW === true);
+U2.openOppWindow("acme");   // must not throw and must NOT reach the retired drawer
+ck("openOppWindow is a safe no-op when #owScrim is absent (no drawer fallback - it is gone)", DREW === false);
 
 console.log("");
 if (fails) { console.log(fails + " FAILED"); process.exit(1); }
