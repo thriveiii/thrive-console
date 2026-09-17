@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="d714d145">
+<meta name="thrive-build" content="5eb340a5">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -96,6 +96,23 @@
   .ow-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px}
   .ow-mode{display:flex;flex-direction:column;gap:12px}
   .ow-modes{display:flex;flex-direction:column;gap:12px}
+  /* G3 Mode B: tab panels, the Page-tab engine, the pick list, the sticky Commit, the switchable preview. The
+     window's page previews are TALL (F2/F3 sizing) via a scoped override so the whole page shows, scrollable;
+     the GLOBAL .lv-frame stays as-is (the drawer/Library sizing decision is separate). */
+  .ow-panel{display:flex;flex-direction:column;gap:12px}
+  .ow-page-modes{display:flex;gap:10px;flex-wrap:wrap}
+  .ow-up-btn{cursor:pointer}
+  .ow-pick{display:flex;flex-direction:column;gap:8px}
+  .ow-pick-list{display:flex;flex-direction:column;gap:8px;max-height:44vh;overflow:auto}
+  .ow-pick-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #22222e;border-radius:10px;padding:10px 12px;background:#0e0e14}
+  .ow-pick-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .ow-pick-t{font-weight:650;color:#eef;word-break:break-word}
+  .ow-pick-s{font-size:12px;color:#8a8a93}
+  .ow-foot{position:sticky;inset-block-end:0;background:#0b0b11;border-top:1px solid #17171f;padding:12px 0 0;margin-block-start:16px;display:flex;align-items:center;gap:12px}
+  .ow-prev-tabs{display:flex;gap:8px}
+  .ow-prev-box{min-height:60vh}
+  #owPageReview .lv-frame,.ow-prev-box .lv-frame{height:62vh;min-height:360px}
+  html[dir="rtl"] .ow-pick-t,html[dir="rtl"] .ow-pick-s{letter-spacing:normal}
   .ow-mode-h{font-size:14px;color:#9a9aa6;margin:0 0 4px}
   .ow-mode-btn{display:block;width:100%;text-align:start;background:#0e0e14;border:1px solid #22222e;border-radius:12px;padding:16px 18px;color:#eef;font:inherit;font-size:15px;font-weight:650;cursor:pointer}
   .ow-mode-btn:hover{border-color:#37505c}
@@ -284,7 +301,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build d714d145</span>
+    <span class="muted">build 5eb340a5</span>
   </div>
   <div id="root"></div>
 </div>
@@ -308,7 +325,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "d714d145";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "5eb340a5";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -381,6 +398,11 @@
           ow_title:"Opportunity", ow_pick:"Choose how to send", ow_change_mode:"Change mode",
           ow_mode_a:"Message without campaign", ow_mode_a_sub:"A single message to one or more recipients.",
           ow_mode_b:"Message with campaign", ow_mode_b_sub:"A message plus a hosted page.",
+          ow_tab_msg:"Message", ow_tab_page:"Page", ow_tab_recip:"Recipients", ow_tab_preview:"Preview",
+          ow_commit:"Create campaign", ow_committed:"Campaign created.", ow_need_page:"Add a page first.",
+          ow_page_upload:"Upload a page", ow_page_pick:"Pick from Library", ow_use:"Use", ow_duplicate:"Duplicate",
+          ow_prev_msg:"Message", ow_prev_page:"Page", ow_recip_soon:"Per-recipient management arrives next.",
+          lib_fix_rows:"Fix the highlighted fields first.",
           nm_send:"Send message", nm_need_msg:"Add a subject and body first.", nm_need_to:"Add a recipient email first.",
           up_open:"Upload campaign", up_h:"Upload a campaign zip", up_hint:"A zip of html pages plus message texts and recipient emails. Nothing is written until you approve.",
           up_reading:"Reading the zip...", up_matched:"Pages matched:", up_approve:"Approve and create drafts", up_writing:"Creating drafts...",
@@ -459,6 +481,11 @@
           ow_title:"الفرصة", ow_pick:"اختر طريقة الإرسال", ow_change_mode:"تغيير الطريقة",
           ow_mode_a:"رسالة بدون حملة", ow_mode_a_sub:"رسالة واحدة إلى مستلم أو أكثر.",
           ow_mode_b:"رسالة مع حملة", ow_mode_b_sub:"رسالة مع صفحة مستضافة.",
+          ow_tab_msg:"النص", ow_tab_page:"الصفحة", ow_tab_recip:"المستلمون", ow_tab_preview:"المعاينة",
+          ow_commit:"إنشاء الحملة", ow_committed:"أُنشئت الحملة.", ow_need_page:"أضف صفحة أولًا.",
+          ow_page_upload:"رفع صفحة", ow_page_pick:"اختر من المكتبة", ow_use:"استخدام", ow_duplicate:"نسخ",
+          ow_prev_msg:"الرسالة", ow_prev_page:"الصفحة", ow_recip_soon:"إدارة المستلمين قادمة قريبًا.",
+          lib_fix_rows:"صحّح الحقول المميّزة أولًا.",
           nm_send:"إرسال الرسالة", nm_need_msg:"أضف موضوعًا ونصًا أولًا.", nm_need_to:"أضف بريد المستلم أولًا.",
           up_open:"رفع حملة", up_h:"ارفع ملف حملة مضغوط", up_hint:"ملف مضغوط يضم صفحات html ونصوص الرسائل وبريد المستلمين. لا يُكتب شيء حتى توافق.",
           up_reading:"جارٍ قراءة الملف المضغوط...", up_matched:"الصفحات المطابَقة:", up_approve:"وافق وأنشئ المسودّات", up_writing:"جارٍ إنشاء المسودّات...",
@@ -2049,11 +2076,35 @@ function nmBusiness(subj){ var s=String(subj==null?"":subj).trim(); return s ? s
 // ONE compose body, mounted by reference at every compose surface (the overlay #nmPanel, and G2's window Mode A
 // #owModeA): the SAME editorHtml (subject/body/signature/link/#edPreview) + recipientHtml (#recIn) + Send
 // (#nmSend) + status (#nmStatus). No second editor - the built shell holds one editorHtml/recipientHtml.
-function composeBodyHtml(slug, row, detail){
+// The compose FIELDS (subject/body/signature/link/#edPreview + the #recIn recipient), no action button. Mounted
+// by reference at every compose surface. composeBodyHtml adds the overlay/Mode-A Send; G3 Mode B mounts the
+// fields alone on its Message tab (the window's ONE Commit is the action, not a per-tab send).
+function composeFieldsHtml(slug, row, detail){
   return editorHtml(slug, row, detail)+
-    recipientHtml(slug, row, detail)+                                     // UNIFY: the SAME #recIn field the drawer mounts
+    recipientHtml(slug, row, detail);                                     // UNIFY: the SAME #recIn field the drawer mounts
+}
+function composeBodyHtml(slug, row, detail){
+  return composeFieldsHtml(slug, row, detail)+
     '<div class="acts"><button class="act send" id="nmSend" type="button">'+esc(t("nm_send"))+'</button></div>'+
     '<div class="act-status" id="nmStatus" role="status" aria-live="polite"></div>';
+}
+// G3: mount the SHARED compose fields into the window's Mode B Message tab (#owMsgPanel), wired like the overlay
+// minus the Send button (composeOwns still routes autosave here). editorHtml/recipientHtml are the SAME nodes.
+function owMsgMount(slug){
+  var host=document.getElementById("owMsgPanel"); if(!host) return;
+  var row = (typeof findRow==="function" && findRow(slug)) || { slug:slug };
+  host.innerHTML = composeFieldsHtml(slug, row, { opp:{ data:(__edBase[slug]||{}) } });
+  owMsgWire(slug);
+  oppReadData(slug).then(function(data){
+    __edBase[slug]=data;
+    host.innerHTML = composeFieldsHtml(slug, row, { opp:{ data:data } });
+    owMsgWire(slug);
+  }, function(){});
+}
+function owMsgWire(slug){
+  try{ wireEditor(slug); }catch(e){}
+  var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ nmTick(slug); nmScheduleSave(slug, 700); });
+  nmTick(slug);
 }
 function nmPanelHtml(slug, data){
   data = data || {};
@@ -3407,8 +3458,132 @@ function libPromoteConfirm(slug){
     });
 }
 
+// ===================================================================================================
+// G3: the window's Mode B ("message with campaign") PAGE tab - the ONE unified upload/library engine.
+// Three ENTRY MODES (Upload / Pick from Library / Duplicate) feed the SAME review component (libRowHtml:
+// pageFrameIframe render + editable title/slug/task + libCollectRows validation). NOTHING branches except the
+// COMMIT, which is the campaign shape (card + B2-stripped recipients + cycle + page). Reuses upBuildPlan,
+// libRowHtml, libCollectRows, libFetchPages, libMatches, pageReadHtml, pageFrameIframe, and the upCommit-shape
+// primitives (oppUpsert/pageUpsert/pagePublishRelay/upActivateBackground) - no new copies, no forked commit.
+var __owCommitting = false;
+function owPageStatus(msg, cls){ var el=document.getElementById("owPageStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
+function owCommitStatus(msg, cls){ var el=document.getElementById("owCommitStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
+// Load the existing-slug set for validation, EXCLUDING this opp's own slug (re-publishing the opp's own page is
+// not a conflict). libDistinctTasks feeds the task datalist. Best-effort; a failed read leaves an empty set.
+function owPageLoadExisting(){
+  return libFetchPages().then(function(pages){
+    __libPages = pages || [];
+    __libExisting = {}; (pages||[]).forEach(function(p){ if(p && p.slug && p.slug!==__owSlug) __libExisting[p.slug]=1; });
+    return pages || [];
+  }, function(){ __libExisting = __libExisting || {}; return []; });
+}
+// Mount a single row into the SAME review component the Library upload uses (libRowHtml), then wire its slug
+// input to libCollectRows exactly as libOnFile does. The row is held on __upPlan (one place, one review).
+function owPageSetReview(row){
+  row.slug = row.slug || __owSlug; row.warnings = row.warnings || [];
+  __upPlan = { rows:[row] };
+  var box=document.getElementById("owPageReview"); if(!box) return;
+  box.innerHTML = libTasksDatalist(libDistinctTasks(__libPages||[])) + libRowHtml(row, 0);
+  try{ libCollectRows(); }catch(e){}
+  var si=document.getElementById("libSlug-0"); if(si) si.addEventListener("input", function(){ try{ libCollectRows(); }catch(e){} });
+  var ti=document.getElementById("libTitle-0"); if(ti) ti.addEventListener("input", function(){ try{ libCollectRows(); }catch(e){} });
+  owPageStatus("", "");
+}
+// Entry mode 1: UPLOAD a new page/template (the SHARED upBuildPlan parse). First page row becomes the review.
+function owPageOnFile(files){
+  if(!files || !files.length) return;
+  owPageStatus(t("up_reading"), "");
+  Promise.all([ upBuildPlan(files), owPageLoadExisting() ]).then(function(a){
+    var plan=a[0], rows=(plan&&plan.rows)||[];
+    var pageRow=null; for(var i=0;i<rows.length;i++){ if(rows[i] && rows[i].page && rows[i].page.html){ pageRow=rows[i]; break; } }
+    if(!pageRow){ owPageStatus(t("up_no_html"), "bad"); return; }
+    owPageSetReview({ slug:__owSlug, title:pageRow.title||"", task:pageRow.task||"", page:pageRow.page });
+  }, function(e){ owPageStatus((e&&e.message==="not_a_zip")?t("up_not_zip"):t("up_read_failed"), "bad"); });
+}
+// Entry modes 2 + 3: PICK an existing page (its html copied to THIS campaign at the opp slug) or DUPLICATE it
+// (same html, a fresh slug the operator names). Both read the stored html via pageReadHtml -> the SAME review.
+function owPagePickList(){
+  var box=document.getElementById("owPickList"); if(!box) return;
+  owPageLoadExisting().then(function(pages){
+    var q=(document.getElementById("owPickSearch")||{}).value; q=String(q||"").trim().toLowerCase();
+    var list=(pages||[]).filter(function(p){ return libMatches(p, q); });
+    if(!list.length){ box.innerHTML='<div class="lv-empty">'+esc(q?t("lib_no_match"):t("lib_empty"))+'</div>'; return; }
+    box.innerHTML = list.map(function(p){
+      var title=(p.title&&String(p.title).trim())||upPretty(p.slug);
+      return '<div class="ow-pick-row"><div class="ow-pick-meta"><span class="ow-pick-t">'+esc(title)+'</span>'+
+        '<span class="ow-pick-s mono-iso" dir="ltr">'+esc(p.slug)+'</span></div>'+
+        '<div class="acts"><button class="act" type="button" data-ow-pick="'+esc(p.slug)+'">'+esc(t("ow_use"))+'</button>'+
+        '<button class="act" type="button" data-ow-dup="'+esc(p.slug)+'">'+esc(t("ow_duplicate"))+'</button></div></div>';
+    }).join("");
+    [].forEach.call(box.querySelectorAll("[data-ow-pick]"), function(b){ b.addEventListener("click", function(){ owPagePick(b.getAttribute("data-ow-pick"), false); }); });
+    [].forEach.call(box.querySelectorAll("[data-ow-dup]"), function(b){ b.addEventListener("click", function(){ owPagePick(b.getAttribute("data-ow-dup"), true); }); });
+  });
+}
+function owPagePick(slug, duplicate){
+  var p=libPageBySlug(slug)||{ slug:slug };
+  var title=(p.title&&String(p.title).trim())||upPretty(slug);
+  owPageStatus(t("up_reading"), "");
+  pageReadHtml(slug).then(function(html){
+    owPageStatus("", "");
+    // pick -> publish a copy at THIS opp's slug; duplicate -> a fresh slug the operator names (blank to force a choice)
+    owPageSetReview({ slug: duplicate ? "" : __owSlug, title:title, task:(p.task||""), page:{ html:String(html||"") } });
+  }, function(){ owPageStatus(t("up_read_failed"), "bad"); });
+}
+// Mount the Page tab: the three entry modes + the shared review + the publish status line. owModeBMount calls this.
+function owPageMount(slug){
+  var host=document.getElementById("owPagePanel"); if(!host) return;
+  host.innerHTML =
+    '<div class="ow-page-modes">'+
+      '<label class="act ow-up-btn">'+esc(t("ow_page_upload"))+'<input type="file" id="owPageFile" accept=".zip,.html,.htm" hidden></label>'+
+      '<button class="act" id="owPickBtn" type="button">'+esc(t("ow_page_pick"))+'</button>'+
+    '</div>'+
+    '<div class="ow-pick" id="owPick" hidden>'+
+      '<input class="lib-in" id="owPickSearch" type="text" placeholder="'+esc(t("lib_search_ph"))+'" autocomplete="off">'+
+      '<div class="ow-pick-list" id="owPickList"></div>'+
+    '</div>'+
+    '<div class="up-rows" id="owPageReview"></div>'+
+    '<div class="act-status" id="owPageStatus" role="status" aria-live="polite"></div>';
+  var fi=document.getElementById("owPageFile"); if(fi) fi.addEventListener("change", function(){ owPageOnFile(fi.files); });
+  var pb=document.getElementById("owPickBtn"); if(pb) pb.addEventListener("click", function(){ var pk=document.getElementById("owPick"); if(pk){ pk.hidden=!pk.hidden; if(!pk.hidden) owPagePickList(); } });
+  var q=document.getElementById("owPickSearch"); if(q) q.addEventListener("input", function(){ owPagePickList(); });
+  owPageLoadExisting();
+}
+// The ONE primary action: COMMIT the campaign. Reuses the upCommit-shape primitives (oppUpsert + pageUpsert +
+// pagePublishRelay + upActivateBackground) in the same order, but MERGES the campaign fields into the opp's
+// EXISTING data so the interactive compose (subject/body/signature) and any notes are preserved (upCommit's
+// own data-replace is right for a fresh zip row, but would clobber an interactively-composed opp). B2 strips
+// suppressed recipients here, exactly like upCommit. {{ASSET_BASE}} resolved. F1 publish-truth via
+// upActivateBackground. Single recipient is fine at G3; rich multi-recipient management is G4.
+function owCommitCampaign(slug){
+  if(__owCommitting) return Promise.resolve(false);
+  var subj=edVal("edSubj"), body=edVal("edBody");
+  if(!(subj.trim() && body.trim())){ owCommitStatus(t("nm_need_msg"), "bad"); return Promise.resolve(false); }
+  var rows=(__upPlan&&__upPlan.rows)||[]; var pr=rows[0];
+  if(!pr || !(pr.page && String(pr.page.html).trim())){ owCommitStatus(t("ow_need_page"), "bad"); return Promise.resolve(false); }
+  var v=libCollectRows(); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }   // format/dup/exists validation gate
+  __owCommitting=true; owCommitStatus(t("up_writing"), "");
+  var pageSlug=pr.slug||slug, html=assetBaseInto(pr.page.html), cycle=upNewCycle(), sig=edSignature();
+  var kept=sendToList().filter(function(r){ return !isSuppressed(r.addr); });   // B2 strip at commit
+  return oppReadData(slug).then(function(data){
+    var next=Object.assign({}, data, { source:"upload", page_title:pr.title||pageSlug,
+      outreach_subject:subj, outreach_text:body, sig:sig, recipients:kept });
+    if(pageSlug!==slug) next.page_slug=pageSlug;                                 // a renamed page: the card references it by page_slug
+    return oppUpsert(slug, { business:pr.title||slug, data:next, up:Date.now(), cycle:cycle })
+      .then(function(){ return pageUpsert(pageSlug, html, { title:pr.title, task:pr.task }); })
+      .then(function(){ return pagePublishRelay(pageSlug, withBeaconClient(html, cycle)); });
+  }).then(function(){
+    try{ upActivateBackground([pageSlug]); }catch(e){}                            // F1 publish-truth (never a false RED)
+    return reloadBoardData().then(function(){},function(){});
+  }).then(function(){
+    __owCommitting=false; owCommitStatus(t("ow_committed"), "ok"); return true;
+  }, function(e){
+    __owCommitting=false; owCommitStatus((e&&e.authRequired)?t("err"):t("up_write_failed"), "bad"); return false;
+  });
+}
+
 // Read-only hooks for board_upload_test:
 try{
+  window.__thriveOppCommitCampaign = function(slug){ return owCommitCampaign(slug); };   // G3: await the campaign commit
   window.__thriveUploadPlan = function(){ return __upPlan; };
   window.__thriveUploadVerify = function(slug){ return verifyLive(slug); };
   window.__thriveLibraryCommit = function(plan){ return upCommitLibrary(plan); };   // PR1: page-only commit + activate
@@ -3807,16 +3982,68 @@ try{
     if(__owMode==="a"){                                            // G2 Mode A: a single lean compose surface, no tab strip
       if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
       if(body){ body.innerHTML = '<div class="ow-mode" id="owModeA"></div>'; if(typeof owModeAMount==="function") owModeAMount(__owSlug); }
-    } else {                                                        // Mode B: a tab strip (scaffold) + its container (filled in G3)
-      if(tabs){ tabs.hidden=false; tabs.innerHTML=""; }
-      if(body){ body.innerHTML = '<div class="ow-mode" id="owModeB"></div>'; }
+    } else {                                                        // G3 Mode B: tabs (Message/Page/Recipients/Preview) + the one campaign Commit
+      if(tabs){ tabs.hidden=false; tabs.innerHTML = owTabsHtml(); owWireTabs(); }
+      if(body){ body.innerHTML = owModeBBodyHtml(); if(typeof owModeBMount==="function") owModeBMount(__owSlug); }
     }
   }
   function owSelectMode(mode){ __owMode = mode; owRender(); }
-  // G2: the window's Mode A is a recognized compose surface. edRoot (board-editor) resolves compose lookups to
-  // #owModeA while this is true, and composeOwns (board-newmsg) routes save/send here - the SAME shared path.
-  function owComposeActive(){ return !!(__owSlug && __owMode==="a"); }
-  function owComposeRoot(){ return owComposeActive() ? document.getElementById("owModeA") : null; }
+  // ---- G3 Mode B: the tabbed campaign window. Tabs switch instantly; the compose fields live in #owMsgPanel
+  //      (shared editorHtml/recipientHtml by reference); the Page tab is the ONE unified engine; the ONE
+  //      primary action is Commit (owCommitCampaign, board-upload). ----
+  var OW_TABS = [ {k:"msg", key:"ow_tab_msg"}, {k:"page", key:"ow_tab_page"}, {k:"recip", key:"ow_tab_recip"}, {k:"preview", key:"ow_tab_preview"} ];
+  var __owTab = "msg";
+  function owTabsHtml(){
+    return OW_TABS.map(function(tb){ return '<button class="ow-tab'+(tb.k===__owTab?" on":"")+'" role="tab" type="button" data-ow-tab="'+tb.k+'">'+esc(t(tb.key))+'</button>'; }).join("");
+  }
+  function owModeBBodyHtml(){
+    return '<div class="ow-panel" id="owMsgPanel"'+(__owTab==="msg"?"":" hidden")+'></div>'+
+      '<div class="ow-panel" id="owPagePanel"'+(__owTab==="page"?"":" hidden")+'></div>'+
+      '<div class="ow-panel" id="owRecipPanel"'+(__owTab==="recip"?"":" hidden")+'><div class="up-empty">'+esc(t("ow_recip_soon"))+'</div></div>'+
+      '<div class="ow-panel" id="owPreviewPanel"'+(__owTab==="preview"?"":" hidden")+'></div>'+
+      '<div class="ow-foot"><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
+        '<div class="act-status" id="owCommitStatus" role="status" aria-live="polite"></div></div>';
+  }
+  function owWireTabs(){
+    [].forEach.call(document.querySelectorAll("#owTabs [data-ow-tab]"), function(b){ b.addEventListener("click", function(){ owTabTo(b.getAttribute("data-ow-tab")); }); });
+  }
+  function owTabTo(tab){
+    __owTab = tab;
+    [].forEach.call(document.querySelectorAll("#owTabs .ow-tab"), function(b){ b.classList.toggle("on", b.getAttribute("data-ow-tab")===tab); });
+    var map={ msg:"owMsgPanel", page:"owPagePanel", recip:"owRecipPanel", preview:"owPreviewPanel" };
+    Object.keys(map).forEach(function(k){ var el=document.getElementById(map[k]); if(el) el.hidden = (k!==tab); });
+    if(tab==="preview" && typeof owPreviewMount==="function") owPreviewMount(__owSlug);   // compile fresh from the current compose
+  }
+  function owModeBMount(slug){
+    __owTab = "msg";
+    try{ if(typeof owMsgMount==="function") owMsgMount(slug); }catch(e){}       // Message tab: shared compose fields
+    try{ if(typeof owPageMount==="function") owPageMount(slug); }catch(e){}     // Page tab: the unified engine
+    var cb=document.getElementById("owCommit"); if(cb) cb.addEventListener("click", function(){ if(typeof owCommitCampaign==="function") owCommitCampaign(slug); });
+  }
+  // The Preview tab: the exact-send MESSAGE (compiled through the send path) and the PAGE, both tall srcdoc,
+  // switchable. Reuses edCompileFrom/edLiveData (the send compiler) and pageFrameIframe - no new preview code.
+  function owPreviewMount(slug){
+    var host=document.getElementById("owPreviewPanel"); if(!host) return;
+    host.innerHTML = '<div class="ow-prev-tabs"><button class="act on" id="owPrevMsgBtn" type="button">'+esc(t("ow_prev_msg"))+'</button>'+
+      '<button class="act" id="owPrevPageBtn" type="button">'+esc(t("ow_prev_page"))+'</button></div>'+
+      '<div class="ow-prev-box" id="owPrevBox"></div>';
+    function box(){ return document.getElementById("owPrevBox"); }
+    function mark(which){ var m=document.getElementById("owPrevMsgBtn"), p=document.getElementById("owPrevPageBtn"); if(m) m.classList.toggle("on", which==="msg"); if(p) p.classList.toggle("on", which==="page"); }
+    function showMsg(){ mark("msg"); var b=box(); if(!b) return; try{ var art=edCompileFrom(slug, edLiveData(slug)); b.innerHTML = pageFrameIframe(art.html); }catch(e){ b.innerHTML=''; } }
+    function showPage(){ mark("page"); var b=box(); if(!b) return; var pr = (__upPlan && __upPlan.rows || [])[0]; if(pr && pr.page && String(pr.page.html).trim()) b.innerHTML = pageFrameIframe(pr.page.html); else b.innerHTML = '<div class="up-empty">'+esc(t("ow_need_page"))+'</div>'; }
+    var mb=document.getElementById("owPrevMsgBtn"); if(mb) mb.addEventListener("click", showMsg);
+    var pb=document.getElementById("owPrevPageBtn"); if(pb) pb.addEventListener("click", showPage);
+    showMsg();
+  }
+  // G3: the window's Mode B compose fields (#owMsgPanel) are a recognized compose surface too, so edRoot binds
+  // there and composeOwns routes autosave - whichever Mode-B tab is visible (the fields stay mounted).
+  function owComposeActive(){ return !!(__owSlug && (__owMode==="a" || __owMode==="b")); }
+  function owComposeRoot(){
+    if(!__owSlug) return null;
+    if(__owMode==="a") return document.getElementById("owModeA");
+    if(__owMode==="b") return document.getElementById("owMsgPanel");
+    return null;
+  }
   function openOppWindow(slug){
     __owSlug = slug; __owMode = null;                              // always open on the selector
     var sc=document.getElementById("owScrim"); if(!sc){ openDrawer(slug); return; }   // fallback if the shell is absent

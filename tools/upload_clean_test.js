@@ -127,8 +127,8 @@ const PAGE_HTML = "<html><head><title>Acme</title></head><body><h1>Acme</h1></bo
   ck("guard: upResultHtml no longer renders the orphan line (up-orphans)", upload.indexOf("up-orphans") < 0, "up-orphans still rendered");
   ck("guard: upBuildPlan no longer collects informational", !/informational\.push/.test(upload), "informational.push remains");
   ck("guard: the count is plan.rows.length only", (upload.match(/var n = \(plan\.rows \|\| \[\]\)\.length;/g) || []).length >= 2, "count is not rows.length in both previews");
-  ck("guard: both file inputs accept .zip,.html,.htm",
-     (upload.match(/accept="\.zip,\.html,\.htm"/g) || []).length === 2, "accept not widened on both inputs");
+  ck("guard: every file input accepts .zip,.html,.htm (campaign, library, and the G3 Mode B Page tab)",
+     (upload.match(/accept="\.zip,\.html,\.htm"/g) || []).length === 3, "accept not widened on all inputs");
 
   console.log("");
   if (fails) { console.log(fails + " FAILED"); process.exit(1); }

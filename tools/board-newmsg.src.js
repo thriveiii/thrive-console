@@ -73,11 +73,35 @@ function nmBusiness(subj){ var s=String(subj==null?"":subj).trim(); return s ? s
 // ONE compose body, mounted by reference at every compose surface (the overlay #nmPanel, and G2's window Mode A
 // #owModeA): the SAME editorHtml (subject/body/signature/link/#edPreview) + recipientHtml (#recIn) + Send
 // (#nmSend) + status (#nmStatus). No second editor - the built shell holds one editorHtml/recipientHtml.
-function composeBodyHtml(slug, row, detail){
+// The compose FIELDS (subject/body/signature/link/#edPreview + the #recIn recipient), no action button. Mounted
+// by reference at every compose surface. composeBodyHtml adds the overlay/Mode-A Send; G3 Mode B mounts the
+// fields alone on its Message tab (the window's ONE Commit is the action, not a per-tab send).
+function composeFieldsHtml(slug, row, detail){
   return editorHtml(slug, row, detail)+
-    recipientHtml(slug, row, detail)+                                     // UNIFY: the SAME #recIn field the drawer mounts
+    recipientHtml(slug, row, detail);                                     // UNIFY: the SAME #recIn field the drawer mounts
+}
+function composeBodyHtml(slug, row, detail){
+  return composeFieldsHtml(slug, row, detail)+
     '<div class="acts"><button class="act send" id="nmSend" type="button">'+esc(t("nm_send"))+'</button></div>'+
     '<div class="act-status" id="nmStatus" role="status" aria-live="polite"></div>';
+}
+// G3: mount the SHARED compose fields into the window's Mode B Message tab (#owMsgPanel), wired like the overlay
+// minus the Send button (composeOwns still routes autosave here). editorHtml/recipientHtml are the SAME nodes.
+function owMsgMount(slug){
+  var host=document.getElementById("owMsgPanel"); if(!host) return;
+  var row = (typeof findRow==="function" && findRow(slug)) || { slug:slug };
+  host.innerHTML = composeFieldsHtml(slug, row, { opp:{ data:(__edBase[slug]||{}) } });
+  owMsgWire(slug);
+  oppReadData(slug).then(function(data){
+    __edBase[slug]=data;
+    host.innerHTML = composeFieldsHtml(slug, row, { opp:{ data:data } });
+    owMsgWire(slug);
+  }, function(){});
+}
+function owMsgWire(slug){
+  try{ wireEditor(slug); }catch(e){}
+  var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ nmTick(slug); nmScheduleSave(slug, 700); });
+  nmTick(slug);
 }
 function nmPanelHtml(slug, data){
   data = data || {};

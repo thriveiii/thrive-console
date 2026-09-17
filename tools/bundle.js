@@ -1007,6 +1007,23 @@ function buildBoard(){
   .ow-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px}
   .ow-mode{display:flex;flex-direction:column;gap:12px}
   .ow-modes{display:flex;flex-direction:column;gap:12px}
+  /* G3 Mode B: tab panels, the Page-tab engine, the pick list, the sticky Commit, the switchable preview. The
+     window's page previews are TALL (F2/F3 sizing) via a scoped override so the whole page shows, scrollable;
+     the GLOBAL .lv-frame stays as-is (the drawer/Library sizing decision is separate). */
+  .ow-panel{display:flex;flex-direction:column;gap:12px}
+  .ow-page-modes{display:flex;gap:10px;flex-wrap:wrap}
+  .ow-up-btn{cursor:pointer}
+  .ow-pick{display:flex;flex-direction:column;gap:8px}
+  .ow-pick-list{display:flex;flex-direction:column;gap:8px;max-height:44vh;overflow:auto}
+  .ow-pick-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #22222e;border-radius:10px;padding:10px 12px;background:#0e0e14}
+  .ow-pick-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .ow-pick-t{font-weight:650;color:#eef;word-break:break-word}
+  .ow-pick-s{font-size:12px;color:#8a8a93}
+  .ow-foot{position:sticky;inset-block-end:0;background:#0b0b11;border-top:1px solid #17171f;padding:12px 0 0;margin-block-start:16px;display:flex;align-items:center;gap:12px}
+  .ow-prev-tabs{display:flex;gap:8px}
+  .ow-prev-box{min-height:60vh}
+  #owPageReview .lv-frame,.ow-prev-box .lv-frame{height:62vh;min-height:360px}
+  html[dir="rtl"] .ow-pick-t,html[dir="rtl"] .ow-pick-s{letter-spacing:normal}
   .ow-mode-h{font-size:14px;color:#9a9aa6;margin:0 0 4px}
   .ow-mode-btn{display:block;width:100%;text-align:start;background:#0e0e14;border:1px solid #22222e;border-radius:12px;padding:16px 18px;color:#eef;font:inherit;font-size:15px;font-weight:650;cursor:pointer}
   .ow-mode-btn:hover{border-color:#37505c}
@@ -1292,6 +1309,11 @@ function buildBoard(){
           ow_title:"Opportunity", ow_pick:"Choose how to send", ow_change_mode:"Change mode",
           ow_mode_a:"Message without campaign", ow_mode_a_sub:"A single message to one or more recipients.",
           ow_mode_b:"Message with campaign", ow_mode_b_sub:"A message plus a hosted page.",
+          ow_tab_msg:"Message", ow_tab_page:"Page", ow_tab_recip:"Recipients", ow_tab_preview:"Preview",
+          ow_commit:"Create campaign", ow_committed:"Campaign created.", ow_need_page:"Add a page first.",
+          ow_page_upload:"Upload a page", ow_page_pick:"Pick from Library", ow_use:"Use", ow_duplicate:"Duplicate",
+          ow_prev_msg:"Message", ow_prev_page:"Page", ow_recip_soon:"Per-recipient management arrives next.",
+          lib_fix_rows:"Fix the highlighted fields first.",
           nm_send:"Send message", nm_need_msg:"Add a subject and body first.", nm_need_to:"Add a recipient email first.",
           up_open:"Upload campaign", up_h:"Upload a campaign zip", up_hint:"A zip of html pages plus message texts and recipient emails. Nothing is written until you approve.",
           up_reading:"Reading the zip...", up_matched:"Pages matched:", up_approve:"Approve and create drafts", up_writing:"Creating drafts...",
@@ -1370,6 +1392,11 @@ function buildBoard(){
           ow_title:"الفرصة", ow_pick:"اختر طريقة الإرسال", ow_change_mode:"تغيير الطريقة",
           ow_mode_a:"رسالة بدون حملة", ow_mode_a_sub:"رسالة واحدة إلى مستلم أو أكثر.",
           ow_mode_b:"رسالة مع حملة", ow_mode_b_sub:"رسالة مع صفحة مستضافة.",
+          ow_tab_msg:"النص", ow_tab_page:"الصفحة", ow_tab_recip:"المستلمون", ow_tab_preview:"المعاينة",
+          ow_commit:"إنشاء الحملة", ow_committed:"أُنشئت الحملة.", ow_need_page:"أضف صفحة أولًا.",
+          ow_page_upload:"رفع صفحة", ow_page_pick:"اختر من المكتبة", ow_use:"استخدام", ow_duplicate:"نسخ",
+          ow_prev_msg:"الرسالة", ow_prev_page:"الصفحة", ow_recip_soon:"إدارة المستلمين قادمة قريبًا.",
+          lib_fix_rows:"صحّح الحقول المميّزة أولًا.",
           nm_send:"إرسال الرسالة", nm_need_msg:"أضف موضوعًا ونصًا أولًا.", nm_need_to:"أضف بريد المستلم أولًا.",
           up_open:"رفع حملة", up_h:"ارفع ملف حملة مضغوط", up_hint:"ملف مضغوط يضم صفحات html ونصوص الرسائل وبريد المستلمين. لا يُكتب شيء حتى توافق.",
           up_reading:"جارٍ قراءة الملف المضغوط...", up_matched:"الصفحات المطابَقة:", up_approve:"وافق وأنشئ المسودّات", up_writing:"جارٍ إنشاء المسودّات...",
@@ -1996,16 +2023,68 @@ ${UPLOAD_SRC}
     if(__owMode==="a"){                                            // G2 Mode A: a single lean compose surface, no tab strip
       if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
       if(body){ body.innerHTML = '<div class="ow-mode" id="owModeA"></div>'; if(typeof owModeAMount==="function") owModeAMount(__owSlug); }
-    } else {                                                        // Mode B: a tab strip (scaffold) + its container (filled in G3)
-      if(tabs){ tabs.hidden=false; tabs.innerHTML=""; }
-      if(body){ body.innerHTML = '<div class="ow-mode" id="owModeB"></div>'; }
+    } else {                                                        // G3 Mode B: tabs (Message/Page/Recipients/Preview) + the one campaign Commit
+      if(tabs){ tabs.hidden=false; tabs.innerHTML = owTabsHtml(); owWireTabs(); }
+      if(body){ body.innerHTML = owModeBBodyHtml(); if(typeof owModeBMount==="function") owModeBMount(__owSlug); }
     }
   }
   function owSelectMode(mode){ __owMode = mode; owRender(); }
-  // G2: the window's Mode A is a recognized compose surface. edRoot (board-editor) resolves compose lookups to
-  // #owModeA while this is true, and composeOwns (board-newmsg) routes save/send here - the SAME shared path.
-  function owComposeActive(){ return !!(__owSlug && __owMode==="a"); }
-  function owComposeRoot(){ return owComposeActive() ? document.getElementById("owModeA") : null; }
+  // ---- G3 Mode B: the tabbed campaign window. Tabs switch instantly; the compose fields live in #owMsgPanel
+  //      (shared editorHtml/recipientHtml by reference); the Page tab is the ONE unified engine; the ONE
+  //      primary action is Commit (owCommitCampaign, board-upload). ----
+  var OW_TABS = [ {k:"msg", key:"ow_tab_msg"}, {k:"page", key:"ow_tab_page"}, {k:"recip", key:"ow_tab_recip"}, {k:"preview", key:"ow_tab_preview"} ];
+  var __owTab = "msg";
+  function owTabsHtml(){
+    return OW_TABS.map(function(tb){ return '<button class="ow-tab'+(tb.k===__owTab?" on":"")+'" role="tab" type="button" data-ow-tab="'+tb.k+'">'+esc(t(tb.key))+'</button>'; }).join("");
+  }
+  function owModeBBodyHtml(){
+    return '<div class="ow-panel" id="owMsgPanel"'+(__owTab==="msg"?"":" hidden")+'></div>'+
+      '<div class="ow-panel" id="owPagePanel"'+(__owTab==="page"?"":" hidden")+'></div>'+
+      '<div class="ow-panel" id="owRecipPanel"'+(__owTab==="recip"?"":" hidden")+'><div class="up-empty">'+esc(t("ow_recip_soon"))+'</div></div>'+
+      '<div class="ow-panel" id="owPreviewPanel"'+(__owTab==="preview"?"":" hidden")+'></div>'+
+      '<div class="ow-foot"><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
+        '<div class="act-status" id="owCommitStatus" role="status" aria-live="polite"></div></div>';
+  }
+  function owWireTabs(){
+    [].forEach.call(document.querySelectorAll("#owTabs [data-ow-tab]"), function(b){ b.addEventListener("click", function(){ owTabTo(b.getAttribute("data-ow-tab")); }); });
+  }
+  function owTabTo(tab){
+    __owTab = tab;
+    [].forEach.call(document.querySelectorAll("#owTabs .ow-tab"), function(b){ b.classList.toggle("on", b.getAttribute("data-ow-tab")===tab); });
+    var map={ msg:"owMsgPanel", page:"owPagePanel", recip:"owRecipPanel", preview:"owPreviewPanel" };
+    Object.keys(map).forEach(function(k){ var el=document.getElementById(map[k]); if(el) el.hidden = (k!==tab); });
+    if(tab==="preview" && typeof owPreviewMount==="function") owPreviewMount(__owSlug);   // compile fresh from the current compose
+  }
+  function owModeBMount(slug){
+    __owTab = "msg";
+    try{ if(typeof owMsgMount==="function") owMsgMount(slug); }catch(e){}       // Message tab: shared compose fields
+    try{ if(typeof owPageMount==="function") owPageMount(slug); }catch(e){}     // Page tab: the unified engine
+    var cb=document.getElementById("owCommit"); if(cb) cb.addEventListener("click", function(){ if(typeof owCommitCampaign==="function") owCommitCampaign(slug); });
+  }
+  // The Preview tab: the exact-send MESSAGE (compiled through the send path) and the PAGE, both tall srcdoc,
+  // switchable. Reuses edCompileFrom/edLiveData (the send compiler) and pageFrameIframe - no new preview code.
+  function owPreviewMount(slug){
+    var host=document.getElementById("owPreviewPanel"); if(!host) return;
+    host.innerHTML = '<div class="ow-prev-tabs"><button class="act on" id="owPrevMsgBtn" type="button">'+esc(t("ow_prev_msg"))+'</button>'+
+      '<button class="act" id="owPrevPageBtn" type="button">'+esc(t("ow_prev_page"))+'</button></div>'+
+      '<div class="ow-prev-box" id="owPrevBox"></div>';
+    function box(){ return document.getElementById("owPrevBox"); }
+    function mark(which){ var m=document.getElementById("owPrevMsgBtn"), p=document.getElementById("owPrevPageBtn"); if(m) m.classList.toggle("on", which==="msg"); if(p) p.classList.toggle("on", which==="page"); }
+    function showMsg(){ mark("msg"); var b=box(); if(!b) return; try{ var art=edCompileFrom(slug, edLiveData(slug)); b.innerHTML = pageFrameIframe(art.html); }catch(e){ b.innerHTML=''; } }
+    function showPage(){ mark("page"); var b=box(); if(!b) return; var pr = (__upPlan && __upPlan.rows || [])[0]; if(pr && pr.page && String(pr.page.html).trim()) b.innerHTML = pageFrameIframe(pr.page.html); else b.innerHTML = '<div class="up-empty">'+esc(t("ow_need_page"))+'</div>'; }
+    var mb=document.getElementById("owPrevMsgBtn"); if(mb) mb.addEventListener("click", showMsg);
+    var pb=document.getElementById("owPrevPageBtn"); if(pb) pb.addEventListener("click", showPage);
+    showMsg();
+  }
+  // G3: the window's Mode B compose fields (#owMsgPanel) are a recognized compose surface too, so edRoot binds
+  // there and composeOwns routes autosave - whichever Mode-B tab is visible (the fields stay mounted).
+  function owComposeActive(){ return !!(__owSlug && (__owMode==="a" || __owMode==="b")); }
+  function owComposeRoot(){
+    if(!__owSlug) return null;
+    if(__owMode==="a") return document.getElementById("owModeA");
+    if(__owMode==="b") return document.getElementById("owMsgPanel");
+    return null;
+  }
   function openOppWindow(slug){
     __owSlug = slug; __owMode = null;                              // always open on the selector
     var sc=document.getElementById("owScrim"); if(!sc){ openDrawer(slug); return; }   // fallback if the shell is absent

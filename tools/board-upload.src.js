@@ -1179,8 +1179,132 @@ function libPromoteConfirm(slug){
     });
 }
 
+// ===================================================================================================
+// G3: the window's Mode B ("message with campaign") PAGE tab - the ONE unified upload/library engine.
+// Three ENTRY MODES (Upload / Pick from Library / Duplicate) feed the SAME review component (libRowHtml:
+// pageFrameIframe render + editable title/slug/task + libCollectRows validation). NOTHING branches except the
+// COMMIT, which is the campaign shape (card + B2-stripped recipients + cycle + page). Reuses upBuildPlan,
+// libRowHtml, libCollectRows, libFetchPages, libMatches, pageReadHtml, pageFrameIframe, and the upCommit-shape
+// primitives (oppUpsert/pageUpsert/pagePublishRelay/upActivateBackground) - no new copies, no forked commit.
+var __owCommitting = false;
+function owPageStatus(msg, cls){ var el=document.getElementById("owPageStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
+function owCommitStatus(msg, cls){ var el=document.getElementById("owCommitStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
+// Load the existing-slug set for validation, EXCLUDING this opp's own slug (re-publishing the opp's own page is
+// not a conflict). libDistinctTasks feeds the task datalist. Best-effort; a failed read leaves an empty set.
+function owPageLoadExisting(){
+  return libFetchPages().then(function(pages){
+    __libPages = pages || [];
+    __libExisting = {}; (pages||[]).forEach(function(p){ if(p && p.slug && p.slug!==__owSlug) __libExisting[p.slug]=1; });
+    return pages || [];
+  }, function(){ __libExisting = __libExisting || {}; return []; });
+}
+// Mount a single row into the SAME review component the Library upload uses (libRowHtml), then wire its slug
+// input to libCollectRows exactly as libOnFile does. The row is held on __upPlan (one place, one review).
+function owPageSetReview(row){
+  row.slug = row.slug || __owSlug; row.warnings = row.warnings || [];
+  __upPlan = { rows:[row] };
+  var box=document.getElementById("owPageReview"); if(!box) return;
+  box.innerHTML = libTasksDatalist(libDistinctTasks(__libPages||[])) + libRowHtml(row, 0);
+  try{ libCollectRows(); }catch(e){}
+  var si=document.getElementById("libSlug-0"); if(si) si.addEventListener("input", function(){ try{ libCollectRows(); }catch(e){} });
+  var ti=document.getElementById("libTitle-0"); if(ti) ti.addEventListener("input", function(){ try{ libCollectRows(); }catch(e){} });
+  owPageStatus("", "");
+}
+// Entry mode 1: UPLOAD a new page/template (the SHARED upBuildPlan parse). First page row becomes the review.
+function owPageOnFile(files){
+  if(!files || !files.length) return;
+  owPageStatus(t("up_reading"), "");
+  Promise.all([ upBuildPlan(files), owPageLoadExisting() ]).then(function(a){
+    var plan=a[0], rows=(plan&&plan.rows)||[];
+    var pageRow=null; for(var i=0;i<rows.length;i++){ if(rows[i] && rows[i].page && rows[i].page.html){ pageRow=rows[i]; break; } }
+    if(!pageRow){ owPageStatus(t("up_no_html"), "bad"); return; }
+    owPageSetReview({ slug:__owSlug, title:pageRow.title||"", task:pageRow.task||"", page:pageRow.page });
+  }, function(e){ owPageStatus((e&&e.message==="not_a_zip")?t("up_not_zip"):t("up_read_failed"), "bad"); });
+}
+// Entry modes 2 + 3: PICK an existing page (its html copied to THIS campaign at the opp slug) or DUPLICATE it
+// (same html, a fresh slug the operator names). Both read the stored html via pageReadHtml -> the SAME review.
+function owPagePickList(){
+  var box=document.getElementById("owPickList"); if(!box) return;
+  owPageLoadExisting().then(function(pages){
+    var q=(document.getElementById("owPickSearch")||{}).value; q=String(q||"").trim().toLowerCase();
+    var list=(pages||[]).filter(function(p){ return libMatches(p, q); });
+    if(!list.length){ box.innerHTML='<div class="lv-empty">'+esc(q?t("lib_no_match"):t("lib_empty"))+'</div>'; return; }
+    box.innerHTML = list.map(function(p){
+      var title=(p.title&&String(p.title).trim())||upPretty(p.slug);
+      return '<div class="ow-pick-row"><div class="ow-pick-meta"><span class="ow-pick-t">'+esc(title)+'</span>'+
+        '<span class="ow-pick-s mono-iso" dir="ltr">'+esc(p.slug)+'</span></div>'+
+        '<div class="acts"><button class="act" type="button" data-ow-pick="'+esc(p.slug)+'">'+esc(t("ow_use"))+'</button>'+
+        '<button class="act" type="button" data-ow-dup="'+esc(p.slug)+'">'+esc(t("ow_duplicate"))+'</button></div></div>';
+    }).join("");
+    [].forEach.call(box.querySelectorAll("[data-ow-pick]"), function(b){ b.addEventListener("click", function(){ owPagePick(b.getAttribute("data-ow-pick"), false); }); });
+    [].forEach.call(box.querySelectorAll("[data-ow-dup]"), function(b){ b.addEventListener("click", function(){ owPagePick(b.getAttribute("data-ow-dup"), true); }); });
+  });
+}
+function owPagePick(slug, duplicate){
+  var p=libPageBySlug(slug)||{ slug:slug };
+  var title=(p.title&&String(p.title).trim())||upPretty(slug);
+  owPageStatus(t("up_reading"), "");
+  pageReadHtml(slug).then(function(html){
+    owPageStatus("", "");
+    // pick -> publish a copy at THIS opp's slug; duplicate -> a fresh slug the operator names (blank to force a choice)
+    owPageSetReview({ slug: duplicate ? "" : __owSlug, title:title, task:(p.task||""), page:{ html:String(html||"") } });
+  }, function(){ owPageStatus(t("up_read_failed"), "bad"); });
+}
+// Mount the Page tab: the three entry modes + the shared review + the publish status line. owModeBMount calls this.
+function owPageMount(slug){
+  var host=document.getElementById("owPagePanel"); if(!host) return;
+  host.innerHTML =
+    '<div class="ow-page-modes">'+
+      '<label class="act ow-up-btn">'+esc(t("ow_page_upload"))+'<input type="file" id="owPageFile" accept=".zip,.html,.htm" hidden></label>'+
+      '<button class="act" id="owPickBtn" type="button">'+esc(t("ow_page_pick"))+'</button>'+
+    '</div>'+
+    '<div class="ow-pick" id="owPick" hidden>'+
+      '<input class="lib-in" id="owPickSearch" type="text" placeholder="'+esc(t("lib_search_ph"))+'" autocomplete="off">'+
+      '<div class="ow-pick-list" id="owPickList"></div>'+
+    '</div>'+
+    '<div class="up-rows" id="owPageReview"></div>'+
+    '<div class="act-status" id="owPageStatus" role="status" aria-live="polite"></div>';
+  var fi=document.getElementById("owPageFile"); if(fi) fi.addEventListener("change", function(){ owPageOnFile(fi.files); });
+  var pb=document.getElementById("owPickBtn"); if(pb) pb.addEventListener("click", function(){ var pk=document.getElementById("owPick"); if(pk){ pk.hidden=!pk.hidden; if(!pk.hidden) owPagePickList(); } });
+  var q=document.getElementById("owPickSearch"); if(q) q.addEventListener("input", function(){ owPagePickList(); });
+  owPageLoadExisting();
+}
+// The ONE primary action: COMMIT the campaign. Reuses the upCommit-shape primitives (oppUpsert + pageUpsert +
+// pagePublishRelay + upActivateBackground) in the same order, but MERGES the campaign fields into the opp's
+// EXISTING data so the interactive compose (subject/body/signature) and any notes are preserved (upCommit's
+// own data-replace is right for a fresh zip row, but would clobber an interactively-composed opp). B2 strips
+// suppressed recipients here, exactly like upCommit. {{ASSET_BASE}} resolved. F1 publish-truth via
+// upActivateBackground. Single recipient is fine at G3; rich multi-recipient management is G4.
+function owCommitCampaign(slug){
+  if(__owCommitting) return Promise.resolve(false);
+  var subj=edVal("edSubj"), body=edVal("edBody");
+  if(!(subj.trim() && body.trim())){ owCommitStatus(t("nm_need_msg"), "bad"); return Promise.resolve(false); }
+  var rows=(__upPlan&&__upPlan.rows)||[]; var pr=rows[0];
+  if(!pr || !(pr.page && String(pr.page.html).trim())){ owCommitStatus(t("ow_need_page"), "bad"); return Promise.resolve(false); }
+  var v=libCollectRows(); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }   // format/dup/exists validation gate
+  __owCommitting=true; owCommitStatus(t("up_writing"), "");
+  var pageSlug=pr.slug||slug, html=assetBaseInto(pr.page.html), cycle=upNewCycle(), sig=edSignature();
+  var kept=sendToList().filter(function(r){ return !isSuppressed(r.addr); });   // B2 strip at commit
+  return oppReadData(slug).then(function(data){
+    var next=Object.assign({}, data, { source:"upload", page_title:pr.title||pageSlug,
+      outreach_subject:subj, outreach_text:body, sig:sig, recipients:kept });
+    if(pageSlug!==slug) next.page_slug=pageSlug;                                 // a renamed page: the card references it by page_slug
+    return oppUpsert(slug, { business:pr.title||slug, data:next, up:Date.now(), cycle:cycle })
+      .then(function(){ return pageUpsert(pageSlug, html, { title:pr.title, task:pr.task }); })
+      .then(function(){ return pagePublishRelay(pageSlug, withBeaconClient(html, cycle)); });
+  }).then(function(){
+    try{ upActivateBackground([pageSlug]); }catch(e){}                            // F1 publish-truth (never a false RED)
+    return reloadBoardData().then(function(){},function(){});
+  }).then(function(){
+    __owCommitting=false; owCommitStatus(t("ow_committed"), "ok"); return true;
+  }, function(e){
+    __owCommitting=false; owCommitStatus((e&&e.authRequired)?t("err"):t("up_write_failed"), "bad"); return false;
+  });
+}
+
 // Read-only hooks for board_upload_test:
 try{
+  window.__thriveOppCommitCampaign = function(slug){ return owCommitCampaign(slug); };   // G3: await the campaign commit
   window.__thriveUploadPlan = function(){ return __upPlan; };
   window.__thriveUploadVerify = function(slug){ return verifyLive(slug); };
   window.__thriveLibraryCommit = function(plan){ return upCommitLibrary(plan); };   // PR1: page-only commit + activate
