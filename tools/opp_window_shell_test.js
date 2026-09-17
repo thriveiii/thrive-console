@@ -7,8 +7,9 @@
 // Proves:
 //   - openOppWindow(slug) reveals #owScrim (window), leaves the drawer #scrim untouched, and shows the mode
 //     selector (both choices) with the tab strip hidden and the change-mode button hidden;
-//   - selecting Mode A mounts an empty #owModeA (no tab strip); Mode B mounts #owModeB WITH the tab strip and
-//     the change-mode button; the mode can be switched back to the selector;
+//   - selecting Mode A mounts an empty #owModeA (no tab strip); Mode B (G3) shows the tab strip + mounts the
+//     Message/Page/Recipients/Preview panels and the one Commit, with the change-mode button; the mode can be
+//     switched back to the selector;
 //   - closeOppWindow hides the window;
 //   - openOppWindow falls back to openDrawer if the shell node is absent (drawer stays callable).
 // Plus source guards: markup + centered CSS + bottom-sheet + backdrop/Escape wiring + the card-tap route +
@@ -50,7 +51,8 @@ function load(shellPresent) {
     getElementById: function (id) {
       if (id === "owScrim" && els.__noOwScrim) return null;   // simulate the shell being absent
       return el(id);
-    }
+    },
+    querySelectorAll: function () { return []; }               // owWireTabs iterates the tab buttons (none in this stub)
   };
   const stubs = {
     esc: function (s) { return String(s == null ? "" : s); },
@@ -60,11 +62,19 @@ function load(shellPresent) {
     document: documentStub
   };
   const names = Object.keys(stubs);
+  // OW_TABS + __owTab are buildBoard vars (not functions); mirror them here like __owSlug/__owMode. The G3 Mode B
+  // branch of owRender pulls in owTabsHtml/owModeBBodyHtml/owWireTabs/owModeBMount; owModeBMount's owMsgMount/
+  // owPageMount/owCommitCampaign live in the src modules and stay typeof-guarded (skipped in this sandbox).
   const body =
-    "var __owSlug=null, __owMode=null;\n" +
+    "var __owSlug=null, __owMode=null, __owTab='msg';\n" +
+    "var OW_TABS=[{k:'msg',key:'ow_tab_msg'},{k:'page',key:'ow_tab_page'},{k:'recip',key:'ow_tab_recip'},{k:'preview',key:'ow_tab_preview'}];\n" +
     fnSrc(BUNDLE, "function owModeSelectHtml(") + "\n" +
     fnSrc(BUNDLE, "function owRender(") + "\n" +
     fnSrc(BUNDLE, "function owSelectMode(") + "\n" +
+    fnSrc(BUNDLE, "function owTabsHtml(") + "\n" +
+    fnSrc(BUNDLE, "function owModeBBodyHtml(") + "\n" +
+    fnSrc(BUNDLE, "function owWireTabs(") + "\n" +
+    fnSrc(BUNDLE, "function owModeBMount(") + "\n" +
     fnSrc(BUNDLE, "function openOppWindow(") + "\n" +
     fnSrc(BUNDLE, "function closeOppWindow(") + "\n" +
     "return { openOppWindow:openOppWindow, owSelectMode:owSelectMode, closeOppWindow:closeOppWindow };";
@@ -113,9 +123,12 @@ U.owSelectMode("a");
 ck("Mode A mounts an empty #owModeA with NO tab strip", bodyEl.innerHTML.indexOf('id="owModeA"') >= 0 && tabs.hidden === true, bodyEl.innerHTML);
 ck("...and the change-mode control is now shown", chg.hidden === false);
 
-// ---- behavior: Mode B -----------------------------------------------------------------------------
+// ---- behavior: Mode B (G3) ------------------------------------------------------------------------
 U.owSelectMode("b");
-ck("Mode B mounts #owModeB WITH the tab strip visible", bodyEl.innerHTML.indexOf('id="owModeB"') >= 0 && tabs.hidden === false, { body: bodyEl.innerHTML, tabs: tabs.hidden });
+ck("Mode B shows the tab strip (Message/Page/Recipients/Preview) and mounts the panels",
+   tabs.hidden === false && tabs.innerHTML.indexOf('data-ow-tab="page"') >= 0 &&
+   bodyEl.innerHTML.indexOf('id="owMsgPanel"') >= 0 && bodyEl.innerHTML.indexOf('id="owPagePanel"') >= 0 &&
+   bodyEl.innerHTML.indexOf('id="owCommit"') >= 0, { body: bodyEl.innerHTML, tabs: tabs.innerHTML });
 
 // ---- behavior: switch back to selector, then close ------------------------------------------------
 U.owSelectMode(null);
