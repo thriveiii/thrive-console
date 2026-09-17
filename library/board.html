@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="95f78d6d">
+<meta name="thrive-build" content="dd556f2c">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -319,7 +319,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build 95f78d6d</span>
+    <span class="muted">build dd556f2c</span>
   </div>
   <div id="root"></div>
 </div>
@@ -343,7 +343,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "95f78d6d";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "dd556f2c";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -416,6 +416,7 @@
           ow_title:"Opportunity", ow_pick:"Choose how to send", ow_change_mode:"Change mode",
           ow_mode_a:"Message without campaign", ow_mode_a_sub:"A single message to one or more recipients.",
           ow_mode_b:"Message with campaign", ow_mode_b_sub:"A message plus a hosted page.",
+          ow_compose:"Compose",
           ow_tab_msg:"Message", ow_tab_page:"Page", ow_tab_recip:"Recipients", ow_tab_preview:"Preview",
           ow_commit:"Create campaign", ow_committed:"Campaign created.", ow_need_page:"Add a page first.",
           ow_page_upload:"Upload a page", ow_page_pick:"Pick from Library", ow_use:"Use", ow_duplicate:"Duplicate",
@@ -501,6 +502,7 @@
           ow_title:"الفرصة", ow_pick:"اختر طريقة الإرسال", ow_change_mode:"تغيير الطريقة",
           ow_mode_a:"رسالة بدون حملة", ow_mode_a_sub:"رسالة واحدة إلى مستلم أو أكثر.",
           ow_mode_b:"رسالة مع حملة", ow_mode_b_sub:"رسالة مع صفحة مستضافة.",
+          ow_compose:"إنشاء رسالة",
           ow_tab_msg:"النص", ow_tab_page:"الصفحة", ow_tab_recip:"المستلمون", ow_tab_preview:"المعاينة",
           ow_commit:"إنشاء الحملة", ow_committed:"أُنشئت الحملة.", ow_need_page:"أضف صفحة أولًا.",
           ow_page_upload:"رفع صفحة", ow_page_pick:"اختر من المكتبة", ow_use:"استخدام", ow_duplicate:"نسخ",
@@ -3978,14 +3980,15 @@ try{
                     // paint so a "Saved." confirmation survives the detail-enrichment re-render. __notes: per-slug
                     // in-session confirmed notes (from a read-back), so a just-added note shows without a refetch.
   function actBtn(action, key, cls){ return '<button class="act'+(cls?(" "+cls):"")+'" type="button" data-act="'+action+'">'+esc(t(key))+'</button>'; }
-  function actionsHtml(row){
+  function actionsHtml(row, opts){
     var st=(row && row.stage) || "", arch=!!(row && row.archived);
+    var noSend=!!(opts && opts.noSend);                                 // G4.5: the Details view has no compose editor mounted, so it omits Send (composing is a mode you enter)
     var inTray = arch || TRAY_STAGES.indexOf(st)>=0;                    // archived, or a legacy won/lost/dropped row
     var btns=[];
     if(inTray){
       btns.push(actBtn("reopen","a_reopen",""));                        // the only sensible forward write on a closed card
     } else {
-      if(editorEligible(row) && relayEp()) btns.push(actBtn("send","s_send","send")); // UNIFY: Send renders wherever the compose editor does (endpoint set); it is DISABLED (sendApplyGate) until subject+body+recipient, never gated on the stored has_email flag
+      if(!noSend && editorEligible(row) && relayEp()) btns.push(actBtn("send","s_send","send")); // UNIFY: Send renders wherever the compose editor does (endpoint set); it is DISABLED (sendApplyGate) until subject+body+recipient, never gated on the stored has_email flag
       if(st==="draft") btns.push(actBtn("promote","a_promote","win")); // the one declarable forward step
       else if(st==="live") btns.push(actBtn("revert","a_revert",""));
       btns.push(actBtn("archive","a_archive","warn"));                  // FATE: archive (carries all history + stamps archived_at/archived_from)
@@ -4067,8 +4070,20 @@ try{
   //      board repaints (the card jumps back), and a visible RED status shows - never a silent wrong state. ----
   function findRow(slug){ var r=null; if(__data && __data.rows) __data.rows.forEach(function(x){ if(x && x.slug===slug) r=x; }); return r; }
   function replaceRow(slug, snap){ if(!__data || !__data.rows) return; for(var i=0;i<__data.rows.length;i++){ if(__data.rows[i] && __data.rows[i].slug===slug){ __data.rows[i]=snap; return; } } }
-  function drawerActsDisabled(on){ var dw=document.getElementById("drawer"); if(!dw) return; [].forEach.call(dw.querySelectorAll(".act"), function(b){ b.disabled=!!on; }); }
-  function refreshDrawer(slug){ if(__drawerSlug!==slug) return; if(!findRow(slug)){ closeDrawer(); return; } openDrawer(slug); }
+  function drawerActsDisabled(on){                                     // disable action buttons on whichever surface is showing this opp
+    [document.getElementById("drawer"), document.getElementById("owDetail")].forEach(function(node){
+      if(node) [].forEach.call(node.querySelectorAll(".act"), function(b){ b.disabled=!!on; });
+    });
+  }
+  // The single re-render funnel after a write / a delete-arm. G4.5: it also serves the window Details view, so the
+  // shared onAction / runOppWrite / runOppDelete need no per-surface branching - they call refreshDrawer as before.
+  function refreshDrawer(slug){
+    if(typeof owDetailActive==="function" && owDetailActive(slug)){ owDetailRefresh(slug); return; }
+    if(__drawerSlug!==slug) return; if(!findRow(slug)){ closeDrawer(); return; } openDrawer(slug);
+  }
+  // Is EITHER opp surface (the drawer, or the window Details view) currently showing this opp? Used by the write
+  // handlers to decide whether an inline re-render suffices or a board-level red must show instead.
+  function oppSurfaceActive(slug){ return __drawerSlug===slug || (typeof owDetailActive==="function" && owDetailActive(slug)); }
 
   // ---- G1: the centered opportunity window (#oppWindow) -------------------------------------------------
   // The default opp-open path. This step is the SHELL + mode selector ONLY: the mode containers are empty and
@@ -4089,7 +4104,9 @@ try{
   function owRender(){
     var title=document.getElementById("owTitle");
     if(title){ var row=findRow(__owSlug); title.textContent = (row && (row.business||row.slug)) || __owSlug || t("ow_title"); }
-    var chg=document.getElementById("owChangeMode"); if(chg){ chg.hidden = !__owMode; chg.textContent = t("ow_change_mode"); }
+    // The header button: from a compose mode it "changes mode" (back to the selector); from the Details view it
+    // is the "Compose" entry (a new message for this opp). Both land on the selector; only the label differs.
+    var chg=document.getElementById("owChangeMode"); if(chg){ chg.hidden = !__owMode; chg.textContent = (__owMode==="detail") ? t("ow_compose") : t("ow_change_mode"); }
     var tabs=document.getElementById("owTabs"), body=document.getElementById("owBody");
     if(!__owMode){                                                  // the mode selector, shown first
       if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
@@ -4099,7 +4116,12 @@ try{
       }
       return;
     }
-    // A mode is chosen.
+    if(__owMode==="detail"){                                        // G4.5 detail-first: the drawer's detail/management half, in the window
+      if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
+      if(body){ body.innerHTML = '<div class="ow-detail" id="owDetail"></div>'; if(typeof owDetailMount==="function") owDetailMount(__owSlug); }
+      return;
+    }
+    // A compose mode is chosen.
     if(__owMode==="a"){                                            // G2 Mode A: a single lean compose surface, no tab strip
       if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
       if(body){ body.innerHTML = '<div class="ow-mode" id="owModeA"></div>'; if(typeof owModeAMount==="function") owModeAMount(__owSlug); }
@@ -4166,8 +4188,45 @@ try{
     if(__owMode==="b") return document.getElementById("owMsgPanel");
     return null;
   }
-  function openOppWindow(slug){
-    __owSlug = slug; __owMode = null;                              // always open on the selector
+  // ---- G4.5 detail-first: the drawer's DETAIL + MANAGEMENT half, brought into the window and mounted BY
+  //      REFERENCE. The upper (compose) half already lives in the compose modes; this view carries the lower
+  //      half the drawer stacked - signals + channels + archived stamp + fate actions + the reply thread + the
+  //      record + notes + the activity timeline - reusing numsHtml/factsHtml/archivedInfoHtml/actionsHtml/
+  //      threadHtml/recordHtml/notesHtml/activityHtml and the same fetchDetail read, onAction / onAddNote /
+  //      runOppWrite / runOppDelete handlers, unchanged. No second read path, no forked handler. The compose
+  //      surface (editor/upload/recipient) is NOT mounted here - composing is a mode you enter via "Compose".
+  function owDetailHtml(row, detail){
+    var slug=row.slug||"";
+    return numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+
+      actionsHtml(row, { noSend:true })+threadHtml(slug, detail)+recordHtml(detail)+
+      notesHtml(slug, detail)+activityHtml(slug, detail);
+  }
+  function owDetailActive(slug){ return __owMode==="detail" && __owSlug===slug && !!document.getElementById("owDetail"); }
+  function owDetailWire(slug){
+    [].forEach.call(document.querySelectorAll("#owDetail .act[data-act]"), function(btn){
+      btn.addEventListener("click", function(){ onAction(slug, btn.getAttribute("data-act")); });   // promote/revert/archive/reopen/delete (+confirm)
+    });
+    var na=document.getElementById("noteAdd"); if(na) na.addEventListener("click", function(){ onAddNote(slug); });
+  }
+  function owDetailMount(slug){
+    var host=document.getElementById("owDetail"); if(!host) return;
+    var row=findRow(slug); if(!row){ host.innerHTML='<div class="up-empty">'+esc(t("d_loading"))+'</div>'; return; }
+    host.innerHTML = owDetailHtml(row, null); owDetailWire(slug);       // instant paint: the reply thread (the heart) comes from __reps in memory
+    fetchDetail(slug).then(function(detail){                            // then enrich: outbound sends, record, notes, activity
+      if(!owDetailActive(slug)) return;
+      try{ var dn=detail && detail.opp && detail.opp.data && detail.opp.data.notes; if(Array.isArray(dn)) __notes[slug]=dn; }catch(e){}
+      var r2=findRow(slug)||row;
+      try{ host.innerHTML = owDetailHtml(r2, detail); owDetailWire(slug); }catch(e){}
+    }, function(){});
+  }
+  // The window twin of refreshDrawer: re-render after a write / a delete-arm. A deleted row closes the window.
+  function owDetailRefresh(slug){
+    if(!owDetailActive(slug)) return;
+    if(!findRow(slug)){ closeOppWindow(); return; }
+    owDetailMount(slug);
+  }
+  function openOppWindow(slug, mode){
+    __owSlug = slug; __owMode = mode || null;                      // a card tap passes "detail"; "New message" opens the selector
     var sc=document.getElementById("owScrim"); if(!sc){ openDrawer(slug); return; }   // fallback if the shell is absent
     sc.hidden=false; var body=document.getElementById("owBody"); if(body) body.scrollTop=0;
     owRender();
@@ -4198,7 +4257,7 @@ try{
       __writing=false;
       replaceRow(slug, snap); try{ renderBoard(__data); }catch(x){}     // revert the optimistic change
       __act[slug]={ msg:((e&&e.authRequired)? t("err") : t("a_failed")), cls:"bad" };
-      if(__drawerSlug===slug) refreshDrawer(slug); else redInto(root, "write", new Error(t("a_failed")));
+      if(oppSurfaceActive(slug)) refreshDrawer(slug); else redInto(root, "write", new Error(t("a_failed")));
     });
   }
   // Bounded DELETE through the same authFetchOnce discipline as oppPatch (settles always, one refresh-retry). The
@@ -4233,15 +4292,16 @@ try{
   function runOppDelete(slug){
     if(__writing) return; __writing=true;
     __act[slug]={ msg:t("a_deleting"), cls:"" }; drawerActsDisabled(true);
-    if(__drawerSlug===slug){ try{ refreshDrawer(slug); }catch(e){} }
+    if(oppSurfaceActive(slug)){ try{ refreshDrawer(slug); }catch(e){} }
     oppDelete(slug).then(function(){
       delete __delConfirm[slug]; delete __act[slug];
       __writing=false; closeDrawer();                                   // the card is gone; leave the board
+      if(typeof owDetailActive==="function" && owDetailActive(slug)) closeOppWindow();   // G4.5: close the window Details too
       return reloadBoardData();
     }).catch(function(e){
       __writing=false;
       __act[slug]={ msg:((e&&e.authRequired)? t("err") : t("a_del_failed")), cls:"bad" };
-      if(__drawerSlug===slug) refreshDrawer(slug); else redInto(root, "delete", new Error(t("a_del_failed")));
+      if(oppSurfaceActive(slug)) refreshDrawer(slug); else redInto(root, "delete", new Error(t("a_del_failed")));
     });
   }
   // The localized name of the lane a card was archived from (archived_from stores a laneOf() key). Falls back to
@@ -4284,8 +4344,8 @@ try{
       return runOppWrite(slug, function(r){ r.archived=false; if(clear) r.stage=""; }, clear ? { archived:false, stage:"", up:m } : { archived:false, up:m });
     }
     // FULL DELETE, two-tap confirmed: first tap arms the confirm, the "delete_go" tap performs it, "delete_cancel" clears.
-    if(act==="delete"){ __delConfirm[slug]=true; if(__drawerSlug===slug) refreshDrawer(slug); return; }
-    if(act==="delete_cancel"){ delete __delConfirm[slug]; if(__drawerSlug===slug) refreshDrawer(slug); return; }
+    if(act==="delete"){ __delConfirm[slug]=true; refreshDrawer(slug); return; }          // refreshDrawer self-routes to the active surface
+    if(act==="delete_cancel"){ delete __delConfirm[slug]; refreshDrawer(slug); return; }
     if(act==="delete_go") return runOppDelete(slug);
   }
   function setNoteStatus(msg, cls){ var el=document.getElementById("noteStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
@@ -4371,7 +4431,7 @@ try{
     // path; openDrawer stays callable (OPP_WINDOW fallback flag) so nothing breaks before G5 removes the drawer.
     [].forEach.call(root.querySelectorAll(".card[data-slug]"), function(c){
       var slug=c.getAttribute("data-slug");
-      var open=function(){ if(OPP_WINDOW) openOppWindow(slug); else openDrawer(slug); };
+      var open=function(){ if(OPP_WINDOW) openOppWindow(slug, "detail"); else openDrawer(slug); };   // G4.5 detail-first: a card tap manages an existing opp
       c.addEventListener("click", open);
       c.addEventListener("keydown", function(e){ if(e.key==="Enter" || e.key===" "){ e.preventDefault(); open(); } });
     });

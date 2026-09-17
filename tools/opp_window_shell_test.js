@@ -92,8 +92,8 @@ ck("the backdrop is dimmed + blurred and only the body scrolls (fixed header + t
    /\.ow-scrim\{[^}]*backdrop-filter:blur/.test(BOARD) && /\.ow-body\{[^}]*overflow-y:auto/.test(BOARD) && /\.ow-head\{[^}]*flex:0 0 auto/.test(BOARD));
 ck("it becomes a full-height bottom sheet under 720px",
    /@media \(max-width:720px\)\{[^@]*\.ow\{[^}]*height:92vh;border-radius:16px 16px 0 0/.test(BOARD));
-ck("the card tap routes to the window (OPP_WINDOW ? openOppWindow : openDrawer), drawer kept callable",
-   /if\(OPP_WINDOW\) openOppWindow\(slug\); else openDrawer\(slug\);/.test(BOARD) && /function openDrawer\(/.test(BOARD));
+ck("the card tap routes to the window detail-first (OPP_WINDOW ? openOppWindow(slug,'detail') : openDrawer), drawer kept callable",
+   /if\(OPP_WINDOW\) openOppWindow\(slug, ?"detail"\); else openDrawer\(slug\);/.test(BOARD) && /function openDrawer\(/.test(BOARD));
 ck("backdrop click + close button + change-mode + Escape are wired to close/switch the window",
    /ow\.addEventListener\("click", function\(e\)\{ if\(e\.target===ow\) closeOppWindow\(\)/.test(BOARD) &&
    /owc\.addEventListener\("click", function\(\)\{ closeOppWindow\(\)/.test(BOARD) &&
