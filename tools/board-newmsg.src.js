@@ -70,18 +70,48 @@ function nmBusiness(subj){ var s=String(subj==null?"":subj).trim(); return s ? s
 // Reuses editorHtml for subject/body/signature/link/preview/checklist (a synthetic draft row makes it
 // eligible), then adds a recipient input, a Send button, and a status line. Everything the editor renders is
 // the SAME markup the drawer uses, so the light-HTML preview and the signature field behave identically.
+// ONE compose body, mounted by reference at every compose surface (the overlay #nmPanel, and G2's window Mode A
+// #owModeA): the SAME editorHtml (subject/body/signature/link/#edPreview) + recipientHtml (#recIn) + Send
+// (#nmSend) + status (#nmStatus). No second editor - the built shell holds one editorHtml/recipientHtml.
+function composeBodyHtml(slug, row, detail){
+  return editorHtml(slug, row, detail)+
+    recipientHtml(slug, row, detail)+                                     // UNIFY: the SAME #recIn field the drawer mounts
+    '<div class="acts"><button class="act send" id="nmSend" type="button">'+esc(t("nm_send"))+'</button></div>'+
+    '<div class="act-status" id="nmStatus" role="status" aria-live="polite"></div>';
+}
 function nmPanelHtml(slug, data){
   data = data || {};
   var row = { slug:slug, business:nmBusiness(data.outreach_subject), stage:"draft", archived:false };
   return '<div class="nm-head"><h2>'+esc(t("nm_h"))+'</h2>'+
       '<button class="link nm-x" id="nmClose" type="button">'+esc(t("pf_close"))+'</button></div>'+
-    '<div class="nm-body">'+
-      editorHtml(slug, row, { opp:{ data:data } })+
-      recipientHtml(slug, row, { opp:{ data:data } })+                      // UNIFY: the SAME #recIn field the drawer mounts
-      '<div class="acts"><button class="act send" id="nmSend" type="button">'+esc(t("nm_send"))+'</button></div>'+
-      '<div class="act-status" id="nmStatus" role="status" aria-live="polite"></div>'+
-    '</div>';
+    '<div class="nm-body">'+ composeBodyHtml(slug, row, { opp:{ data:data } }) +'</div>';
 }
+
+// G2: the window's Mode A ("message without campaign") compose. composeOwns is the ONE ownership predicate for
+// BOTH the overlay and the window, so unifiedSend/nmSaveNow/edScheduleSave route to the mounted compose surface
+// without forking. owComposeActive lives in buildBoard (it reads the window state).
+function composeOwns(slug){
+  if(typeof nmActive==="function" && nmActive(slug)) return true;
+  if(typeof owComposeActive==="function" && owComposeActive() && (typeof __owSlug==="undefined" || __owSlug===slug)) return true;
+  return false;
+}
+// Mount the shared compose body into the window's Mode A container and wire it (the same wireEditor/#recIn/
+// #nmSend wiring the overlay uses). Instant paint from in-memory, then enrich from the record (prefill), exactly
+// like the drawer's editor. NO page/campaign/library machinery, NO tabs - the lean path.
+function owModeAMount(slug){
+  var host=document.getElementById("owModeA"); if(!host) return;
+  var row = (typeof findRow==="function" && findRow(slug)) || { slug:slug };
+  host.innerHTML = composeBodyHtml(slug, row, { opp:{ data:(__edBase[slug]||{}) } });
+  owModeAWire(slug);
+  oppReadData(slug).then(function(data){
+    __edBase[slug]=data;                                                  // keep the preview base in sync with the record
+    host.innerHTML = composeBodyHtml(slug, row, { opp:{ data:data } });
+    owModeAWire(slug);
+  }, function(){});
+}
+function owModeAWire(slug){ nmWire(slug); }                               // reuse the overlay wiring; its #nmClose lookup is a no-op here
+// Flush a pending autosave when the window closes, so an in-progress message is never lost (mirrors closeNewMessage).
+function owComposeFlush(slug){ if(slug && __nmT[slug]){ clearTimeout(__nmT[slug]); __nmT[slug]=null; try{ nmSaveNow(slug); }catch(e){} } }
 
 function nmSetStatus(msg, cls){ var el=document.getElementById("nmStatus"); if(el){ el.className="act-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
 // UNIFY: ONE Send gate for BOTH surfaces. Send is enabled only when subject + body + a valid recipient are
@@ -106,7 +136,7 @@ function nmScheduleSave(slug, delay){
 // operator's text left intact (never a phantom "Saved"). Records the guarded draft pointer on first success,
 // so an accidental close resumes. Never fights the shared send lock: reschedules if one is in flight.
 function nmSaveNow(slug){
-  if(!nmActive(slug)) return;
+  if(!composeOwns(slug)) return;                                        // G2: overlay OR window Mode A owns this compose
   var subjEl=edEl("edSubj"), bodyEl=edEl("edBody");                     // scoped to the active surface (COMPOSE_SURFACE_EVIDENCE A1)
   if(!subjEl || !bodyEl) return;
   if(__writing || __nmSaving){ nmScheduleSave(slug, 500); return; }
@@ -118,7 +148,7 @@ function nmSaveNow(slug){
     return oppUpsert(slug, { business:nmBusiness(subj), data:next, up:Date.now() }).then(function(){
       __nmSaving = false;
       __edBase[slug] = next;                 // keep the editor's preview base in sync with the persisted record
-      nmStore(slug);                         // the draft is now server-durable; remember it for resume
+      if(typeof nmActive==="function" && nmActive(slug)) nmStore(slug);   // the resume pointer is the OVERLAY's new-message concern; the window composes an existing opp
       nmSetStatus(t("a_saved"), "ok");
       try{ edRenderPreview(slug); }catch(e){}
     });
@@ -175,7 +205,7 @@ function closeNewMessage(){
 
 // Where a send-time status goes: the overlay's #nmStatus when it owns the slug, else the drawer card status.
 function sendFail(slug, msg){
-  if(typeof nmActive==="function" && nmActive(slug)){ nmSetStatus(msg, "bad"); }
+  if(composeOwns(slug)){ nmSetStatus(msg, "bad"); }                      // overlay OR window Mode A: show it in #nmStatus
   else { __act[slug] = { msg:msg, cls:"bad" }; if(__drawerSlug===slug) refreshDrawer(slug); }
 }
 // UNIFY: the ONE send path for BOTH surfaces. Persist the live subject/body/signature/recipients to the opp,
@@ -185,11 +215,11 @@ function sendFail(slug, msg){
 // recipient (the send controls are disabled otherwise); the opp link stays optional; upSendLiveGate (the live
 // -page check for source==="upload") still runs inside runSend, unchanged.
 function unifiedSend(slug){
-  if(__writing || __nmSaving){ if(typeof nmActive==="function" && nmActive(slug)){ nmSetStatus(t("a_saving"), ""); nmScheduleSave(slug, 300); } return; }
+  if(__writing || __nmSaving){ if(composeOwns(slug)){ nmSetStatus(t("a_saving"), ""); nmScheduleSave(slug, 300); } return; }
   var subj=edVal("edSubj"), body=edVal("edBody"), sig=edSignature(), recips=sendToList();
   if(!(subj.trim() && body.trim())){ sendFail(slug, t("nm_need_msg")); return; }
   if(!recips.length){ sendFail(slug, t("nm_need_to")); return; }
-  var over = (typeof nmActive==="function" && nmActive(slug));
+  var over = composeOwns(slug);                                          // G2: the overlay OR the window Mode A owns the result surface (#nmStatus)
   if(over){ nmSetStatus(t("s_sending"), ""); var sd=document.getElementById("nmSend"); if(sd) sd.disabled=true; }
   var row = findRow(slug) || { slug:slug };
   oppReadData(slug).then(function(data){

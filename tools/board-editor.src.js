@@ -77,6 +77,10 @@ function edSignaturePreset(){
 // edRoot() returns the ACTIVE compose surface - the overlay while it is open, otherwise the drawer - and
 // edEl() scopes every compose lookup to it, so a read never resolves to a hidden second copy.
 function edRoot(){
+  // G2: the centered window's "message without campaign" (Mode A) compose surface wins when it is active, so
+  // every edEl/edVal/edRenderPreview lookup binds to the window's mounted nodes (the SAME editorHtml nodes,
+  // mounted by reference - not a second editor). owComposeRoot lives in buildBoard.
+  if(typeof owComposeRoot==="function"){ var w=owComposeRoot(); if(w) return w; }
   if(typeof __nmOpen!=="undefined" && __nmOpen){ var p=document.getElementById("nmPanel"); if(p) return p; }
   var d=document.getElementById("drawer"); if(d) return d;
   return document;
@@ -211,7 +215,9 @@ function edScheduleSave(slug, delay){
   // E1 seam: when the standalone New Message overlay owns this slug, its own single writer persists the
   // message + recipient together (one read-modify-write, no data-jsonb race with the drawer writer). Every
   // editor input / link-insert / signature-fill routes here, so this is the one place that redirects the save.
-  if(typeof nmActive==="function" && nmActive(slug)){ if(typeof nmScheduleSave==="function") nmScheduleSave(slug, delay); return; }
+  // G2: composeOwns covers BOTH the New-message overlay and the window's Mode A, so window edits autosave
+  // through the same single writer (nmSaveNow) as the overlay - no forked save path.
+  if(typeof composeOwns==="function" ? composeOwns(slug) : (typeof nmActive==="function" && nmActive(slug))){ if(typeof nmScheduleSave==="function") nmScheduleSave(slug, delay); return; }
   if(__edT[slug]) clearTimeout(__edT[slug]);
   __edT[slug] = setTimeout(function(){ __edT[slug]=null; edSaveNow(slug); }, delay||700);
 }
