@@ -358,12 +358,19 @@ function pageStampLive(slug, retried){
 // yields a usable string). Written to console_opps.cycle; the send stamps console_mail.cycle with it.
 function upNewCycle(){ try{ return "cy" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }catch(e){ return "cy" + Date.now(); } }
 function upCommit(plan){
-  var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0, failed = [], published = [];
+  var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0, failed = [], published = [], incomplete = 0, incompleteList = [];
   function one(i){
-    if(i >= rows.length) return Promise.resolve({ ok:ok, fail:fail, failed:failed, published:published });
+    if(i >= rows.length) return Promise.resolve({ ok:ok, fail:fail, failed:failed, published:published, incomplete:incomplete, incompleteList:incompleteList });
     var r = rows[i];
     if(done[r.slug]) return one(i + 1);
     done[r.slug] = 1;
+    // NO EMPTY CARDS, EVER. A campaign card IS its message: subject + body + recipient, the same opp shape a
+    // hand-composed Mode A message writes (nmSaveNow: outreach_subject / outreach_text / recipients). A row that
+    // carries a page but NO message (no subject AND no body - its .md never paired) must NOT be written as an
+    // empty card with an orphan page; it is counted as incomplete and skipped, and the caller names it, so the
+    // operator sees "N had no message" instead of silent empty cards. (Folder-pairing attaches a per-folder
+    // message; this is the backstop for a page that genuinely has none.)
+    if(!(String(r.subject||"").trim() || String(r.body||"").trim())){ incomplete++; incompleteList.push(r.title || r.slug); return one(i + 1); }
     var data = { source:"upload", page_title:r.title,
       outreach_subject:r.subject || "", outreach_text:r.body || "",
       // B2: strip a suppressed recipient - the opp/page still commit, but the do-not-contact address is not stored.
@@ -1472,13 +1479,16 @@ function owCommitCampaignAll(slug){
     return reloadBoardData().then(function(){ return res; }, function(){ return res; });
   }).then(function(res){
     __owCommitting=false;
+    // NO EMPTY CARDS: a page that carried no message is named, not silently dropped, so the operator can fix its
+    // zip - never an empty card and never a silent loss.
+    var skip = res.incomplete ? (" "+t("ow_no_msg_n").replace("{n}", String(res.incomplete))+" "+(res.incompleteList||[]).join(", ")) : "";
     if(res.fail){                                                                   // name the failed rows, keep the panel
       var names=(res.failed||[]).join(", ");
-      owCommitStatus(t("up_done_partial").replace("{k}", String(res.ok||0)).replace("{n}", String((res.ok||0)+res.fail))+" "+names, (res.ok?"warn":"bad"));
+      owCommitStatus(t("up_done_partial").replace("{k}", String(res.ok||0)).replace("{n}", String((res.ok||0)+res.fail))+" "+names+skip, (res.ok?"warn":"bad"));
       return (res.ok||0)>0;
     }
-    owCommitStatus(t("ow_committed_n").replace("{n}", String(res.ok||0)), "ok");
-    return true;
+    owCommitStatus(t("ow_committed_n").replace("{n}", String(res.ok||0))+skip, res.incomplete?"warn":"ok");
+    return (res.ok||0)>0;
   }, function(e){
     __owCommitting=false; owCommitStatus((e&&e.authRequired)?t("err"):t("up_write_failed"), "bad"); return false;
   });
