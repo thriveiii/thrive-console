@@ -755,25 +755,48 @@ function libResultHtml(plan, tasks){
     '<div class="acts"><button class="act send" id="libApprove" type="button"' + (n ? "" : " disabled") + '>' + esc(t("lib_activate")) + '</button></div>'+
     '<div class="act-status" id="upStatus" role="status" aria-live="polite"></div>';
 }
+// The next FREE slug: the given slug if it is taken by neither the existing console_pages set nor a slug already
+// claimed earlier in this batch, else slug-2, slug-3, ... A hostile runtime that somehow exhausts the counter
+// falls back to a time suffix, so this always returns a usable, free slug (never loops forever, never "").
+function upFreeSlug(slug, seen){
+  function taken(s){ return !!((__libExisting && __libExisting[s]) || (seen && seen[s])); }
+  if(!taken(slug)) return slug;
+  for(var n = 2; n < 1000; n++){ var cand = slug + "-" + n; if(!taken(cand)) return cand; }
+  return slug + "-" + Date.now().toString(36);
+}
 // Read the edited slug/title/task back into the plan rows and validate: slug format + uniqueness against the
 // existing console_pages slugs (__libExisting) and against the other rows in this batch. Marks each row's inline
 // error and returns { ok, firstBad }.
-function libCollectRows(){
+// BUG-1 FIX: with autoSuffix (the campaign commit paths pass true), a slug already TAKEN in console_pages, or by
+// an earlier row in this batch, is NOT an error to fix by hand - the message would be stuck and the card would
+// commit empty. Instead the slug is renamed to the next free one (bards-alley-2), the input is updated, and a
+// visible (info, not error) note shows the rename, so the page + its message + recipient commit under a free
+// slug and no card is ever left empty. Only a bad FORMAT still blocks (a genuine input error). The Library
+// upload keeps autoSuffix off, so a hand-named page still surfaces "already taken" for the operator to rename.
+function libCollectRows(autoSuffix){
   var plan = __upPlan; if(!plan || !plan.rows) return { ok:false, firstBad:-1 };
   var seen = {}, ok = true, firstBad = -1;
   plan.rows.forEach(function(r, i){
     var si = document.getElementById("libSlug-" + i), ti = document.getElementById("libTitle-" + i), ki = document.getElementById("libTask-" + i);
     var slug = si ? String(si.value||"").trim().toLowerCase() : (r.slug||"");
+    var renamed = "";
+    if(autoSuffix && LIB_SLUG_RE.test(slug) && ((__libExisting && __libExisting[slug]) || seen[slug])){
+      var free = upFreeSlug(slug, seen);
+      if(free !== slug){ renamed = free; slug = free; if(si) si.value = slug; }   // rename to a free slug; keep the message
+    }
     r.slug = slug;
     r.title = ti ? String(ti.value||"").trim() : (r.title||"");
     r.task  = ki ? String(ki.value||"").trim() : (r.task||"");
     var msg = "";
     if(!LIB_SLUG_RE.test(slug)) msg = t("lib_err_slug");
     else if(seen[slug]) msg = t("lib_err_dup");
-    else if(__libExisting && __libExisting[slug]) msg = t("lib_err_exists");
+    else if(!autoSuffix && __libExisting && __libExisting[slug]) msg = t("lib_err_exists");
     seen[slug] = 1;
     var err = document.getElementById("libErr-" + i);
-    if(err){ err.textContent = msg; err.className = "lib-rowerr" + (msg ? " bad" : ""); }
+    if(err){
+      if(renamed){ err.textContent = t("lib_renamed").replace("{s}", slug); err.className = "lib-rowerr info"; }
+      else { err.textContent = msg; err.className = "lib-rowerr" + (msg ? " bad" : ""); }
+    }
     if(si){ si.className = "lib-in mono-iso" + (msg ? " bad" : ""); }
     if(msg){ ok = false; if(firstBad < 0) firstBad = i; }
   });
@@ -1092,11 +1115,15 @@ function libCardHtml(p){
       '<button class="act" type="button" data-lv-open="' + esc(p.slug) + '">' + esc(t("lib_open_page")) + '</button>'+
       '<button class="act" type="button" data-lv-prev="' + esc(p.slug) + '">' + esc(t("lib_preview")) + '</button>'+
       '<button class="act lv-prom-b" type="button" data-lv-promote="' + esc(p.slug) + '">' + esc(t("lib_promote")) + '</button>'+
+      // BUG-2 FIX: a Delete action (two-tap confirm) removes ONLY this one console_pages row, so a mistaken or
+      // stale template is not stuck forever. It never touches an opp/card or any ledger row.
+      '<button class="act lv-del-b" type="button" data-lv-del="' + esc(p.slug) + '">' + esc(t("lib_delete")) + '</button>'+
       // No re-activate button: a template publishes and verifies on upload (upCommitLibrary + libVerifyBackground),
       // and a not-yet-live row self-heals in the background - the state chip reads confirming/live, never a prompt.
     '</div>'+
     '<div class="lv-prev" id="lvPrev-' + esc(p.slug) + '" hidden></div>'+
     '<div class="lv-prom" id="lvProm-' + esc(p.slug) + '" hidden></div>'+
+    '<div class="lv-del" id="lvDel-' + esc(p.slug) + '" hidden></div>'+
   '</div>';
 }
 function libViewWireCards(){
@@ -1104,6 +1131,33 @@ function libViewWireCards(){
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lv-open")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-prev]"), function(b){ b.addEventListener("click", function(){ libPreviewToggle(b.getAttribute("data-lv-prev"), b); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-promote]"), function(b){ b.addEventListener("click", function(){ libPromoteToggle(b.getAttribute("data-lv-promote"), b); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-del]"), function(b){ b.addEventListener("click", function(){ libDeleteToggle(b.getAttribute("data-lv-del"), b); }); });
+}
+// BUG-2: a two-tap delete for one Library page. First tap opens an inline confirm (Delete / Cancel); the confirm
+// deletes ONLY this console_pages row (restDelete, the same bounded DELETE the card delete uses - the DB grant in
+// docs/supabase-opp-delete.sql permits it), then drops the row from the cached list and re-renders. No opp/card,
+// no ledger row, and no other page is ever touched. A failed delete shows a red status and changes nothing.
+function libDeleteToggle(slug, btn){
+  var box = document.getElementById("lvDel-" + slug); if(!box) return;
+  if(!box.hidden){ box.hidden = true; box.innerHTML = ""; if(btn) btn.classList.remove("on"); return; }
+  box.hidden = false; if(btn) btn.classList.add("on");
+  box.innerHTML = '<div class="lv-del-warn">' + esc(t("lib_del_confirm")) + '</div>'+
+    '<div class="acts"><button class="act lv-del-go" type="button">' + esc(t("lib_delete")) + '</button>'+
+    '<button class="act lv-del-x" type="button">' + esc(t("lib_del_cancel")) + '</button></div>'+
+    '<div class="act-status" id="lvDelStatus-' + esc(slug) + '" role="status" aria-live="polite"></div>';
+  var go = box.querySelector(".lv-del-go"); if(go) go.addEventListener("click", function(){ libDoDelete(slug); });
+  var cx = box.querySelector(".lv-del-x"); if(cx) cx.addEventListener("click", function(){ libDeleteToggle(slug, btn); });
+}
+function libDoDelete(slug){
+  var st = document.getElementById("lvDelStatus-" + slug);
+  if(st){ st.className = "act-status"; st.textContent = t("lib_deleting"); }
+  return restDelete("console_pages?slug=eq." + encodeURIComponent(slug)).then(function(){
+    __libPages = (__libPages || []).filter(function(p){ return !(p && p.slug === slug); });   // optimistic: drop it from the list
+    if(__libExisting) delete __libExisting[slug];
+    libRenderList();
+  }, function(e){
+    if(st){ st.className = "act-status bad"; st.textContent = (e && e.authRequired) ? t("err") : t("lib_del_failed"); }
+  });
 }
 // (libRepair removed: a Library template publishes and verifies on upload, so there is no manual repair button.)
 // On-demand preview: read the committed html back from console_pages (pageReadHtml) into a sandboxed iframe,
@@ -1381,7 +1435,7 @@ function owCommitCampaign(slug){
   if(!(subj.trim() && body.trim())){ owCommitStatus(t("nm_need_msg"), "bad"); return Promise.resolve(false); }
   var rows=(__upPlan&&__upPlan.rows)||[]; var pr=rows[0];
   if(!pr || !(pr.page && String(pr.page.html).trim())){ owCommitStatus(t("ow_need_page"), "bad"); return Promise.resolve(false); }
-  var v=libCollectRows(); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }   // format/dup/exists validation gate
+  var v=libCollectRows(true); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }   // format/dup/exists validation gate
   __owCommitting=true; owCommitStatus(t("up_writing"), "");
   var pageSlug=pr.slug||slug, html=assetBaseInto(pr.page.html), cycle=upNewCycle(), sig=edSignature();
   var kept=sendToList().filter(function(r){ return !isSuppressed(r.addr); });   // B2 strip at commit
@@ -1411,7 +1465,7 @@ function owCommitCampaignAll(slug){
   if(__owCommitting) return Promise.resolve(false);
   var plan=__upPlan, rows=(plan&&plan.rows)||[];
   if(!rows.length){ owCommitStatus(t("ow_need_page"), "bad"); return Promise.resolve(false); }
-  var v=libCollectRows(); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }
+  var v=libCollectRows(true); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }
   __owCommitting=true; owCommitStatus(t("up_writing"), "");
   return upCommit(plan).then(function(res){
     try{ upActivateBackground(res.published); }catch(e){}                          // F1 publish-truth, per page
@@ -1538,6 +1592,7 @@ try{
   window.__thriveLibraryDoneHtml = function(results){ return libDoneHtml(results); };
   window.__thriveLibraryPages = function(){ return __libPages; };                   // PR-L1: the surface's fetched rows
   window.__thriveLibraryPromote = function(slug){ return libPromoteConfirm(slug); };// PR-L6: await the promote (reads #lvPromIn-<slug>)
+  window.__thriveLibraryDelete = function(slug){ return libDoDelete(slug); };       // BUG-2: await the one-page delete
   window.__thriveLibraryReverify = function(tries, gap){ return libReverifyPending(tries, gap); };   // PR-CF: await a fast re-verify pass
   window.__thriveParseSections = function(text){ return upParseSections(text); };
 }catch(e){}
