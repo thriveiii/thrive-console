@@ -475,20 +475,23 @@ function supaSelectMailById_(id) {
   }
 }
 
-/* B3 suppression guard. Is this address on the do-not-contact list (console_suppressions)? The console has its
-   own fail-closed B2 guard at compose/send time (board-send.src.js: it refuses to send if the set never loads),
-   but the relay is now the single sender (recordSend_, the durable outbox), so a suppressed address must be
-   refused HERE too, on the one path every send crosses. Reads with the same service_role key it already holds
-   (SUPABASE_URL + SUPABASE_SERVICE_KEY), one bounded query keyed on the bare, lowercased address (the form the
-   console stores). Returns true ONLY on a confirmed hit; unconfigured, no address, a non-200, or any error
-   returns false, so a transient Supabase blip can never wall off every send (the console B2 stays the
-   compose-time backstop). Never throws: the caller decides what a refusal means (sendMail_ throws, sendQueue_
-   marks the row failed). */
+/* B3 suppression guard. Is this address on the do-not-contact list (console_suppressions)? The relay is now the
+   single sender (recordSend_, the durable outbox) and the LAST gate before Resend, so it must be FAIL-CLOSED: an
+   unreadable list can never be treated as "not suppressed", or it reopens the exact bypass B3 exists to close.
+   Reads with the service_role key the relay already holds (SUPABASE_URL + SUPABASE_SERVICE_KEY), one bounded
+   query keyed on the bare, lowercased address (the form the console stores). THREE states, never two:
+     true  - confirmed suppressed (a row exists): refuse the send.
+     false - NO suppression system configured (no url/key, or no address): nothing to check, allow. This is the
+             only "allow" path, and it is deliberate: a deployment without Supabase wired has no list to honor.
+     null  - configured but UNREADABLE this call (a non-200 or an exception): the answer is UNKNOWN. The caller
+             fails closed on it - a direct send refuses, and the queue defers the row (retry next tick) rather
+             than send into an unknown or poison the row on a transient blip.
+   Never throws: the caller decides what each state means. */
 function supaSuppressed_(addr) {
   var url = props_().getProperty('SUPABASE_URL');
   var key = props_().getProperty('SUPABASE_SERVICE_KEY');
   var a = String(addr || '').trim().toLowerCase();
-  if (!url || !key || !a) return false;   // cannot check (unconfigured / no address): allow; console B2 is the backstop
+  if (!url || !key || !a) return false;   // no suppression system configured (or no address): nothing to check, allow
   try {
     var q = String(url).replace(/\/+$/, '') + '/rest/v1/console_suppressions?email=eq.' +
             encodeURIComponent(a) + '&select=email&limit=1';
@@ -497,11 +500,11 @@ function supaSuppressed_(addr) {
       headers: { apikey: key, Authorization: 'Bearer ' + key },
       muteHttpExceptions: true
     });
-    if (res.getResponseCode() !== 200) return false;   // cannot confirm: do not block on a transient error
+    if (res.getResponseCode() !== 200) return null;    // configured but unreadable -> UNKNOWN (fail closed at the caller)
     var rows = JSON.parse(res.getContentText() || '[]');
-    return !!(rows && rows.length);                     // a row exists -> the address is suppressed
+    return !!(rows && rows.length);                     // true = confirmed suppressed, false = confirmed clear
   } catch (e) {
-    return false;   // never throw out of the guard; a lookup failure is not a positive
+    return null;   // configured but unreadable (network / parse) -> UNKNOWN, never a false "clear"
   }
 }
 
@@ -833,11 +836,14 @@ function sendMail_(d) {
   var key = props_().getProperty('RESEND_KEY');
   if (!key) throw new Error('RESEND_KEY not set');
   if (!d.to) throw new Error('missing "to"');
-  /* B3 suppression guard, on the one path every send crosses. A do-not-contact address is refused BY NAME
-     before anything is sent or recorded, so no path (a direct send, the durable queue, a legacy bare body)
-     can reach a suppressed recipient. The throw is what makes a send to a suppressed address return failed:
-     doPost catches it into { ok:false, error }, and sendQueue_'s per-row catch flips the row to 'failed'. */
-  if (supaSuppressed_(d.to)) throw new Error('suppressed: ' + d.to);
+  /* B3 suppression guard, on the one path every send crosses. FAIL-CLOSED: a confirmed do-not-contact address
+     is refused by name, and an UNREADABLE list is refused too (never sent into on an unknown), so no path (a
+     direct send, the durable queue, a legacy bare body) can reach a suppressed recipient. Both throws become a
+     failed send: doPost catches them into { ok:false, error }, and sendQueue_'s per-row catch flips 'failed'.
+     Only a configured-but-clear (false) address proceeds. */
+  var sup = supaSuppressed_(d.to);
+  if (sup === true) throw new Error('suppressed: ' + d.to);
+  if (sup === null) throw new Error('suppress-check-unavailable');
 
   /* COURIER, not a composer. This relay sends the html and text exactly as the console composed them and
      writes NO copy of its own: no footer, no address, no signature. The console is the single composer
@@ -1040,13 +1046,23 @@ function sendQueue_() {
   for (var c = 0; c < claimed.length; c++) {
     var row = findOutbox_(claimed[c]);
     if (!row) continue;
-    /* B3 suppression pre-check, at the head of the per-row send. A do-not-contact recipient is marked failed
-       WITHOUT calling sendMail_ (no Resend request, no ledger row), so a suppressed row in a campaign is
-       refused cleanly and by name. sendMail_ still carries the same guard as the backstop for every other
-       caller, so this is defense in depth, not the sole gate. */
-    if (supaSuppressed_(row.to)) {
+    /* B3 suppression pre-check, at the head of the per-row send. FAIL-CLOSED, three states:
+         true  - a confirmed do-not-contact recipient is marked failed WITHOUT calling sendMail_ (no Resend
+                 request), so a suppressed row is refused cleanly and by name.
+         null  - the list is configured but UNREADABLE this tick: do NOT send (fail closed), but do NOT poison
+                 the row either - release it back to 'queued' (sending_since 0) so the next tick re-claims and
+                 retries once the list is readable again. A transient Supabase blip never sends into an unknown
+                 and never permanently fails a legitimate recipient.
+         false - configured-clear (or no list): fall through to the normal send.
+       sendMail_ carries the same guard as the backstop for every other caller, so this is defense in depth. */
+    var supq = supaSuppressed_(row.to);
+    if (supq === true) {
       flipOutbox_(row.mid, { status: 'failed', error: 'suppressed' });   // visible, never silent; never sent
       failed++;
+      continue;
+    }
+    if (supq === null) {
+      flipOutbox_(row.mid, { status: 'queued', sending_since: 0 });       // unreadable: defer, retry next tick (never poison)
       continue;
     }
     try {

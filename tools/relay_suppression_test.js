@@ -34,11 +34,16 @@ function ck(name, cond, detail) {
 const SUPPRESSED = { "blocked@example.test": 1 };   // bare, lowercase, exactly as the console stores
 let resendSends = [];   // every address actually handed to api.resend.com (must never include a suppressed one)
 let mailUpserts = [];   // every console_mail row upserted (recordSend_); a suppressed send must write none
+let suppReadable = true;  // when false, the stubbed console_suppressions read returns a non-200 (list UNREADABLE -> null state)
 
-function loadRelay() {
+// configured (default): Supabase is wired, so supaSuppressed_ actually queries the list. configured:false loads a
+// relay with NO SUPABASE props, so supaSuppressed_ returns false (nothing to check) - the deliberate allow path.
+function loadRelay(opts) {
+  const configured = !opts || opts.configured !== false;
   // a stateful Script Properties store, so STORE_FILE_ID set inside storeFile_ persists across calls
-  const propStore = { RESEND_KEY: "re_key_test", SYNC_KEY: "the-real-key",
-                      SUPABASE_URL: "https://proj.supabase.co", SUPABASE_SERVICE_KEY: "svc_key_test" };
+  const propStore = configured
+    ? { RESEND_KEY: "re_key_test", SYNC_KEY: "the-real-key", SUPABASE_URL: "https://proj.supabase.co", SUPABASE_SERVICE_KEY: "svc_key_test" }
+    : { RESEND_KEY: "re_key_test", SYNC_KEY: "the-real-key" };   // no SUPABASE url/key -> no suppression system
   const PropertiesService = {
     getScriptProperties() {
       return { getProperty(k) { return Object.prototype.hasOwnProperty.call(propStore, k) ? propStore[k] : null; },
@@ -60,6 +65,8 @@ function loadRelay() {
     fetch(url, opts) {
       const u = String(url);
       if (u.indexOf("console_suppressions") >= 0) {
+        // an UNREADABLE list (a transient Supabase blip) is a non-200 -> supaSuppressed_ returns null (fail closed)
+        if (!suppReadable) return { getResponseCode() { return 503; }, getContentText() { return "service unavailable"; } };
         // supaSuppressed_ asks email=eq.<addr>; report a row only for a suppressed address
         const m = /email=eq\.([^&]+)/.exec(u);
         const addr = m ? decodeURIComponent(m[1]).toLowerCase() : "";
@@ -130,6 +137,46 @@ const blocked = st.filter(function (r) { return r.mid === "m-blocked"; })[0] || 
 const allowed = st.filter(function (r) { return r.mid === "m-ok"; })[0] || {};
 ck("B: the suppressed row is marked failed with reason 'suppressed'", blocked.status === "failed" && blocked.error === "suppressed", blocked);
 ck("B: the allowed row is marked sent", allowed.status === "sent", allowed);
+
+/* ===================== D: FAIL-CLOSED on an UNREADABLE list (the null state) ===================== */
+/* This is the core of the change: a configured list that cannot be read must NEVER be treated as "clear".
+   A direct send refuses; the queue DEFERS the row (retry next tick) rather than send into an unknown. */
+suppReadable = false;   // the console_suppressions read now returns 503 -> supaSuppressed_ returns null
+
+// D-A: a direct send to an otherwise-clear address is REFUSED (not sent) while the list is unreadable
+resendSends = [];
+let threwU = null;
+try { relay.sendMail_({ to: "welcome@example.test", subject: "Hi", html: "<p>Hi</p>", text: "Hi", slug: "acme" }); }
+catch (e) { threwU = e; }
+ck("D: an unreadable list REFUSES a direct send (fail closed, 'suppress-check-unavailable')",
+   !!threwU && /suppress-check-unavailable/.test(String(threwU.message || threwU)), threwU ? String(threwU.message) : "sent!");
+ck("D: the refused-on-unknown send NEVER reached Resend", resendSends.length === 0, resendSends);
+
+// D-B: a queued row is DEFERRED (released back to 'queued', sending_since 0), not sent and not poisoned to failed
+resendSends = [];
+relay.outboxPush_([{ mid: "m-defer", opp: "camp2", to: "clear@example.test", subject: "Hi", html: "<p>Hi</p>", text: "Hi", due: "2000-01-01T00:00:00Z" }]);
+const qU = relay.sendQueue_();
+const deferSt = relay.outboxStatus_("camp2").rows.filter(function (r) { return r.mid === "m-defer"; })[0] || {};
+ck("D: an unreadable list sends nothing this tick (fail closed)", resendSends.length === 0 && qU.sent === 0, { resend: resendSends, q: qU });
+ck("D: the deferred row is released back to 'queued' (retry next tick), NOT failed and NOT sent",
+   deferSt.status === "queued", deferSt);
+
+// D-B continued: once the list is readable again, the same row sends on the next tick (never poisoned)
+suppReadable = true;
+resendSends = [];
+relay.sendQueue_();
+const nowSent = relay.outboxStatus_("camp2").rows.filter(function (r) { return r.mid === "m-defer"; })[0] || {};
+ck("D: when the list is readable again, the deferred row sends on the next tick",
+   nowSent.status === "sent" && resendSends.length === 1 && resendSends[0] === "clear@example.test", { row: nowSent, resend: resendSends });
+
+/* ===================== E: NO suppression system configured -> allow (the false state) ===================== */
+/* The one deliberate allow: a deployment with no Supabase wired has no list to honor, so a send proceeds even
+   for an address that WOULD be suppressed if a list existed. This is distinct from the null (unreadable) state. */
+const relay2 = loadRelay({ configured: false });
+resendSends = [];
+const eOut = relay2.sendMail_({ to: "blocked@example.test", subject: "Hi", html: "<p>Hi</p>", text: "Hi", slug: "acme" });
+ck("E: with NO suppression system configured, a send proceeds (allow; distinct from the unreadable-null block)",
+   eOut && eOut.ok === true && resendSends.length === 1, { out: eOut, resend: resendSends });
 
 console.log("");
 if (fails) { console.log(fails + " FAILED"); process.exit(1); }
