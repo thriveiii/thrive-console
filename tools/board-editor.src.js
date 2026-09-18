@@ -55,20 +55,40 @@ function editorEligible(row){
 // leaves it blank.
 function edIdentity(){ try{ return window.__thriveIdentity || {}; }catch(e){ return {}; } }
 function edSignature(){ return edVal("edSig"); }
-// The "Use my signature" preset: a quiet three-line block from runtime identity, name / title / site, each on
-// its own line. Title omitted if unset (name then site); name omitted if unset (site alone). This only FILLS
-// the field on demand; it is never applied automatically. The site is the send-side agency constant.
-function edSignaturePreset(){
+// G7.1: the agency line of the DEFAULT signature, localized. English reuses the send-side FROM_NAME constant
+// (the correct spelling "Thrive Digital Solutions", not the old "Solutoins" mock); Arabic is the agency's own
+// name. The site line is the shared agency constant, the same value the message compile uses.
+var AGENCY_NAME_EN_L5 = (typeof FROM_NAME_DEFAULT_L5!=="undefined" && FROM_NAME_DEFAULT_L5) ? FROM_NAME_DEFAULT_L5 : "Thrive Digital Solutions";
+var AGENCY_NAME_AR_L5 = "ثرايف للحلول الرقمية";
+// Arabic detection: any Arabic-script codepoint in the text. Used to pick the default signature's language
+// "per the message language" (the body's script), not the UI chrome language.
+function edIsArabic(s){ return /[؀-ۿݐ-ݿࢠ-ࣿ]/.test(String(s||"")); }
+// The message language: the body's script when it has content (so a message typed in Arabic gets the Arabic
+// signature even in an English UI, and vice versa), else the UI language (LANG).
+function edMsgLang(){
+  var body = edVal("edBody");
+  if(body.trim()) return edIsArabic(body) ? "ar" : "en";
+  try{ return (typeof LANG!=="undefined" && LANG==="ar") ? "ar" : "en"; }catch(e){ return "en"; }
+}
+// The DEFAULT signature: three lines, name / agency / site, localized. The name is the current user's OWN name
+// (from runtime identity), so it is per-user, never hardcoded. Name omitted if unset (agency then site). The
+// site line is the agency constant. This only FILLS the field on demand ("Use my signature"); never automatic.
+function edSignatureDefault(lang){
   var id = edIdentity();
   var name = String(id.name==null?"":id.name).trim();
-  var title = String(id.title==null?"":id.title).trim();
   var site = (typeof AGENCY_SITE_L5!=="undefined" && AGENCY_SITE_L5) ? AGENCY_SITE_L5 : "thriveiii.com";
+  var agency = (lang==="ar") ? AGENCY_NAME_AR_L5 : AGENCY_NAME_EN_L5;
   var lines = [];
   if(name) lines.push(name);
-  if(title) lines.push(title);
+  lines.push(agency);
   lines.push(site);
   return lines.join("\n");
 }
+// Back-compat seam name: the "Use my signature" fill, now the localized default (name / agency / site).
+function edSignaturePreset(){ return edSignatureDefault(edMsgLang()); }
+// The user's saved (named) signatures, from runtime identity (console_profiles.prefs.signatures). Always an
+// array; each entry is { id, name, text }. Per-user by construction (own profile row).
+function edSavedSigs(){ var id=edIdentity(); var a=id && id.signatures; return Array.isArray(a) ? a : []; }
 
 // SURFACE SCOPING (COMPOSE_SURFACE_EVIDENCE A1): the editor markup (#edSubj/#edBody/#edSig/#edPreview/
 // #edLink/#edStatus and the checklist items) is mounted by BOTH the drawer (#drawer) and the standalone
@@ -129,9 +149,9 @@ function editorHtml(slug, row, detail){
   var sig = data ? String(data.sig||"") : (edVal("edSig"));
   var subjOk = !!subj.trim(), bodyOk = !!body.trim(), linkOk = edHasLink(slug, body);
   return '<div class="dw-sec ed-sec"><h3>'+esc(t("ed_h"))+'</h3>'+
-    '<input class="ed-subj" id="edSubj" type="text" autocomplete="off" spellcheck="true" '+
+    '<input class="ed-subj" id="edSubj" type="text" dir="auto" autocomplete="off" spellcheck="true" '+
       'placeholder="'+esc(t("ed_subj_ph"))+'" aria-label="'+esc(t("ed_subj"))+'" value="'+esc(subj)+'">'+
-    '<textarea class="rec-in ed-body" id="edBody" rows="6" autocomplete="off" spellcheck="true" '+
+    '<textarea class="rec-in ed-body" id="edBody" rows="6" dir="auto" autocomplete="off" spellcheck="true" '+
       'placeholder="'+esc(t("ed_body_ph"))+'" aria-label="'+esc(t("ed_body"))+'">'+esc(body)+'</textarea>'+
     '<div class="acts"><button class="act" id="edLink" type="button">'+esc(t("ed_link"))+'</button></div>'+
     '<ul class="ed-checks">'+
@@ -141,8 +161,11 @@ function editorHtml(slug, row, detail){
     '<div class="ed-sig-field">'+
       '<div class="ed-sig-head"><span class="ed-sig-lab">'+esc(t("ed_sig"))+'</span>'+
         '<button class="act ed-sig-use" id="edSigFill" type="button">'+esc(t("ed_sig_use"))+'</button></div>'+
-      '<textarea class="rec-in ed-sig-in" id="edSig" rows="3" autocomplete="off" spellcheck="true" '+
+      '<textarea class="rec-in ed-sig-in" id="edSig" rows="3" dir="auto" autocomplete="off" spellcheck="true" '+
         'placeholder="'+esc(t("ed_sig_ph"))+'" aria-label="'+esc(t("ed_sig"))+'">'+esc(sig)+'</textarea>'+
+      // G7.1: the user's SAVED signatures - pick one to fill the field, or "+" to save the current text as a new
+      // named signature. Populated from runtime identity (per-user) by edRenderSavedSigs after wiring.
+      '<div class="ed-sig-saved" id="edSigSaved"></div>'+
     '</div>'+
     '<div class="ed-prev-h">'+esc(t("ed_preview"))+'</div>'+
     '<iframe class="ed-preview" id="edPreview" title="'+esc(t("ed_preview"))+'" sandbox="" referrerpolicy="no-referrer" srcdoc=""></iframe>'+
@@ -199,15 +222,63 @@ function edInsertLink(slug){
   edTick(slug); edScheduleSave(slug, 300);
 }
 
-// "Use my signature": a convenience FILL of the Signature field with the identity preset (name / title / site,
-// each on its own line). It is never automatic - the operator taps it, then may edit or clear the field. After
-// filling, refresh the preview and debounce a save so the chosen signature persists like any typed one.
-function edFillSignature(slug){
+// Fill the Signature field with a literal block (a picked saved signature, or the default). Never automatic -
+// the operator taps a control, then may edit or clear the field. After filling, refresh the preview and debounce
+// a save so the chosen signature persists like any typed one. edFocus keeps the field focused; the input event
+// keeps the preview/gate/checklist live and routes the debounced save (E0: signature is field-driven).
+function edFillSignatureText(slug, text){
   var el=edEl("edSig"); if(!el) return;
-  el.value = edSignaturePreset();
+  el.value = String(text==null?"":text);
   try{ el.dispatchEvent(new Event("input", { bubbles:true })); }catch(_){}
   try{ el.focus(); }catch(_){}
   edTick(slug); edScheduleSave(slug, 300);
+}
+// "Use my signature": fill the field with the DEFAULT block (name / agency / site), localized to the message
+// language (the body's script), with the correct "Thrive Digital Solutions" spelling. Per-user via the name.
+function edFillSignature(slug){ edFillSignatureText(slug, edSignatureDefault(edMsgLang())); }
+// Pick a SAVED signature by id -> fill the field with its text.
+function edPickSig(slug, id){
+  var list=edSavedSigs(), s=null;
+  for(var i=0;i<list.length;i++){ if(list[i] && list[i].id===id){ s=list[i]; break; } }
+  if(s) edFillSignatureText(slug, s.text);
+}
+// "+": save the CURRENT Signature field text as a new named signature (name derived from its first non-empty
+// line, so no modal). Persists to the per-user store (console_profiles.prefs.signatures) and re-renders the
+// strip. A blank field is not saved (nothing to name). Best-effort persistence: a failed write shows a status
+// but the strip still reflects the in-memory add so the operator is not blocked mid-compose.
+function edSaveCurrentSig(slug){
+  var text = String(edVal("edSig")||"").replace(/\s+$/,"");
+  if(!text.trim()){ edSetStatus(slug, t("ed_sig_empty"), "bad"); return; }
+  var firstLine = (text.split("\n").find(function(l){ return l.trim(); })||text).trim();
+  var name = firstLine.length>40 ? firstLine.slice(0,40) : firstLine;
+  var id = "sig-"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  var entry = { id:id, name:name, text:text };
+  if(typeof saveSignatureEntry==="function"){
+    saveSignatureEntry(entry).then(function(){ edRenderSavedSigs(slug); edSetStatus(slug, t("ed_sig_saved"), "ok"); },
+                                   function(){ edRenderSavedSigs(slug); edSetStatus(slug, t("ed_sig_save_failed"), "bad"); });
+  } else { edRenderSavedSigs(slug); }
+}
+// Remove a saved signature by id (persist + re-render).
+function edRemoveSig(slug, id){
+  if(typeof removeSignatureEntry==="function"){
+    removeSignatureEntry(id).then(function(){ edRenderSavedSigs(slug); }, function(){ edRenderSavedSigs(slug); });
+  } else { edRenderSavedSigs(slug); }
+}
+// Render the saved-signatures strip: one pick chip per saved signature (its name; tap to fill), each with a
+// small remove control, then a "+" to save the current field text as a new one. Rebuilt from runtime identity,
+// so it reflects the latest per-user set after every add/remove. Wired here (not in the static markup) because
+// it is dynamic. dir="auto" on the name so an Arabic signature name reads right-to-left.
+function edRenderSavedSigs(slug){
+  var box=edEl("edSigSaved"); if(!box) return;
+  var list=edSavedSigs();
+  var chips = list.map(function(s){
+    return '<span class="ed-sig-chip"><button class="ed-sig-pick" type="button" data-sig-pick="'+esc(s.id)+'" dir="auto" title="'+esc(t("ed_sig_pick"))+'">'+esc(s.name||t("ed_sig"))+'</button>'+
+      '<button class="ed-sig-rm" type="button" data-sig-rm="'+esc(s.id)+'" aria-label="'+esc(t("ed_sig_remove"))+'" title="'+esc(t("ed_sig_remove"))+'">×</button></span>';
+  }).join("");
+  box.innerHTML = chips + '<button class="ed-sig-add" id="edSigAdd" type="button" title="'+esc(t("ed_sig_add"))+'">+ '+esc(t("ed_sig_add"))+'</button>';
+  [].forEach.call(box.querySelectorAll("[data-sig-pick]"), function(b){ b.addEventListener("click", function(){ edPickSig(slug, b.getAttribute("data-sig-pick")); }); });
+  [].forEach.call(box.querySelectorAll("[data-sig-rm]"), function(b){ b.addEventListener("click", function(){ edRemoveSig(slug, b.getAttribute("data-sig-rm")); }); });
+  var add=box.querySelector("#edSigAdd"); if(add) add.addEventListener("click", function(){ edSaveCurrentSig(slug); });
 }
 
 function edScheduleSave(slug, delay){
@@ -266,6 +337,7 @@ function wireEditor(slug){
   var sigEl=edEl("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven
   var lk=edEl("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
   var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
+  edRenderSavedSigs(slug);                                     // G7.1: the per-user saved-signatures strip + "+"
   edTick(slug);                                                // initial checklist + gate + preview
 }
 
@@ -280,5 +352,7 @@ try{
   //     campaign), proving a personal send carries NO List-Unsubscribe. Derives mode from the persisted record.
   window.__thriveSendHeaders = function(slug){ return oppReadData(slug).then(function(data){ return outboundHeaders(slug, sendMode(data)); }); };
   window.__thriveEditorSignature = function(){ return edSignature(); };     // the LIVE field value (empty allowed)
-  window.__thriveSignaturePreset = function(){ return edSignaturePreset(); }; // the "Use my signature" fill (name/title/site)
+  window.__thriveSignaturePreset = function(){ return edSignaturePreset(); }; // the "Use my signature" fill (localized default)
+  window.__thriveSignatureDefault = function(lang){ return edSignatureDefault(lang); }; // the default block for a given language
+  window.__thriveMsgLang = function(){ return edMsgLang(); };                // the detected message language (body script, else UI)
 }catch(e){}

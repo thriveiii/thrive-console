@@ -24,7 +24,7 @@
 // profile resolves to a safe default (no name, member role), never a black screen. No storage is touched.
 // ===================================================================================================
 
-var __identity = { uid:"", email:"", name:"", signature:"", title:"", role:"member", loaded:false };
+var __identity = { uid:"", email:"", name:"", signature:"", title:"", role:"member", loaded:false, prefs:{}, signatures:[] };
 var __profileIndex = { byUid:{}, byEmail:{} };   // from console_profile_names, powers resolveActor across operators
 
 // The current actor as a uid: the value NEW writes stamp (matches app.js currentActor()=authUid()).
@@ -72,6 +72,22 @@ function pickSignature(prefs){
   prefs = (prefs && typeof prefs==="object") ? prefs : {};
   return String(prefs.signature || prefs.sig_en || prefs.sig_ar || "");
 }
+// G7.1: the per-user saved signatures live in console_profiles.prefs.signatures - an array of { id, name, text }.
+// normSignatures coerces any stored value into that clean, bounded shape (drops malformed entries, trims, caps
+// the list), so a hand-edited or legacy prefs never yields a broken strip. Pure; no I/O.
+function normSignatures(v){
+  if(!Array.isArray(v)) return [];
+  var out=[];
+  v.forEach(function(s){
+    if(!s || typeof s!=="object") return;
+    var text=String(s.text==null?"":s.text);
+    if(!text.trim()) return;
+    var id=String(s.id==null?"":s.id).trim() || ("sig-"+out.length+"-"+(String(text).length));
+    var name=String(s.name==null?"":s.name).trim() || String(text).split("\n")[0].slice(0,40);
+    out.push({ id:id, name:name, text:text });
+  });
+  return out.slice(0, 24);      // a sane cap; a person keeps a handful of signatures, not hundreds
+}
 
 // Load, once, at boot: the cross-operator name index, then the current operator's own profile (signature +
 // title) and role. Fire-and-forget from loadBoard(); it NEVER gates the render. Bounded and best-effort at
@@ -98,6 +114,10 @@ function loadIdentity(){
       __identity.signature = pickSignature(pr.prefs);
       var prefs = (pr.prefs && typeof pr.prefs==="object") ? pr.prefs : {};
       __identity.title = String(pr.signature_title || prefs.title || "");   // column authoritative once applied
+      // G7.1: the full prefs is kept for read-modify-write (a signatures save must not clobber other prefs keys),
+      // and the per-user saved signatures are surfaced for the editor's signature strip.
+      __identity.prefs = prefs;
+      __identity.signatures = normSignatures(prefs.signatures);
     }
     // role, from the DATABASE: own console_members row (owner|member), console_admins the legacy fallback.
     return uid ? identGet("console_members?id=eq."+enc(uid)+"&select=id,role&limit=1") : [];
@@ -113,7 +133,7 @@ function finishIdentity(){
   // Surface for later steps (read-only). Non-secret: name/title/role/uid/email plus a hasSignature flag.
   try{ window.__thriveIdentity = { uid:__identity.uid, email:__identity.email, name:__identity.name,
         title:__identity.title, signature:__identity.signature, hasSignature:!!__identity.signature,
-        role:__identity.role, loaded:true }; }catch(e){}
+        signatures:normSignatures(__identity.signatures), role:__identity.role, loaded:true }; }catch(e){}
   // Step 2A: the profile index just settled (fire-and-forget from loadBoard, so it may finish AFTER a drawer
   // was opened). Re-paint the open drawer's notes ONCE so an actor uid that showed raw on first paint now
   // reads as the display name. One synchronous re-render, no polling, no await; guarded so it never throws.
@@ -216,6 +236,61 @@ function applyNameLocally(name){
   try{ if(window.__thriveIdentity) window.__thriveIdentity.name = __identity.name; }catch(e){}
   try{ if(typeof owDetailActive==="function" && owDetailActive(__owSlug) && typeof renderNotesInto==="function") renderNotesInto(__owSlug); }catch(e){}
 }
+// ===================================================================================================
+// G7.1 PER-USER SIGNATURES. The saved signatures live in console_profiles.prefs.signatures (own row, jsonb).
+// A write is a bounded read-modify-write: merge the new signatures array INTO the existing prefs object (kept
+// on __identity from loadIdentity) and upsert the whole prefs column, so other prefs keys (title, sig_en/ar,
+// signature) are preserved - PostgREST merge-duplicates updates only the columns in the payload, so display_name
+// (written by profileSaveName) is never touched here either. Same settle-always + one refresh-retry discipline
+// as profileSaveName; own-row policy (uid = (auth.uid())::text). Per-user by construction: every write keys on
+// the current uid, and the strip reads __identity.signatures, so a second operator sees only their own set.
+// ===================================================================================================
+function profileSavePrefs(nextPrefs, retried){
+  var uid = currentUid();
+  var body = { uid: uid, prefs: (nextPrefs && typeof nextPrefs==="object") ? nextPrefs : {} };
+  return authFetchOnce(URL_BASE + "/rest/v1/console_profiles", {
+    method:"POST",
+    headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Content-Type":"application/json",
+              "Prefer":"resolution=merge-duplicates,return=representation" },
+    cache:"no-store", body: JSON.stringify(body)
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return profileSavePrefs(nextPrefs, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    var row = (Array.isArray(r.data) ? r.data[0] : r.data) || body;
+    return (row && typeof row.prefs==="object") ? row.prefs : body.prefs;    // the server's authoritative prefs
+  });
+}
+// Apply the confirmed prefs to runtime so the editor strip (and any reader) reflects the new set without a reload.
+function applyPrefsLocally(prefs){
+  prefs = (prefs && typeof prefs==="object") ? prefs : {};
+  __identity.prefs = prefs;
+  __identity.signatures = normSignatures(prefs.signatures);
+  try{ if(window.__thriveIdentity) window.__thriveIdentity.signatures = normSignatures(prefs.signatures); }catch(e){}
+}
+// Add (or replace, by id) one saved signature; persist; reflect. Returns the confirmed list.
+function saveSignatureEntry(entry){
+  entry = entry || {};
+  var cur = normSignatures(__identity.signatures);
+  var next = cur.filter(function(s){ return s.id !== entry.id; });
+  next.push({ id:entry.id, name:entry.name, text:entry.text });
+  var base = (__identity.prefs && typeof __identity.prefs==="object") ? __identity.prefs : {};
+  var nextPrefs = Object.assign({}, base, { signatures: normSignatures(next) });
+  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); return normSignatures(saved.signatures); });
+}
+// Remove one saved signature by id; persist; reflect. Returns the confirmed list.
+function removeSignatureEntry(id){
+  var next = normSignatures(__identity.signatures).filter(function(s){ return s.id !== id; });
+  var base = (__identity.prefs && typeof __identity.prefs==="object") ? __identity.prefs : {};
+  var nextPrefs = Object.assign({}, base, { signatures: next });
+  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); return normSignatures(saved.signatures); });
+}
+try{
+  window.__thriveSignatures = function(){ return normSignatures(__identity.signatures); };   // the per-user saved set
+  window.__thriveSaveSignature = function(entry){ return saveSignatureEntry(entry); };        // add/replace (await the confirm)
+  window.__thriveRemoveSignature = function(id){ return removeSignatureEntry(id); };           // remove (await the confirm)
+}catch(e){}
 // Optimistic confirm-or-revert: the person controls their own display_name (any format, first-name-only or
 // full). Nothing is applied until the server confirms; a failure shows red and leaves the runtime name as it
 // was, never a phantom save. Reuses the shared __writing guard so a save never overlaps a send or note write.

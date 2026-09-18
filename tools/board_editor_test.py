@@ -37,7 +37,11 @@ UID = "u"
 DISPLAY_NAME = "Alice Op"
 TITLE = "Growth Lead"
 SIG = DISPLAY_NAME + ", " + TITLE                    # a legacy comma-form sig (used by the baked fixture only)
-PRESET = DISPLAY_NAME + "\n" + TITLE + "\n" + "thriveiii.com"   # the "Use my signature" 3-line fill
+# G7.1: the "Use my signature" default is now name / AGENCY / site (localized). For an English message (the body
+# below is English) the agency line is the correctly-spelled "Thrive Digital Solutions" (no longer the functional
+# title). The name is still the user's own; the site is unchanged.
+AGENCY_EN = "Thrive Digital Solutions"
+PRESET = DISPLAY_NAME + "\n" + AGENCY_EN + "\n" + "thriveiii.com"   # the "Use my signature" 3-line fill (EN default)
 FREE = "Warm regards,\nAlice Op"                     # a freely typed signature (operator authored)
 
 # ---- opps (ALL addresses synthetic *.example.test) -----------------------------------------------
@@ -255,8 +259,8 @@ with sync_playwright() as p:
     ck("E0: the preset signature persists to data.sig as three lines", str(lastP.get("sig",""))==PRESET, lastP.get("sig"))
     artP = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('acme'); }")
     htmP = artP.get("html","")
-    ck("E0: the preset renders as three lines with <br> between name / title / site",
-       (DISPLAY_NAME+"<br>"+TITLE+"<br>thriveiii.com") in htmP, htmP[-300:])
+    ck("E0: the preset renders as three lines with <br> between name / agency / site",
+       (DISPLAY_NAME+"<br>"+AGENCY_EN+"<br>thriveiii.com") in htmP, htmP[-300:])
 
     # ===== PR-A: the body is compiled and sent VERBATIM - no signature-like text is ever removed =====
     bart = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact('baked'); }")

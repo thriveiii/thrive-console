@@ -1208,9 +1208,15 @@ function buildBoard(){
   textarea.rec-in:focus{border-color:#5D7FB7}
   textarea.note-in:focus{border-color:#5D7FB7}
   /* Unified message editor (compose + reply) */
-  input.ed-subj{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:10px 12px;font-size:14px;line-height:1.4;outline:none;margin-bottom:8px}
+  /* G7.1: the compose subject/body/signature type comfortably in both languages. dir="auto" (in the markup) +
+     unicode-bidi:plaintext make each field flow RTL for Arabic content and LTR for English, aligned to that
+     side, with no manual toggle; the console (sans) font, equal 12px padding on all four sides, and a roomy
+     line-height replace the cramped monospace box. Scoped to the editor fields, so the recipient (#recIn) stays
+     LTR - emails are LTR. No letter-spacing on Arabic. */
+  input.ed-subj{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:12px;font-size:14px;line-height:1.5;font-family:inherit;outline:none;margin-bottom:8px;unicode-bidi:plaintext}
   input.ed-subj:focus{border-color:#5D7FB7}
-  textarea.ed-body{min-height:120px;line-height:1.5;unicode-bidi:plaintext}
+  textarea.ed-body{min-height:140px;line-height:1.6;padding:12px;font-family:inherit;unicode-bidi:plaintext}
+  html[dir="rtl"] input.ed-subj,html[dir="rtl"] textarea.ed-body,html[dir="rtl"] textarea.ed-sig-in{letter-spacing:normal}
   .act:disabled{opacity:.45;cursor:not-allowed}
   .ed-checks{list-style:none;margin:8px 0 4px;padding:0;display:flex;flex-wrap:wrap;gap:6px}
   .ed-ck{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid #22222e;color:#8a8a93;background:#14141c;display:flex;align-items:center;gap:5px}
@@ -1223,7 +1229,18 @@ function buildBoard(){
   .ed-sig-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
   .ed-sig-lab{font-size:12px;color:#8a8a93}
   .ed-sig-use{font-size:12px;padding:5px 10px}
-  textarea.ed-sig-in{min-height:64px;line-height:1.5;unicode-bidi:plaintext;font-size:13px}
+  textarea.ed-sig-in{min-height:66px;line-height:1.6;padding:12px;font-family:inherit;unicode-bidi:plaintext;font-size:13px}
+  /* the saved-signatures strip: pickable name chips (each with a remove x), then a "+" to save the current
+     field text as a new named signature. Equal padding; chips wrap; Arabic names keep no letter-spacing. */
+  .ed-sig-saved{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .ed-sig-chip{display:inline-flex;align-items:stretch;border:1px solid #22222e;border-radius:999px;overflow:hidden;background:#14141c}
+  .ed-sig-pick{background:transparent;border:0;color:#cdd;font:inherit;font-size:12px;padding:5px 11px;cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ed-sig-pick:hover{color:#eef}
+  .ed-sig-rm{background:transparent;border:0;border-inline-start:1px solid #22222e;color:#8a8a93;font:inherit;font-size:13px;padding:0 9px;cursor:pointer}
+  .ed-sig-rm:hover{color:#e37a7a}
+  .ed-sig-add{background:#14141c;border:1px dashed #33333f;border-radius:999px;color:#9a9aa6;font:inherit;font-size:12px;padding:5px 11px;cursor:pointer}
+  .ed-sig-add:hover{border-color:#5D7FB7;color:#cdd}
+  html[dir="rtl"] .ed-sig-pick,html[dir="rtl"] .ed-sig-add{letter-spacing:normal}
   .ed-prev-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:6px 0 6px}
   html[dir="rtl"] .ed-prev-h{text-transform:none;letter-spacing:normal}
   iframe.ed-preview{width:100%;height:220px;border:1px solid #22222e;border-radius:9px;background:#fff}
@@ -1323,6 +1340,8 @@ function buildBoard(){
           ed_h:"Message", ed_subj:"Subject", ed_subj_ph:"Subject line",
           ed_body:"Body", ed_body_ph:"Write the message. Use Insert opp link to add the page link.",
           ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature",
+          ed_sig_add:"Save this signature", ed_sig_pick:"Use this signature", ed_sig_remove:"Remove",
+          ed_sig_saved:"Signature saved.", ed_sig_save_failed:"Could not save the signature.", ed_sig_empty:"Write a signature first, then save it.",
           ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
           ed_ck_subj:"Subject", ed_ck_body:"Body", ed_ck_recip:"Recipient", ed_ck_link:"Opp link",
           nm_open:"New message", nm_h:"New message", nm_to:"To", nm_to_ph:"recipient@example.com",
@@ -1413,6 +1432,8 @@ function buildBoard(){
           ed_h:"الرسالة", ed_subj:"الموضوع", ed_subj_ph:"سطر الموضوع",
           ed_body:"النص", ed_body_ph:"اكتب الرسالة. استخدم إدراج رابط الفرصة لإضافة رابط الصفحة.",
           ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي",
+          ed_sig_add:"احفظ هذا التوقيع", ed_sig_pick:"استخدم هذا التوقيع", ed_sig_remove:"إزالة",
+          ed_sig_saved:"حُفظ التوقيع.", ed_sig_save_failed:"تعذّر حفظ التوقيع.", ed_sig_empty:"اكتب توقيعًا أولًا ثم احفظه.",
           ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",
           ed_ck_subj:"الموضوع", ed_ck_body:"النص", ed_ck_recip:"المستلم", ed_ck_link:"رابط الفرصة",
           nm_open:"رسالة جديدة", nm_h:"رسالة جديدة", nm_to:"إلى", nm_to_ph:"recipient@example.com",
