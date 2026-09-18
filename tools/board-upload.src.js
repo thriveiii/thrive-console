@@ -101,6 +101,10 @@ function upSlugify(s){                                                          
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 }
 function upBaseName(name){ return String(name || "").replace(/^.*\//, ""); }
+// The directory prefix of a zip entry name (everything before the last "/"), "" for a top-level file. Used to
+// pair a page and its message by their SHARED FOLDER (a per-slug subfolder zip), independent of the message's
+// heading or filename.
+function upDir(name){ var s = String(name || ""); var i = s.lastIndexOf("/"); return i < 0 ? "" : s.slice(0, i); }
 function upPageSlug(name){                                                          // intake.js:434
   var parts = String(name || "").split("/").filter(Boolean);
   var file = parts.length ? parts[parts.length - 1] : "";
@@ -241,8 +245,27 @@ function upBuildPlan(files){
       // AXIOM #3 "ignores the rest": a text with no message (README / facts sheet / base64 asset / manifest) is
       // neither a page nor a message. It is silently ignored - no informational row, no note.
     });
-    var usedUnit = {};
-    rows.forEach(function(r){
+    var usedUnit = {}, pairedRow = {};
+    // FOLDER-FIRST pairing: a page and the single message-bearing text that live in the SAME subfolder are the
+    // same campaign item (the per-slug zip: bards-alley/index.html + bards-alley/<name>.md), so pair them
+    // DIRECTLY - by their shared folder - before any name-similarity guess. The message's heading or filename may
+    // differ from the folder name; the folder is the unambiguous link the token ranker cannot see. This only
+    // fires for a page in a REAL subfolder that has EXACTLY ONE unused unit sharing that folder, so the
+    // consolidated one-file-many-messages zip (its messages live in one top-level file, not per folder) never
+    // folder-pairs and is still resolved by the token ranker below.
+    rows.forEach(function(r, ri){
+      var pdir = upDir(r.page && r.page.name);
+      if(!pdir) return;                                         // only a real subfolder pairs by folder
+      var found = -1, n = 0;
+      units.forEach(function(u, ui){ if(usedUnit[ui]) return; if(upDir(u.file) === pdir){ n++; found = ui; } });
+      if(n !== 1) return;                                       // 0 or ambiguous (>1) in this folder: leave to the ranker
+      var u = units[found]; usedUnit[found] = 1; pairedRow[ri] = 1;
+      r.subject = u.subject; r.body = u.body; r.email = u.email; r.text_name = u.file;
+      r.title = u.subject || upPretty(r.slug);
+      if(r.email && isSuppressed(r.email) && r.warnings.indexOf("suppressed") < 0) r.warnings.push("suppressed");
+    });
+    rows.forEach(function(r, ri){
+      if(pairedRow[ri]) return;                                 // already attached by the shared-folder pass
       var best = null, bestScore = 0, bi = -1;
       units.forEach(function(u, ui){
         if(usedUnit[ui]) return;
