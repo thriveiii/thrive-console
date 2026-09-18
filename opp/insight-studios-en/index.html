@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insight Studios · Made to be seen</title>
+<link rel="preconnect" href="https://ssqhwdzgegzqcjfcclmr.supabase.co" crossorigin>
+<link rel="dns-prefetch" href="https://ssqhwdzgegzqcjfcclmr.supabase.co">
+<style>
+:root{
+  --bg:#0b0d13; --bg2:#0f1220; --ink:#ECE9E1; --muted:#9aa1b2; --soft:#c7cbd6;
+  --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.06);
+  --g1:#8b7bf0; --g2:#3fd9c6; --panel:rgba(255,255,255,.025);
+  color-scheme:dark;
+}
+@font-face{font-family:"tf1";src:url("https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-01-beb41e57.woff2") format("woff2");font-display:swap;}
+@font-face{font-family:"tf2";src:url("https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-02-22937cf9.woff2") format("woff2");font-display:swap;}
+@font-face{font-family:"tf3";src:url("https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-03-151d08ee.woff2") format("woff2");font-display:swap;}
+@font-face{font-family:"tf4";src:url("https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-04-dd8e8c5a.woff2") format("woff2");font-display:swap;}
+@font-face{font-family:"tf5";src:url("https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-05-e36207c4.woff2") format("woff2");font-display:swap;}
+@font-face{font-family:"tf6";src:url("https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-06-58a22f0f.woff2") format("woff2");font-display:swap;}
+@font-face{font-family:"tf7";src:url("https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-07-ee5dbf54.woff2") format("woff2");font-display:swap;}
+@font-face{font-family:"tf8";src:url("https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-08-e35f45ee.woff2") format("woff2");font-display:swap;}
+*{box-sizing:border-box}
+html{overflow-x:clip; -webkit-text-size-adjust:100%; scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"tf1","tf2","tf3","tf4","tf5","tf6","tf7","tf8",system-ui,"Segoe UI",Helvetica,Arial,sans-serif; line-height:1.6;
+  font-feature-settings:"kern" 1;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  overflow-x:clip;
+}
+.wrap{max-width:1080px; margin:0 auto; padding:0 clamp(20px,5vw,44px)}
+.rule{height:1px; width:100%; background:linear-gradient(90deg,transparent,var(--line),transparent); margin:0}
+section{padding:clamp(52px,8vw,96px) 0}
+.kick{
+  display:inline-block; font-size:.74rem; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 14px;
+}
+h1,h2,h3{margin:0; font-weight:650; text-wrap:balance; line-height:1.16}
+p{text-wrap:pretty}
+.gt{background:linear-gradient(100deg,var(--g1),var(--g2)); -webkit-background-clip:text; background-clip:text; color:transparent}
+
+/* aurora */
+.aur{position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none}
+.aur i{position:absolute; display:block; border-radius:50%; filter:blur(90px); opacity:.4}
+.aur .a{width:52vw; height:52vw; background:radial-gradient(circle,#6a58e8,transparent 60%); inset-inline-start:-12vw; top:-10vw; animation:drift 26s ease-in-out infinite}
+.aur .b{width:46vw; height:46vw; background:radial-gradient(circle,#2bbf9f,transparent 60%); inset-inline-end:-10vw; top:24vh; animation:drift 32s ease-in-out infinite reverse}
+.aur .c{width:40vw; height:40vw; background:radial-gradient(circle,#caa14a,transparent 62%); inset-inline-start:18vw; bottom:-16vw; opacity:.22; animation:drift 38s ease-in-out infinite}
+@keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(3vw,-3vh)}}
+
+/* hero */
+.hero{text-align:center; padding-top:clamp(48px,7vw,84px)}
+.badge{width:64px; height:64px; margin:0 auto 22px; display:block; animation:spin 34s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hero h1{font-size:clamp(2.15rem,6.2vw,4rem); letter-spacing:-.01em; margin:6px auto 0; max-width:18ch}
+.lede{color:var(--soft); font-size:clamp(1.02rem,2.3vw,1.22rem); max-width:60ch; margin:20px auto 0}
+.cta-row{margin-top:30px}
+.btn{
+  position:relative; display:inline-block; text-decoration:none; color:#0b0d13; font-weight:650;
+  padding:15px 30px; border-radius:999px; overflow:hidden; font-size:1rem;
+  background:linear-gradient(100deg,var(--g1),var(--g2)); box-shadow:0 10px 34px rgba(99,80,220,.32);
+}
+.btn:after{content:""; position:absolute; top:0; bottom:0; width:44%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);
+  left:-60%; animation:sheenL 3.6s ease-in-out infinite}
+@keyframes sheenL{0%{left:-60%}55%,100%{left:130%}}
+@keyframes sheenR{0%{right:-60%}55%,100%{right:130%}}
+.btn:focus-visible{outline:2px solid var(--g2); outline-offset:3px}
+
+/* proofs */
+.eyerow{text-align:center}
+.proofs{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:26px}
+.proof{padding:22px 20px; border:1px solid var(--line2); border-radius:16px; background:var(--panel)}
+.proof p{margin:0; color:var(--soft); font-size:.98rem}
+
+/* pull quote */
+.quote{max-width:56ch; margin:40px auto 0; text-align:center}
+.quote blockquote{margin:0; font-size:clamp(1.3rem,3.4vw,1.95rem); line-height:1.4; font-weight:620}
+.quote .by{display:block; margin-top:14px; color:var(--muted); font-size:.92rem; font-weight:400}
+
+/* big / sub */
+.big h2{font-size:clamp(1.7rem,4.6vw,2.9rem); max-width:22ch}
+.big .sub{color:var(--soft); font-size:clamp(1rem,2.2vw,1.16rem); max-width:62ch; margin:18px 0 0}
+
+/* market signal */
+.signal{text-align:center}
+.signal p{font-size:clamp(1.12rem,2.7vw,1.5rem); line-height:1.5; max-width:46ch; margin:0 auto; font-weight:540}
+.signal .src{display:block; margin-top:16px; color:var(--muted); font-size:.8rem; letter-spacing:.04em}
+
+/* gallery */
+.work{overflow:hidden}
+.work-head{margin-bottom:26px}
+.strip{
+  width:100vw; position:relative; inset-inline-start:50%; margin-inline-start:-50vw;
+  overflow:hidden; overscroll-behavior-x:contain; touch-action:pan-y;
+  cursor:grab; direction:ltr;
+}
+.strip::-webkit-scrollbar{display:none}
+.strip.drag{cursor:grabbing}
+.set{display:flex; gap:16px; padding-inline-start:clamp(20px,5vw,44px); padding-inline-end:clamp(20px,5vw,44px); width:max-content; min-height:1px}
+.wf{
+  position:relative; flex:0 0 auto; width:clamp(200px,26vw,300px); aspect-ratio:4/5;
+  border-radius:14px; overflow:hidden; background:#141726; border:1px solid var(--line2);
+}
+.wf img{width:100%; height:100%; object-fit:cover; display:block; user-select:none; -webkit-user-drag:none}
+.wf .wl{
+  position:absolute; inset-inline:0; bottom:0; padding:26px 16px 12px; color:#fff;
+  background:linear-gradient(0deg,rgba(6,7,12,.86),transparent);
+  font-size:.86rem; letter-spacing:0; line-height:1.35;
+}
+.wf .wl b{display:block; font-weight:600}
+.wf .wl span{color:#c9cede}
+.wf button.open{position:absolute; inset:0; background:none; border:0; cursor:pointer}
+.wf button.open:focus-visible{outline:2px solid var(--g2); outline-offset:-3px}
+
+/* services */
+.svc-head{margin-bottom:30px}
+.cards{display:grid; grid-template-columns:repeat(3,1fr); gap:18px}
+.pc{padding:26px 22px; border:1px solid var(--line2); border-radius:18px; background:var(--panel)}
+.pc .ico{width:34px; height:34px; margin-bottom:16px; display:block}
+.pc h3{font-size:1.12rem; margin-bottom:9px; font-weight:640}
+.pc p{margin:0; color:var(--soft); font-size:.96rem; line-height:1.6}
+
+/* cta */
+.final{text-align:center}
+.final h2{font-size:clamp(1.7rem,4.4vw,2.7rem); max-width:20ch; margin:0 auto}
+.final .p{color:var(--soft); font-size:clamp(1rem,2.2vw,1.16rem); max-width:56ch; margin:18px auto 0}
+.respect{max-width:58ch; margin:30px auto 0; color:var(--ink); font-size:1.05rem}
+.respect b{font-weight:650}
+.terms{margin-top:26px; color:var(--muted); font-size:.84rem}
+footer{padding:40px 0 60px; text-align:center; border-top:1px solid var(--line2)}
+footer img{width:34px; height:34px; opacity:.85}
+
+/* lightbox */
+.lb{position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
+  background:rgba(6,7,12,.9); padding:24px}
+.lb[hidden]{display:none!important}
+.lb-inner{max-width:min(92vw,560px)}
+.lb-img{max-width:100%; max-height:78vh; border-radius:14px; display:block; border:1px solid var(--line)}
+.lb-img[hidden]{display:none!important}
+.lb-cap{margin-top:14px; text-align:center; color:#dfe3ee; font-size:.95rem; line-height:1.4}
+.lb-cap b{display:block; font-weight:600}
+.lb-cap span{color:#a7adbd}
+.lb-x{position:fixed; top:18px; inset-inline-end:18px; width:42px; height:42px; border-radius:50%;
+  border:1px solid var(--line); background:rgba(255,255,255,.06); color:#fff; font-size:1.3rem; cursor:pointer}
+.lb-x:focus-visible{outline:2px solid var(--g2); outline-offset:2px}
+
+@media (max-width:720px){
+  .proofs{grid-template-columns:1fr}
+  .cards{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){
+  .badge,.aur i,.btn:after{animation:none!important}
+  html{scroll-behavior:auto}
+}
+@media (prefers-reduced-data:reduce){
+  .aur{display:none}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#8b7bf0"/><stop offset="1" stop-color="#3fd9c6"/></linearGradient></defs></svg>
+<div class="aur" aria-hidden="true"><i class="a"></i><i class="b"></i><i class="c"></i></div>
+
+<header class="wrap hero">
+  <img class="badge" src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-05-544275ef.png" alt="Thrive">
+  <div class="kick">Film production · Riyadh</div>
+  <h1>Made to be seen</h1>
+  <p class="lede">From ideas to dazzling visions, that is how you describe yourselves, and it is what we saw in your work. Instagram carries your presence well; the other channels do not carry the same weight yet. That is where we come in.</p>
+  <div class="cta-row"><a class="btn" href="mailto:mnaboush@insightstudios.sa?subject=Made%20to%20be%20seen">Let&#x27;s talk</a></div>
+</header>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<section class="wrap eyerow">
+  <div class="kick">What you have built</div>
+  <div class="proofs"><div class="proof"><p>A full-fledged Saudi film production house in Riyadh, guiding clients from concept to visual style to filming and final cut.</p></div>
+<div class="proof"><p>Direction, production and cinematography under one roof, with a track record in integrated visual content.</p></div>
+<div class="proof"><p>A striking Instagram presence of over five thousand followers that already reflects a clear cinematic eye.</p></div></div>
+  <div class="quote"><blockquote>«From ideas to dazzling visions»<span class="by">Insight Studios, in their own words</span></blockquote></div>
+</section>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<section class="wrap big">
+  <div class="kick">Where we come in</div>
+  <h2>Instagram sees you. <span class="gt">The decision-makers do not, yet</span></h2>
+  <p class="sub">Your reels land on Instagram, while X and LinkedIn stay quiet. We carry your weight across every channel and build an institutional presence that ministries and brands can find.</p>
+</section>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<section class="wrap signal">
+  <div class="kick">A signal from the market</div>
+  <p>Saudi Arabia&#x27;s digital video content market is set to more than double to over five billion dollars by 2034, and short-form video engagement across the region rose sharply in a single year. Attention is moving to the feed, and a studio like yours should own it there.<span class="src">IMARC and YouGov, 2025 to 2034</span></p>
+</section>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<section class="work">
+  <div class="wrap work-head">
+    <div class="kick">Selected work</div>
+    <p class="sub" style="color:var(--soft);max-width:56ch;margin:0">A glimpse of identity, campaigns and content we have made for different brands. Drag to browse, tap any piece to see it closer.</p>
+  </div>
+  <div class="strip" id="strip"><div class="set" id="set"><figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-06-216e41dc.jpg" alt="Brand identity" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Brand identity</b><span>Hospitality</span></figcaption><button class="open" data-i="0" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-07-bdd7d105.jpg" alt="Launch campaign" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Launch campaign</b><span>Seasonal</span></figcaption><button class="open" data-i="1" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-08-f0c1a1b9.jpg" alt="Ad film" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Ad film</b><span>Production</span></figcaption><button class="open" data-i="2" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-09-f7a203b1.jpg" alt="Content system" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Content system</b><span>Social</span></figcaption><button class="open" data-i="3" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-10-49193d0e.jpg" alt="Identity &amp; print" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Identity &amp; print</b><span>Retail</span></figcaption><button class="open" data-i="4" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-11-2a8ad948.jpg" alt="Product shoot" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Product shoot</b><span>Lifestyle</span></figcaption><button class="open" data-i="5" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-12-565c5c22.jpg" alt="Story content" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Story content</b><span>Short video</span></figcaption><button class="open" data-i="6" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-13-62a329d8.jpg" alt="Restaurant identity" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Restaurant identity</b><span>Packaging</span></figcaption><button class="open" data-i="7" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-14-121572d8.jpg" alt="Performance campaign" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Performance campaign</b><span>Ads</span></figcaption><button class="open" data-i="8" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-15-34357b25.jpg" alt="Performance report" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Performance report</b><span>Dashboard</span></figcaption><button class="open" data-i="9" aria-label="Open work"></button></figure>
+<figure class="wf"><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-16-31d33179.jpg" alt="Digital identity" loading="lazy" decoding="async" width="720" height="900"><figcaption class="wl"><b>Digital identity</b><span>Launch</span></figcaption><button class="open" data-i="10" aria-label="Open work"></button></figure></div></div>
+</section>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<section class="wrap">
+  <div class="svc-head">
+    <div class="kick">What we propose to Insight</div>
+    <p class="sub" style="color:var(--soft);max-width:56ch;margin:0">Six connected steps, from relaunch to the monthly report, shaped for where you are now.</p>
+  </div>
+  <div class="cards"><div class="pc"><svg class="ico" viewBox="0 0 32 32" fill="none"><g stroke="url(#g)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="8" width="20" height="18" rx="2"/><path d="M6 14h20M12 5v5M20 5v5"/><path d="M11.5 19.5l3 3 5.5-5.5"/></g></svg><h3>Relaunch your digital presence</h3><p>We bring Insight back to the platforms with a steady plan worthy of a name whose work people watch.</p></div>
+<div class="pc"><svg class="ico" viewBox="0 0 32 32" fill="none"><g stroke="url(#g)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="7" width="16" height="14" rx="2"/><rect x="11" y="12" width="16" height="13" rx="2" opacity=".7"/></g></svg><h3>Refine the channel identity</h3><p>Templates, colours and one typeface for your posts. It never touches your cinematic language; it gives it a consistent frame that stands out in the feed.</p></div>
+<div class="pc"><svg class="ico" viewBox="0 0 32 32" fill="none"><g stroke="url(#g)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="20" height="20" rx="3"/><path d="M6 13h20M6 20h20M13 6v20M20 6v20" opacity=".55"/></g></svg><h3>Content for X and Instagram</h3><p>Ten posts a month on each, telling your work in a cinematic, story-led style that suits Insight&#x27;s taste and audience, and presents you as a production partner for institutions and ministries.</p></div>
+<div class="pc"><svg class="ico" viewBox="0 0 32 32" fill="none"><g stroke="url(#g)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="16" r="9"/><circle cx="16" cy="16" r="4.5"/><circle cx="16" cy="16" r="1" fill="url(#g)" stroke="none"/></g></svg><h3>A LinkedIn package</h3><p>Ten posts a month that surface your projects and position you as a leading Saudi film production house, speaking to the decision-makers who commission work.</p></div>
+<div class="pc"><svg class="ico" viewBox="0 0 32 32" fill="none"><g stroke="url(#g)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="14" r="8"/><path d="M20 20l6 6"/></g></svg><h3>A working session with your team</h3><p>We agree on direction and tone, and build a content and identity plan that fits your standing and your growth.</p></div>
+<div class="pc"><svg class="ico" viewBox="0 0 32 32" fill="none"><g stroke="url(#g)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 24h20"/><path d="M11 24v-6M16 24v-11M21 24v-8"/></g></svg><h3>A full monthly report</h3><p>What we delivered in numbers this month, and what we propose for the month ahead.</p></div></div>
+</section>
+
+<div class="wrap"><div class="rule"></div></div>
+
+<section class="wrap final">
+  <div class="kick">Let&#x27;s begin</div>
+  <h2>A short brief, then a decision</h2>
+  <p class="p">Open the brief whenever it suits you. Whether the focus is a strong return to X and Instagram or an institutional presence on LinkedIn, we are glad to talk.</p>
+  <p class="respect"><b>You turn ideas into work people watch.</b> We are here to make sure the right people watch it, on every channel.</p>
+  <div class="cta-row"><a class="btn" href="mailto:mnaboush@insightstudios.sa?subject=Made%20to%20be%20seen">Let&#x27;s talk</a></div>
+  <p class="terms">A monthly partnership. We start with a brief, not a contract.</p>
+</section>
+
+<footer><img src="https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-05-544275ef.png" alt="Thrive"></footer>
+
+<div class="lb" id="lb" hidden>
+  <button class="lb-x" id="lbx" aria-label="Close">&times;</button>
+  <div class="lb-inner">
+    <img class="lb-img" id="lbimg" alt="">
+    <div class="lb-cap" id="lbcap"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+  var rtl = false;
+  var caps = [{t:"Brand identity",s:"Hospitality",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-06-216e41dc.jpg"},{t:"Launch campaign",s:"Seasonal",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-07-bdd7d105.jpg"},{t:"Ad film",s:"Production",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-08-f0c1a1b9.jpg"},{t:"Content system",s:"Social",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-09-f7a203b1.jpg"},{t:"Identity & print",s:"Retail",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-10-49193d0e.jpg"},{t:"Product shoot",s:"Lifestyle",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-11-2a8ad948.jpg"},{t:"Story content",s:"Short video",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-12-565c5c22.jpg"},{t:"Restaurant identity",s:"Packaging",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-13-62a329d8.jpg"},{t:"Performance campaign",s:"Ads",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-14-121572d8.jpg"},{t:"Performance report",s:"Dashboard",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-15-34357b25.jpg"},{t:"Digital identity",s:"Launch",src:"https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/opp/opp-16-31d33179.jpg"}];
+
+  // seamless marquee via transform (strip is internally LTR; scrolls left, loops)
+  var strip = document.getElementById('strip'), set = document.getElementById('set');
+  var clone = set.cloneNode(true); clone.removeAttribute('id');
+  var track = document.createElement('div');
+  track.style.cssText = 'display:flex;width:max-content;will-change:transform';
+  strip.appendChild(track); track.appendChild(set); track.appendChild(clone);
+  var half = 0, x = 0, paused = false, dragging = false, speed = -0.4;
+  function measure(){ half = set.getBoundingClientRect().width + 16; }
+  measure(); window.addEventListener('resize', measure);
+  function norm(){ while(-x >= half) x += half; while(x > 0) x -= half; }
+  function tick(){
+    if(!paused && !dragging && !reduce){ x += speed; norm(); track.style.transform='translateX('+x+'px)'; }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // pointer drag (mouse + touch); vertical scroll preserved via touch-action:pan-y
+  var startX=0, startTx=0;
+  strip.addEventListener('pointerdown',function(ev){
+    dragging=true; strip.classList.add('drag'); startX=ev.clientX; startTx=x;
+    try{ strip.setPointerCapture(ev.pointerId); }catch(e){}
+  });
+  strip.addEventListener('pointermove',function(ev){
+    if(!dragging) return;
+    x = startTx + (ev.clientX - startX); norm();
+    track.style.transform='translateX('+x+'px)';
+  });
+  function endDrag(){ if(dragging){ dragging=false; strip.classList.remove('drag'); } }
+  strip.addEventListener('pointerup',endDrag);
+  strip.addEventListener('pointercancel',endDrag);
+  strip.addEventListener('pointerleave',endDrag);
+
+  // lightbox
+  var lb=document.getElementById('lb'), lbimg=document.getElementById('lbimg'),
+      lbcap=document.getElementById('lbcap'), lbx=document.getElementById('lbx'), lastFocus=null;
+  function openLb(i){
+    var c=caps[i]; lbimg.hidden=false; lbimg.src=c.src; lbimg.alt=c.t;
+    lbcap.innerHTML='<b></b><span></span>';
+    lbcap.querySelector('b').textContent=c.t; lbcap.querySelector('span').textContent=c.s;
+    lb.hidden=false; paused=true; lastFocus=document.activeElement; lbx.focus();
+  }
+  function closeLb(){ lb.hidden=true; paused=false; if(lastFocus) lastFocus.focus(); }
+  document.querySelectorAll('.open').forEach(function(b){
+    b.addEventListener('click',function(){ openLb(+b.dataset.i); });
+  });
+  lbx.addEventListener('click',closeLb);
+  lb.addEventListener('click',function(ev){ if(ev.target===lb) closeLb(); });
+  document.addEventListener('keydown',function(ev){ if(ev.key==='Escape' && !lb.hidden) closeLb(); });
+
+  // orphan control: join last two words of key blocks
+  ['h1','.lede','.big h2','.respect','.final h2'].forEach(function(sel){
+    document.querySelectorAll(sel).forEach(function(el){
+      if(el.children.length) return;
+      var w=el.textContent.trim().split(/\s+/);
+      if(w.length>2){ var last=w.pop(); el.textContent=w.join(' ')+'\u00A0'+last; }
+    });
+  });
+})();
+</script>
+<script src="/beacon.js" defer></script>
+</body>
+</html>
