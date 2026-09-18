@@ -436,7 +436,10 @@ function runSend(slug){
   return oppReadData(slug).then(function(data){
     var recips = allRecipients(data);
     if(!recips.length) { var e0=new Error("no recipient"); e0.__kind="norecip"; throw e0; }
-    if(!(data && (String(data.outreach_text||"").trim() || String(data.outreach_subject||"").trim()))){ var e1=new Error("no message"); e1.__kind="nomsg"; throw e1; }
+    // NO MESSAGE, NO SEND: a card must carry a real message before it can send, or a campaign could ship a page
+    // with an empty body. Require BOTH a subject AND a body (the same bar as the interactive compose gate
+    // sendReady), so an empty-body card (e.g. a page committed with no message attached) can never send.
+    if(!(data && String(data.outreach_text||"").trim() && String(data.outreach_subject||"").trim())){ var e1=new Error("no message"); e1.__kind="nomsg"; throw e1; }
     // E2 ConTh-3: an uploaded-page opp must be proven LIVE before ANY send (upSendLiveGate, unchanged). The gate
     // throws __kind="notlive"/"deadlink" so the catch reverts with a clear reason. Non-upload opps pass through.
     var __liveGate = (typeof upSendLiveGate==="function") ? upSendLiveGate(slug, data) : Promise.resolve();

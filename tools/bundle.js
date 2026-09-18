@@ -1142,6 +1142,7 @@ function buildBoard(){
   .lib-in.bad{border-color:#7a3838;box-shadow:0 0 0 2px rgba(150,60,60,.16)}
   .lib-rowerr{font-size:11.5px;color:#9aa0aa;min-height:0}
   .lib-rowerr.bad{color:#e0a3a3}
+  .lib-rowerr.info{color:#a9d5b6}   /* BUG-1: a friendly auto-rename note, not an error */
   /* PR-L1: the standalone Library surface */
   .scrim.libview{justify-content:center;align-items:flex-start}
   html[dir="rtl"] .scrim.libview{justify-content:center}
@@ -1183,6 +1184,12 @@ function buildBoard(){
   .lv-prev{margin-top:6px}
   .lv-prom-b.on{border-color:#3a5;color:#bfe6cd}
   .lv-prom{margin-top:8px;display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid #262632;border-radius:10px;background:#0b0b10}
+  /* BUG-2: the Delete action + its inline confirm. A quiet danger button; the confirm box echoes the promote box. */
+  .lv-del-b:hover{border-color:#5c2121;color:#e37a7a}
+  .lv-del-b.on{border-color:#5c2121;color:#e37a7a}
+  .lv-del{margin-top:8px;display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid #3a2222;border-radius:10px;background:#140d0d}
+  .lv-del-warn{font-size:12.5px;color:#e0b3b3}
+  .lv-del-go{border-color:#5c2121;color:#e37a7a}
   .lv-prom-in{width:100%;box-sizing:border-box;resize:vertical;min-height:38px;border:1px solid #262632;border-radius:8px;background:#0e0e14;color:#dfe3ea;padding:9px 10px;font-size:13px}
   .lv-prom-in:focus{outline:none;border-color:#3d5a7a}
   .lv-prom-acts{display:flex;justify-content:flex-start}
@@ -1379,6 +1386,7 @@ function buildBoard(){
           lib_doc_only:"Documentation template (no message).", lib_activate:"Publish to Library", lib_activating:"Publishing templates...", lib_done:"Published to Library:",
           lib_link:"Live link", lib_copy:"Copy link", lib_open_page:"Open page", lib_copied:"Link copied.", lib_row_live:"Live", lib_row_confirming:"Published (going live)", lib_row_failed:"Not published", lib_row_fault:"Live link not resolving",
           lib_f_title:"Title", lib_f_slug:"Link name", lib_f_task:"Task", lib_task_ph:"Choose or type a task", lib_err_slug:"Use lowercase letters, numbers and dashes only.", lib_err_dup:"This link name is repeated in this batch.", lib_err_exists:"This link name is already taken.", lib_err_fix:"Fix the highlighted link names first.",
+          lib_renamed:"Link name was taken, renamed to {s}.", lib_delete:"Delete", lib_del_confirm:"Delete this page permanently? Its live link will stop working.", lib_del_cancel:"Cancel", lib_deleting:"Deleting…", lib_del_failed:"Could not delete. Nothing changed.",
           lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview",
           lib_tab_templates:"Templates", lib_tab_archive:"Archive", lib_arch_open:"History", lib_restore:"Restore", lib_arch_empty:"No archived cards yet.",
           lib_promote:"Promote", lib_prom_ph:"Recipient email (or several, comma separated)", lib_prom_go:"Add to Operations", lib_prom_need:"Enter at least one valid email.", lib_prom_saving:"Adding to Operations...", lib_prom_done:"Added to Operations. Write the message there.", lib_prom_failed:"Could not add to Operations." },
@@ -1471,6 +1479,7 @@ function buildBoard(){
           lib_doc_only:"قالب توثيقي (بلا رسالة).", lib_activate:"انشر في المكتبة", lib_activating:"جارٍ نشر القوالب...", lib_done:"نُشر في المكتبة:",
           lib_link:"الرابط الحيّ", lib_copy:"نسخ الرابط", lib_open_page:"فتح الصفحة", lib_copied:"نُسخ الرابط.", lib_row_live:"حيّة", lib_row_confirming:"نُشرت (قيد التفعيل)", lib_row_failed:"لم تُنشر", lib_row_fault:"معطّلة (الرابط لا يستجيب)",
           lib_f_title:"العنوان", lib_f_slug:"اسم الرابط", lib_f_task:"المهمة", lib_task_ph:"اختر مهمة أو اكتب واحدة", lib_err_slug:"استخدم حروفًا صغيرة وأرقامًا وشرطات فقط.", lib_err_dup:"اسم الرابط مكرّر في هذه الدفعة.", lib_err_exists:"اسم الرابط مستخدم من قبل.", lib_err_fix:"صحّح أسماء الروابط المميّزة أولًا.",
+          lib_renamed:"اسم الرابط كان مستخدماً، فأُعيدت تسميته إلى {s}.", lib_delete:"حذف", lib_del_confirm:"حذف هذه الصفحة نهائياً؟ سيتوقف رابطها الحيّ.", lib_del_cancel:"إلغاء", lib_deleting:"جارٍ الحذف…", lib_del_failed:"تعذّر الحذف. لم يتغيّر شيء.",
           lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة",
           lib_tab_templates:"القوالب", lib_tab_archive:"الأرشيف", lib_arch_open:"السجل", lib_restore:"استرجاع", lib_arch_empty:"لا بطاقات مؤرشفة بعد.",
           lib_promote:"أضف مستلماً", lib_prom_ph:"بريد المستلم (أو عدة، مفصولة بفواصل)", lib_prom_go:"أضف إلى العمليات", lib_prom_need:"أدخل بريداً صحيحاً واحداً على الأقل.", lib_prom_saving:"جارٍ الإضافة إلى العمليات...", lib_prom_done:"أُضيف إلى العمليات. اكتب الرسالة هناك.", lib_prom_failed:"تعذّرت الإضافة إلى العمليات." }
