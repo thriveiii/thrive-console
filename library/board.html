@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="c21ab2a1">
+<meta name="thrive-build" content="cc342bd7">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -297,9 +297,15 @@
   textarea.rec-in:focus{border-color:#5D7FB7}
   textarea.note-in:focus{border-color:#5D7FB7}
   /* Unified message editor (compose + reply) */
-  input.ed-subj{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:10px 12px;font-size:14px;line-height:1.4;outline:none;margin-bottom:8px}
+  /* G7.1: the compose subject/body/signature type comfortably in both languages. dir="auto" (in the markup) +
+     unicode-bidi:plaintext make each field flow RTL for Arabic content and LTR for English, aligned to that
+     side, with no manual toggle; the console (sans) font, equal 12px padding on all four sides, and a roomy
+     line-height replace the cramped monospace box. Scoped to the editor fields, so the recipient (#recIn) stays
+     LTR - emails are LTR. No letter-spacing on Arabic. */
+  input.ed-subj{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:12px;font-size:14px;line-height:1.5;font-family:inherit;outline:none;margin-bottom:8px;unicode-bidi:plaintext}
   input.ed-subj:focus{border-color:#5D7FB7}
-  textarea.ed-body{min-height:120px;line-height:1.5;unicode-bidi:plaintext}
+  textarea.ed-body{min-height:140px;line-height:1.6;padding:12px;font-family:inherit;unicode-bidi:plaintext}
+  html[dir="rtl"] input.ed-subj,html[dir="rtl"] textarea.ed-body,html[dir="rtl"] textarea.ed-sig-in{letter-spacing:normal}
   .act:disabled{opacity:.45;cursor:not-allowed}
   .ed-checks{list-style:none;margin:8px 0 4px;padding:0;display:flex;flex-wrap:wrap;gap:6px}
   .ed-ck{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid #22222e;color:#8a8a93;background:#14141c;display:flex;align-items:center;gap:5px}
@@ -312,7 +318,18 @@
   .ed-sig-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
   .ed-sig-lab{font-size:12px;color:#8a8a93}
   .ed-sig-use{font-size:12px;padding:5px 10px}
-  textarea.ed-sig-in{min-height:64px;line-height:1.5;unicode-bidi:plaintext;font-size:13px}
+  textarea.ed-sig-in{min-height:66px;line-height:1.6;padding:12px;font-family:inherit;unicode-bidi:plaintext;font-size:13px}
+  /* the saved-signatures strip: pickable name chips (each with a remove x), then a "+" to save the current
+     field text as a new named signature. Equal padding; chips wrap; Arabic names keep no letter-spacing. */
+  .ed-sig-saved{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .ed-sig-chip{display:inline-flex;align-items:stretch;border:1px solid #22222e;border-radius:999px;overflow:hidden;background:#14141c}
+  .ed-sig-pick{background:transparent;border:0;color:#cdd;font:inherit;font-size:12px;padding:5px 11px;cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ed-sig-pick:hover{color:#eef}
+  .ed-sig-rm{background:transparent;border:0;border-inline-start:1px solid #22222e;color:#8a8a93;font:inherit;font-size:13px;padding:0 9px;cursor:pointer}
+  .ed-sig-rm:hover{color:#e37a7a}
+  .ed-sig-add{background:#14141c;border:1px dashed #33333f;border-radius:999px;color:#9a9aa6;font:inherit;font-size:12px;padding:5px 11px;cursor:pointer}
+  .ed-sig-add:hover{border-color:#5D7FB7;color:#cdd}
+  html[dir="rtl"] .ed-sig-pick,html[dir="rtl"] .ed-sig-add{letter-spacing:normal}
   .ed-prev-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:6px 0 6px}
   html[dir="rtl"] .ed-prev-h{text-transform:none;letter-spacing:normal}
   iframe.ed-preview{width:100%;height:220px;border:1px solid #22222e;border-radius:9px;background:#fff}
@@ -322,7 +339,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build c21ab2a1</span>
+    <span class="muted">build cc342bd7</span>
   </div>
   <div id="root"></div>
 </div>
@@ -345,7 +362,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "c21ab2a1";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "cc342bd7";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -412,6 +429,8 @@
           ed_h:"Message", ed_subj:"Subject", ed_subj_ph:"Subject line",
           ed_body:"Body", ed_body_ph:"Write the message. Use Insert opp link to add the page link.",
           ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature",
+          ed_sig_add:"Save this signature", ed_sig_pick:"Use this signature", ed_sig_remove:"Remove",
+          ed_sig_saved:"Signature saved.", ed_sig_save_failed:"Could not save the signature.", ed_sig_empty:"Write a signature first, then save it.",
           ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
           ed_ck_subj:"Subject", ed_ck_body:"Body", ed_ck_recip:"Recipient", ed_ck_link:"Opp link",
           nm_open:"New message", nm_h:"New message", nm_to:"To", nm_to_ph:"recipient@example.com",
@@ -502,6 +521,8 @@
           ed_h:"الرسالة", ed_subj:"الموضوع", ed_subj_ph:"سطر الموضوع",
           ed_body:"النص", ed_body_ph:"اكتب الرسالة. استخدم إدراج رابط الفرصة لإضافة رابط الصفحة.",
           ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي",
+          ed_sig_add:"احفظ هذا التوقيع", ed_sig_pick:"استخدم هذا التوقيع", ed_sig_remove:"إزالة",
+          ed_sig_saved:"حُفظ التوقيع.", ed_sig_save_failed:"تعذّر حفظ التوقيع.", ed_sig_empty:"اكتب توقيعًا أولًا ثم احفظه.",
           ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",
           ed_ck_subj:"الموضوع", ed_ck_body:"النص", ed_ck_recip:"المستلم", ed_ck_link:"رابط الفرصة",
           nm_open:"رسالة جديدة", nm_h:"رسالة جديدة", nm_to:"إلى", nm_to_ph:"recipient@example.com",
@@ -778,7 +799,7 @@
 // profile resolves to a safe default (no name, member role), never a black screen. No storage is touched.
 // ===================================================================================================
 
-var __identity = { uid:"", email:"", name:"", signature:"", title:"", role:"member", loaded:false };
+var __identity = { uid:"", email:"", name:"", signature:"", title:"", role:"member", loaded:false, prefs:{}, signatures:[] };
 var __profileIndex = { byUid:{}, byEmail:{} };   // from console_profile_names, powers resolveActor across operators
 
 // The current actor as a uid: the value NEW writes stamp (matches app.js currentActor()=authUid()).
@@ -826,6 +847,22 @@ function pickSignature(prefs){
   prefs = (prefs && typeof prefs==="object") ? prefs : {};
   return String(prefs.signature || prefs.sig_en || prefs.sig_ar || "");
 }
+// G7.1: the per-user saved signatures live in console_profiles.prefs.signatures - an array of { id, name, text }.
+// normSignatures coerces any stored value into that clean, bounded shape (drops malformed entries, trims, caps
+// the list), so a hand-edited or legacy prefs never yields a broken strip. Pure; no I/O.
+function normSignatures(v){
+  if(!Array.isArray(v)) return [];
+  var out=[];
+  v.forEach(function(s){
+    if(!s || typeof s!=="object") return;
+    var text=String(s.text==null?"":s.text);
+    if(!text.trim()) return;
+    var id=String(s.id==null?"":s.id).trim() || ("sig-"+out.length+"-"+(String(text).length));
+    var name=String(s.name==null?"":s.name).trim() || String(text).split("\n")[0].slice(0,40);
+    out.push({ id:id, name:name, text:text });
+  });
+  return out.slice(0, 24);      // a sane cap; a person keeps a handful of signatures, not hundreds
+}
 
 // Load, once, at boot: the cross-operator name index, then the current operator's own profile (signature +
 // title) and role. Fire-and-forget from loadBoard(); it NEVER gates the render. Bounded and best-effort at
@@ -852,6 +889,10 @@ function loadIdentity(){
       __identity.signature = pickSignature(pr.prefs);
       var prefs = (pr.prefs && typeof pr.prefs==="object") ? pr.prefs : {};
       __identity.title = String(pr.signature_title || prefs.title || "");   // column authoritative once applied
+      // G7.1: the full prefs is kept for read-modify-write (a signatures save must not clobber other prefs keys),
+      // and the per-user saved signatures are surfaced for the editor's signature strip.
+      __identity.prefs = prefs;
+      __identity.signatures = normSignatures(prefs.signatures);
     }
     // role, from the DATABASE: own console_members row (owner|member), console_admins the legacy fallback.
     return uid ? identGet("console_members?id=eq."+enc(uid)+"&select=id,role&limit=1") : [];
@@ -867,7 +908,7 @@ function finishIdentity(){
   // Surface for later steps (read-only). Non-secret: name/title/role/uid/email plus a hasSignature flag.
   try{ window.__thriveIdentity = { uid:__identity.uid, email:__identity.email, name:__identity.name,
         title:__identity.title, signature:__identity.signature, hasSignature:!!__identity.signature,
-        role:__identity.role, loaded:true }; }catch(e){}
+        signatures:normSignatures(__identity.signatures), role:__identity.role, loaded:true }; }catch(e){}
   // Step 2A: the profile index just settled (fire-and-forget from loadBoard, so it may finish AFTER a drawer
   // was opened). Re-paint the open drawer's notes ONCE so an actor uid that showed raw on first paint now
   // reads as the display name. One synchronous re-render, no polling, no await; guarded so it never throws.
@@ -970,6 +1011,61 @@ function applyNameLocally(name){
   try{ if(window.__thriveIdentity) window.__thriveIdentity.name = __identity.name; }catch(e){}
   try{ if(typeof owDetailActive==="function" && owDetailActive(__owSlug) && typeof renderNotesInto==="function") renderNotesInto(__owSlug); }catch(e){}
 }
+// ===================================================================================================
+// G7.1 PER-USER SIGNATURES. The saved signatures live in console_profiles.prefs.signatures (own row, jsonb).
+// A write is a bounded read-modify-write: merge the new signatures array INTO the existing prefs object (kept
+// on __identity from loadIdentity) and upsert the whole prefs column, so other prefs keys (title, sig_en/ar,
+// signature) are preserved - PostgREST merge-duplicates updates only the columns in the payload, so display_name
+// (written by profileSaveName) is never touched here either. Same settle-always + one refresh-retry discipline
+// as profileSaveName; own-row policy (uid = (auth.uid())::text). Per-user by construction: every write keys on
+// the current uid, and the strip reads __identity.signatures, so a second operator sees only their own set.
+// ===================================================================================================
+function profileSavePrefs(nextPrefs, retried){
+  var uid = currentUid();
+  var body = { uid: uid, prefs: (nextPrefs && typeof nextPrefs==="object") ? nextPrefs : {} };
+  return authFetchOnce(URL_BASE + "/rest/v1/console_profiles", {
+    method:"POST",
+    headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Content-Type":"application/json",
+              "Prefer":"resolution=merge-duplicates,return=representation" },
+    cache:"no-store", body: JSON.stringify(body)
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return profileSavePrefs(nextPrefs, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+    }
+    if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    var row = (Array.isArray(r.data) ? r.data[0] : r.data) || body;
+    return (row && typeof row.prefs==="object") ? row.prefs : body.prefs;    // the server's authoritative prefs
+  });
+}
+// Apply the confirmed prefs to runtime so the editor strip (and any reader) reflects the new set without a reload.
+function applyPrefsLocally(prefs){
+  prefs = (prefs && typeof prefs==="object") ? prefs : {};
+  __identity.prefs = prefs;
+  __identity.signatures = normSignatures(prefs.signatures);
+  try{ if(window.__thriveIdentity) window.__thriveIdentity.signatures = normSignatures(prefs.signatures); }catch(e){}
+}
+// Add (or replace, by id) one saved signature; persist; reflect. Returns the confirmed list.
+function saveSignatureEntry(entry){
+  entry = entry || {};
+  var cur = normSignatures(__identity.signatures);
+  var next = cur.filter(function(s){ return s.id !== entry.id; });
+  next.push({ id:entry.id, name:entry.name, text:entry.text });
+  var base = (__identity.prefs && typeof __identity.prefs==="object") ? __identity.prefs : {};
+  var nextPrefs = Object.assign({}, base, { signatures: normSignatures(next) });
+  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); return normSignatures(saved.signatures); });
+}
+// Remove one saved signature by id; persist; reflect. Returns the confirmed list.
+function removeSignatureEntry(id){
+  var next = normSignatures(__identity.signatures).filter(function(s){ return s.id !== id; });
+  var base = (__identity.prefs && typeof __identity.prefs==="object") ? __identity.prefs : {};
+  var nextPrefs = Object.assign({}, base, { signatures: next });
+  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); return normSignatures(saved.signatures); });
+}
+try{
+  window.__thriveSignatures = function(){ return normSignatures(__identity.signatures); };   // the per-user saved set
+  window.__thriveSaveSignature = function(entry){ return saveSignatureEntry(entry); };        // add/replace (await the confirm)
+  window.__thriveRemoveSignature = function(id){ return removeSignatureEntry(id); };           // remove (await the confirm)
+}catch(e){}
 // Optimistic confirm-or-revert: the person controls their own display_name (any format, first-name-only or
 // full). Nothing is applied until the server confirms; a failure shows red and leaves the runtime name as it
 // was, never a phantom save. Reuses the shared __writing guard so a save never overlaps a send or note write.
@@ -1807,20 +1903,40 @@ function editorEligible(row){
 // leaves it blank.
 function edIdentity(){ try{ return window.__thriveIdentity || {}; }catch(e){ return {}; } }
 function edSignature(){ return edVal("edSig"); }
-// The "Use my signature" preset: a quiet three-line block from runtime identity, name / title / site, each on
-// its own line. Title omitted if unset (name then site); name omitted if unset (site alone). This only FILLS
-// the field on demand; it is never applied automatically. The site is the send-side agency constant.
-function edSignaturePreset(){
+// G7.1: the agency line of the DEFAULT signature, localized. English reuses the send-side FROM_NAME constant
+// (the correct spelling "Thrive Digital Solutions", not the old "Solutoins" mock); Arabic is the agency's own
+// name. The site line is the shared agency constant, the same value the message compile uses.
+var AGENCY_NAME_EN_L5 = (typeof FROM_NAME_DEFAULT_L5!=="undefined" && FROM_NAME_DEFAULT_L5) ? FROM_NAME_DEFAULT_L5 : "Thrive Digital Solutions";
+var AGENCY_NAME_AR_L5 = "ثرايف للحلول الرقمية";
+// Arabic detection: any Arabic-script codepoint in the text. Used to pick the default signature's language
+// "per the message language" (the body's script), not the UI chrome language.
+function edIsArabic(s){ return /[؀-ۿݐ-ݿࢠ-ࣿ]/.test(String(s||"")); }
+// The message language: the body's script when it has content (so a message typed in Arabic gets the Arabic
+// signature even in an English UI, and vice versa), else the UI language (LANG).
+function edMsgLang(){
+  var body = edVal("edBody");
+  if(body.trim()) return edIsArabic(body) ? "ar" : "en";
+  try{ return (typeof LANG!=="undefined" && LANG==="ar") ? "ar" : "en"; }catch(e){ return "en"; }
+}
+// The DEFAULT signature: three lines, name / agency / site, localized. The name is the current user's OWN name
+// (from runtime identity), so it is per-user, never hardcoded. Name omitted if unset (agency then site). The
+// site line is the agency constant. This only FILLS the field on demand ("Use my signature"); never automatic.
+function edSignatureDefault(lang){
   var id = edIdentity();
   var name = String(id.name==null?"":id.name).trim();
-  var title = String(id.title==null?"":id.title).trim();
   var site = (typeof AGENCY_SITE_L5!=="undefined" && AGENCY_SITE_L5) ? AGENCY_SITE_L5 : "thriveiii.com";
+  var agency = (lang==="ar") ? AGENCY_NAME_AR_L5 : AGENCY_NAME_EN_L5;
   var lines = [];
   if(name) lines.push(name);
-  if(title) lines.push(title);
+  lines.push(agency);
   lines.push(site);
   return lines.join("\n");
 }
+// Back-compat seam name: the "Use my signature" fill, now the localized default (name / agency / site).
+function edSignaturePreset(){ return edSignatureDefault(edMsgLang()); }
+// The user's saved (named) signatures, from runtime identity (console_profiles.prefs.signatures). Always an
+// array; each entry is { id, name, text }. Per-user by construction (own profile row).
+function edSavedSigs(){ var id=edIdentity(); var a=id && id.signatures; return Array.isArray(a) ? a : []; }
 
 // SURFACE SCOPING (COMPOSE_SURFACE_EVIDENCE A1): the editor markup (#edSubj/#edBody/#edSig/#edPreview/
 // #edLink/#edStatus and the checklist items) is mounted by BOTH the drawer (#drawer) and the standalone
@@ -1881,9 +1997,9 @@ function editorHtml(slug, row, detail){
   var sig = data ? String(data.sig||"") : (edVal("edSig"));
   var subjOk = !!subj.trim(), bodyOk = !!body.trim(), linkOk = edHasLink(slug, body);
   return '<div class="dw-sec ed-sec"><h3>'+esc(t("ed_h"))+'</h3>'+
-    '<input class="ed-subj" id="edSubj" type="text" autocomplete="off" spellcheck="true" '+
+    '<input class="ed-subj" id="edSubj" type="text" dir="auto" autocomplete="off" spellcheck="true" '+
       'placeholder="'+esc(t("ed_subj_ph"))+'" aria-label="'+esc(t("ed_subj"))+'" value="'+esc(subj)+'">'+
-    '<textarea class="rec-in ed-body" id="edBody" rows="6" autocomplete="off" spellcheck="true" '+
+    '<textarea class="rec-in ed-body" id="edBody" rows="6" dir="auto" autocomplete="off" spellcheck="true" '+
       'placeholder="'+esc(t("ed_body_ph"))+'" aria-label="'+esc(t("ed_body"))+'">'+esc(body)+'</textarea>'+
     '<div class="acts"><button class="act" id="edLink" type="button">'+esc(t("ed_link"))+'</button></div>'+
     '<ul class="ed-checks">'+
@@ -1893,8 +2009,11 @@ function editorHtml(slug, row, detail){
     '<div class="ed-sig-field">'+
       '<div class="ed-sig-head"><span class="ed-sig-lab">'+esc(t("ed_sig"))+'</span>'+
         '<button class="act ed-sig-use" id="edSigFill" type="button">'+esc(t("ed_sig_use"))+'</button></div>'+
-      '<textarea class="rec-in ed-sig-in" id="edSig" rows="3" autocomplete="off" spellcheck="true" '+
+      '<textarea class="rec-in ed-sig-in" id="edSig" rows="3" dir="auto" autocomplete="off" spellcheck="true" '+
         'placeholder="'+esc(t("ed_sig_ph"))+'" aria-label="'+esc(t("ed_sig"))+'">'+esc(sig)+'</textarea>'+
+      // G7.1: the user's SAVED signatures - pick one to fill the field, or "+" to save the current text as a new
+      // named signature. Populated from runtime identity (per-user) by edRenderSavedSigs after wiring.
+      '<div class="ed-sig-saved" id="edSigSaved"></div>'+
     '</div>'+
     '<div class="ed-prev-h">'+esc(t("ed_preview"))+'</div>'+
     '<iframe class="ed-preview" id="edPreview" title="'+esc(t("ed_preview"))+'" sandbox="" referrerpolicy="no-referrer" srcdoc=""></iframe>'+
@@ -1951,15 +2070,63 @@ function edInsertLink(slug){
   edTick(slug); edScheduleSave(slug, 300);
 }
 
-// "Use my signature": a convenience FILL of the Signature field with the identity preset (name / title / site,
-// each on its own line). It is never automatic - the operator taps it, then may edit or clear the field. After
-// filling, refresh the preview and debounce a save so the chosen signature persists like any typed one.
-function edFillSignature(slug){
+// Fill the Signature field with a literal block (a picked saved signature, or the default). Never automatic -
+// the operator taps a control, then may edit or clear the field. After filling, refresh the preview and debounce
+// a save so the chosen signature persists like any typed one. edFocus keeps the field focused; the input event
+// keeps the preview/gate/checklist live and routes the debounced save (E0: signature is field-driven).
+function edFillSignatureText(slug, text){
   var el=edEl("edSig"); if(!el) return;
-  el.value = edSignaturePreset();
+  el.value = String(text==null?"":text);
   try{ el.dispatchEvent(new Event("input", { bubbles:true })); }catch(_){}
   try{ el.focus(); }catch(_){}
   edTick(slug); edScheduleSave(slug, 300);
+}
+// "Use my signature": fill the field with the DEFAULT block (name / agency / site), localized to the message
+// language (the body's script), with the correct "Thrive Digital Solutions" spelling. Per-user via the name.
+function edFillSignature(slug){ edFillSignatureText(slug, edSignatureDefault(edMsgLang())); }
+// Pick a SAVED signature by id -> fill the field with its text.
+function edPickSig(slug, id){
+  var list=edSavedSigs(), s=null;
+  for(var i=0;i<list.length;i++){ if(list[i] && list[i].id===id){ s=list[i]; break; } }
+  if(s) edFillSignatureText(slug, s.text);
+}
+// "+": save the CURRENT Signature field text as a new named signature (name derived from its first non-empty
+// line, so no modal). Persists to the per-user store (console_profiles.prefs.signatures) and re-renders the
+// strip. A blank field is not saved (nothing to name). Best-effort persistence: a failed write shows a status
+// but the strip still reflects the in-memory add so the operator is not blocked mid-compose.
+function edSaveCurrentSig(slug){
+  var text = String(edVal("edSig")||"").replace(/\s+$/,"");
+  if(!text.trim()){ edSetStatus(slug, t("ed_sig_empty"), "bad"); return; }
+  var firstLine = (text.split("\n").find(function(l){ return l.trim(); })||text).trim();
+  var name = firstLine.length>40 ? firstLine.slice(0,40) : firstLine;
+  var id = "sig-"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  var entry = { id:id, name:name, text:text };
+  if(typeof saveSignatureEntry==="function"){
+    saveSignatureEntry(entry).then(function(){ edRenderSavedSigs(slug); edSetStatus(slug, t("ed_sig_saved"), "ok"); },
+                                   function(){ edRenderSavedSigs(slug); edSetStatus(slug, t("ed_sig_save_failed"), "bad"); });
+  } else { edRenderSavedSigs(slug); }
+}
+// Remove a saved signature by id (persist + re-render).
+function edRemoveSig(slug, id){
+  if(typeof removeSignatureEntry==="function"){
+    removeSignatureEntry(id).then(function(){ edRenderSavedSigs(slug); }, function(){ edRenderSavedSigs(slug); });
+  } else { edRenderSavedSigs(slug); }
+}
+// Render the saved-signatures strip: one pick chip per saved signature (its name; tap to fill), each with a
+// small remove control, then a "+" to save the current field text as a new one. Rebuilt from runtime identity,
+// so it reflects the latest per-user set after every add/remove. Wired here (not in the static markup) because
+// it is dynamic. dir="auto" on the name so an Arabic signature name reads right-to-left.
+function edRenderSavedSigs(slug){
+  var box=edEl("edSigSaved"); if(!box) return;
+  var list=edSavedSigs();
+  var chips = list.map(function(s){
+    return '<span class="ed-sig-chip"><button class="ed-sig-pick" type="button" data-sig-pick="'+esc(s.id)+'" dir="auto" title="'+esc(t("ed_sig_pick"))+'">'+esc(s.name||t("ed_sig"))+'</button>'+
+      '<button class="ed-sig-rm" type="button" data-sig-rm="'+esc(s.id)+'" aria-label="'+esc(t("ed_sig_remove"))+'" title="'+esc(t("ed_sig_remove"))+'">×</button></span>';
+  }).join("");
+  box.innerHTML = chips + '<button class="ed-sig-add" id="edSigAdd" type="button" title="'+esc(t("ed_sig_add"))+'">+ '+esc(t("ed_sig_add"))+'</button>';
+  [].forEach.call(box.querySelectorAll("[data-sig-pick]"), function(b){ b.addEventListener("click", function(){ edPickSig(slug, b.getAttribute("data-sig-pick")); }); });
+  [].forEach.call(box.querySelectorAll("[data-sig-rm]"), function(b){ b.addEventListener("click", function(){ edRemoveSig(slug, b.getAttribute("data-sig-rm")); }); });
+  var add=box.querySelector("#edSigAdd"); if(add) add.addEventListener("click", function(){ edSaveCurrentSig(slug); });
 }
 
 function edScheduleSave(slug, delay){
@@ -2018,6 +2185,7 @@ function wireEditor(slug){
   var sigEl=edEl("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven
   var lk=edEl("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
   var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
+  edRenderSavedSigs(slug);                                     // G7.1: the per-user saved-signatures strip + "+"
   edTick(slug);                                                // initial checklist + gate + preview
 }
 
@@ -2032,7 +2200,9 @@ try{
   //     campaign), proving a personal send carries NO List-Unsubscribe. Derives mode from the persisted record.
   window.__thriveSendHeaders = function(slug){ return oppReadData(slug).then(function(data){ return outboundHeaders(slug, sendMode(data)); }); };
   window.__thriveEditorSignature = function(){ return edSignature(); };     // the LIVE field value (empty allowed)
-  window.__thriveSignaturePreset = function(){ return edSignaturePreset(); }; // the "Use my signature" fill (name/title/site)
+  window.__thriveSignaturePreset = function(){ return edSignaturePreset(); }; // the "Use my signature" fill (localized default)
+  window.__thriveSignatureDefault = function(lang){ return edSignatureDefault(lang); }; // the default block for a given language
+  window.__thriveMsgLang = function(){ return edMsgLang(); };                // the detected message language (body script, else UI)
 }catch(e){}
 
 // ===================================================================================================
