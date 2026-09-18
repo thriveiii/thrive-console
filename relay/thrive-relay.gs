@@ -43,7 +43,12 @@
  * send into a relay it does not match. Bump it whenever the request or response
  * shape changes, and only then, in the same commit as the change.
  */
-var RELAY_VERSION = 9;   // v9 (F2, static activation): a new page_publish op commits opp/<slug>/index.html to the
+var RELAY_VERSION = 10;  // v10 (B3, suppression guard): sendMail_ and the outbox worker refuse a do-not-contact
+                         // recipient (supaSuppressed_ queries console_suppressions with the service key), so the
+                         // relay, now the single sender, can never contact a suppressed address on any path. A
+                         // change to send BEHAVIOR (a new refusal), so the number moves with it (the version
+                         // contract): a send to a suppressed address returns failed, and every response reads v10.
+                         // v9 (F2, static activation): a new page_publish op commits opp/<slug>/index.html to the
                          // repo via the GitHub Contents API using a GH_TOKEN Script Property (the token lives ONLY
                          // here, never in the client), so GitHub Pages serves an uploaded page as a static file.
                          // v8 (P23, attachments): sendMail_ forwards d.attachments (each { filename, path } where
@@ -470,6 +475,36 @@ function supaSelectMailById_(id) {
   }
 }
 
+/* B3 suppression guard. Is this address on the do-not-contact list (console_suppressions)? The console has its
+   own fail-closed B2 guard at compose/send time (board-send.src.js: it refuses to send if the set never loads),
+   but the relay is now the single sender (recordSend_, the durable outbox), so a suppressed address must be
+   refused HERE too, on the one path every send crosses. Reads with the same service_role key it already holds
+   (SUPABASE_URL + SUPABASE_SERVICE_KEY), one bounded query keyed on the bare, lowercased address (the form the
+   console stores). Returns true ONLY on a confirmed hit; unconfigured, no address, a non-200, or any error
+   returns false, so a transient Supabase blip can never wall off every send (the console B2 stays the
+   compose-time backstop). Never throws: the caller decides what a refusal means (sendMail_ throws, sendQueue_
+   marks the row failed). */
+function supaSuppressed_(addr) {
+  var url = props_().getProperty('SUPABASE_URL');
+  var key = props_().getProperty('SUPABASE_SERVICE_KEY');
+  var a = String(addr || '').trim().toLowerCase();
+  if (!url || !key || !a) return false;   // cannot check (unconfigured / no address): allow; console B2 is the backstop
+  try {
+    var q = String(url).replace(/\/+$/, '') + '/rest/v1/console_suppressions?email=eq.' +
+            encodeURIComponent(a) + '&select=email&limit=1';
+    var res = UrlFetchApp.fetch(q, {
+      method: 'get',
+      headers: { apikey: key, Authorization: 'Bearer ' + key },
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() !== 200) return false;   // cannot confirm: do not block on a transient error
+    var rows = JSON.parse(res.getContentText() || '[]');
+    return !!(rows && rows.length);                     // a row exists -> the address is suppressed
+  } catch (e) {
+    return false;   // never throw out of the guard; a lookup failure is not a positive
+  }
+}
+
 /* Resend delivery webhook (defect B-2), the shortest path to a truthful bounce. It reconciles a REAL bounce or
    complaint into a console_inbound row (kind='auto', bounce hard/soft) keyed deterministically by the Resend
    email id and event type, so a redelivery upserts in place. The console_board view already surfaces such rows
@@ -798,6 +833,11 @@ function sendMail_(d) {
   var key = props_().getProperty('RESEND_KEY');
   if (!key) throw new Error('RESEND_KEY not set');
   if (!d.to) throw new Error('missing "to"');
+  /* B3 suppression guard, on the one path every send crosses. A do-not-contact address is refused BY NAME
+     before anything is sent or recorded, so no path (a direct send, the durable queue, a legacy bare body)
+     can reach a suppressed recipient. The throw is what makes a send to a suppressed address return failed:
+     doPost catches it into { ok:false, error }, and sendQueue_'s per-row catch flips the row to 'failed'. */
+  if (supaSuppressed_(d.to)) throw new Error('suppressed: ' + d.to);
 
   /* COURIER, not a composer. This relay sends the html and text exactly as the console composed them and
      writes NO copy of its own: no footer, no address, no signature. The console is the single composer
@@ -1000,6 +1040,15 @@ function sendQueue_() {
   for (var c = 0; c < claimed.length; c++) {
     var row = findOutbox_(claimed[c]);
     if (!row) continue;
+    /* B3 suppression pre-check, at the head of the per-row send. A do-not-contact recipient is marked failed
+       WITHOUT calling sendMail_ (no Resend request, no ledger row), so a suppressed row in a campaign is
+       refused cleanly and by name. sendMail_ still carries the same guard as the backstop for every other
+       caller, so this is defense in depth, not the sole gate. */
+    if (supaSuppressed_(row.to)) {
+      flipOutbox_(row.mid, { status: 'failed', error: 'suppressed' });   // visible, never silent; never sent
+      failed++;
+      continue;
+    }
     try {
       var res = sendMail_({ to: row.to, subject: row.subject, html: row.html, text: row.text,
                             attachments: row.attachments,   // P23: carried per queued row, the same for every recipient

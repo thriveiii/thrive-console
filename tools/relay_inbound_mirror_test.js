@@ -149,8 +149,8 @@ ck("the mirror writes to console_inbound AND console_hits",
 ck("existing relay ops are untouched (send, page_publish, hit, inbound_get, hits_get all still dispatched)",
    /op === 'page_publish'/.test(relay) && /op === 'inbound_get'/.test(relay) &&
    /op === 'hits_get'/.test(relay) && /op === 'hit'/.test(relay) && /function sendMail_/.test(relay));
-ck("RELAY_VERSION unchanged at 9 (no request-shape change, per the version contract at line ~44)",
-   /var RELAY_VERSION = 9;/.test(relay));
+ck("RELAY_VERSION is 10 (the inbound mirror added no request-shape change; B3's suppression guard moved it to 10)",
+   /var RELAY_VERSION = 10;/.test(relay));
 
 console.log("");
 if (fails) { console.log(fails + " FAILED"); process.exit(1); }

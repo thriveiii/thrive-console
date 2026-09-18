@@ -53,6 +53,7 @@ HARNESS = r"""
 var __store = { outbox: [] };
 function storeRead_(){ return __store; }
 function withStore_(fn){ return fn(__store); }        // synchronous + atomic: models the LockService serialization
+function supaSuppressed_(addr){ return false; }       // B3: this test exercises queue mechanics, not suppression, so nobody is on the do-not-contact list
 var __sent = [];
 var __reentered = false;
 function sendMail_(d){
