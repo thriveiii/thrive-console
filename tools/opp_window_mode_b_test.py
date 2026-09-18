@@ -115,6 +115,9 @@ def wire(ctx):
 
 PAGE_HTML = "<!doctype html><html><head><title>Ramadan Offer</title></head><body><h1>Ramadan Offer</h1><p>Visit {{LINK}} today.</p></body></html>"
 def upload_page(pg):
+    # G7: the single-page upload now lives behind the "One page + written message" path on the Page tab. Choosing
+    # it reveals the page file input; the review + commit shape (single row) are unchanged.
+    pg.evaluate("()=>{var b=document.getElementById('owPathPage'); if(b) b.click();}"); pg.wait_for_timeout(150)
     pg.set_input_files("#owPageFile", {"name":"ramadan-offer.html", "mimeType":"text/html", "buffer":PAGE_HTML.encode()})
     pg.wait_for_selector("#owPageReview #libSlug-0", timeout=6000); pg.wait_for_timeout(400)
 
@@ -151,7 +154,8 @@ with sync_playwright() as p:
     ck("only the active panel is visible on screen (hidden panels do not render)",
        pg.evaluate("()=>({page:document.getElementById('owPagePanel').offsetParent!==null, msg:document.getElementById('owMsgPanel').offsetParent!==null, prev:document.getElementById('owPreviewPanel').offsetParent!==null})")=={"page":True,"msg":False,"prev":False})
     ck("the compose fields stay mounted while the Page tab is active (still ONE #edSubj)", pg.evaluate("()=>document.querySelectorAll('#edSubj').length")==1)
-    ck("the Page tab offers Upload + Pick entry modes", pg.evaluate("()=>!!(document.getElementById('owPageFile')&&document.getElementById('owPickBtn'))"))
+    ck("the Page tab offers THREE labelled paths (full campaign / one page + written message / pick a template)",
+       pg.evaluate("()=>!!(document.getElementById('owPathCampaign')&&document.getElementById('owPathPage')&&document.getElementById('owPathPick'))"))
 
     # ===== 3: the Page tab is the ONE unified engine -> the SHARED review component =====
     upload_page(pg)
