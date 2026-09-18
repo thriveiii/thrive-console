@@ -1046,6 +1046,12 @@ function buildBoard(){
   .ow-mode-btn{display:block;width:100%;text-align:start;background:#0e0e14;border:1px solid #22222e;border-radius:12px;padding:16px 18px;color:#eef;font:inherit;font-size:15px;font-weight:650;cursor:pointer}
   .ow-mode-btn:hover{border-color:#37505c}
   .ow-mode-btn .ow-mode-sub{display:block;font-weight:400;font-size:12.5px;color:#8a8a93;margin-top:4px}
+  /* G7: the three Page-tab paths reuse .ow-mode-btn; .on marks the chosen one, and its body (the file input or
+     the Library picker) sits below the chooser with equal padding on all four sides. */
+  .ow-page-paths{display:flex;flex-direction:column;gap:10px}
+  .ow-mode-btn.on{border-color:#4a7688;background:#101019}
+  .ow-path-body{padding:2px}
+  .ow-camp-row{display:flex;flex-direction:column;gap:6px}
   html[dir="rtl"] .ow-tab,html[dir="rtl"] .ow-title,html[dir="rtl"] .ow-mode-btn{letter-spacing:normal;text-transform:none}
   @media (max-width:720px){
     .ow-scrim{padding:0;align-items:flex-end}
@@ -1327,6 +1333,10 @@ function buildBoard(){
           ow_tab_msg:"Message", ow_tab_page:"Page", ow_tab_recip:"Recipients", ow_tab_preview:"Preview",
           ow_commit:"Create campaign", ow_committed:"Campaign created.", ow_need_page:"Add a page first.",
           ow_page_upload:"Upload a page", ow_page_pick:"Pick from Library", ow_use:"Use", ow_duplicate:"Duplicate",
+          ow_path_campaign:"Full campaign (zip)", ow_path_campaign_sub:"Many pages, messages and recipients in one zip. Each page becomes its own card.",
+          ow_path_page:"One page and a written message", ow_path_page_sub:"Upload a single page and write its message in the Message tab.",
+          ow_path_pick:"Pick a Library template", ow_path_pick_sub:"Reuse a page already in your Library.",
+          ow_campaign_upload:"Upload a campaign zip", ow_committed_n:"Campaign created. Cards: {n}",
           ow_prev_msg:"Message", ow_prev_page:"Page", ow_recip_none:"No recipients yet.",
           ow_rs_suppressed:"Do not contact", ow_rs_bounced_hard:"Bounced (hard)", ow_rs_bounced_soft:"Bounced (soft)",
           ow_rs_replied:"Replied", ow_rs_opened:"Opened", ow_rs_sent:"Sent", ow_rs_queued:"Queued", ow_rs_none:"Not sent",
@@ -1413,6 +1423,10 @@ function buildBoard(){
           ow_tab_msg:"النص", ow_tab_page:"الصفحة", ow_tab_recip:"المستلمون", ow_tab_preview:"المعاينة",
           ow_commit:"إنشاء الحملة", ow_committed:"أُنشئت الحملة.", ow_need_page:"أضف صفحة أولًا.",
           ow_page_upload:"رفع صفحة", ow_page_pick:"اختر من المكتبة", ow_use:"استخدام", ow_duplicate:"نسخ",
+          ow_path_campaign:"حملة كاملة (ملف مضغوط)", ow_path_campaign_sub:"عدة صفحات ورسائل ومستلمين في ملف واحد. كل صفحة تصبح بطاقة مستقلة.",
+          ow_path_page:"صفحة واحدة ورسالة تكتبها", ow_path_page_sub:"ارفع صفحة واحدة واكتب رسالتها في تبويب الرسالة.",
+          ow_path_pick:"اختر قالبًا من المكتبة", ow_path_pick_sub:"أعد استخدام صفحة موجودة في مكتبتك.",
+          ow_campaign_upload:"ارفع ملف حملة مضغوط", ow_committed_n:"أُنشئت الحملة. البطاقات: {n}",
           ow_prev_msg:"الرسالة", ow_prev_page:"الصفحة", ow_recip_none:"لا مستلمين بعد.",
           ow_rs_suppressed:"عدم التواصل", ow_rs_bounced_hard:"ارتداد نهائي", ow_rs_bounced_soft:"ارتداد مؤقت",
           ow_rs_replied:"ردّ", ow_rs_opened:"فتحت", ow_rs_sent:"أُرسلت", ow_rs_queued:"في الانتظار", ow_rs_none:"لم تُرسل",
