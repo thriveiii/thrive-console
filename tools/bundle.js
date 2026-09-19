@@ -2199,7 +2199,7 @@ ${UPLOAD_SRC}
   // A card tap opens the opp as an organized control room, opening on the MESSAGE gate with the editor + the
   // exact-send preview LIVE and the message LOADED (subject + body + recipient). Three gates plus the reorganized
   // detail/management half, so MESSAGE is first and nothing is buried, and NO mode selector opens on a card tap.
-  //   MESSAGE  - composeFieldsHtml (editorHtml + recipientHtml) BY REFERENCE + #edPreview via edCompileFrom ->
+  //   MESSAGE  - composeBodyHtml (editorHtml + recipientHtml + the #nmSend Send) BY REFERENCE + #edPreview via edCompileFrom ->
   //              sendCompile; autosave routes through composeOwns -> nmSaveNow (B2/F1 inherited), preview binds to
   //              #crMsgPanel through owComposeRoot. This is the ONLY gate that mounts the live compose fields.
   //   PAGE     - the opp's page (data.page_slug || slug): its title (console_pages.title), link name (the slug),
@@ -2245,8 +2245,8 @@ ${UPLOAD_SRC}
     var row = (typeof findRow==="function" && findRow(slug)) || { slug:slug };
     function paint(data){
       var h=document.getElementById("crMsgPanel"); if(!h) return;
-      if(editorEligible(row)){                                        // live card: the editable compose fields + preview
-        h.innerHTML = composeFieldsHtml(slug, row, { opp:{ data:data } });
+      if(editorEligible(row)){                                        // live card: the editable compose fields + preview + Send
+        h.innerHTML = composeBodyHtml(slug, row, { opp:{ data:data } });  // composeFieldsHtml + the SAME #nmSend/#nmStatus Mode A mounts
         crMsgWire(slug);
       } else {                                                        // archived / tray: the message stays visible, read-only
         h.innerHTML = crMsgReadOnlyHtml(data);
@@ -2270,6 +2270,11 @@ ${UPLOAD_SRC}
     try{ if(typeof wireEditor==="function") wireEditor(slug); }catch(e){}
     var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ if(typeof nmTick==="function") nmTick(slug); if(typeof nmScheduleSave==="function") nmScheduleSave(slug, 700); });
     var rs=document.getElementById("recSave"); if(rs) rs.addEventListener("click", function(){ try{ onSaveRecipient(slug); }catch(e){} });
+    // SEND: the SAME affordance and path Mode A uses. unifiedSend persists the live message + recipients then runs
+    // the shared L5 runSend (B2 fail-closed suppression, F1, per-recipient one-to-one, the no-message guard all
+    // inherited); sendApplyGate (via nmTick) enables it only when subject + body + recipient are ready, and the
+    // result surfaces in #nmStatus. composeOwns is true here, so the window owns the result surface. No fork.
+    var sd=document.getElementById("nmSend"); if(sd) sd.addEventListener("click", function(){ if(typeof unifiedSend==="function") unifiedSend(slug); });
     try{ if(typeof nmTick==="function") nmTick(slug); }catch(e){}     // initial preview + checklist + Send gate
   }
   // PAGE gate: the opp's page and its settings. The page a card points at is data.page_slug (a promoted card
