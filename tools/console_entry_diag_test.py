@@ -28,17 +28,20 @@ def ck(n, c, d=None):
         if d is not None: print("      " + str(d)[:400])
 
 idx = open(os.path.join(ROOT, "index.html")).read()
-shell = open(os.path.join(ROOT, "library/console.html")).read()
+shell = open(os.path.join(ROOT, "library/console.html")).read()   # the LEGACY console; still tested for paint-safe (P3)
 ver = json.load(open(os.path.join(ROOT, "version.json")))
-raw = open(os.path.join(ROOT, "library/console.html"), "rb").read()
+# LANE F (ROOT FLIP): the root now serves board.html, so the served shell the probe validates is board.html.
+raw = open(os.path.join(ROOT, "library/board.html"), "rb").read()
 
 # ---- source guards ---------------------------------------------------------------------------------
-ck("Part 2: version.json publishes the exact byte count and SHA-256 of the shipped shell",
-   ver.get("consoleBytes") == len(raw) and ver.get("consoleSha256") == hashlib.sha256(raw).hexdigest(),
-   {"json": ver.get("consoleBytes"), "disk": len(raw)})
+ck("Part 2: version.json publishes the exact byte count and SHA-256 of the shipped shell (board.html)",
+   ver.get("boardBytes") == len(raw) and ver.get("boardSha256") == hashlib.sha256(raw).hexdigest(),
+   {"json": ver.get("boardBytes"), "disk": len(raw)})
 
-ck("Part 4: the two static entry links and the probe control are painted in the markup (no JS to reach them)",
-   'id="idxNormal"' in idx and 'id="idxSafe"' in idx and 'paint=safe' in idx and 'id="idxProbe"' in idx)
+ck("Part 4: the static entry links and the probe control are painted in the markup (no JS to reach them)",
+   'id="idxNormal"' in idx and 'id="idxSafe"' in idx and 'id="idxProbe"' in idx)
+ck("Part 4: the LEGACY console escape is kept on the root (Contacts / Insights / Batches not lost at the flip)",
+   'id="idxSafe" href="./library/console.html' in idx and "Legacy console" in idx)
 
 probe_block = ""
 for b in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>", idx):
@@ -104,7 +107,7 @@ with sync_playwright() as p:
     # ---- P2: the SAME probe against a damaged file. It must refuse to call this intact. ----
     ctx2 = b.new_context()
     half = raw[: len(raw) // 2]
-    ctx2.route("**/library/console.html*", lambda r: r.fulfill(status=200, content_type="text/html; charset=utf-8", body=half))
+    ctx2.route("**/library/board.html*", lambda r: r.fulfill(status=200, content_type="text/html; charset=utf-8", body=half))
     pg2 = ctx2.new_page()
     pg2.goto(f"{base}/index.html?stay=1", wait_until="domcontentloaded")
     t2 = read_probe(pg2)
