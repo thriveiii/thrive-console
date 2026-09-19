@@ -8,7 +8,9 @@ never commits while the index stays painted; and the index offered no way out.
 The fix: (a) remove the meta refresh so there is exactly ONE deferred JS navigation, no race; (b) paint
 STATIC escape links at first paint (a browser tap on an <a> works even if a hung hand-off suspends the
 document's JS); (c) a ?stay=1 manual-launcher mode that suppresses the auto hand-off. This test proves the
-static escapes are present, reach the sign-in page and the console, and that ?stay=1 does not navigate away.
+static escapes are present, reach the sign-in page and the app (LANE F: the app is now board.html, the new
+engine the root serves; the legacy console stays reachable through its own labelled escape), and that ?stay=1
+does not navigate away.
 """
 import threading, http.server, socketserver, functools, os
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
@@ -25,8 +27,8 @@ def ck(n, c, d=None):
 # Source guards on the generated index.
 idx = open(os.path.join(ROOT, "index.html")).read()
 ck("the 0s meta refresh is gone (no second racing top-level navigation)", 'http-equiv="refresh"' not in idx)
-ck("static escapes are painted in the body markup (not built by a timer): sign-in, console, menu",
-   'class="esc"' in idx and 'id="idxGate"' in idx and 'href="gate.html"' in idx
+ck("static escapes are painted in the body markup (not built by a timer): sign-in, board, menu",
+   'class="esc"' in idx and 'id="idxGate"' in idx and 'href="gate.html?v=' in idx
    and 'id="idxCon"' in idx and 'id="idxMenu"' in idx)
 ck("the router is a single deferred navigation and honors ?stay=1 as a manual launcher",
    "setTimeout(decide, 250)" in idx and "stay=1" in idx)
@@ -55,14 +57,14 @@ with sync_playwright() as p:
         path: location.pathname,
         escVisible: !!w && (getComputedStyle(w).display!=='none'),
         gate: links.some(l=>/gate\\.html/.test(l.href||'')),
-        console: links.some(l=>/library\\/console\\.html/.test(l.href||'')),
+        board: links.some(l=>/library\\/board\\.html/.test(l.href||'')),
         menu: links.some(l=>l.id==='idxMenu'),
         count: links.length
       };
     }""")
     ck("with ?stay=1 the index does NOT auto-navigate (manual launcher stays put)", st.get("onIndex"), st)
-    ck("the static escape row is visible and reaches the sign-in page and the console",
-       st.get("escVisible") and st.get("gate") and st.get("console") and st.get("menu"), st)
+    ck("the static escape row is visible and reaches the sign-in page and the board",
+       st.get("escVisible") and st.get("gate") and st.get("board") and st.get("menu"), st)
     # Tapping the sign-in escape reaches gate.html (the tiny proven page) as a fresh single navigation.
     pg.click("#idxGate")
     pg.wait_for_timeout(600)

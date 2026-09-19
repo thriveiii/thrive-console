@@ -2488,11 +2488,14 @@ emit("dist/thrive-console.html", true);
 })();
 
 /* Part 1, the load-bearing cache fix: the root redirect carries the build id, so a new deploy points the
-   browser at console.html?v=<new BUILD>, a URL it has never cached, and it must fetch the fresh shell (and
+   browser at board.html?v=<new BUILD>, a URL it has never cached, and it must fetch the fresh shell (and
    through it the fresh, content-hashed assets). GitHub Pages caches this tiny HTML for a short window we
    cannot header-override, so the meta cache directives are best effort on top; the version in the redirect
    is what guarantees a merged-and-deployed build is the build that runs. Generated here so BUILD is always
-   current, never a hand-typed version to forget. */
+   current, never a hand-typed version to forget.
+   LANE F (ROOT FLIP): the redirect target is now library/board.html (the self-contained engine, no app.js),
+   so every merged fix goes live at once. console.html (the app.js shell) is retired from the auto path but
+   kept reachable through the labelled "Legacy console" escape, so Contacts/Insights/Batches are not lost. */
 const rootIndex = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -2521,22 +2524,24 @@ a{color:#71BFCC}
 .diag{position:fixed;left:0;right:0;bottom:72px;display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:center;padding:0 16px}
 .diag a,.diag button{color:#cbd5e1;font:13.5px/1 -apple-system,Segoe UI,Roboto,sans-serif;text-decoration:none;border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:9px 14px;background:#14141a;cursor:pointer}
 #idxProbeOut{position:fixed;left:12px;right:12px;top:12px;bottom:130px;z-index:12;margin:0;padding:12px 14px;background:#0a0b0f;border:1px solid rgba(255,255,255,.18);border-radius:12px;color:#cbd5e1;font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;direction:ltr;text-align:start;overflow:auto}</style></head>
-<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span id="idxMsg">Opening the <a href="./library/console.html?v=${BUILD}">Thrive Opportunity Library</a>…</span></div>
+<body><div class="c"><img src="./assets/thrive-logo.png" alt=""><span id="idxMsg">Opening the <a href="./library/board.html?v=${BUILD}">Thrive Opportunity Board</a>…</span></div>
 <div class="esc" id="idxEsc" role="group" aria-label="Enter">
 <a id="idxGate" class="primary" href="gate.html?v=${BUILD}">Sign-in page</a>
-<a id="idxCon" href="./library/console.html?v=${BUILD}">Open the console</a>
+<a id="idxCon" href="./library/board.html?v=${BUILD}">Open the board</a>
 <a id="idxMenu" href="./?stay=1">Menu</a>
 </div>
-<!-- CONSOLE_ENTRY_DIAG Part 4: two static, clearly labelled links. No JS, no redirect: a plain tap, so a
-     hung router or a suspended document cannot take them away. -->
+<!-- CONSOLE_ENTRY_DIAG Part 4: static, clearly labelled links. No JS, no redirect: a plain tap, so a hung
+     router or a suspended document cannot take them away. idxNormal is the new board (the served root); idxSafe
+     is the LEGACY console escape (LANE F): the old app.js shell, kept reachable so its not-yet-migrated screens
+     (Contacts, Insights, Batches) are never lost at the flip. -->
 <div class="diag" id="idxDiag">
-<a id="idxNormal" href="./library/console.html?v=${BUILD}">Normal console</a>
-<a id="idxSafe" href="./library/console.html?v=${BUILD}&amp;paint=safe">Paint-Safe console</a>
-<button id="idxProbe" type="button">Test console file</button>
+<a id="idxNormal" href="./library/board.html?v=${BUILD}">Board</a>
+<a id="idxSafe" href="./library/console.html?v=${BUILD}">Legacy console (Contacts, Insights, Batches)</a>
+<button id="idxProbe" type="button">Test board file</button>
 </div>
 <pre id="idxProbeOut" hidden></pre>
 <script>(function(){/* CONSOLE_ENTRY_DIAG Part 1: the byte-and-hash probe. The question this answers is the one a
-  black screen cannot: does library/console.html actually ARRIVE on this device, whole and unaltered? It
+  black screen cannot: does library/board.html actually ARRIVE on this device, whole and unaltered? It
   streams the response so it can separate three distinct failures that all look identical from the outside:
   headers never arrive (the request is stalled), headers arrive but no body byte follows (the connection is
   open and mute), and body bytes arrive but the stream never terminates (a truncated transfer). It then
@@ -2548,7 +2553,7 @@ a{color:#71BFCC}
   if(!btn||!out) return;
   var ar=false; try{ ar=localStorage.getItem("thrive_lang")==="ar"; }catch(e){}
   var T=ar?{
-    title:"فحص ملف الكونسول", run:"جارٍ الفحص…", again:"إعادة فحص ملف الكونسول",
+    title:"فحص ملف اللوحة", run:"جارٍ الفحص…", again:"إعادة فحص ملف اللوحة",
     sent:"أُرسل الطلب", hdr:"وصلت الترويسات", first:"أول بايت من الجسم", term:"اكتمل الجسم",
     yes:"نعم", no:"لا", bytes:"البايتات المستلمة", sha:"البصمة SHA-256",
     expBytes:"البايتات المتوقعة", expSha:"البصمة المتوقعة", ctype:"نوع المحتوى", clen:"الطول المعلن",
@@ -2563,7 +2568,7 @@ a{color:#71BFCC}
     vFail:"فشل الطلب قبل وصول الجسم.",
     vStall:"لم تصل أي ترويسة خلال 30 ثانية: الطلب معلَّق."
   }:{
-    title:"console file probe", run:"Testing…", again:"Test console file again",
+    title:"board file probe", run:"Testing…", again:"Test board file again",
     sent:"request sent", hdr:"headers arrived", first:"first body byte", term:"full body terminated",
     yes:"yes", no:"no", bytes:"bytes received", sha:"sha-256",
     expBytes:"expected bytes", expSha:"expected sha-256", ctype:"content-type", clen:"content-length",
@@ -2601,8 +2606,8 @@ a{color:#71BFCC}
   function finish(){ btn.disabled=false; btn.textContent=T.again; }
   function judge(stamp, got, digest, terminated){
     return readVersion(stamp).then(function(v){
-      var vb=(v&&typeof v.consoleBytes==="number")?v.consoleBytes:null;
-      var vh=(v&&v.consoleSha256)?String(v.consoleSha256):null;
+      var vb=(v&&typeof v.boardBytes==="number")?v.boardBytes:null;      // LANE F: the served root is board.html
+      var vh=(v&&v.boardSha256)?String(v.boardSha256):null;
       put(T.expBytes, vb===null?T.none:vb);
       put(T.expSha, vh||T.none);
       note("");
@@ -2618,7 +2623,7 @@ a{color:#71BFCC}
     var me=++rid, stamp=String(Date.now());
     t0=Date.now(); lines=[]; out.hidden=false; btn.disabled=true; btn.textContent=T.run;
     var hdr=false, first=false, term=false;
-    var url="./library/console.html?v="+BUILD+"&probe="+stamp;
+    var url="./library/board.html?v="+BUILD+"&probe="+stamp;
     put(T.title, "build "+BUILD);
     put("url", url);
     note(T.close);
@@ -2696,13 +2701,13 @@ a{color:#71BFCC}
   keeps the painted Arabic labels. */
   try{ if(localStorage.getItem('thrive_lang')==='ar'){
     var d=document.documentElement; d.setAttribute('lang','ar'); d.setAttribute('dir','rtl');
-    var m=document.getElementById('idxMsg'); if(m) m.innerHTML='جارٍ فتح <a href="./library/console.html?v=${BUILD}">مكتبة فرص ثرايف</a>…';
+    var m=document.getElementById('idxMsg'); if(m) m.innerHTML='جارٍ فتح <a href="./library/board.html?v=${BUILD}">لوحة فرص ثرايف</a>…';
     var g=document.getElementById('idxGate'); if(g) g.textContent='صفحة تسجيل الدخول';
-    var c=document.getElementById('idxCon'); if(c) c.textContent='فتح الكونسول';
+    var c=document.getElementById('idxCon'); if(c) c.textContent='فتح اللوحة';
     var u=document.getElementById('idxMenu'); if(u) u.textContent='القائمة';
-    var n=document.getElementById('idxNormal'); if(n) n.textContent='الكونسول المعتاد';
-    var s=document.getElementById('idxSafe'); if(s) s.textContent='الكونسول بالرسم الآمن';
-    var p=document.getElementById('idxProbe'); if(p) p.textContent='فحص ملف الكونسول';
+    var n=document.getElementById('idxNormal'); if(n) n.textContent='اللوحة';
+    var s=document.getElementById('idxSafe'); if(s) s.textContent='الكونسول القديم (جهات الاتصال، الرؤى، الدفعات)';
+    var p=document.getElementById('idxProbe'); if(p) p.textContent='فحص ملف اللوحة';
   } }catch(e){}
 })();</script>
 <script>(function(){/* CONSOLE_ENTRY_DIAG (read-only). If the console just ejected (it wrote a fresh
@@ -2741,15 +2746,20 @@ a{color:#71BFCC}
   if(/[?&]stay=1(&|$)/.test(location.search||"")) return;           // manual launcher: no auto hand-off
   var q=(location.search||"").replace(/^\\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0&&p.indexOf("warm=")!==0&&p.indexOf("stay=")!==0;}).join("&");
   var warm=/[?&]warm=1(&|$)/.test(location.search||"");
-  function toConsole(){ location.replace("./library/console.html?v="+BUILD+(q?("&"+q):"")+(location.hash||"")); }
+  // LANE F (ROOT FLIP): the single hand-off now forwards to library/board.html, the new self-contained engine
+  // (no app.js), so every merged fix - the campaign-message write, folder pairing, B2/B3, the unified window,
+  // Library delete, per-recipient status - is what the operator lands on. console.html (the old app.js shell)
+  // is retired from the auto path but kept reachable through the labelled "Legacy console" escape below, so the
+  // not-yet-migrated screens (Contacts, Insights, Batches) are never lost. app.js/console.html stay in the repo.
+  function toBoard(){ location.replace("./library/board.html?v="+BUILD+(q?("&"+q):"")+(location.hash||"")); }
   function toGate(){ location.replace("gate.html?v=" + BUILD); }   // version-pinned: never serve a stale gate.html
   function readSess(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||"null"); }catch(e){ return null; } }
   function expired(s){ try{ if(!s||!s.expires_at) return false; return (Number(s.expires_at)*1000) < (Date.now()-5000); }catch(e){ return false; } }
   function decide(){
     var sess=readSess();
-    if(warm){ toConsole(); return; }                                // just signed in through the bare gate
+    if(warm){ toBoard(); return; }                                  // just signed in through the bare gate
     if(!sess||!sess.access_token){ toGate(); return; }              // no session: the bare gate owns sign-in
-    if(!expired(sess)){ toConsole(); return; }                      // live session: forward, no network
+    if(!expired(sess)){ toBoard(); return; }                        // live session: forward, no network
     // Expired token: ONE silent bounded refresh (frozen shape, arrayBuffer + TextDecoder read).
     var done=false, timer=setTimeout(function(){ if(done) return; done=true; toGate(); }, 12000);
     var opts={method:"POST",headers:{"apikey":ANON,"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({refresh_token:sess.refresh_token})};
@@ -2761,7 +2771,7 @@ a{color:#71BFCC}
       var t=String(r.text||"").replace(/^\\uFEFF/,"").trim(), d=null; try{ d=t?JSON.parse(t):null; }catch(e){}
       if(r.ok && d && d.access_token){
         try{ localStorage.setItem(SESSION_KEY, JSON.stringify({access_token:d.access_token,refresh_token:d.refresh_token,expires_at:d.expires_at,email:sess.email,uid:sess.uid||((d.user&&d.user.id)||"")})); localStorage.setItem(PRESENCE,String(Date.now())); }catch(e){}
-        toConsole();
+        toBoard();
       } else { toGate(); }
     }).catch(function(){ if(done) return; done=true; clearTimeout(timer); toGate(); });
   }
@@ -2771,7 +2781,7 @@ a{color:#71BFCC}
 })();</script></body></html>
 `;
 fs.writeFileSync(path.join(ROOT, "index.html"), rootIndex);
-console.log("wrote index.html  (redirect -> console.html?v=" + BUILD + ")");
+console.log("wrote index.html  (LANE F: redirect -> board.html?v=" + BUILD + "; legacy console escape kept)");
 
 /* P43: the version authority. One tiny JSON, written by the SAME step that stamps the build, fetched
    with cache:"no-store" by every entry document at boot. It is how a document discovers it is stale:
@@ -2784,10 +2794,17 @@ console.log("wrote index.html  (redirect -> console.html?v=" + BUILD + ")");
    than assumed. Read from disk AFTER console.html is written, so it is the real shipped bytes. */
 const consoleBuf = fs.readFileSync(path.join(ROOT, "library/console.html"));
 const consoleSha = crypto.createHash("sha256").update(consoleBuf).digest("hex");
+// LANE F (ROOT FLIP): board.html is now the served root, so publish ITS byte count and SHA-256 too, and the
+// root probe compares what the device received against these. consoleBytes/consoleSha256 stay (additive): the
+// in-shell failsafe (P43) and the legacy console escape still validate the old shell against them.
+const boardBuf = fs.readFileSync(path.join(ROOT, "library/board.html"));
+const boardSha = crypto.createHash("sha256").update(boardBuf).digest("hex");
 fs.writeFileSync(path.join(ROOT, "version.json"), JSON.stringify({
-  build: BUILD, builtAt: BUILT_AT, consoleBytes: consoleBuf.length, consoleSha256: consoleSha
+  build: BUILD, builtAt: BUILT_AT,
+  boardBytes: boardBuf.length, boardSha256: boardSha,
+  consoleBytes: consoleBuf.length, consoleSha256: consoleSha
 }) + "\n");
-console.log("wrote version.json  ({build: " + BUILD + ", consoleBytes: " + consoleBuf.length + "})");
+console.log("wrote version.json  ({build: " + BUILD + ", boardBytes: " + boardBuf.length + ", consoleBytes: " + consoleBuf.length + "})");
 
 /* NETLIFY_DEPLOY: assemble a CLEAN publish/ directory (gitignored, like dist/) holding ONLY the deployable
    site, so Netlify publishes a tidy tree rather than the whole repo (tools, docs, relay source, shots). It
