@@ -283,7 +283,9 @@ with sync_playwright() as p:
     # ===== 5: send is NOT blocked for a live-on-upload page; blocked ONLY for a definitively dead page (404) =====
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(600); wait_ident(pg)
     # 5a: acme-co is live on upload -> the send goes straight through, no manual activate, no re-activate button
-    pg.evaluate(OPEN, "A quick note for Acme Co")   # business == subject/title -> opens the Details view
+    pg.evaluate(OPEN, "A quick note for Acme Co")   # business == subject/title -> opens the control room on MESSAGE
+    pg.wait_for_selector("#owTabs [data-cr-gate='activity']", timeout=6000)   # P1: the hosted-page controls live in the ACTIVITY gate
+    pg.click("#owTabs [data-cr-gate='activity']")
     pg.wait_for_selector("#owDetail", timeout=6000); pg.wait_for_timeout(400)
     ck("5: no re-activate button on a live upload card (activation happened on upload)",
        pg.evaluate("()=>!document.getElementById('upActBtn')"))
@@ -297,7 +299,7 @@ with sync_playwright() as p:
     LIVE["fresh-labs"] = "dead"; STAMP.pop("fresh-labs", None)   # force the live /opp/fresh-labs to 404
     pg.evaluate("()=>location.reload()"); pg.wait_for_timeout(700); wait_ident(pg)
     pg.evaluate(OPEN, "Fresh Labs intro")
-    pg.wait_for_selector("#owDetail", timeout=6000); pg.wait_for_timeout(200)
+    pg.wait_for_selector("#owTabs [data-cr-gate='msg']", timeout=6000); pg.wait_for_timeout(200)   # control room open
     pg.evaluate("()=>window.owSelectMode('a')")
     pg.wait_for_selector("#owModeA #nmSend", timeout=6000); pg.wait_for_timeout(400)
     n_before = sent_count("fresh-labs")

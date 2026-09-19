@@ -145,7 +145,10 @@ def wait_ident(pg, tries=40):
         pg.wait_for_timeout(150)
     return False
 def open_card(pg, slug):
+    # P1: a card tap opens the control room on MESSAGE; the fate actions live in the ACTIVITY gate (#owDetail).
     pg.evaluate("(s)=>{var c=document.querySelector('.card[data-slug=\"'+s+'\"]'); if(c) window.openOppWindow(c.getAttribute('data-slug'), 'detail');}", slug)
+    pg.wait_for_selector("#owTabs [data-cr-gate='activity']", timeout=8000)
+    pg.click("#owTabs [data-cr-gate='activity']")
     pg.wait_for_function("()=>!!document.getElementById('owDetail') && document.getElementById('owDetail').querySelector('.act[data-act]')", timeout=8000)
 def has_act(pg, act):
     return pg.evaluate("(a)=>!!document.querySelector('#owDetail .act[data-act='+JSON.stringify(a)+']')", act)

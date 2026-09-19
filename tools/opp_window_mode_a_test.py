@@ -153,16 +153,19 @@ with sync_playwright() as p:
     ck("B2 fail-closed: an unreadable suppression list halts the send (zero relay calls)", len(RELAY_CALLS)==0, RELAY_CALLS)
     ck("B2 fail-closed: no console_mail row when the list is unreadable", sent_count("alpha")==0, MAIL)
 
-    # ===== 7: G5 - a card tap opens the WINDOW on Details (the drawer is retired) =====
+    # ===== 7: P1 - a card tap opens the WINDOW on the CONTROL ROOM (MESSAGE gate); the drawer is retired =====
     SUPP["fault"]=False; SUPP["rows"]=[]
     pg.evaluate("()=>window.closeOppWindow()")
     pg.wait_for_timeout(200)
-    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"alpha\"]'); if(c) c.click();}")   # card tap -> window Details
-    pg.wait_for_timeout(500)
-    ck("a card tap opens the centered window on Details; no drawer/#scrim in the DOM",
-       pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, det:!!document.getElementById('owDetail'), noDw:!document.getElementById('drawer') && !document.getElementById('scrim')})")=={"ow":True,"det":True,"noDw":True})
-    ck("the Details view mounts the drawer's sections (not a compose editor)",
-       pg.evaluate("()=>!!document.querySelector('#owDetail .dw-sec') && !document.querySelector('#owDetail #edSubj')"))
+    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"alpha\"]'); if(c) c.click();}")   # card tap -> control room
+    pg.wait_for_selector("#owTabs [data-cr-gate='msg']", timeout=6000); pg.wait_for_timeout(300)
+    ck("a card tap opens the centered window on the control room MESSAGE gate; no drawer/#scrim in the DOM",
+       pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, msg:!!document.querySelector('#crMsgPanel #edSubj'), noDw:!document.getElementById('drawer') && !document.getElementById('scrim')})")=={"ow":True,"msg":True,"noDw":True})
+    # The drawer's detail/management sections moved to the ACTIVITY gate (reused wholesale, no fork).
+    pg.click("#owTabs [data-cr-gate='activity']")
+    pg.wait_for_selector("#owDetail .dw-sec", timeout=6000)
+    ck("the ACTIVITY gate mounts the drawer's sections (reused by reference)",
+       pg.evaluate("()=>!!document.querySelector('#owDetail .dw-sec')"))
 
     ck("no uncaught page error fired", len(perr)==0, perr)
     pg.close(); b.close()

@@ -1,9 +1,10 @@
-"""G4.5 - the Details view (the drawer's detail/management half) inside #oppWindow (board.html).
+"""P1 CONTROL ROOM - a card tap opens the opp as a control room (board.html), opening on the MESSAGE gate; the
+detail/management half moved to the ACTIVITY gate but is reused wholesale (owDetailMount, no fork).
 
-Detail-first: a card tap opens the window on Details for that opp. This drives the REAL Details view via the
-exposed window.openOppWindow(slug, "detail") seam (the same call the flipped card tap will make; OPP_WINDOW
-stays OFF in the shipped build). Proves the window now covers the drawer's lower half, reusing the SAME
-functions/handlers by reference (no fork):
+Detail-first: a card tap opens the window on the control room for that opp, on the MESSAGE gate. This drives the
+REAL surface via the exposed window.openOppWindow(slug, "detail") seam (the same call the card tap makes).
+Proves: the control room opens on MESSAGE with the editor and the loaded message (no mode selector), and the
+ACTIVITY gate still covers the drawer's lower half, reusing the SAME functions/handlers by reference (no fork):
   - the sections render: signals (dw-nums), the reply thread (the heart, from the one resolver), the record,
     notes (list + add form), and the activity timeline;
   - fate actions are present and correct for the stage (a draft shows Promote/Archive/Delete), and there is NO
@@ -32,7 +33,9 @@ def ck(n, c, d=None):
 
 SLUG = "alpha"
 OPPS = { SLUG: {"slug":SLUG, "business":"Alpha Co", "stage":"draft", "archived":False,
-                "data":{"recipients":[{"addr":"buyer@ex.example","name":"Buyer"}],
+                "data":{"outreach_subject":"A partnership for Alpha Co",
+                        "outreach_text":"Hi there, we would love to work with you.",
+                        "recipients":[{"addr":"buyer@ex.example","name":"Buyer"}],
                         "notes":[{"ts":"2026-08-01T09:00:00Z","text":"first note","by":"u"}]}} }
 MAIL = [{"id":"m1","opp":SLUG,"to_addr":"buyer@ex.example","status":"sent","ts":"2026-08-01T10:00:00Z","data":{"direction":"out","subject":"Hello"}}]
 HITS = [{"id":"h1","slug":SLUG,"ts":"2026-08-02T10:00:00Z","self":False,"data":{"type":"open","r":"m1"}}]
@@ -93,9 +96,16 @@ def wire(ctx):
     ctx.route("**/rest/v1/console_pages**", route_empty)
     ctx.route("**/rest/v1/console_suppressions**", route_empty)
 
-def open_detail(pg):
+def open_room(pg):
+    # a card tap opens the control room; it opens on the MESSAGE gate (the gate strip is always present)
     pg.evaluate("(s)=>window.openOppWindow(s,'detail')", SLUG)
+    pg.wait_for_selector("#owTabs [data-cr-gate='msg']", timeout=6000); pg.wait_for_timeout(300)
+def to_activity(pg):
+    # the drawer's former detail/management half lives in the ACTIVITY gate; switch to it, then it mounts #owDetail
+    pg.click("#owTabs [data-cr-gate='activity']")
     pg.wait_for_selector("#owDetail .dw-sec", timeout=6000); pg.wait_for_timeout(500)
+def open_detail(pg):
+    open_room(pg); to_activity(pg)
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
@@ -105,9 +115,30 @@ with sync_playwright() as p:
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(700)
     pg.wait_for_selector(".card[data-slug='alpha']", timeout=8000)
 
-    # ===== 1: the Details view renders the drawer's lower-half sections =====
-    open_detail(pg)
-    ck("window open on Details (#owDetail present), drawer stays hidden",
+    # ===== 1a: the control room opens on the MESSAGE gate with the loaded message (Phase 1 core) =====
+    open_room(pg)
+    pg.wait_for_function("()=>{var s=document.getElementById('edSubj'); return s && s.value.indexOf('partnership for Alpha')>=0;}", timeout=6000)
+    ck("a card tap opens the control room on the MESSAGE gate (editor mounted, not a mode selector)",
+       pg.evaluate("()=>{var p=document.getElementById('crMsgPanel'); return !!(p && !p.hidden && p.querySelector('#edSubj') && p.querySelector('#edBody') && p.querySelector('#edPreview'));}")
+       and pg.evaluate("()=>!document.getElementById('owPickA') && !document.getElementById('owModeA')"))
+    ck("the MESSAGE gate LOADS the message (subject + body present in the editor)",
+       pg.evaluate("()=>{var s=document.getElementById('edSubj'), b=document.getElementById('edBody'); return !!(s && b && s.value.indexOf('partnership for Alpha')>=0 && b.value.indexOf('would love to work')>=0);}"),
+       pg.evaluate("()=>{var s=document.getElementById('edSubj'); return s?s.value:'no edSubj';}"))
+    ck("the four gates are present and clearly placed (Message / Page / Contact / Activity)",
+       pg.evaluate("()=>['msg','page','contact','activity'].every(function(g){return !!document.querySelector(\"#owTabs [data-cr-gate='\"+g+\"']\");})"))
+    # The PAGE gate: the page settings (slug/link name) show; CONTACT gate: the recipient shows.
+    pg.click("#owTabs [data-cr-gate='page']"); pg.wait_for_timeout(400)
+    ck("PAGE gate shows the page settings (link name = the slug)",
+       pg.evaluate("()=>{var p=document.getElementById('crPagePanel'); return !!(p && !p.hidden && p.textContent.indexOf('alpha')>=0);}"),
+       pg.evaluate("()=>{var p=document.getElementById('crPagePanel'); return p?p.textContent.slice(0,140):'no page panel';}"))
+    pg.click("#owTabs [data-cr-gate='contact']"); pg.wait_for_timeout(400)
+    ck("CONTACT gate shows the recipient address for this opp",
+       pg.evaluate("()=>{var p=document.getElementById('crContactPanel'); return !!(p && !p.hidden && p.textContent.indexOf('buyer@ex.example')>=0);}"),
+       pg.evaluate("()=>{var p=document.getElementById('crContactPanel'); return p?p.textContent.slice(0,140):'no contact panel';}"))
+
+    # ===== 1b: the ACTIVITY gate renders the drawer's lower-half sections =====
+    to_activity(pg)
+    ck("window open on the control room (#owDetail present in ACTIVITY), drawer stays hidden",
        pg.evaluate("()=>({d:!!document.getElementById('owDetail'), dw:!document.getElementById('scrim'), ow:!document.getElementById('owScrim').hidden})")=={"d":True,"dw":True,"ow":True})
     ck("signals section renders (dw-nums)", pg.evaluate("()=>!!document.querySelector('#owDetail .dw-nums')"))
     ck("the reply thread (the heart) shows the inbound reply", pg.evaluate("()=>{var m=document.querySelector('#owDetail .thread .msg.in'); return !!(m && m.textContent.indexOf('sounds great')>=0);}"),
