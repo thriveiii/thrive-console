@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="220363d9">
+<meta name="thrive-build" content="168d43c8">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -370,7 +370,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build 220363d9</span>
+    <span class="muted">build 168d43c8</span>
   </div>
   <div id="root"></div>
 </div>
@@ -393,7 +393,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "220363d9";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "168d43c8";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -4591,7 +4591,7 @@ try{
   // A card tap opens the opp as an organized control room, opening on the MESSAGE gate with the editor + the
   // exact-send preview LIVE and the message LOADED (subject + body + recipient). Three gates plus the reorganized
   // detail/management half, so MESSAGE is first and nothing is buried, and NO mode selector opens on a card tap.
-  //   MESSAGE  - composeFieldsHtml (editorHtml + recipientHtml) BY REFERENCE + #edPreview via edCompileFrom ->
+  //   MESSAGE  - composeBodyHtml (editorHtml + recipientHtml + the #nmSend Send) BY REFERENCE + #edPreview via edCompileFrom ->
   //              sendCompile; autosave routes through composeOwns -> nmSaveNow (B2/F1 inherited), preview binds to
   //              #crMsgPanel through owComposeRoot. This is the ONLY gate that mounts the live compose fields.
   //   PAGE     - the opp's page (data.page_slug || slug): its title (console_pages.title), link name (the slug),
@@ -4637,8 +4637,8 @@ try{
     var row = (typeof findRow==="function" && findRow(slug)) || { slug:slug };
     function paint(data){
       var h=document.getElementById("crMsgPanel"); if(!h) return;
-      if(editorEligible(row)){                                        // live card: the editable compose fields + preview
-        h.innerHTML = composeFieldsHtml(slug, row, { opp:{ data:data } });
+      if(editorEligible(row)){                                        // live card: the editable compose fields + preview + Send
+        h.innerHTML = composeBodyHtml(slug, row, { opp:{ data:data } });  // composeFieldsHtml + the SAME #nmSend/#nmStatus Mode A mounts
         crMsgWire(slug);
       } else {                                                        // archived / tray: the message stays visible, read-only
         h.innerHTML = crMsgReadOnlyHtml(data);
@@ -4662,6 +4662,11 @@ try{
     try{ if(typeof wireEditor==="function") wireEditor(slug); }catch(e){}
     var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ if(typeof nmTick==="function") nmTick(slug); if(typeof nmScheduleSave==="function") nmScheduleSave(slug, 700); });
     var rs=document.getElementById("recSave"); if(rs) rs.addEventListener("click", function(){ try{ onSaveRecipient(slug); }catch(e){} });
+    // SEND: the SAME affordance and path Mode A uses. unifiedSend persists the live message + recipients then runs
+    // the shared L5 runSend (B2 fail-closed suppression, F1, per-recipient one-to-one, the no-message guard all
+    // inherited); sendApplyGate (via nmTick) enables it only when subject + body + recipient are ready, and the
+    // result surfaces in #nmStatus. composeOwns is true here, so the window owns the result surface. No fork.
+    var sd=document.getElementById("nmSend"); if(sd) sd.addEventListener("click", function(){ if(typeof unifiedSend==="function") unifiedSend(slug); });
     try{ if(typeof nmTick==="function") nmTick(slug); }catch(e){}     // initial preview + checklist + Send gate
   }
   // PAGE gate: the opp's page and its settings. The page a card points at is data.page_slug (a promoted card
