@@ -124,7 +124,7 @@ with sync_playwright() as p:
     ck("board: the Epsilon card shows its reply N-badge (2)", epsiBadge=="2", epsiBadge)
 
     # ---- tap the replied opp -> drawer ----
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});if(t){window.openOppWindow(t.getAttribute('data-slug'), 'detail'); var g=document.querySelector("#owTabs [data-cr-gate='activity']"); if(g) g.click();}}""")
     pg.wait_for_timeout(600)  # > detail fetch
     d = pg.evaluate("""()=>{
       var dw=document.getElementById('owDetail'); var scrim=document.getElementById('owScrim');
@@ -173,20 +173,20 @@ with sync_playwright() as p:
     ck("6: Close hides the drawer and the board is still mounted (no reload)", closed["hidden"] and closed["board"] and closed["alive"]=="YES", closed)
 
     # reopen + Escape
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});if(t){window.openOppWindow(t.getAttribute('data-slug'), 'detail'); var g=document.querySelector("#owTabs [data-cr-gate='activity']"); if(g) g.click();}}""")
     pg.wait_for_timeout(200)
     pg.keyboard.press("Escape"); pg.wait_for_timeout(120)
     ck("6: Escape closes the drawer", pg.evaluate("()=>document.getElementById('owScrim').hidden"))
 
     # reopen + backdrop click
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});if(t){window.openOppWindow(t.getAttribute('data-slug'), 'detail'); var g=document.querySelector("#owTabs [data-cr-gate='activity']"); if(g) g.click();}}""")
     pg.wait_for_timeout(200)
     pg.evaluate("()=>document.getElementById('owScrim').click()")
     pg.wait_for_timeout(120)
     ck("6: a backdrop tap closes the drawer", pg.evaluate("()=>document.getElementById('owScrim').hidden"))
 
     # ---- tap the Sent opp -> empty reply thread ----
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Gamma Inc/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Gamma Inc/.test(c.textContent))t=c;});if(t){window.openOppWindow(t.getAttribute('data-slug'), 'detail'); var g=document.querySelector("#owTabs [data-cr-gate='activity']"); if(g) g.click();}}""")
     pg.wait_for_timeout(500)
     g = pg.evaluate("""()=>{var dw=document.getElementById('owDetail');return {
       threadN:(dw.querySelector('[data-threadn]')||{}).textContent||'',
@@ -198,7 +198,7 @@ with sync_playwright() as p:
 
     # ---- AR: RTL drawer ----
     pg.click("#langBtn"); pg.wait_for_timeout(300)
-    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});t&&window.openOppWindow(t.getAttribute('data-slug'), 'detail');}""")
+    pg.evaluate("""()=>{var t=null;document.querySelectorAll('.card').forEach(function(c){if(/Epsilon/.test(c.textContent))t=c;});if(t){window.openOppWindow(t.getAttribute('data-slug'), 'detail'); var g=document.querySelector("#owTabs [data-cr-gate='activity']"); if(g) g.click();}}""")
     pg.wait_for_timeout(600)
     ar = pg.evaluate("""()=>{
       var dw=document.getElementById('owDetail');

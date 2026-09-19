@@ -236,11 +236,12 @@ with sync_playwright() as p:
     ck("the Preview tab can switch to the PAGE (its srcdoc shows the uploaded page)",
        pg.evaluate("()=>{var f=document.querySelector('#owPrevBox .lv-frame'); return !!(f && (f.getAttribute('srcdoc')||'').indexOf('Ramadan Offer')>=0);}"))
 
-    # ===== 9: G5 - a card tap opens the WINDOW on Details (the drawer is retired) =====
+    # ===== 9: P1 - a card tap opens the WINDOW on the CONTROL ROOM (MESSAGE gate); the drawer is retired =====
     pg.evaluate("()=>window.closeOppWindow()"); pg.wait_for_timeout(200)
-    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"alpha\"]'); if(c) c.click();}"); pg.wait_for_timeout(500)
-    ck("a card tap opens the centered window on Details; no drawer/#scrim in the DOM",
-       pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, det:!!document.getElementById('owDetail'), noDw:!document.getElementById('drawer') && !document.getElementById('scrim')})")=={"ow":True,"det":True,"noDw":True})
+    pg.evaluate("()=>{var c=document.querySelector('.card[data-slug=\"alpha\"]'); if(c) c.click();}")
+    pg.wait_for_selector("#owTabs [data-cr-gate='msg']", timeout=6000); pg.wait_for_timeout(300)
+    ck("a card tap opens the centered window on the control room MESSAGE gate; no drawer/#scrim in the DOM",
+       pg.evaluate("()=>({ow:!document.getElementById('owScrim').hidden, msg:!!document.querySelector('#crMsgPanel #edSubj'), noDw:!document.getElementById('drawer') && !document.getElementById('scrim')})")=={"ow":True,"msg":True,"noDw":True})
 
     ck("no uncaught page error fired", len(perr)==0, perr)
     pg.close(); b.close()

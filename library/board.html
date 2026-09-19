@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="e9943524">
+<meta name="thrive-build" content="ab928a40">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -141,6 +141,30 @@
   .ow-mode-btn.on{border-color:#4a7688;background:#101019}
   .ow-path-body{padding:2px}
   .ow-camp-row{display:flex;flex-direction:column;gap:6px}
+  /* CONTROL ROOM (Phase 1): a card tap opens the opp organized into gates (MESSAGE / PAGE / CONTACT / ACTIVITY),
+     opening on MESSAGE with the editor + live preview and the message loaded. The gate strip reuses .ow-tab; each
+     gate is a .cr-panel (only the active one shown). Sections are placed by need with equal padding on all four
+     sides, a clean header, and a smooth crossfade on gate switch - a daily-use surface, made to look excellent. */
+  .cr-panel{display:flex;flex-direction:column;gap:14px;animation:cr-in .18s ease}
+  .cr-panel[hidden]{display:none}
+  @keyframes cr-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){ .cr-panel{animation:none} }
+  .cr-sec{display:flex;flex-direction:column;gap:12px;border:1px solid #1e1e28;border-radius:14px;background:#0d0d13;padding:16px}
+  .cr-h{margin:0;font-size:13px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:#9aa4ad}
+  .cr-field{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
+  .cr-k{flex:0 0 auto;font-size:12.5px;color:#8a8a93}
+  .cr-v{flex:1 1 60%;min-width:0;color:#eef;word-break:break-word}
+  .cr-prev-h{font-size:12.5px;color:#8a8a93;margin-top:2px}
+  .cr-page-box{border:1px solid #22222e;border-radius:10px;overflow:hidden;background:#fff}
+  .cr-page-box .lv-frame{height:56vh;min-height:320px;border:0;border-radius:0}
+  .cr-contact-list{display:flex;flex-direction:column;gap:8px}
+  .cr-contact-row{display:flex;flex-direction:column;gap:2px;border:1px solid #22222e;border-radius:10px;padding:12px 14px;background:#0e0e14}
+  .cr-contact-name{font-weight:650;color:#eef;word-break:break-word}
+  .cr-contact-addr{font-size:12.5px;color:#9aa4ad}
+  .cr-count{font-size:12.5px;color:#8a8a93}
+  .cr-msg-subj{font-weight:700;color:#eef;font-size:15px;word-break:break-word}
+  .cr-msg-body{color:#c7c7d1;white-space:pre-wrap;word-break:break-word;line-height:1.5}
+  html[dir="rtl"] .cr-h,html[dir="rtl"] .cr-contact-name,html[dir="rtl"] .cr-k{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .ow-tab,html[dir="rtl"] .ow-title,html[dir="rtl"] .ow-mode-btn{letter-spacing:normal;text-transform:none}
   @media (max-width:720px){
     .ow-scrim{padding:0;align-items:flex-end}
@@ -346,7 +370,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build e9943524</span>
+    <span class="muted">build ab928a40</span>
   </div>
   <div id="root"></div>
 </div>
@@ -369,7 +393,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "e9943524";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "ab928a40";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -446,6 +470,9 @@
           ow_mode_b:"Message with campaign", ow_mode_b_sub:"A message plus a hosted page.",
           ow_compose:"Compose",
           ow_tab_msg:"Message", ow_tab_page:"Page", ow_tab_recip:"Recipients", ow_tab_preview:"Preview",
+          cr_gate_msg:"Message", cr_gate_page:"Page", cr_gate_contact:"Contact", cr_gate_activity:"Activity",
+          cr_page_h:"Page", cr_page_title:"Title", cr_page_link_name:"Link name", cr_page_none:"No page for this card yet.",
+          cr_page_preview:"Preview", cr_contact_h:"Contact", cr_contact_count:"recipient(s)", cr_msg_none:"No message yet.",
           ow_commit:"Create campaign", ow_committed:"Campaign created.", ow_need_page:"Add a page first.",
           ow_page_upload:"Upload a page", ow_page_pick:"Pick from Library", ow_use:"Use", ow_duplicate:"Duplicate",
           ow_path_campaign:"Full campaign (zip)", ow_path_campaign_sub:"Many pages, messages and recipients in one zip. Each page becomes its own card.",
@@ -539,6 +566,9 @@
           ow_mode_b:"رسالة مع حملة", ow_mode_b_sub:"رسالة مع صفحة مستضافة.",
           ow_compose:"إنشاء رسالة",
           ow_tab_msg:"النص", ow_tab_page:"الصفحة", ow_tab_recip:"المستلمون", ow_tab_preview:"المعاينة",
+          cr_gate_msg:"الرسالة", cr_gate_page:"الصفحة", cr_gate_contact:"جهة الاتصال", cr_gate_activity:"النشاط",
+          cr_page_h:"الصفحة", cr_page_title:"العنوان", cr_page_link_name:"اسم الرابط", cr_page_none:"لا صفحة لهذه البطاقة بعد.",
+          cr_page_preview:"المعاينة", cr_contact_h:"جهة الاتصال", cr_contact_count:"مستلم/مستلمون", cr_msg_none:"لا رسالة بعد.",
           ow_commit:"إنشاء الحملة", ow_committed:"أُنشئت الحملة.", ow_need_page:"أضف صفحة أولًا.",
           ow_page_upload:"رفع صفحة", ow_page_pick:"اختر من المكتبة", ow_use:"استخدام", ow_duplicate:"نسخ",
           ow_path_campaign:"حملة كاملة (ملف مضغوط)", ow_path_campaign_sub:"عدة صفحات ورسائل ومستلمين في ملف واحد. كل صفحة تصبح بطاقة مستقلة.",
@@ -4442,9 +4472,8 @@ try{
       }
       return;
     }
-    if(__owMode==="detail"){                                        // G4.5 detail-first: the drawer's detail/management half, in the window
-      if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
-      if(body){ body.innerHTML = '<div class="ow-detail" id="owDetail"></div>'; if(typeof owDetailMount==="function") owDetailMount(__owSlug); }
+    if(__owMode==="detail"){                                        // P1: the CONTROL ROOM - gates, opening on MESSAGE
+      if(typeof crMount==="function") crMount(__owSlug);
       return;
     }
     // A compose mode is chosen.
@@ -4507,11 +4536,16 @@ try{
   }
   // G3: the window's Mode B compose fields (#owMsgPanel) are a recognized compose surface too, so edRoot binds
   // there and composeOwns routes autosave - whichever Mode-B tab is visible (the fields stay mounted).
-  function owComposeActive(){ return !!(__owSlug && (__owMode==="a" || __owMode==="b")); }
+  // P1 CONTROL ROOM: the detail view's MESSAGE gate (#crMsgPanel) is a compose surface too, so composeOwns routes
+  // its autosave through the SAME single writer (nmSaveNow: subject + body + signature + recipients together) and
+  // edRoot/edEl bind every compose lookup + the #edPreview to it. The fields stay mounted while other gates show,
+  // so an in-progress edit is never dropped on a gate switch (owComposeActive is not gated on the active gate).
+  function owComposeActive(){ return !!(__owSlug && (__owMode==="a" || __owMode==="b" || (__owMode==="detail" && !!document.getElementById("crMsgPanel")))); }
   function owComposeRoot(){
     if(!__owSlug) return null;
     if(__owMode==="a") return document.getElementById("owModeA");
     if(__owMode==="b") return document.getElementById("owMsgPanel");
+    if(__owMode==="detail") return document.getElementById("crMsgPanel");   // the control-room MESSAGE gate
     return null;
   }
   // ---- Detail-first (G4.5) + the flip (G5): the drawer's DETAIL + MANAGEMENT half, in the window and mounted BY
@@ -4552,6 +4586,132 @@ try{
     if(!owDetailActive(slug)) return;
     if(!findRow(slug)){ closeOppWindow(); return; }
     owDetailMount(slug);
+  }
+  // ==== The CONTROL ROOM (Phase 1) ==============================================================================
+  // A card tap opens the opp as an organized control room, opening on the MESSAGE gate with the editor + the
+  // exact-send preview LIVE and the message LOADED (subject + body + recipient). Three gates plus the reorganized
+  // detail/management half, so MESSAGE is first and nothing is buried, and NO mode selector opens on a card tap.
+  //   MESSAGE  - composeFieldsHtml (editorHtml + recipientHtml) BY REFERENCE + #edPreview via edCompileFrom ->
+  //              sendCompile; autosave routes through composeOwns -> nmSaveNow (B2/F1 inherited), preview binds to
+  //              #crMsgPanel through owComposeRoot. This is the ONLY gate that mounts the live compose fields.
+  //   PAGE     - the opp's page (data.page_slug || slug): its title (console_pages.title), link name (the slug),
+  //              live link (liveUrl), and the hosted-page preview (pageReadHtml -> pageFrameIframe). Read-only.
+  //   CONTACT  - the opp's recipients[] and their addresses (read-only; Phase 3 grows this into the contact entity).
+  //   ACTIVITY - the drawer's former detail/management half, reused wholesale via owDetailMount into #owDetail:
+  //              signals, the reply thread (the heart), the record, notes, the activity timeline, and fate actions.
+  var CR_GATES = [ {k:"msg", key:"cr_gate_msg"}, {k:"page", key:"cr_gate_page"}, {k:"contact", key:"cr_gate_contact"}, {k:"activity", key:"cr_gate_activity"} ];
+  var __crGate = "msg", __crMounted = {};
+  function crTabsHtml(){
+    return CR_GATES.map(function(g){ return '<button class="ow-tab cr-gate'+(g.k===__crGate?" on":"")+'" role="tab" type="button" data-cr-gate="'+g.k+'">'+esc(t(g.key))+'</button>'; }).join("");
+  }
+  function crBodyHtml(){
+    return '<div class="cr-panel" id="crMsgPanel"'+(__crGate==="msg"?"":" hidden")+'></div>'+
+      '<div class="cr-panel" id="crPagePanel"'+(__crGate==="page"?"":" hidden")+'></div>'+
+      '<div class="cr-panel" id="crContactPanel"'+(__crGate==="contact"?"":" hidden")+'></div>'+
+      '<div class="cr-panel" id="crActivityPanel"'+(__crGate==="activity"?"":" hidden")+'></div>';
+  }
+  function crMount(slug){
+    __crGate = "msg"; __crMounted = { msg:true };
+    var tabs=document.getElementById("owTabs"); if(tabs){ tabs.hidden=false; tabs.innerHTML = crTabsHtml(); crWireTabs(); }
+    var body=document.getElementById("owBody"); if(body){ body.innerHTML = crBodyHtml(); }
+    crMsgMount(slug);                                                  // the default gate: the message, loaded + live preview
+  }
+  function crWireTabs(){
+    [].forEach.call(document.querySelectorAll("#owTabs [data-cr-gate]"), function(b){ b.addEventListener("click", function(){ crGateTo(b.getAttribute("data-cr-gate")); }); });
+  }
+  function crGateTo(gate){
+    __crGate = gate; var slug=__owSlug;
+    [].forEach.call(document.querySelectorAll("#owTabs .cr-gate"), function(b){ b.classList.toggle("on", b.getAttribute("data-cr-gate")===gate); });
+    var map={ msg:"crMsgPanel", page:"crPagePanel", contact:"crContactPanel", activity:"crActivityPanel" };
+    Object.keys(map).forEach(function(k){ var el=document.getElementById(map[k]); if(el) el.hidden = (k!==gate); });
+    if(gate==="page" && !__crMounted.page){ crPageMount(slug); __crMounted.page=true; }
+    if(gate==="contact" && !__crMounted.contact){ crContactMount(slug); __crMounted.contact=true; }
+    if(gate==="activity" && !__crMounted.activity){ crActivityMount(slug); __crMounted.activity=true; }
+    if(gate==="msg"){ try{ if(typeof edRenderPreview==="function") edRenderPreview(slug); }catch(e){} }   // re-sync the preview on return
+  }
+  // MESSAGE gate: the SHARED compose fields (editor + recipient + #edPreview + signature), mounted by reference and
+  // wired exactly like the window's Mode B Message tab (owMsgMount/owMsgWire) - instant paint from memory, then the
+  // record enriches it. composeOwns routes autosave to nmSaveNow; nmTick renders the live exact-send preview.
+  function crMsgMount(slug){
+    var host=document.getElementById("crMsgPanel"); if(!host) return;
+    var row = (typeof findRow==="function" && findRow(slug)) || { slug:slug };
+    function paint(data){
+      var h=document.getElementById("crMsgPanel"); if(!h) return;
+      if(editorEligible(row)){                                        // live card: the editable compose fields + preview
+        h.innerHTML = composeFieldsHtml(slug, row, { opp:{ data:data } });
+        crMsgWire(slug);
+      } else {                                                        // archived / tray: the message stays visible, read-only
+        h.innerHTML = crMsgReadOnlyHtml(data);
+      }
+    }
+    paint(__edBase[slug]||{});                                        // instant paint from memory
+    oppReadData(slug).then(function(data){
+      if(!(__owMode==="detail" && __owSlug===slug)) return;           // the operator moved on: do not clobber
+      __edBase[slug]=data; paint(data);                              // enrich from the record
+    }, function(){});
+  }
+  function crMsgReadOnlyHtml(data){
+    data=data||{};
+    var subj=String(data.outreach_subject||"").trim(), body=String(data.outreach_text||"").trim();
+    if(!subj && !body) return '<div class="cr-sec"><div class="up-empty">'+esc(t("cr_msg_none"))+'</div></div>';
+    return '<div class="cr-sec"><h3 class="cr-h">'+esc(t("cr_gate_msg"))+'</h3>'+
+      (subj ? '<div class="cr-msg-subj" dir="auto">'+esc(subj)+'</div>' : '')+
+      (body ? '<div class="cr-msg-body" dir="auto">'+esc(body)+'</div>' : '')+'</div>';
+  }
+  function crMsgWire(slug){
+    try{ if(typeof wireEditor==="function") wireEditor(slug); }catch(e){}
+    var rc=document.getElementById("recIn"); if(rc) rc.addEventListener("input", function(){ if(typeof nmTick==="function") nmTick(slug); if(typeof nmScheduleSave==="function") nmScheduleSave(slug, 700); });
+    var rs=document.getElementById("recSave"); if(rs) rs.addEventListener("click", function(){ try{ onSaveRecipient(slug); }catch(e){} });
+    try{ if(typeof nmTick==="function") nmTick(slug); }catch(e){}     // initial preview + checklist + Send gate
+  }
+  // PAGE gate: the opp's page and its settings. The page a card points at is data.page_slug (a promoted card
+  // shares the template page) else the slug - the same rule the send + editor use (edPageSlug). Title from
+  // console_pages, the live link from liveUrl, the hosted-page preview read back with pageReadHtml (the same seam
+  // the Library preview uses) into a sandboxed pageFrameIframe.
+  function crPageMount(slug){
+    var host=document.getElementById("crPagePanel"); if(!host) return;
+    var d=__edBase[slug]||{}, pageSlug=(d && d.page_slug) || slug;
+    host.innerHTML =
+      '<div class="cr-sec"><h3 class="cr-h">'+esc(t("cr_page_h"))+'</h3>'+
+        '<div class="cr-field"><span class="cr-k">'+esc(t("cr_page_title"))+'</span><span class="cr-v" id="crPageTitle" dir="auto">'+esc(upPretty(pageSlug))+'</span></div>'+
+        '<div class="cr-field"><span class="cr-k">'+esc(t("cr_page_link_name"))+'</span><bdi class="cr-v mono-iso" dir="ltr">'+esc(pageSlug)+'</bdi></div>'+
+        '<div class="cr-field"><span class="cr-k">'+esc(t("lib_link"))+'</span><bdi class="cr-v mono-iso" dir="ltr">'+esc(liveUrl(pageSlug))+'</bdi></div>'+
+        '<div class="cr-prev-h">'+esc(t("cr_page_preview"))+'</div>'+
+        '<div class="cr-page-box" id="crPageBox"><div class="up-empty">'+esc(t("up_reading"))+'</div></div>'+
+      '</div>';
+    try{ restGet("console_pages?slug=eq."+enc(pageSlug)+"&select=title&limit=1").then(function(rows){
+      var ti=document.getElementById("crPageTitle"); if(!ti) return;
+      var title=(rows && rows[0] && String(rows[0].title||"").trim()) || upPretty(pageSlug); ti.textContent=title;
+    }, function(){}); }catch(e){}
+    try{ pageReadHtml(pageSlug).then(function(html){
+      var box=document.getElementById("crPageBox"); if(!box) return;
+      if(String(html||"").trim()) box.innerHTML = pageFrameIframe(html);
+      else box.innerHTML = '<div class="up-empty">'+esc(t("cr_page_none"))+'</div>';
+    }, function(){ var box=document.getElementById("crPageBox"); if(box) box.innerHTML='<div class="up-empty">'+esc(t("cr_page_none"))+'</div>'; }); }
+    catch(e){ var box=document.getElementById("crPageBox"); if(box) box.innerHTML='<div class="up-empty">'+esc(t("cr_page_none"))+'</div>'; }
+  }
+  // CONTACT gate: the opp's recipients[] and their addresses (read-only). Phase 3 grows this into the contact
+  // entity (templates sent to them + the full conversation). Reads data.recipients[] - {addr,name,lang}.
+  function crContactMount(slug){
+    var host=document.getElementById("crContactPanel"); if(!host) return;
+    var d=__edBase[slug]||{}, recips=(d && Array.isArray(d.recipients)) ? d.recipients : [];
+    var listHtml = recips.length ? recips.map(function(r){
+      var addr=String((r && r.addr)||"").trim(), name=String((r && r.name)||"").trim();
+      return '<div class="cr-contact-row">'+
+        (name ? '<span class="cr-contact-name" dir="auto">'+esc(name)+'</span>' : '')+
+        '<bdi class="cr-contact-addr mono-iso" dir="ltr">'+esc(addr)+'</bdi></div>';
+    }).join("") : '<div class="up-empty">'+esc(t("ow_recip_none"))+'</div>';
+    host.innerHTML = '<div class="cr-sec"><h3 class="cr-h">'+esc(t("cr_contact_h"))+'</h3>'+
+      (recips.length ? '<div class="cr-count">'+esc(String(recips.length))+' '+esc(t("cr_contact_count"))+'</div>' : '')+
+      '<div class="cr-contact-list">'+listHtml+'</div></div>';
+  }
+  // ACTIVITY gate: the drawer's former detail/management half, reused WHOLESALE - owDetailMount fills #owDetail
+  // with numsHtml/factsHtml/archivedInfo/uploadActivate(F1)/actions/threadHtml/recordHtml/notesHtml/activityHtml
+  // and owDetailWire wires the fate actions + notes, unchanged. No second read path, no forked handler.
+  function crActivityMount(slug){
+    var host=document.getElementById("crActivityPanel"); if(!host) return;
+    host.innerHTML = '<div class="ow-detail" id="owDetail"></div>';
+    if(typeof owDetailMount==="function") owDetailMount(slug);
   }
   function openOppWindow(slug, mode){
     __owSlug = slug; __owMode = mode || null;                      // a card tap passes "detail"; "New message" opens the selector
