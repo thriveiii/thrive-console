@@ -2901,8 +2901,8 @@ a{color:#71BFCC}
 <script>(function(){/* BARE_GATE router, a SINGLE deferred navigation (no meta+JS race). Query params (minus
   stale v/vr/warm/stay) and the hash carry across, so ?debug=paint survives. ?stay=1 is the manual launcher:
   no auto hand-off, the static escapes above are the way in. */
-  var BUILD="${BUILD}", URL_BASE="${SUPA_URL}", ANON="${SUPA_ANON}";
-  var SESSION_KEY="console_sb_session", PRESENCE="thrive_presence";
+  var BUILD="${BUILD}";
+  var SESSION_KEY="console_sb_session";
   if(/[?&]stay=1(&|$)/.test(location.search||"")) return;           // manual launcher: no auto hand-off
   var q=(location.search||"").replace(/^\\?/,"").split("&").filter(function(p){return p&&p.indexOf("v=")!==0&&p.indexOf("vr=")!==0&&p.indexOf("warm=")!==0&&p.indexOf("stay=")!==0;}).join("&");
   var warm=/[?&]warm=1(&|$)/.test(location.search||"");
@@ -2914,26 +2914,20 @@ a{color:#71BFCC}
   function toBoard(){ location.replace("./library/board.html?v="+BUILD+(q?("&"+q):"")+(location.hash||"")); }
   function toGate(){ location.replace("gate.html?v=" + BUILD); }   // version-pinned: never serve a stale gate.html
   function readSess(){ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||"null"); }catch(e){ return null; } }
-  function expired(s){ try{ if(!s||!s.expires_at) return false; return (Number(s.expires_at)*1000) < (Date.now()-5000); }catch(e){ return false; } }
+  // ENTRY-LOOP FIX: the router decides on session PRESENCE only and does NO network. The old expired-token
+  // branch POSTed grant_type=refresh_token here to decide - but Supabase refresh tokens are single-use (they
+  // rotate), and board.html ALSO refreshes on its warm boot, so two refreshers raced the one token: whoever ran
+  // second saw a consumed token and this router fell to toGate(), bouncing a signed-in operator to the gate
+  // (the multi-try loop). It also made routing network-fragile (a slow refresh or the 12s timeout went to the
+  // gate). Now: warm -> board; any stored session (access_token present, expired or not) -> board in ONE hop and
+  // board.html owns the single, in-place refresh (library/board.html boot: connectingView -> refresh -> board,
+  // never a navigation, never a loop); no session -> gate. Auth is unchanged - board.html still refreshes every
+  // expired token, and a truly session-less visit still goes to the gate, which returns via index.html?warm=1.
   function decide(){
-    var sess=readSess();
     if(warm){ toBoard(); return; }                                  // just signed in through the bare gate
-    if(!sess||!sess.access_token){ toGate(); return; }              // no session: the bare gate owns sign-in
-    if(!expired(sess)){ toBoard(); return; }                        // live session: forward, no network
-    // Expired token: ONE silent bounded refresh (frozen shape, arrayBuffer + TextDecoder read).
-    var done=false, timer=setTimeout(function(){ if(done) return; done=true; toGate(); }, 12000);
-    var opts={method:"POST",headers:{"apikey":ANON,"Content-Type":"application/json"},cache:"no-store",body:JSON.stringify({refresh_token:sess.refresh_token})};
-    fetch(URL_BASE+"/auth/v1/token?grant_type=refresh_token",opts).then(function(res){
-      var read=(typeof res.arrayBuffer==="function")?res.arrayBuffer().then(function(b){return new TextDecoder("utf-8").decode(b);}):res.text();
-      return read.then(function(t){ return {ok:res.ok,text:t}; });
-    }).then(function(r){
-      if(done) return; done=true; clearTimeout(timer);
-      var t=String(r.text||"").replace(/^\\uFEFF/,"").trim(), d=null; try{ d=t?JSON.parse(t):null; }catch(e){}
-      if(r.ok && d && d.access_token){
-        try{ localStorage.setItem(SESSION_KEY, JSON.stringify({access_token:d.access_token,refresh_token:d.refresh_token,expires_at:d.expires_at,email:sess.email,uid:sess.uid||((d.user&&d.user.id)||"")})); localStorage.setItem(PRESENCE,String(Date.now())); }catch(e){}
-        toBoard();
-      } else { toGate(); }
-    }).catch(function(){ if(done) return; done=true; clearTimeout(timer); toGate(); });
+    var sess=readSess();
+    if(sess && sess.access_token){ toBoard(); return; }             // a session exists -> board owns the refresh, ONE hop, no network
+    toGate();                                                       // no session: the bare gate owns sign-in
   }
   // Defer the single hand-off a beat so first paint (with the static escapes) always lands before any
   // navigation. If the hand-off then hangs, the escapes are already on screen and tappable.
