@@ -1400,6 +1400,10 @@ function buildBoard(){
           ow_title:"Opportunity", ow_pick:"Choose how to send", ow_change_mode:"Change mode",
           ow_mode_a:"Message without campaign", ow_mode_a_sub:"A single message to one or more recipients.",
           ow_mode_b:"Message with campaign", ow_mode_b_sub:"A message plus a hosted page.",
+          ow_new_text:"Text message only", ow_new_text_sub:"Compose and send a message. No page.",
+          ow_new_upload:"Upload a page or campaign", ow_new_upload_sub:"A single page, or a full multi-page zip.",
+          ow_new_pick:"Pick from the Library", ow_new_pick_sub:"Reuse a template you already published, then write the message.",
+          ow_path_upload:"Upload a page or campaign", ow_path_upload_sub:"A single page, or a multi-page zip. Each page becomes its own card.",
           ow_compose:"Compose",
           ow_tab_msg:"Message", ow_tab_page:"Page", ow_tab_recip:"Recipients", ow_tab_preview:"Preview",
           cr_gate_msg:"Message", cr_gate_page:"Page", cr_gate_contact:"Contact", cr_gate_activity:"Activity",
@@ -1501,6 +1505,10 @@ function buildBoard(){
           ow_title:"الفرصة", ow_pick:"اختر طريقة الإرسال", ow_change_mode:"تغيير الطريقة",
           ow_mode_a:"رسالة بدون حملة", ow_mode_a_sub:"رسالة واحدة إلى مستلم أو أكثر.",
           ow_mode_b:"رسالة مع حملة", ow_mode_b_sub:"رسالة مع صفحة مستضافة.",
+          ow_new_text:"رسالة نصية فقط", ow_new_text_sub:"اكتب وأرسل رسالة. بدون صفحة.",
+          ow_new_upload:"ارفع صفحة أو حملة", ow_new_upload_sub:"صفحة واحدة، أو ملف مضغوط متعدد الصفحات.",
+          ow_new_pick:"اختر من المكتبة", ow_new_pick_sub:"أعد استخدام قالب سبق نشره، ثم اكتب الرسالة.",
+          ow_path_upload:"ارفع صفحة أو حملة", ow_path_upload_sub:"صفحة واحدة، أو ملف مضغوط متعدد الصفحات. كل صفحة تصبح بطاقة.",
           ow_compose:"إنشاء رسالة",
           ow_tab_msg:"النص", ow_tab_page:"الصفحة", ow_tab_recip:"المستلمون", ow_tab_preview:"المعاينة",
           cr_gate_msg:"الرسالة", cr_gate_page:"الصفحة", cr_gate_contact:"جهة الاتصال", cr_gate_activity:"النشاط",
@@ -2089,12 +2097,19 @@ ${UPLOAD_SRC}
   // Page tab), per-recipient status (Recipients tab), and the drawer's former detail/management half - signals,
   // reply thread, record, notes, activity, and the fate actions - in the Details view (owDetail*).
   var __owSlug = null, __owMode = null;   // the open opp; the chosen view ("detail" | "a" | "b"), or null = the selector
+  // New message opens on THREE clear options (Thyab's request): text-only, upload a page or campaign, or pick from
+  // the Library - no nested "with/without campaign" step. Each leads straight into its editor. The upload and pick
+  // options open Mode B on the Page tab with that path pre-selected; text-only opens the lean Mode A compose.
   function owModeSelectHtml(){
+    var card=function(id, tkey, subkey){
+      return '<button class="ow-mode-btn" id="'+id+'" type="button">'+esc(t(tkey))+
+        '<span class="ow-mode-sub">'+esc(t(subkey))+'</span></button>';
+    };
     return '<div class="ow-modes"><p class="ow-mode-h">'+esc(t("ow_pick"))+'</p>'+
-      '<button class="ow-mode-btn" id="owPickA" type="button">'+esc(t("ow_mode_a"))+
-        '<span class="ow-mode-sub">'+esc(t("ow_mode_a_sub"))+'</span></button>'+
-      '<button class="ow-mode-btn" id="owPickB" type="button">'+esc(t("ow_mode_b"))+
-        '<span class="ow-mode-sub">'+esc(t("ow_mode_b_sub"))+'</span></button></div>';
+      card("owPickText","ow_new_text","ow_new_text_sub")+
+      card("owPickUpload","ow_new_upload","ow_new_upload_sub")+
+      card("owPickLib","ow_new_pick","ow_new_pick_sub")+
+      '</div>';
   }
   function owRender(){
     var title=document.getElementById("owTitle");
@@ -2106,8 +2121,9 @@ ${UPLOAD_SRC}
     if(!__owMode){                                                  // the mode selector, shown first
       if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
       if(body){ body.innerHTML = owModeSelectHtml();
-        var a=document.getElementById("owPickA"); if(a) a.addEventListener("click", function(){ owSelectMode("a"); });
-        var b=document.getElementById("owPickB"); if(b) b.addEventListener("click", function(){ owSelectMode("b"); });
+        var a=document.getElementById("owPickText"); if(a) a.addEventListener("click", function(){ owSelectMode("a"); });          // text message only
+        var u=document.getElementById("owPickUpload"); if(u) u.addEventListener("click", function(){ owSelectMode("upload"); });   // upload a page or campaign
+        var l=document.getElementById("owPickLib"); if(l) l.addEventListener("click", function(){ owSelectMode("pick"); });        // pick from the Library
       }
       return;
     }
@@ -2124,7 +2140,16 @@ ${UPLOAD_SRC}
       if(body){ body.innerHTML = owModeBBodyHtml(); if(typeof owModeBMount==="function") owModeBMount(__owSlug); }
     }
   }
-  function owSelectMode(mode){ __owMode = mode; owRender(); }
+  // "upload" and "pick" are first-screen shortcuts into Mode B: open on the Page tab with that path pre-selected,
+  // so the operator lands straight in the upload control or the Library picker (no nested with-campaign step).
+  // "a"/"b"/"detail" behave as before (owSelectMode('a')/('b') remain the compose seams the tests drive).
+  var __owStartPath = null;
+  function owSelectMode(mode){
+    if(mode==="upload" || mode==="pick"){
+      __owStartPath = mode; __owTab = "page"; __owMode = "b"; owRender(); return;
+    }
+    __owStartPath = null; __owTab = "msg"; __owMode = mode; owRender();
+  }
   // ---- G3 Mode B: the tabbed campaign window. Tabs switch instantly; the compose fields live in #owMsgPanel
   //      (shared editorHtml/recipientHtml by reference); the Page tab is the ONE unified engine; the ONE
   //      primary action is Commit (owCommitCampaign, board-upload). ----
@@ -2153,10 +2178,14 @@ ${UPLOAD_SRC}
     if(tab==="recip" && typeof owRecipMount==="function") owRecipMount(__owSlug);         // G4: read the ledger fresh each open
   }
   function owModeBMount(slug){
-    __owTab = "msg";
     try{ if(typeof owMsgMount==="function") owMsgMount(slug); }catch(e){}       // Message tab: shared compose fields
     try{ if(typeof owPageMount==="function") owPageMount(slug); }catch(e){}     // Page tab: the unified engine
     var cb=document.getElementById("owCommit"); if(cb) cb.addEventListener("click", function(){ if(typeof owCommitCampaign==="function") owCommitCampaign(slug); });
+    if(__owStartPath){                                                          // entered via a first-screen upload/pick option
+      owTabTo("page");
+      try{ if(typeof owSelectPath==="function") owSelectPath(__owStartPath); }catch(e){}
+      __owStartPath = null;
+    } else { __owTab = "msg"; }
   }
   // The Preview tab: the exact-send MESSAGE (compiled through the send path) and the PAGE, both tall srcdoc,
   // switchable. Reuses edCompileFrom/edLiveData (the send compiler) and pageFrameIframe - no new preview code.

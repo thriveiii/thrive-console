@@ -120,7 +120,7 @@ with sync_playwright() as p:
     pg.wait_for_function("()=>{var s=document.getElementById('edSubj'); return s && s.value.indexOf('partnership for Alpha')>=0;}", timeout=6000)
     ck("a card tap opens the control room on the MESSAGE gate (editor mounted, not a mode selector)",
        pg.evaluate("()=>{var p=document.getElementById('crMsgPanel'); return !!(p && !p.hidden && p.querySelector('#edSubj') && p.querySelector('#edBody') && p.querySelector('#edPreview'));}")
-       and pg.evaluate("()=>!document.getElementById('owPickA') && !document.getElementById('owModeA')"))
+       and pg.evaluate("()=>!document.getElementById('owPickText') && !document.getElementById('owModeA')"))
     ck("the MESSAGE gate LOADS the message (subject + body present in the editor)",
        pg.evaluate("()=>{var s=document.getElementById('edSubj'), b=document.getElementById('edBody'); return !!(s && b && s.value.indexOf('partnership for Alpha')>=0 && b.value.indexOf('would love to work')>=0);}"),
        pg.evaluate("()=>{var s=document.getElementById('edSubj'); return s?s.value:'no edSubj';}"))

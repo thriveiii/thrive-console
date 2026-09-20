@@ -115,10 +115,11 @@ def wire(ctx):
 
 PAGE_HTML = "<!doctype html><html><head><title>Ramadan Offer</title></head><body><h1>Ramadan Offer</h1><p>Visit {{LINK}} today.</p></body></html>"
 def upload_page(pg):
-    # G7: the single-page upload now lives behind the "One page + written message" path on the Page tab. Choosing
-    # it reveals the page file input; the review + commit shape (single row) are unchanged.
-    pg.evaluate("()=>{var b=document.getElementById('owPathPage'); if(b) b.click();}"); pg.wait_for_timeout(150)
-    pg.set_input_files("#owPageFile", {"name":"ramadan-offer.html", "mimeType":"text/html", "buffer":PAGE_HTML.encode()})
+    # The single-page upload now lives behind the ONE unified "Upload a page or campaign" path on the Page tab
+    # (a single page and a multi-page zip both work from it). Choosing it reveals the file input; a single page
+    # yields a one-row review + commit, unchanged.
+    pg.evaluate("()=>{var b=document.getElementById('owPathUpload'); if(b) b.click();}"); pg.wait_for_timeout(150)
+    pg.set_input_files("#owUploadFile", {"name":"ramadan-offer.html", "mimeType":"text/html", "buffer":PAGE_HTML.encode()})
     pg.wait_for_selector("#owPageReview #libSlug-0", timeout=6000); pg.wait_for_timeout(400)
 
 def open_mode_b(pg, slug):
@@ -154,8 +155,8 @@ with sync_playwright() as p:
     ck("only the active panel is visible on screen (hidden panels do not render)",
        pg.evaluate("()=>({page:document.getElementById('owPagePanel').offsetParent!==null, msg:document.getElementById('owMsgPanel').offsetParent!==null, prev:document.getElementById('owPreviewPanel').offsetParent!==null})")=={"page":True,"msg":False,"prev":False})
     ck("the compose fields stay mounted while the Page tab is active (still ONE #edSubj)", pg.evaluate("()=>document.querySelectorAll('#edSubj').length")==1)
-    ck("the Page tab offers THREE labelled paths (full campaign / one page + written message / pick a template)",
-       pg.evaluate("()=>!!(document.getElementById('owPathCampaign')&&document.getElementById('owPathPage')&&document.getElementById('owPathPick'))"))
+    ck("the Page tab offers the TWO unified paths (upload a page or campaign / pick a Library template)",
+       pg.evaluate("()=>!!(document.getElementById('owPathUpload')&&document.getElementById('owPathPick')) && !document.getElementById('owPathCampaign') && !document.getElementById('owPathPage')"))
 
     # ===== 3: the Page tab is the ONE unified engine -> the SHARED review component =====
     upload_page(pg)

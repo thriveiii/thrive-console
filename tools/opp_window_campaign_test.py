@@ -202,23 +202,25 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: perr.append(str(e)))
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(500); wait_ident(pg)
 
-    # ===== 1: entering Mode B Page tab shows THREE labelled paths =====
+    # ===== 1: entering Mode B Page tab shows the TWO unified paths (upload / pick) =====
     open_mode_b_page(pg)
     ck("1: the Page tab is the active Mode B panel", pg.evaluate("()=>{var el=document.getElementById('owPagePanel'); return !!el && !el.hidden;}"))
-    for pid, label in [("owPathCampaign","Full campaign"), ("owPathPage","One page"), ("owPathPick","Library template")]:
+    for pid in ["owPathUpload", "owPathPick"]:
         vis = pg.evaluate("(id)=>{var b=document.getElementById(id); return !!b && b.offsetParent!==null;}", pid)
         ck(f"1: path button {pid} is present and visible", vis)
-    ck("1: the three path labels read (EN)",
-       pg.evaluate("()=>{var t=document.querySelector('.ow-page-paths').textContent; return t.indexOf('Full campaign')>=0 && t.indexOf('written message')>=0 && t.indexOf('Library template')>=0;}"))
-    ck("1: no path chosen -> campaign body hidden and review empty",
-       pg.evaluate("()=>document.getElementById('owBodyCampaign').hidden===true") and
+    ck("1: the old separate campaign/page path buttons are gone (unified)",
+       pg.evaluate("()=>!document.getElementById('owPathCampaign') && !document.getElementById('owPathPage')"))
+    ck("1: the two path labels read (EN: upload a page or campaign / pick a template)",
+       pg.evaluate("()=>{var t=document.querySelector('.ow-page-paths').textContent; return t.indexOf('Upload a page or campaign')>=0 && t.indexOf('Library template')>=0;}"))
+    ck("1: no path chosen -> upload body hidden and review empty",
+       pg.evaluate("()=>document.getElementById('owBodyUpload').hidden===true") and
        pg.evaluate("()=>document.getElementById('owPageReview').innerHTML.trim()===''"))
 
-    # ===== 2: FULL CAMPAIGN renders ALL six pages =====
-    pg.click("#owPathCampaign"); pg.wait_for_timeout(150)
-    ck("2: choosing Full campaign reveals the zip input, hides the others",
-       pg.evaluate("()=>document.getElementById('owBodyCampaign').hidden===false && document.getElementById('owBodyPage').hidden===true && document.getElementById('owBodyPick').hidden===true"))
-    pg.set_input_files("#owCampaignFile", CAMP_ZIP)
+    # ===== 2: the unified UPLOAD path renders ALL six pages from a multi-page zip =====
+    pg.click("#owPathUpload"); pg.wait_for_timeout(150)
+    ck("2: choosing Upload reveals the file input, hides the pick body",
+       pg.evaluate("()=>document.getElementById('owBodyUpload').hidden===false && document.getElementById('owBodyPick').hidden===true"))
+    pg.set_input_files("#owUploadFile", CAMP_ZIP)
     pg.wait_for_timeout(1400)
     plan = pg.evaluate("()=>window.__thriveUploadPlan()")
     ck("2: the WHOLE plan is held (six page rows, not one)", bool(plan) and len(plan.get("rows",[]))==6, {"rows": len(plan.get("rows",[])) if plan else None})
@@ -255,11 +257,11 @@ with sync_playwright() as p:
        (OPPS.get("river-sea-chocolates",{}).get("data",{}) or {}).get("outreach_subject","").startswith("A page for River Sea"),
        (OPPS.get("river-sea-chocolates",{}).get("data",{}) or {}).get("outreach_subject"))
 
-    # ===== 4: BARE PAGE + a written message -> ONE card carrying the written message =====
+    # ===== 4: a SINGLE bare page via the SAME unified upload path -> ONE card carrying the written message =====
     open_mode_b_page(pg)
-    pg.click("#owPathPage"); pg.wait_for_timeout(150)
-    ck("4: choosing One page reveals the page input", pg.evaluate("()=>document.getElementById('owBodyPage').hidden===false"))
-    pg.set_input_files("#owPageFile", BARE_HTML)
+    pg.click("#owPathUpload"); pg.wait_for_timeout(150)
+    ck("4: choosing Upload reveals the file input (a single page works from the same control)", pg.evaluate("()=>document.getElementById('owBodyUpload').hidden===false"))
+    pg.set_input_files("#owUploadFile", BARE_HTML)
     pg.wait_for_timeout(900)
     plan2 = pg.evaluate("()=>window.__thriveUploadPlan()")
     ck("4: the bare-page path holds exactly ONE row", bool(plan2) and len(plan2.get("rows",[]))==1, {"rows": len(plan2.get("rows",[])) if plan2 else None})
@@ -314,8 +316,8 @@ with sync_playwright() as p:
         c2 = b.new_context(viewport={"width":vw,"height":vh}); wire(c2, lang=lang); p2 = c2.new_page()
         p2.goto(f"{base}/library/board.html", wait_until="load"); p2.wait_for_timeout(500); wait_ident(p2)
         open_mode_b_page(p2)
-        p2.click("#owPathCampaign"); p2.wait_for_timeout(150)
-        p2.set_input_files("#owCampaignFile", CAMP_ZIP); p2.wait_for_timeout(1400)
+        p2.click("#owPathUpload"); p2.wait_for_timeout(150)
+        p2.set_input_files("#owUploadFile", CAMP_ZIP); p2.wait_for_timeout(1400)
         p2.screenshot(path=os.path.join(SCRATCH, f"g7_paths_{name}.png"))
         c2.close()
 

@@ -1343,7 +1343,7 @@ function owPathBtnHtml(path, tkey, subkey){
 // review so a switch never carries a stale plan into the wrong commit. The Library list loads lazily on pick.
 function owSelectPath(path){
   __owPagePath = path; __upPlan = null;
-  [["campaign","owPathCampaign","owBodyCampaign"],["page","owPathPage","owBodyPage"],["pick","owPathPick","owBodyPick"]].forEach(function(x){
+  [["upload","owPathUpload","owBodyUpload"],["pick","owPathPick","owBodyPick"]].forEach(function(x){
     var btn=document.getElementById(x[1]); if(btn) btn.classList.toggle("on", x[0]===path);
     var body=document.getElementById(x[2]); if(body) body.hidden = (x[0]!==path);
   });
@@ -1351,14 +1351,17 @@ function owSelectPath(path){
   owPageStatus("", "");
   if(path==="pick") owPagePickList();
 }
-// Path 1 (FULL CAMPAIGN): the SHARED multi-page parse. Keep the WHOLE plan (every page row), exactly as the
-// standalone upOnFile does - no collapse to the first row. Every row renders; commit iterates (owCommitCampaignAll).
+// The unified UPLOAD parse (a single page OR a multi-page zip). Keep the WHOLE plan (every page row), exactly as
+// the standalone upOnFile does. A SINGLE page defaults its slug to THIS opp's slug (mirroring the old one-page
+// path, so the page publishes at the opp's own link); a multi-page zip keeps each page's own derived slug and
+// mints its own card. The slug stays editable in the review either way. Commit routes by row count.
 function owCampaignOnFile(files){
   if(!files || !files.length) return;
   owPageStatus(t("up_reading"), "");
   Promise.all([ upBuildPlan(files), owPageLoadExisting() ]).then(function(a){
     var plan=a[0], rows=(plan&&plan.rows)||[];
     if(!rows.length){ owPageStatus(t("up_no_html"), "bad"); return; }
+    if(rows.length === 1 && __owSlug){ rows[0].slug = __owSlug; }        // a single page -> the opp's own slug (old one-page behavior)
     __upPlan = plan;                                                    // the WHOLE plan (all pages), never rows[0]
     owCampaignRenderReview();
   }, function(e){ owPageStatus((e&&e.message==="not_a_zip")?t("up_not_zip"):t("up_read_failed"), "bad"); });
@@ -1394,17 +1397,16 @@ function owCampaignRenderReview(){
 function owPageMount(slug){
   var host=document.getElementById("owPagePanel"); if(!host) return;
   __owPagePath = null;
+  // TWO paths now (Thyab's request surfaces them at the FIRST screen): ONE unified upload that accepts a single
+  // page OR a full multi-page zip (upBuildPlan folder-pairs both; the review renders 1..N rows), and Pick from the
+  // Library. The old separate "campaign" (zip-only) and "page" (single) paths are merged into "upload".
   host.innerHTML =
     '<div class="ow-page-paths">'+
-      owPathBtnHtml("campaign", "ow_path_campaign", "ow_path_campaign_sub")+
-      owPathBtnHtml("page", "ow_path_page", "ow_path_page_sub")+
+      owPathBtnHtml("upload", "ow_path_upload", "ow_path_upload_sub")+
       owPathBtnHtml("pick", "ow_path_pick", "ow_path_pick_sub")+
     '</div>'+
-    '<div class="ow-path-body" id="owBodyCampaign" hidden>'+
-      '<label class="act ow-up-btn">'+esc(t("ow_campaign_upload"))+'<input type="file" id="owCampaignFile" accept=".zip" hidden></label>'+
-    '</div>'+
-    '<div class="ow-path-body" id="owBodyPage" hidden>'+
-      '<label class="act ow-up-btn">'+esc(t("ow_page_upload"))+'<input type="file" id="owPageFile" accept=".zip,.html,.htm" hidden></label>'+
+    '<div class="ow-path-body" id="owBodyUpload" hidden>'+
+      '<label class="act ow-up-btn">'+esc(t("ow_campaign_upload"))+'<input type="file" id="owUploadFile" accept=".zip,.html,.htm" hidden></label>'+
     '</div>'+
     '<div class="ow-path-body" id="owBodyPick" hidden>'+
       '<div class="ow-pick" id="owPick">'+
@@ -1414,12 +1416,10 @@ function owPageMount(slug){
     '</div>'+
     '<div class="up-rows" id="owPageReview"></div>'+
     '<div class="act-status" id="owPageStatus" role="status" aria-live="polite"></div>';
-  var pc=document.getElementById("owPathCampaign"); if(pc) pc.addEventListener("click", function(){ owSelectPath("campaign"); });
-  var pp=document.getElementById("owPathPage");     if(pp) pp.addEventListener("click", function(){ owSelectPath("page"); });
-  var pk=document.getElementById("owPathPick");     if(pk) pk.addEventListener("click", function(){ owSelectPath("pick"); });
-  var cf=document.getElementById("owCampaignFile"); if(cf) cf.addEventListener("change", function(){ owCampaignOnFile(cf.files); });
-  var fi=document.getElementById("owPageFile");     if(fi) fi.addEventListener("change", function(){ owPageOnFile(fi.files); });
-  var q=document.getElementById("owPickSearch");    if(q) q.addEventListener("input", function(){ owPagePickList(); });
+  var pu=document.getElementById("owPathUpload"); if(pu) pu.addEventListener("click", function(){ owSelectPath("upload"); });
+  var pk=document.getElementById("owPathPick");   if(pk) pk.addEventListener("click", function(){ owSelectPath("pick"); });
+  var uf=document.getElementById("owUploadFile"); if(uf) uf.addEventListener("change", function(){ owCampaignOnFile(uf.files); });   // single OR multi-page: upBuildPlan handles both
+  var q=document.getElementById("owPickSearch");  if(q) q.addEventListener("input", function(){ owPagePickList(); });
   owPageLoadExisting();
 }
 // The ONE primary action: COMMIT the campaign. Reuses the upCommit-shape primitives (oppUpsert + pageUpsert +
@@ -1429,11 +1429,15 @@ function owPageMount(slug){
 // suppressed recipients here, exactly like upCommit. {{ASSET_BASE}} resolved. F1 publish-truth via
 // upActivateBackground. Single recipient is fine at G3; rich multi-recipient management is G4.
 function owCommitCampaign(slug){
-  if(__owPagePath==="campaign") return owCommitCampaignAll(slug);       // path 1: iterate the whole plan (N cards)
+  // Route by ROW COUNT, not by path name: a multi-page upload (N>1 rows, each folder-paired to its own message)
+  // iterates into N cards with those paired messages; a single page or a picked template (1 row) takes the
+  // interactively-written Message-tab message into ONE card. Both come from the one unified upload/pick surface.
+  var rows=(__upPlan&&__upPlan.rows)||[];
+  if(rows.length > 1) return owCommitCampaignAll(slug);                 // multi-page: paired messages, N cards
   if(__owCommitting) return Promise.resolve(false);
   var subj=edVal("edSubj"), body=edVal("edBody");
   if(!(subj.trim() && body.trim())){ owCommitStatus(t("nm_need_msg"), "bad"); return Promise.resolve(false); }
-  var rows=(__upPlan&&__upPlan.rows)||[]; var pr=rows[0];
+  var pr=rows[0];
   if(!pr || !(pr.page && String(pr.page.html).trim())){ owCommitStatus(t("ow_need_page"), "bad"); return Promise.resolve(false); }
   var v=libCollectRows(true); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }   // format/dup/exists validation gate
   __owCommitting=true; owCommitStatus(t("up_writing"), "");
