@@ -1,0 +1,21 @@
+# Cloudflare Pages configuration for the Thrive Console (migration off Netlify).
+#
+# This records, in the repo, the ONE thing Cloudflare Pages must serve: the publish/ tree that
+# `node tools/bundle.js` assembles (the same tree Netlify serves today via netlify.toml). It changes
+# nothing about the build itself and nothing about how pages are published (the relay still commits
+# opp/<slug>/index.html to the repo, unchanged).
+#
+# How this maps to the Pages project (see docs/CLOUDFLARE_PAGES.md):
+#   * Build command (set in the Cloudflare dashboard):  node tools/bundle.js
+#   * Build output directory (this file + dashboard):   publish
+#   * Node version (pinned by .node-version):           20.11.1  (build needs >= 16.7 for fs.cpSync)
+#
+# There are NO Functions/bindings: publish/ is fully static, so no _worker.js and no runtime config.
+# The no-stale cache rules live in publish/_headers (a supported Cloudflare Pages file), not here.
+#
+# If a pure-dashboard setup is preferred, this file can be removed with no effect as long as the
+# dashboard "Build output directory" stays "publish"; it is kept so the output dir is version-controlled.
+
+name = "thrive-console"
+pages_build_output_dir = "publish"
+compatibility_date = "2025-09-01"
