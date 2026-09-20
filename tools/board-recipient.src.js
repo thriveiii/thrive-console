@@ -46,9 +46,36 @@ function parseAddrs(text){
 }
 // UNIFY: ONE recipient reader/parser for BOTH the overlay and the drawer. Both mount the same field (#recIn),
 // so this is the single source the send gate and the send writer read. Valid emails only, {addr,name,lang} shape.
-function sendToRaw(){ var el=document.getElementById("recIn"); return el ? String(el.value||"") : ""; }
-function sendToList(){ return parseAddrs(sendToRaw()).filter(isEmail).map(function(a){ return { addr:a, name:"", lang:"" }; }); }
+function sendToRaw(){
+  var el=document.getElementById("recIn"); var a = el ? String(el.value||"") : "";
+  // BULK (Phase 2): when "also send to related contacts" is checked, its 2-3 extra addresses join the list, so
+  // runSend loops EVERY one - each an individual one-to-one message, never a shared To. B2 still refuses a
+  // suppressed address per recipient. The field is ignored when the checkbox is off.
+  var chk=document.getElementById("crBulkChk"), bin=document.getElementById("crBulkIn");
+  if(chk && chk.checked && bin){ var extra=String(bin.value||""); if(extra.trim()) a = a + "\n" + extra; }
+  return a;
+}
+function sendToList(){
+  var list = parseAddrs(sendToRaw()).filter(isEmail).map(function(a){ return { addr:a, name:"", lang:"" }; });
+  // SMART NAME: the primary contact-name field (editable, prefilled) names the first recipient; the rest are
+  // inferred per address at compile (sendCompile: rcpt.name || smartPerson). Never blocks - a missing name is fine.
+  var nf=document.getElementById("crName"); var nm=nf ? String(nf.value||"").trim() : "";
+  if(nm && list.length) list[0].name = nm;
+  return list;
+}
 function sendHasRecip(){ return sendToList().length > 0; }
+// BULK: the "also send to related contacts" block - a checkbox that reveals a small field for 2-3 more addresses
+// on the same subject. Each becomes its own one-to-one send (runSend loop); nothing here changes the send path.
+function bulkHtml(slug, row, detail){
+  if(!editorEligible(row)) return "";
+  return '<div class="dw-sec g-bulk">'+
+    '<label class="g-bulk-chk"><input type="checkbox" id="crBulkChk"><span>'+esc(t("g_bulk_lab"))+'</span></label>'+
+    '<div class="g-bulk-body" id="crBulkBody" hidden>'+
+      '<textarea class="rec-in mono-iso g-bulk-in" id="crBulkIn" rows="2" dir="ltr" autocomplete="off" spellcheck="false" '+
+        'placeholder="'+esc(t("g_bulk_ph"))+'" aria-label="'+esc(t("g_bulk_lab"))+'"></textarea>'+
+      '<div class="g-bulk-hint">'+esc(t("g_bulk_hint"))+'</div>'+
+    '</div></div>';
+}
 
 var __recSaved = {};   // per-slug transient "Saved." status, rendered on each drawer paint (survives the enrichment re-render)
 

@@ -1075,6 +1075,27 @@ function buildBoard(){
   .cr-count{font-size:12.5px;color:#8a8a93}
   .cr-msg-subj{font-weight:700;color:#eef;font-size:15px;word-break:break-word}
   .cr-msg-body{color:#c7c7d1;white-space:pre-wrap;word-break:break-word;line-height:1.5}
+  /* PHASE 2: the greeting toggle + smart-name fields + the bulk "related contacts" block. Brand-neutral, equal
+     padding on all four sides, a clear two-option segmented toggle, no letter-spacing on Arabic. */
+  .g-greet,.g-bulk{display:flex;flex-direction:column;gap:10px}
+  .g-toggle{display:flex;gap:8px;flex-wrap:wrap}
+  .g-opt{flex:1 1 0;min-width:140px;background:#0e0e14;border:1px solid #22222e;border-radius:10px;padding:10px 12px;color:#c7c7d1;font:inherit;font-size:13.5px;cursor:pointer;text-align:center}
+  .g-opt:hover{border-color:#37505c}
+  .g-opt.on{background:#101019;border-color:#71BFCC;color:#eef;font-weight:650}
+  .g-fields{display:flex;flex-wrap:wrap;gap:10px}
+  .g-field{flex:1 1 200px;display:flex;flex-direction:column;gap:4px;min-width:0}
+  .g-lab{font-size:12px;color:#8a8a93}
+  .g-in{width:100%;box-sizing:border-box;background:#0e0e14;border:1px solid #22222e;border-radius:9px;padding:10px 12px;color:#eef;font:inherit;font-size:14px}
+  .g-in:focus{outline:none;border-color:#4a7688}
+  .g-ask{font-size:12.5px;color:#e3c163}
+  .g-bulk-chk{display:flex;align-items:flex-start;gap:9px;cursor:pointer;color:#c7c7d1;font-size:13.5px}
+  .g-bulk-chk input{width:auto;margin-top:2px;flex:0 0 auto}   /* width:auto beats the global input width:100% so the checkbox is its natural size */
+  .g-bulk-chk span{flex:1 1 auto;min-width:0}
+  .g-bulk-body{display:flex;flex-direction:column;gap:6px}
+  .g-bulk-body[hidden]{display:none}   /* the [hidden] attr must beat .g-bulk-body's display:flex, or the field shows while unchecked */
+  .g-bulk-in{width:100%;box-sizing:border-box}
+  .g-bulk-hint{font-size:12px;color:#8a8a93}
+  html[dir="rtl"] .g-opt,html[dir="rtl"] .g-lab,html[dir="rtl"] .g-bulk-chk{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .cr-h,html[dir="rtl"] .cr-contact-name,html[dir="rtl"] .cr-k{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .ow-tab,html[dir="rtl"] .ow-title,html[dir="rtl"] .ow-mode-btn{letter-spacing:normal;text-transform:none}
   @media (max-width:720px){
@@ -1384,6 +1405,11 @@ function buildBoard(){
           cr_gate_msg:"Message", cr_gate_page:"Page", cr_gate_contact:"Contact", cr_gate_activity:"Activity",
           cr_page_h:"Page", cr_page_title:"Title", cr_page_link_name:"Link name", cr_page_none:"No page for this card yet.",
           cr_page_preview:"Preview", cr_contact_h:"Contact", cr_contact_count:"recipient(s)", cr_msg_none:"No message yet.",
+          g_greet_h:"Greeting", g_greet_name:"Hi [Name],", g_greet_team:"Hi [Platform] team,",
+          g_name_lab:"Contact name", g_name_ph:"e.g. Sarah", g_platform_lab:"Platform / company", g_platform_ph:"e.g. Bards Alley",
+          g_name_ask:"No name detected. Add one, or the team greeting is used.",
+          g_bulk_lab:"Also send to related contacts (same subject)", g_bulk_ph:"2-3 more emails, comma or line separated",
+          g_bulk_hint:"Each person gets their own individual message.",
           ow_commit:"Create campaign", ow_committed:"Campaign created.", ow_need_page:"Add a page first.",
           ow_page_upload:"Upload a page", ow_page_pick:"Pick from Library", ow_use:"Use", ow_duplicate:"Duplicate",
           ow_path_campaign:"Full campaign (zip)", ow_path_campaign_sub:"Many pages, messages and recipients in one zip. Each page becomes its own card.",
@@ -1480,6 +1506,11 @@ function buildBoard(){
           cr_gate_msg:"الرسالة", cr_gate_page:"الصفحة", cr_gate_contact:"جهة الاتصال", cr_gate_activity:"النشاط",
           cr_page_h:"الصفحة", cr_page_title:"العنوان", cr_page_link_name:"اسم الرابط", cr_page_none:"لا صفحة لهذه البطاقة بعد.",
           cr_page_preview:"المعاينة", cr_contact_h:"جهة الاتصال", cr_contact_count:"مستلم/مستلمون", cr_msg_none:"لا رسالة بعد.",
+          g_greet_h:"التحية", g_greet_name:"مرحبا [الاسم]،", g_greet_team:"مرحبا فريق [المنصة]،",
+          g_name_lab:"اسم جهة الاتصال", g_name_ph:"مثال: سارة", g_platform_lab:"المنصة أو الشركة", g_platform_ph:"مثال: باردز آلي",
+          g_name_ask:"لا اسم مكتشف. أضف اسمًا، أو تُستخدم تحية الفريق.",
+          g_bulk_lab:"أرسل أيضًا إلى جهات اتصال ذات صلة (نفس الموضوع)", g_bulk_ph:"2-3 عناوين إضافية، مفصولة بفواصل أو أسطر",
+          g_bulk_hint:"يتلقى كل شخص رسالته الفردية.",
           ow_commit:"إنشاء الحملة", ow_committed:"أُنشئت الحملة.", ow_need_page:"أضف صفحة أولًا.",
           ow_page_upload:"رفع صفحة", ow_page_pick:"اختر من المكتبة", ow_use:"استخدام", ow_duplicate:"نسخ",
           ow_path_campaign:"حملة كاملة (ملف مضغوط)", ow_path_campaign_sub:"عدة صفحات ورسائل ومستلمين في ملف واحد. كل صفحة تصبح بطاقة مستقلة.",
