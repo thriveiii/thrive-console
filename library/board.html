@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="b6f069b2">
+<meta name="thrive-build" content="2cf79a29">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -334,7 +334,7 @@
   /* PR-L1: the standalone Library surface */
   .scrim.libview{justify-content:center;align-items:flex-start}
   html[dir="rtl"] .scrim.libview{justify-content:center}
-  .lvpanel{width:min(1000px,100%);height:100%;background:#0b0b11;border-inline-start:1px solid #1c1c26;border-inline-end:1px solid #1c1c26;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 22px 56px}
+  .lvpanel{width:min(1000px,100%);height:100%;background:#0b0b11;border-inline-start:1px solid #1c1c26;border-inline-end:1px solid #1c1c26;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(18px + env(safe-area-inset-top)) calc(22px + env(safe-area-inset-right)) calc(56px + env(safe-area-inset-bottom)) calc(22px + env(safe-area-inset-left))}
   .lv-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin:2px 0 12px}
   .lv-title{font-size:20px;font-weight:680;color:#eef;margin:0}
   .lv-head-acts{display:flex;align-items:center;gap:12px}
@@ -372,6 +372,9 @@
   .lv-prev{margin-top:6px}
   .lv-prom-b.on{border-color:#3a5;color:#bfe6cd}
   .lv-prom{margin-top:8px;display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid #262632;border-radius:10px;background:#0b0b10}
+  /* the [hidden] attr must beat the inline panels' explicit display, or an empty (collapsed) panel renders as a
+     bordered box under the card. .lv-prev/.lv-mem have no display of their own, but guard them too for parity. */
+  .lv-prev[hidden],.lv-mem[hidden],.lv-prom[hidden],.lv-del[hidden]{display:none}
   /* BUG-2: the Delete action + its inline confirm. A quiet danger button; the confirm box echoes the promote box. */
   .lv-del-b:hover{border-color:#5c2121;color:#e37a7a}
   .lv-del-b.on{border-color:#5c2121;color:#e37a7a}
@@ -384,6 +387,57 @@
   .lv-prom-st{margin:0}
   .lv-frame{width:100%;height:260px;border:1px solid #22222e;border-radius:9px;background:#fff}
   .lv-empty{font-size:14px;color:#8a8a93;padding:24px 4px;text-align:center}
+  /* ===== PHASE 3: Contacts + Template memory + Reply tags. Mobile-first (the .lvpanel host is already full-width
+     and full-height on phone); equal padding on all four sides; RTL correct via logical properties. ===== */
+  .ct-body{display:flex;flex-direction:column;gap:14px}
+  .ct-count{font-size:12px;color:#8a8a93;unicode-bidi:isolate}
+  .ct-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .ct-card{border:1px solid #22222e;border-radius:12px;background:#0e0e14;padding:14px 15px;display:flex;flex-direction:column;gap:7px;min-width:0;cursor:pointer}
+  .ct-card:hover{border-color:#2c2c3a}
+  .ct-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .ct-name{font-size:15px;font-weight:640;color:#eef;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .ct-name-lg{font-size:19px;font-weight:720;color:#fff;min-width:0;word-break:break-word}
+  .ct-addr{font-size:12px;color:#9fb0c9;word-break:break-all;unicode-bidi:isolate}
+  .ct-more{font-size:11px;color:#6a6a74}
+  .ct-tags{display:flex;flex-wrap:wrap;gap:6px}
+  .ct-tag{font-size:11px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:999px;padding:1px 9px}
+  .ct-metrics{display:flex;gap:16px;margin-top:2px}
+  .ct-metric{font-size:12px;color:#8a8a93}
+  .ct-metric b{color:#e7e7ea;font-weight:700}
+  /* the reply tag: one control, one behavior (opens the conversation), everywhere a contact appears */
+  .ct-replytag{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;color:#8a8a93;background:#0e0e17;border:1px solid #20202e;border-radius:999px;padding:4px 11px;cursor:pointer;min-height:30px}
+  .ct-replytag.on{color:#04252b;background:#7fd18b;border-color:#7fd18b;font-weight:700}
+  .ct-replytag.on:hover{filter:brightness(1.05)}
+  .ct-replytag.lg{font-size:13px;padding:6px 13px;min-height:34px}
+  .ct-rt-n{font-weight:800}
+  .ct-back{align-self:flex-start;padding:6px 0;font-size:14px}
+  .ct-detail-head{display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #17171f;padding-bottom:14px}
+  .ct-dh-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .ct-addrs{display:flex;flex-direction:column;gap:3px}
+  .ct-note{font-size:13px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:8px;padding:8px 10px}
+  .ct-sec{margin-top:6px}
+  .ct-sh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:0 0 9px;display:flex;gap:8px;align-items:center}
+  html[dir="rtl"] .ct-sh{text-transform:none;letter-spacing:normal}
+  .ct-tpl-list{display:flex;flex-direction:column;gap:8px}
+  .ct-tpl-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;border:1px solid #191921;border-radius:9px;background:#0e0e14;padding:9px 11px}
+  .ct-tpl-t{font-size:14px;color:#eef;font-weight:600;min-width:0}
+  .ct-tpl-slug{font-size:11px;color:#9fb0c9;word-break:break-all}
+  .ct-tpl-n{font-size:11.5px;color:#8a8a93;margin-inline-start:auto;white-space:nowrap}
+  .ct-thread{margin-top:2px}
+  .ct-b-tpl{font-size:10.5px;color:#8a8a93;background:#0b0b11;border:1px solid #20202e;border-radius:999px;padding:0 7px;margin-inline-start:8px}
+  .ct-empty{font-size:13px;color:#8a8a93;padding:14px 4px;text-align:center}
+  /* template memory (inline under a Library card) */
+  .lv-mem{margin-top:2px}
+  .ct-mem{display:flex;flex-direction:column;gap:8px;border-top:1px solid #191921;padding-top:10px}
+  .ct-mem-h{font-size:12px;color:#8a8a93}
+  .ct-mem-n{font-weight:800;color:#e7e7ea}
+  .ct-mem-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;border:1px solid #191921;border-radius:9px;background:#0b0b11;padding:9px 11px}
+  .ct-mem-who{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .ct-mem-meta{display:flex;flex-direction:column;gap:2px;margin-inline-start:auto;text-align:end}
+  .ct-mem-by{font-size:11.5px;color:#8a8a93}
+  .ct-mem-by b{color:#c9c9d2}
+  .ct-mem-when{font-size:10.5px;color:#6a6a74;unicode-bidi:isolate}
+  .ct-mem-tag{flex-basis:100%}
   .up-state.ok{color:#a9d5b6;border-color:#274b34}
   .up-state.bad{color:#d8b48a;border-color:#4b3a27}
   .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
@@ -445,7 +499,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build b6f069b2</span>
+    <span class="muted">build 2cf79a29</span>
   </div>
   <div id="root"></div>
 </div>
@@ -454,6 +508,7 @@
 <div id="nmScrim" class="scrim" hidden><div id="nmPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="upScrim" class="scrim" hidden><div id="upPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="libViewScrim" class="scrim libview" hidden><div id="libViewPanel" class="lvpanel" role="dialog" aria-modal="true"></div></div>
+<div id="ctScrim" class="scrim libview" hidden><div id="ctPanel" class="lvpanel" role="dialog" aria-modal="true"></div></div>
 <div id="owScrim" class="ow-scrim" hidden><div id="oppWindow" class="ow" role="dialog" aria-modal="true" aria-labelledby="owTitle">
   <header class="ow-head"><h2 class="ow-title" id="owTitle"></h2>
     <div class="ow-head-acts">
@@ -468,7 +523,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "b6f069b2";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "2cf79a29";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -589,7 +644,13 @@
           lib_renamed:"Link name was taken, renamed to {s}.", lib_delete:"Delete", lib_del_confirm:"Delete this page permanently? Its live link will stop working.", lib_del_cancel:"Cancel", lib_deleting:"Deleting…", lib_del_failed:"Could not delete. Nothing changed.",
           lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview",
           lib_tab_templates:"Templates", lib_tab_archive:"Archive", lib_arch_open:"History", lib_restore:"Restore", lib_arch_empty:"No archived cards yet.",
-          lib_promote:"Promote", lib_prom_ph:"Recipient email (or several, comma separated)", lib_prom_go:"Add to Operations", lib_prom_need:"Enter at least one valid email.", lib_prom_saving:"Adding to Operations...", lib_prom_done:"Added to Operations. Write the message there.", lib_prom_failed:"Could not add to Operations." },
+          lib_promote:"Promote", lib_prom_ph:"Recipient email (or several, comma separated)", lib_prom_go:"Add to Operations", lib_prom_need:"Enter at least one valid email.", lib_prom_saving:"Adding to Operations...", lib_prom_done:"Added to Operations. Write the message there.", lib_prom_failed:"Could not add to Operations.",
+          ct_open:"Contacts", ct_h:"Contacts", ct_search_ph:"Search by name, email, or tag", ct_empty:"No contacts yet.", ct_no_match:"No contacts match your search.",
+          ct_count_one:"contact", ct_count_n:"contacts", ct_sends:"sends", ct_tmpls:"templates", ct_more_addr:"more",
+          ct_reply_one:"reply", ct_reply_n:"replies", ct_open_convo:"Open the conversation", ct_back:"Back to contacts",
+          ct_tpl_h:"Templates sent", ct_no_tpl:"No templates sent to this contact yet.", ct_convo_h:"Conversation", ct_no_convo:"No conversation yet.",
+          ct_send_one:"send", ct_send_n:"sends", ct_mem_open:"Sent to", ct_mem_h:"Sent to", ct_mem_none:"Not sent to anyone yet.",
+          ct_sent_by:"Sent by", ct_sender_unknown:"a team member" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -694,7 +755,13 @@
           lib_renamed:"اسم الرابط كان مستخدماً، فأُعيدت تسميته إلى {s}.", lib_delete:"حذف", lib_del_confirm:"حذف هذه الصفحة نهائياً؟ سيتوقف رابطها الحيّ.", lib_del_cancel:"إلغاء", lib_deleting:"جارٍ الحذف…", lib_del_failed:"تعذّر الحذف. لم يتغيّر شيء.",
           lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة",
           lib_tab_templates:"القوالب", lib_tab_archive:"الأرشيف", lib_arch_open:"السجل", lib_restore:"استرجاع", lib_arch_empty:"لا بطاقات مؤرشفة بعد.",
-          lib_promote:"أضف مستلماً", lib_prom_ph:"بريد المستلم (أو عدة، مفصولة بفواصل)", lib_prom_go:"أضف إلى العمليات", lib_prom_need:"أدخل بريداً صحيحاً واحداً على الأقل.", lib_prom_saving:"جارٍ الإضافة إلى العمليات...", lib_prom_done:"أُضيف إلى العمليات. اكتب الرسالة هناك.", lib_prom_failed:"تعذّرت الإضافة إلى العمليات." }
+          lib_promote:"أضف مستلماً", lib_prom_ph:"بريد المستلم (أو عدة، مفصولة بفواصل)", lib_prom_go:"أضف إلى العمليات", lib_prom_need:"أدخل بريداً صحيحاً واحداً على الأقل.", lib_prom_saving:"جارٍ الإضافة إلى العمليات...", lib_prom_done:"أُضيف إلى العمليات. اكتب الرسالة هناك.", lib_prom_failed:"تعذّرت الإضافة إلى العمليات.",
+          ct_open:"جهات الاتصال", ct_h:"جهات الاتصال", ct_search_ph:"ابحث بالاسم أو البريد أو الوسم", ct_empty:"لا جهات اتصال بعد.", ct_no_match:"لا جهات اتصال تطابق بحثك.",
+          ct_count_one:"جهة اتصال", ct_count_n:"جهات اتصال", ct_sends:"إرسالات", ct_tmpls:"قوالب", ct_more_addr:"أخرى",
+          ct_reply_one:"رد", ct_reply_n:"ردود", ct_open_convo:"فتح المحادثة", ct_back:"العودة إلى جهات الاتصال",
+          ct_tpl_h:"القوالب المُرسَلة", ct_no_tpl:"لم يُرسَل أي قالب إلى جهة الاتصال هذه بعد.", ct_convo_h:"المحادثة", ct_no_convo:"لا محادثة بعد.",
+          ct_send_one:"إرسال", ct_send_n:"إرسالات", ct_mem_open:"أُرسل إلى", ct_mem_h:"أُرسل إلى", ct_mem_none:"لم يُرسَل إلى أحد بعد.",
+          ct_sent_by:"أرسله", ct_sender_unknown:"أحد أعضاء الفريق" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1654,7 +1721,7 @@ function sendCompile(slug, row, data, rcpt, mode){
   var text = toPlainText(bodyPlain, sig) + (bulk ? footerText(lang) : "");   // plain-text alternative part; footer only for campaigns
   var html = lightHtml(bodyPlain, sig, lang, bulk);                          // light-HTML primary part; footer only for campaigns
   if(token && bulk) html = html + openPixelHtml(slug, token, relayEp());     // channel 1: the open pixel - campaign only (never on a personal 1:1)
-  return { to:addr, name:person, subject:subject, html:html, text:text, token:token, lang:lang, mode:mode, attachments:plan.attach };
+  return { to:addr, name:person, subject:subject, html:html, text:text, token:token, lang:lang, mode:mode, attachments:plan.attach, pageSlug:pageSlug };
 }
 
 // ---- eligibility + recipient (the engine's own gate) ------------------------------------------------
@@ -1822,9 +1889,12 @@ function sendOne(slug, row, data, rcpt, mode){
     // TRANSIT CYCLE: stamp the send with the opp's CURRENT cycle (row.cycle from console_board, via BOARD_QUERY).
     // The view counts this send only while the opp still carries this cycle; a re-upload bumps the opp cycle and
     // this send drops out of the count. A legacy opp (no cycle) stamps null, which the view treats as today.
+    // Phase 3: stamp the template/page this send used (page_slug column + a data.page_slug mirror) so "which
+    // template went to whom" is one hop. The mirror keeps the Contacts/Template lens correct even on a build
+    // deployed before the additive column lands; old rows (neither present) fall back to the opp->page_slug map.
     var mailRow = { id:art.token, opp:slug, status:"sent", to_addr:art.to, subject:art.subject, ts:isoNow(),
-      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null,
-      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:(d && d.id) || "", provider:"endpoint", direction:"out" } };
+      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null, page_slug:art.pageSlug,
+      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:(d && d.id) || "", provider:"endpoint", direction:"out", page_slug:art.pageSlug } };
     return confirmMail(mailRow).then(function(){ return { ok:true, addr:art.to }; },
                                      function(){ return { ok:true, addr:art.to, confirming:true }; });  // email out; the confirm-write is the 'sending' limbo, still a send
   }, function(err){
@@ -1836,8 +1906,8 @@ function sendOne(slug, row, data, rcpt, mode){
     // the bounce webhook. Every OTHER rejection (network / aborted body) stays a real failure.
     if(!(err && err.kind === "timeout")) return { ok:false, addr:art.to };
     var pendRow = { id:art.token, opp:slug, status:"pending", to_addr:art.to, subject:art.subject, ts:isoNow(),
-      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null,
-      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:"", provider:"endpoint", direction:"out" } };
+      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null, page_slug:art.pageSlug,
+      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:"", provider:"endpoint", direction:"out", page_slug:art.pageSlug } };
     return confirmMail(pendRow).then(function(){ return { ok:true, addr:art.to, confirming:true }; },
                                      function(){ return { ok:true, addr:art.to, confirming:true }; });   // still a send; the pending row (or the webhook) reconciles it
   });
@@ -3898,6 +3968,8 @@ function libCardHtml(p){
       '<button class="act" type="button" data-lv-copy="' + esc(p.slug) + '">' + esc(t("lib_copy")) + '</button>'+
       '<button class="act" type="button" data-lv-open="' + esc(p.slug) + '">' + esc(t("lib_open_page")) + '</button>'+
       '<button class="act" type="button" data-lv-prev="' + esc(p.slug) + '">' + esc(t("lib_preview")) + '</button>'+
+      // Phase 3 template memory: who this template was sent to (contacts), the sender, date/time and the count.
+      '<button class="act lv-mem-b" type="button" data-lv-mem="' + esc(p.slug) + '">' + esc(t("ct_mem_open")) + '</button>'+
       '<button class="act lv-prom-b" type="button" data-lv-promote="' + esc(p.slug) + '">' + esc(t("lib_promote")) + '</button>'+
       // BUG-2 FIX: a Delete action (two-tap confirm) removes ONLY this one console_pages row, so a mistaken or
       // stale template is not stuck forever. It never touches an opp/card or any ledger row.
@@ -3906,6 +3978,7 @@ function libCardHtml(p){
       // and a not-yet-live row self-heals in the background - the state chip reads confirming/live, never a prompt.
     '</div>'+
     '<div class="lv-prev" id="lvPrev-' + esc(p.slug) + '" hidden></div>'+
+    '<div class="lv-mem" id="lvMem-' + esc(p.slug) + '" hidden></div>'+
     '<div class="lv-prom" id="lvProm-' + esc(p.slug) + '" hidden></div>'+
     '<div class="lv-del" id="lvDel-' + esc(p.slug) + '" hidden></div>'+
   '</div>';
@@ -3914,6 +3987,7 @@ function libViewWireCards(){
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-copy]"), function(b){ b.addEventListener("click", function(){ libCopyLink(b.getAttribute("data-lv-copy")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lv-open")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-prev]"), function(b){ b.addEventListener("click", function(){ libPreviewToggle(b.getAttribute("data-lv-prev"), b); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-mem]"), function(b){ b.addEventListener("click", function(){ libMemToggle(b.getAttribute("data-lv-mem"), b); }); });   // Phase 3 template memory
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-promote]"), function(b){ b.addEventListener("click", function(){ libPromoteToggle(b.getAttribute("data-lv-promote"), b); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-del]"), function(b){ b.addEventListener("click", function(){ libDeleteToggle(b.getAttribute("data-lv-del"), b); }); });
 }
@@ -4385,6 +4459,352 @@ try{
   window.__thriveParseSections = function(text){ return upParseSections(text); };
 }catch(e){}
 
+// ===================================================================================================
+// PHASE 3 (the last arc) - the networked Contacts + Template memory + Reply tags. This ties the three
+// entities (Opportunity, Template, Contact) into ONE network, every view a LENS over the existing ledger:
+// nothing new is stored beyond the one console_mail.page_slug column and the console_contacts curation.
+//
+// It REUSES the same reads and helpers the rest of the board uses (restGet / fetchInbound / bearer / ANON /
+// URL_BASE / esc / t / enc / normFrom / fmtWhen / liveUrl / upPretty / smartPerson / bareAddress), and the
+// SAME thread bubble markup (.msg.in / .msg.out) the opp detail thread renders. Inlined into the board IIFE
+// after the upload module, so all of the above are in scope; function declarations hoist.
+//
+// Data sources (all best-effort, read-only, bearer+apikey):
+//   * console_contacts  - the curation overlay (id, grouped addresses, name, tags). A person is the merge of
+//     addresses a human confirmed; an address in NO contact row is its own ad-hoc contact (id "addr:<email>").
+//   * console_mail      - the outbound ledger (to_addr, actor=team member, subject, ts, page_slug + a
+//     data.page_slug mirror). effectivePageSlug = page_slug || data.page_slug || oppPage[opp] || opp, so a
+//     row from before the column landed still resolves its template via the opportunity.
+//   * console_inbound   - the replies (data.from, subject, snippet). Human replies only (auto/bounce dropped),
+//     the SAME rule buildReplies() uses for the card counts.
+//   * console_opps      - only data->>page_slug, for the old-row fallback (the "opp -> page_slug derivation").
+//   * console_pages     - slug -> title, so a template shows its human title.
+// ===================================================================================================
+
+var __ctModel = null, __ctQuery = "", __ctView = "list", __ctCurrent = null;
+
+// A rich read that degrades to a lean read if the rich columns are not there yet (e.g. a build reaching a DB
+// where the additive page_slug column has not been applied). restGet swallows the status, so this does its own
+// fetch to tell a 400 (bad column) from a genuine empty, then falls back.
+function ctRestOr(pathRich, pathLean){
+  return fetch(URL_BASE + "/rest/v1/" + pathRich, {
+    method:"GET", headers:{ "apikey":ANON, "Authorization":"Bearer " + bearer() }, cache:"no-store"
+  }).then(function(res){
+    if(res.ok) return res.text().then(function(tx){ var d=null; try{ d=tx?JSON.parse(tx):null; }catch(e){} return Array.isArray(d)?d:[]; });
+    return restGet(pathLean);                                            // rich columns absent -> lean read + derive
+  }, function(){ return restGet(pathLean); });
+}
+
+// One normalized email key for a contact address (mailto strip + trim + lowercase). The whole network keys on it.
+function ctAddr(v){ return normFrom(bareAddress(v)); }
+
+// A display name for a contact: the curated name, else a name derived from the address (smartPerson), else the
+// bare address. Never a machine token.
+function ctName(rec){
+  var n = rec && rec.name ? String(rec.name).trim() : "";
+  if(n) return n;
+  var a = rec && rec.primaryAddr ? rec.primaryAddr : "";
+  var d = a ? String(smartPerson(a)||"").trim() : "";
+  return d || a || t("unnamed");
+}
+
+// Build the whole contact network from the five reads. Pure (no DOM); returns { contacts, byId, byAddr,
+// templates, pageTitle }.
+function ctBuild(contacts, mail, inbound, opps, pages){
+  var oppPage = {}, pageTitle = {};
+  (opps||[]).forEach(function(o){ if(o && o.slug) oppPage[o.slug] = (o.ps && String(o.ps).trim()) || o.slug; });
+  (pages||[]).forEach(function(p){ if(p && p.slug) pageTitle[p.slug] = (p.title && String(p.title).trim()) || upPretty(p.slug); });
+
+  var byId = {}, byAddr = {};
+  function ensure(cid, addr){
+    if(byId[cid]) return byId[cid];
+    var rec = { id:cid, addresses:[], addrSet:{}, name:"", tags:[], note:"", primaryAddr:addr||"",
+                sends:0, replyCount:0, lastTs:"", tmpl:{}, convo:[] };
+    byId[cid] = rec; return rec;
+  }
+  function addAddr(rec, addr){ addr = ctAddr(addr); if(addr && !rec.addrSet[addr]){ rec.addrSet[addr]=1; rec.addresses.push(addr); byAddr[addr]=rec; if(!rec.primaryAddr) rec.primaryAddr=addr; } }
+
+  // 1) curated contacts first, so their merge (grouped addresses) owns every address they claim
+  (contacts||[]).forEach(function(c){ if(!c || !c.id) return;
+    var rec = ensure(c.id, "");
+    rec.name = c.name ? String(c.name).trim() : "";
+    rec.tags = Array.isArray(c.tags) ? c.tags : [];
+    rec.note = c.note ? String(c.note) : "";
+    var addrs = Array.isArray(c.addresses) ? c.addresses : [];
+    addrs.forEach(function(a){ addAddr(rec, a); });
+  });
+  function recFor(addr){
+    addr = ctAddr(addr); if(!addr) return null;
+    if(byAddr[addr]) return byAddr[addr];
+    var rec = ensure("addr:"+addr, addr); addAddr(rec, addr); return rec;   // ad-hoc contact: an address no human has merged yet
+  }
+
+  // 2) outbound sends: attribute each to its contact + its template
+  var templates = {};
+  function tmpl(slug){ return templates[slug] || (templates[slug] = { slug:slug, title:(pageTitle[slug]||upPretty(slug)), count:0, contactIds:{}, sends:[] }); }
+  (mail||[]).forEach(function(m){ if(!m) return;
+    var addr = ctAddr(m.to_addr); if(!addr) return;
+    var rec = recFor(addr); if(!rec) return;
+    var eff = (m.page_slug && String(m.page_slug).trim()) || (m.data && m.data.page_slug && String(m.data.page_slug).trim()) || oppPage[m.opp] || m.opp || "";
+    var ts = String(m.ts || (m.data && m.data.ts) || "");
+    rec.sends++; if(ts > rec.lastTs) rec.lastTs = ts;
+    if(eff){
+      var te = rec.tmpl[eff] || (rec.tmpl[eff] = { slug:eff, title:(pageTitle[eff]||upPretty(eff)), count:0, lastTs:"" });
+      te.count++; if(ts > te.lastTs) te.lastTs = ts;
+      var T = tmpl(eff); T.count++; T.contactIds[rec.id] = 1;
+      T.sends.push({ cid:rec.id, addr:addr, actor:(m.actor||""), ts:ts, subject:(m.subject||(m.data&&m.data.subject)||"") });
+    }
+    rec.convo.push({ dir:"out", ts:ts, subject:(m.subject||(m.data&&m.data.subject)||""), actor:(m.actor||""), pageSlug:eff });
+  });
+
+  // 3) inbound replies: human only (auto/bounce dropped), the same rule as the card counts
+  (inbound||[]).forEach(function(r){ if(!r) return; var d=r.data||{};
+    if(r.kind==="auto" || r.bounce) return;
+    var from = ctAddr(d.from || r.from); if(!from) return;
+    var rec = recFor(from); if(!rec) return;
+    var ts = String(r.ts || d.ts || "");
+    rec.replyCount++; if(ts > rec.lastTs) rec.lastTs = ts;
+    rec.convo.push({ dir:"in", ts:ts, from:from, subject:(d.subject||""), snippet:(d.snippet||d.body||d.text||"") });
+  });
+
+  // 4) finalize each contact: sort the conversation, number the inbound replies, freeze the template list
+  var list = Object.keys(byId).map(function(id){ return byId[id]; });
+  list.forEach(function(rec){
+    rec.convo.sort(function(a,b){ return a.ts<b.ts?-1:(a.ts>b.ts?1:0); });
+    var n=0; rec.convo.forEach(function(x){ if(x.dir==="in"){ n++; x.num=n; } });
+    rec.templates = Object.keys(rec.tmpl).map(function(k){ return rec.tmpl[k]; }).sort(function(a,b){ return b.lastTs<a.lastTs?-1:(b.lastTs>a.lastTs?1:0); });
+    if(!rec.primaryAddr && rec.addresses.length) rec.primaryAddr = rec.addresses[0];
+  });
+  // A contact is anyone curated OR anyone ever emailed/replied. Curated-but-never-touched people still list
+  // (the shared address book), so the section truly retires the Legacy Contacts.
+  list.sort(function(a,b){ if(a.lastTs!==b.lastTs) return a.lastTs<b.lastTs?1:-1; return ctName(a)<ctName(b)?-1:1; });
+  return { contacts:list, byId:byId, byAddr:byAddr, templates:templates, pageTitle:pageTitle };
+}
+
+function ctLoad(){
+  var body=document.getElementById("ctBody");
+  if(body) body.innerHTML = '<div class="muted" style="padding:14px 2px">'+esc(t("up_reading"))+'</div>';
+  return Promise.all([
+    restGet("console_contacts?select=id,addresses,name,tags,note"),
+    ctRestOr("console_mail?select=id,opp,to_addr,actor,subject,ts,status,page_slug,data&order=ts.asc",
+             "console_mail?select=id,opp,to_addr,actor,subject,ts,status,data&order=ts.asc"),
+    (typeof fetchInbound==="function" ? fetchInbound() : Promise.resolve([])),
+    restGet("console_opps?select=slug,ps:data->>page_slug"),
+    restGet("console_pages?select=slug,title")
+  ]).then(function(a){
+    __ctModel = ctBuild(a[0]||[], a[1]||[], a[2]||[], a[3]||[], a[4]||[]);
+    if(__ctView==="detail" && __ctCurrent && __ctModel.byId[__ctCurrent]) ctDetailRender(__ctCurrent);
+    else ctListRender();
+    return __ctModel;
+  }, function(){ __ctModel = { contacts:[], byId:{}, byAddr:{}, templates:{}, pageTitle:{} }; ctListRender(); return __ctModel; });
+}
+
+// ---- the Contacts view shell (mirrors the Library surface: a full-height panel, mobile-first) ----
+function openContactsView(){
+  var sc=document.getElementById("ctScrim"), pn=document.getElementById("ctPanel");
+  if(!sc || !pn) return;
+  __ctQuery = ""; __ctView = "list"; __ctCurrent = null;
+  pn.innerHTML = ctViewHtml();
+  ctWireShell();
+  sc.hidden = false; pn.scrollTop = 0;
+  ctLoad();
+}
+function closeContactsView(){ var sc=document.getElementById("ctScrim"); if(sc) sc.hidden = true; }
+function ctViewHtml(){
+  return '<div class="lv-head">'+
+      '<h2 class="lv-title" id="ctTitle">'+esc(t("ct_h"))+'</h2>'+
+      '<div class="lv-head-acts"><button class="link" id="ctClose" type="button">'+esc(t("pf_close"))+'</button></div>'+
+    '</div>'+
+    '<div class="ct-shell" id="ctShell">'+
+      '<div class="lv-search" id="ctSearchWrap"><input class="lv-q" id="ctQ" type="search" dir="auto" placeholder="'+esc(t("ct_search_ph"))+'" autocomplete="off" aria-label="'+esc(t("ct_search_ph"))+'"></div>'+
+      '<div class="lv-body ct-body" id="ctBody"></div>'+
+    '</div>';
+}
+function ctWireShell(){
+  var c=document.getElementById("ctClose"); if(c) c.addEventListener("click", function(){ closeContactsView(); });
+  var q=document.getElementById("ctQ"); if(q) q.addEventListener("input", function(){ __ctQuery=String(q.value||"").trim().toLowerCase(); if(__ctView==="list") ctListRender(); });
+}
+
+function ctMatches(rec, q){
+  if(!q) return true;
+  var hay = (ctName(rec)+" "+rec.addresses.join(" ")+" "+(rec.tags||[]).join(" ")).toLowerCase();
+  return hay.indexOf(q) >= 0;
+}
+// The reply tag: a count chip that OPENS the full conversation with the contact. It is the same control in the
+// contacts list, the contact header, and the template-memory recipient rows - one class, one behavior.
+function ctReplyTag(rec, extraCls){
+  var n = rec.replyCount||0;
+  var cls = "ct-replytag"+(n>0?" on":"")+(extraCls?(" "+extraCls):"");
+  return '<button type="button" class="'+cls+'" data-ct-convo="'+esc(rec.id)+'" title="'+esc(t("ct_open_convo"))+'">'+
+    '<span class="ct-rt-n">'+n+'</span> <span class="ct-rt-l">'+esc(n===1?t("ct_reply_one"):t("ct_reply_n"))+'</span></button>';
+}
+function ctListRender(){
+  __ctView="list"; __ctCurrent=null;
+  var title=document.getElementById("ctTitle"); if(title) title.textContent=t("ct_h");
+  var sw=document.getElementById("ctSearchWrap"); if(sw) sw.hidden=false;
+  var q=document.getElementById("ctQ"); if(q) q.hidden=false;
+  var body=document.getElementById("ctBody"); if(!body) return;
+  var all=(__ctModel && __ctModel.contacts) ? __ctModel.contacts : [];
+  var rows=all.filter(function(r){ return ctMatches(r, __ctQuery); });
+  if(!rows.length){ body.innerHTML='<div class="lv-empty">'+esc(all.length?t("ct_no_match"):t("ct_empty"))+'</div>'; return; }
+  body.innerHTML =
+    '<div class="ct-count">'+esc(String(rows.length))+' '+esc(rows.length===1?t("ct_count_one"):t("ct_count_n"))+'</div>'+
+    '<div class="ct-cards">'+rows.map(ctCardHtml).join("")+'</div>';
+  ctWireList();
+}
+function ctCardHtml(rec){
+  var tags=(rec.tags||[]).slice(0,4).map(function(x){ return '<span class="ct-tag">'+esc(String(x))+'</span>'; }).join("");
+  return '<div class="ct-card" data-ct-open="'+esc(rec.id)+'" role="button" tabindex="0">'+
+    '<div class="ct-card-top">'+
+      '<span class="ct-name" dir="auto">'+esc(ctName(rec))+'</span>'+
+      ctReplyTag(rec)+
+    '</div>'+
+    '<bdi class="ct-addr mono-iso" dir="ltr">'+esc(rec.primaryAddr||"")+'</bdi>'+
+    (rec.addresses.length>1 ? '<span class="ct-more">+'+(rec.addresses.length-1)+' '+esc(t("ct_more_addr"))+'</span>' : '')+
+    (tags?'<div class="ct-tags">'+tags+'</div>':'')+
+    '<div class="ct-metrics"><span class="ct-metric"><b>'+(rec.sends||0)+'</b> '+esc(t("ct_sends"))+'</span>'+
+      '<span class="ct-metric"><b>'+(rec.templates.length||0)+'</b> '+esc(t("ct_tmpls"))+'</span></div>'+
+  '</div>';
+}
+function ctWireList(){
+  [].forEach.call(document.querySelectorAll("#ctBody [data-ct-open]"), function(el){
+    el.addEventListener("click", function(e){ if(e.target && e.target.closest && e.target.closest("[data-ct-convo]")) return; ctDetailRender(el.getAttribute("data-ct-open")); });
+    el.addEventListener("keydown", function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); ctDetailRender(el.getAttribute("data-ct-open")); } });
+  });
+  ctWireReplyTags(document.getElementById("ctBody"));
+}
+function ctWireReplyTags(scope, opener){
+  if(!scope) return;
+  var open = opener || ctOpenConvo;
+  [].forEach.call(scope.querySelectorAll("[data-ct-convo]"), function(b){
+    b.addEventListener("click", function(e){ e.stopPropagation(); open(b.getAttribute("data-ct-convo")); });
+  });
+}
+// Open the conversation: land on the contact detail and scroll to the thread. Works from anywhere (list,
+// template memory, header) - the reply tag's ONE behavior.
+function ctOpenConvo(cid){
+  if(!(__ctModel && __ctModel.byId[cid])){ return; }
+  ctDetailRender(cid);
+  try{ var th=document.getElementById("ctConvo"); if(th) th.scrollIntoView({ block:"start", behavior:(ctReduceMotion()?"auto":"smooth") }); }catch(e){}
+}
+function ctReduceMotion(){ try{ return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){ return false; } }
+
+// ---- one contact: ONLY the templates sent to them + the FULL conversation ----
+function ctDetailRender(cid){
+  var rec = __ctModel && __ctModel.byId[cid]; if(!rec){ ctListRender(); return; }
+  __ctView="detail"; __ctCurrent=cid;
+  var title=document.getElementById("ctTitle"); if(title) title.textContent=ctName(rec);
+  var sw=document.getElementById("ctSearchWrap"); if(sw) sw.hidden=true;
+  var body=document.getElementById("ctBody"); if(!body) return;
+
+  var addrs = rec.addresses.map(function(a){ return '<bdi class="ct-addr mono-iso" dir="ltr">'+esc(a)+'</bdi>'; }).join("");
+  var tags = (rec.tags||[]).map(function(x){ return '<span class="ct-tag">'+esc(String(x))+'</span>'; }).join("");
+
+  // templates sent to THIS contact only (never a template they were not sent)
+  var tpl = rec.templates.length
+    ? rec.templates.map(function(te){
+        return '<div class="ct-tpl-row">'+
+          '<span class="ct-tpl-t" dir="auto">'+esc(te.title)+'</span>'+
+          '<bdi class="ct-tpl-slug mono-iso" dir="ltr">'+esc(te.slug)+'</bdi>'+
+          '<span class="ct-tpl-n">'+te.count+' '+esc(te.count===1?t("ct_send_one"):t("ct_send_n"))+'</span>'+
+        '</div>';
+      }).join("")
+    : '<div class="ct-empty">'+esc(t("ct_no_tpl"))+'</div>';
+
+  // the full conversation, threaded (the SAME .msg.in/.msg.out bubbles the opp thread uses)
+  var convo = rec.convo.length ? rec.convo.map(ctBubbleHtml).join("") : '<div class="ct-empty">'+esc(t("ct_no_convo"))+'</div>';
+
+  body.innerHTML =
+    '<button class="link ct-back" id="ctBack" type="button">'+esc(t("ct_back"))+'</button>'+
+    '<div class="ct-detail-head">'+
+      '<div class="ct-dh-top"><span class="ct-name-lg" dir="auto">'+esc(ctName(rec))+'</span>'+ctReplyTag(rec, "lg")+'</div>'+
+      '<div class="ct-addrs">'+addrs+'</div>'+
+      (tags?'<div class="ct-tags">'+tags+'</div>':'')+
+      (rec.note?'<div class="ct-note" dir="auto">'+esc(rec.note)+'</div>':'')+
+    '</div>'+
+    '<section class="ct-sec"><h3 class="ct-sh">'+esc(t("ct_tpl_h"))+'</h3><div class="ct-tpl-list">'+tpl+'</div></section>'+
+    '<section class="ct-sec" id="ctConvo"><h3 class="ct-sh">'+esc(t("ct_convo_h"))+' <span class="nbadge">'+(rec.replyCount||0)+'</span></h3><div class="thread ct-thread">'+convo+'</div></section>';
+
+  var back=document.getElementById("ctBack"); if(back) back.addEventListener("click", function(){ ctListRender(); var b2=document.getElementById("ctBody"); if(b2) b2.scrollTop=0; });
+  ctWireReplyTags(body);
+}
+// One conversation bubble, matching the opp thread's markup exactly so it inherits the same styling.
+function ctBubbleHtml(m){
+  if(m.dir==="in"){
+    return '<div class="msg in" data-in="1"><div class="mh"><span class="mnum">#'+(m.num||"")+'</span><span class="maddr">'+esc(m.from||t("unnamed"))+'</span></div>'+
+      (m.subject?'<div class="msubj">'+esc(m.subject)+'</div>':'')+
+      (m.snippet?'<div class="msnip">'+esc(m.snippet)+'</div>':'')+
+      '<div class="mwhen">'+esc(fmtWhen(m.ts))+'</div></div>';
+  }
+  var who = t("d_you") + (m.actor ? (" · "+actorName(m.actor)) : "");
+  return '<div class="msg out"><div class="mh"><span class="mwho">'+esc(who)+'</span>'+
+      (m.pageSlug?'<span class="ct-b-tpl" dir="auto">'+esc((__ctModel&&__ctModel.pageTitle[m.pageSlug])||upPretty(m.pageSlug))+'</span>':'')+'</div>'+
+    (m.subject?'<div class="msubj">'+esc(m.subject)+'</div>':'')+
+    '<div class="mwhen">'+esc(fmtWhen(m.ts))+'</div></div>';
+}
+
+// ===================================================================================================
+// TEMPLATE MEMORY - opening a template in the Library shows who it was sent to (contacts), the sender (the
+// team member, console_mail.actor), the date/time, and the send count. Rendered inline under the template
+// card (the #lvMem-<slug> container libCardHtml provides). Reuses the SAME network build as Contacts.
+// ===================================================================================================
+function libMemToggle(slug, btn){
+  var box=document.getElementById("lvMem-"+slug); if(!box) return;
+  var open = box.hasAttribute("hidden");
+  // close the other inline panels on this card so they never stack
+  ["lvPrev-","lvProm-","lvDel-"].forEach(function(p){ var o=document.getElementById(p+slug); if(o) o.setAttribute("hidden",""); });
+  if(!open){ box.setAttribute("hidden",""); if(btn) btn.classList.remove("on"); return; }
+  box.removeAttribute("hidden"); if(btn) btn.classList.add("on");
+  box.innerHTML = '<div class="muted" style="padding:8px 2px">'+esc(t("up_reading"))+'</div>';
+  var have = __ctModel ? Promise.resolve(__ctModel) : ctBuildForMemory();
+  have.then(function(model){ libMemRender(slug, model); }, function(){ box.innerHTML='<div class="ct-empty">'+esc(t("ct_mem_none"))+'</div>'; });
+}
+// Build the network WITHOUT a Contacts view mounted (the Library is a separate surface). Caches into __ctModel
+// so a later Contacts open (or another template) reuses it.
+function ctBuildForMemory(){
+  return Promise.all([
+    restGet("console_contacts?select=id,addresses,name,tags,note"),
+    ctRestOr("console_mail?select=id,opp,to_addr,actor,subject,ts,status,page_slug,data&order=ts.asc",
+             "console_mail?select=id,opp,to_addr,actor,subject,ts,status,data&order=ts.asc"),
+    (typeof fetchInbound==="function" ? fetchInbound() : Promise.resolve([])),
+    restGet("console_opps?select=slug,ps:data->>page_slug"),
+    restGet("console_pages?select=slug,title")
+  ]).then(function(a){ __ctModel = ctBuild(a[0]||[], a[1]||[], a[2]||[], a[3]||[], a[4]||[]); return __ctModel; });
+}
+function libMemRender(slug, model){
+  var box=document.getElementById("lvMem-"+slug); if(!box) return;
+  var T = model && model.templates && model.templates[slug];
+  var sends = (T && T.sends) ? T.sends.slice() : [];
+  if(!sends.length){ box.innerHTML='<div class="ct-mem"><div class="ct-mem-h">'+esc(t("ct_mem_h"))+' <span class="ct-mem-n">0</span></div><div class="ct-empty">'+esc(t("ct_mem_none"))+'</div></div>'; return; }
+  sends.sort(function(a,b){ return a.ts<b.ts?1:(a.ts>b.ts?-1:0); });   // newest first
+  var rows = sends.map(function(s){
+    var rec = model.byId[s.cid];
+    var name = rec ? ctName(rec) : (smartPerson(s.addr)||s.addr);
+    var who = s.actor ? actorName(s.actor) : t("ct_sender_unknown");
+    var tag = rec ? ctReplyTag(rec) : "";
+    return '<div class="ct-mem-row">'+
+      '<div class="ct-mem-who"><span class="ct-name" dir="auto">'+esc(name)+'</span>'+
+        '<bdi class="ct-addr mono-iso" dir="ltr">'+esc(s.addr)+'</bdi></div>'+
+      '<div class="ct-mem-meta"><span class="ct-mem-by">'+esc(t("ct_sent_by"))+' <b dir="auto">'+esc(who)+'</b></span>'+
+        '<span class="ct-mem-when">'+esc(fmtWhen(s.ts))+'</span></div>'+
+      (tag?'<div class="ct-mem-tag">'+tag+'</div>':'')+
+    '</div>';
+  }).join("");
+  box.innerHTML = '<div class="ct-mem">'+
+    '<div class="ct-mem-h">'+esc(t("ct_mem_h"))+' <span class="ct-mem-n">'+sends.length+'</span> '+esc(sends.length===1?t("ct_send_one"):t("ct_send_n"))+'</div>'+
+    rows+
+  '</div>';
+  ctWireReplyTags(box, ctOpenConvoFromLibrary);   // a tag inside the Library hops surfaces to the Contacts conversation
+}
+// A reply tag inside the Library must leave the Library and open the Contacts conversation.
+function ctOpenConvoFromLibrary(cid){
+  closeLibraryView();
+  openContactsView();
+  // openContactsView reloads async; wait for the model, then land on the contact.
+  var tries=0;
+  (function land(){ if(__ctModel && __ctModel.byId[cid]){ ctOpenConvo(cid); return; } if(tries++>40) return; setTimeout(land, 50); })();
+}
+
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
   // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
@@ -4496,6 +4916,8 @@ try{
         '<button class="link" id="newMsgBtn" type="button">' + esc(t("nm_open")) + '</button>' +
         // PR1 Library: upload html templates for documentation + activation only (no message, no recipient, no card).
         '<button class="link" id="libBtn" type="button">' + esc(t("lib_open")) + '</button>' +
+        // Phase 3 Contacts: the networked address book (templates sent + full conversation), retiring Legacy Contacts.
+        '<button class="link" id="contactsBtn" type="button">' + esc(t("ct_open")) + '</button>' +
         '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
         '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
         '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
@@ -4513,6 +4935,7 @@ try{
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
     var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ owNewMessage(); });   // opens the window on the mode selector
     var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibraryView(); });   // PR-L1: the Library surface (Add templates inside opens the upload)
+    var ctB=document.getElementById("contactsBtn"); if(ctB) ctB.addEventListener("click", function(){ openContactsView(); });   // Phase 3: the Contacts surface
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
@@ -5026,6 +5449,9 @@ try{
   // Stable seams for the window and its tests: owSelectMode lets a test drive the window's mode directly; the
   // card tap and "New message" reach the window through openOppWindow.
   try{ window.openOppWindow = openOppWindow; window.closeOppWindow = closeOppWindow; window.owSelectMode = owSelectMode; window.owNewMessage = owNewMessage; }catch(e){}
+  // Phase 3 seams: open the Contacts surface and drive a contact/conversation directly (the nav button reaches
+  // openContactsView; these let a test land on the surface without depending on the header paint).
+  try{ window.openContactsView = openContactsView; window.closeContactsView = closeContactsView; window.ctDetailRender = ctDetailRender; window.ctOpenConvo = ctOpenConvo; }catch(e){}
   // G5: the standalone campaign-upload overlay lost its nav entry (campaign upload now lives in the window's Page
   // tab), but the overlay + its shared parser/commit engine are retained; expose openUpload as a utility seam so
   // the upload-engine E2E can still drive it. (Not a user path - the nav no longer surfaces it.)
@@ -5283,11 +5709,13 @@ try{
     if(us) us.addEventListener("click", function(e){ if(e.target===us) closeUpload(); });
     var lvs=document.getElementById("libViewScrim");                                      // PR-L1 Library surface
     if(lvs) lvs.addEventListener("click", function(e){ if(e.target===lvs) closeLibraryView(); });
+    var cts=document.getElementById("ctScrim");                                           // Phase 3 Contacts surface
+    if(cts) cts.addEventListener("click", function(e){ if(e.target===cts) closeContactsView(); });
     var ow=document.getElementById("owScrim");                                            // G1 centered opportunity window
     if(ow) ow.addEventListener("click", function(e){ if(e.target===ow) closeOppWindow(); });
     var owc=document.getElementById("owClose"); if(owc) owc.addEventListener("click", function(){ closeOppWindow(); });
     var owm=document.getElementById("owChangeMode"); if(owm) owm.addEventListener("click", function(){ __owMode=null; owRender(); });   // switch mode back from the header
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeOppWindow(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); } });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeOppWindow(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); closeContactsView(); } });
   }catch(e){} })();
   boot();
 })();

@@ -309,7 +309,7 @@ function sendCompile(slug, row, data, rcpt, mode){
   var text = toPlainText(bodyPlain, sig) + (bulk ? footerText(lang) : "");   // plain-text alternative part; footer only for campaigns
   var html = lightHtml(bodyPlain, sig, lang, bulk);                          // light-HTML primary part; footer only for campaigns
   if(token && bulk) html = html + openPixelHtml(slug, token, relayEp());     // channel 1: the open pixel - campaign only (never on a personal 1:1)
-  return { to:addr, name:person, subject:subject, html:html, text:text, token:token, lang:lang, mode:mode, attachments:plan.attach };
+  return { to:addr, name:person, subject:subject, html:html, text:text, token:token, lang:lang, mode:mode, attachments:plan.attach, pageSlug:pageSlug };
 }
 
 // ---- eligibility + recipient (the engine's own gate) ------------------------------------------------
@@ -477,9 +477,12 @@ function sendOne(slug, row, data, rcpt, mode){
     // TRANSIT CYCLE: stamp the send with the opp's CURRENT cycle (row.cycle from console_board, via BOARD_QUERY).
     // The view counts this send only while the opp still carries this cycle; a re-upload bumps the opp cycle and
     // this send drops out of the count. A legacy opp (no cycle) stamps null, which the view treats as today.
+    // Phase 3: stamp the template/page this send used (page_slug column + a data.page_slug mirror) so "which
+    // template went to whom" is one hop. The mirror keeps the Contacts/Template lens correct even on a build
+    // deployed before the additive column lands; old rows (neither present) fall back to the opp->page_slug map.
     var mailRow = { id:art.token, opp:slug, status:"sent", to_addr:art.to, subject:art.subject, ts:isoNow(),
-      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null,
-      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:(d && d.id) || "", provider:"endpoint", direction:"out" } };
+      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null, page_slug:art.pageSlug,
+      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:(d && d.id) || "", provider:"endpoint", direction:"out", page_slug:art.pageSlug } };
     return confirmMail(mailRow).then(function(){ return { ok:true, addr:art.to }; },
                                      function(){ return { ok:true, addr:art.to, confirming:true }; });  // email out; the confirm-write is the 'sending' limbo, still a send
   }, function(err){
@@ -491,8 +494,8 @@ function sendOne(slug, row, data, rcpt, mode){
     // the bounce webhook. Every OTHER rejection (network / aborted body) stays a real failure.
     if(!(err && err.kind === "timeout")) return { ok:false, addr:art.to };
     var pendRow = { id:art.token, opp:slug, status:"pending", to_addr:art.to, subject:art.subject, ts:isoNow(),
-      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null,
-      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:"", provider:"endpoint", direction:"out" } };
+      actor:currentUid(), up:Date.now(), cycle:(row && row.cycle) || null, page_slug:art.pageSlug,
+      data:{ mid:art.token, idem:idem, msgid:msgid, resend_id:"", provider:"endpoint", direction:"out", page_slug:art.pageSlug } };
     return confirmMail(pendRow).then(function(){ return { ok:true, addr:art.to, confirming:true }; },
                                      function(){ return { ok:true, addr:art.to, confirming:true }; });   // still a send; the pending row (or the webhook) reconciles it
   });

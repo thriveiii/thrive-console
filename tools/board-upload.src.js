@@ -1114,6 +1114,8 @@ function libCardHtml(p){
       '<button class="act" type="button" data-lv-copy="' + esc(p.slug) + '">' + esc(t("lib_copy")) + '</button>'+
       '<button class="act" type="button" data-lv-open="' + esc(p.slug) + '">' + esc(t("lib_open_page")) + '</button>'+
       '<button class="act" type="button" data-lv-prev="' + esc(p.slug) + '">' + esc(t("lib_preview")) + '</button>'+
+      // Phase 3 template memory: who this template was sent to (contacts), the sender, date/time and the count.
+      '<button class="act lv-mem-b" type="button" data-lv-mem="' + esc(p.slug) + '">' + esc(t("ct_mem_open")) + '</button>'+
       '<button class="act lv-prom-b" type="button" data-lv-promote="' + esc(p.slug) + '">' + esc(t("lib_promote")) + '</button>'+
       // BUG-2 FIX: a Delete action (two-tap confirm) removes ONLY this one console_pages row, so a mistaken or
       // stale template is not stuck forever. It never touches an opp/card or any ledger row.
@@ -1122,6 +1124,7 @@ function libCardHtml(p){
       // and a not-yet-live row self-heals in the background - the state chip reads confirming/live, never a prompt.
     '</div>'+
     '<div class="lv-prev" id="lvPrev-' + esc(p.slug) + '" hidden></div>'+
+    '<div class="lv-mem" id="lvMem-' + esc(p.slug) + '" hidden></div>'+
     '<div class="lv-prom" id="lvProm-' + esc(p.slug) + '" hidden></div>'+
     '<div class="lv-del" id="lvDel-' + esc(p.slug) + '" hidden></div>'+
   '</div>';
@@ -1130,6 +1133,7 @@ function libViewWireCards(){
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-copy]"), function(b){ b.addEventListener("click", function(){ libCopyLink(b.getAttribute("data-lv-copy")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-open]"), function(b){ b.addEventListener("click", function(){ libOpenPage(b.getAttribute("data-lv-open")); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-prev]"), function(b){ b.addEventListener("click", function(){ libPreviewToggle(b.getAttribute("data-lv-prev"), b); }); });
+  [].forEach.call(document.querySelectorAll("#lvBody [data-lv-mem]"), function(b){ b.addEventListener("click", function(){ libMemToggle(b.getAttribute("data-lv-mem"), b); }); });   // Phase 3 template memory
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-promote]"), function(b){ b.addEventListener("click", function(){ libPromoteToggle(b.getAttribute("data-lv-promote"), b); }); });
   [].forEach.call(document.querySelectorAll("#lvBody [data-lv-del]"), function(b){ b.addEventListener("click", function(){ libDeleteToggle(b.getAttribute("data-lv-del"), b); }); });
 }
