@@ -908,6 +908,10 @@ function buildBoard(){
   // Step 1: the identity layer (actor resolver + profile/role load), inlined before the send clone so its
   // currentUid() is defined for the send actor write. Shares the IIFE scope + helpers.
   const IDENT_SRC = read(path.join(ROOT, "tools/board-identity.src.js"));
+  // Phase 3: the networked Contacts + Template memory + Reply tags. Inlined AFTER the upload module so it reuses
+  // restGet / fetchInbound / esc / t / enc / normFrom / fmtWhen / liveUrl / upPretty / smartPerson / bareAddress /
+  // actorName / closeLibraryView from the same IIFE scope; function declarations hoist.
+  const CONTACTS_SRC = read(path.join(ROOT, "tools/board-contacts.src.js"));
   const RELAY_EP = (published && published.ep) || "";
   return `<!doctype html>
 <html lang="en" dir="ltr">
@@ -1245,7 +1249,7 @@ function buildBoard(){
   /* PR-L1: the standalone Library surface */
   .scrim.libview{justify-content:center;align-items:flex-start}
   html[dir="rtl"] .scrim.libview{justify-content:center}
-  .lvpanel{width:min(1000px,100%);height:100%;background:#0b0b11;border-inline-start:1px solid #1c1c26;border-inline-end:1px solid #1c1c26;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 22px 56px}
+  .lvpanel{width:min(1000px,100%);height:100%;background:#0b0b11;border-inline-start:1px solid #1c1c26;border-inline-end:1px solid #1c1c26;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(18px + env(safe-area-inset-top)) calc(22px + env(safe-area-inset-right)) calc(56px + env(safe-area-inset-bottom)) calc(22px + env(safe-area-inset-left))}
   .lv-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin:2px 0 12px}
   .lv-title{font-size:20px;font-weight:680;color:#eef;margin:0}
   .lv-head-acts{display:flex;align-items:center;gap:12px}
@@ -1283,6 +1287,9 @@ function buildBoard(){
   .lv-prev{margin-top:6px}
   .lv-prom-b.on{border-color:#3a5;color:#bfe6cd}
   .lv-prom{margin-top:8px;display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid #262632;border-radius:10px;background:#0b0b10}
+  /* the [hidden] attr must beat the inline panels' explicit display, or an empty (collapsed) panel renders as a
+     bordered box under the card. .lv-prev/.lv-mem have no display of their own, but guard them too for parity. */
+  .lv-prev[hidden],.lv-mem[hidden],.lv-prom[hidden],.lv-del[hidden]{display:none}
   /* BUG-2: the Delete action + its inline confirm. A quiet danger button; the confirm box echoes the promote box. */
   .lv-del-b:hover{border-color:#5c2121;color:#e37a7a}
   .lv-del-b.on{border-color:#5c2121;color:#e37a7a}
@@ -1295,6 +1302,57 @@ function buildBoard(){
   .lv-prom-st{margin:0}
   .lv-frame{width:100%;height:260px;border:1px solid #22222e;border-radius:9px;background:#fff}
   .lv-empty{font-size:14px;color:#8a8a93;padding:24px 4px;text-align:center}
+  /* ===== PHASE 3: Contacts + Template memory + Reply tags. Mobile-first (the .lvpanel host is already full-width
+     and full-height on phone); equal padding on all four sides; RTL correct via logical properties. ===== */
+  .ct-body{display:flex;flex-direction:column;gap:14px}
+  .ct-count{font-size:12px;color:#8a8a93;unicode-bidi:isolate}
+  .ct-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .ct-card{border:1px solid #22222e;border-radius:12px;background:#0e0e14;padding:14px 15px;display:flex;flex-direction:column;gap:7px;min-width:0;cursor:pointer}
+  .ct-card:hover{border-color:#2c2c3a}
+  .ct-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .ct-name{font-size:15px;font-weight:640;color:#eef;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .ct-name-lg{font-size:19px;font-weight:720;color:#fff;min-width:0;word-break:break-word}
+  .ct-addr{font-size:12px;color:#9fb0c9;word-break:break-all;unicode-bidi:isolate}
+  .ct-more{font-size:11px;color:#6a6a74}
+  .ct-tags{display:flex;flex-wrap:wrap;gap:6px}
+  .ct-tag{font-size:11px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:999px;padding:1px 9px}
+  .ct-metrics{display:flex;gap:16px;margin-top:2px}
+  .ct-metric{font-size:12px;color:#8a8a93}
+  .ct-metric b{color:#e7e7ea;font-weight:700}
+  /* the reply tag: one control, one behavior (opens the conversation), everywhere a contact appears */
+  .ct-replytag{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;color:#8a8a93;background:#0e0e17;border:1px solid #20202e;border-radius:999px;padding:4px 11px;cursor:pointer;min-height:30px}
+  .ct-replytag.on{color:#04252b;background:#7fd18b;border-color:#7fd18b;font-weight:700}
+  .ct-replytag.on:hover{filter:brightness(1.05)}
+  .ct-replytag.lg{font-size:13px;padding:6px 13px;min-height:34px}
+  .ct-rt-n{font-weight:800}
+  .ct-back{align-self:flex-start;padding:6px 0;font-size:14px}
+  .ct-detail-head{display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #17171f;padding-bottom:14px}
+  .ct-dh-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .ct-addrs{display:flex;flex-direction:column;gap:3px}
+  .ct-note{font-size:13px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:8px;padding:8px 10px}
+  .ct-sec{margin-top:6px}
+  .ct-sh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:0 0 9px;display:flex;gap:8px;align-items:center}
+  html[dir="rtl"] .ct-sh{text-transform:none;letter-spacing:normal}
+  .ct-tpl-list{display:flex;flex-direction:column;gap:8px}
+  .ct-tpl-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;border:1px solid #191921;border-radius:9px;background:#0e0e14;padding:9px 11px}
+  .ct-tpl-t{font-size:14px;color:#eef;font-weight:600;min-width:0}
+  .ct-tpl-slug{font-size:11px;color:#9fb0c9;word-break:break-all}
+  .ct-tpl-n{font-size:11.5px;color:#8a8a93;margin-inline-start:auto;white-space:nowrap}
+  .ct-thread{margin-top:2px}
+  .ct-b-tpl{font-size:10.5px;color:#8a8a93;background:#0b0b11;border:1px solid #20202e;border-radius:999px;padding:0 7px;margin-inline-start:8px}
+  .ct-empty{font-size:13px;color:#8a8a93;padding:14px 4px;text-align:center}
+  /* template memory (inline under a Library card) */
+  .lv-mem{margin-top:2px}
+  .ct-mem{display:flex;flex-direction:column;gap:8px;border-top:1px solid #191921;padding-top:10px}
+  .ct-mem-h{font-size:12px;color:#8a8a93}
+  .ct-mem-n{font-weight:800;color:#e7e7ea}
+  .ct-mem-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;border:1px solid #191921;border-radius:9px;background:#0b0b11;padding:9px 11px}
+  .ct-mem-who{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .ct-mem-meta{display:flex;flex-direction:column;gap:2px;margin-inline-start:auto;text-align:end}
+  .ct-mem-by{font-size:11.5px;color:#8a8a93}
+  .ct-mem-by b{color:#c9c9d2}
+  .ct-mem-when{font-size:10.5px;color:#6a6a74;unicode-bidi:isolate}
+  .ct-mem-tag{flex-basis:100%}
   .up-state.ok{color:#a9d5b6;border-color:#274b34}
   .up-state.bad{color:#d8b48a;border-color:#4b3a27}
   .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
@@ -1365,6 +1423,7 @@ function buildBoard(){
 <div id="nmScrim" class="scrim" hidden><div id="nmPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="upScrim" class="scrim" hidden><div id="upPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
 <div id="libViewScrim" class="scrim libview" hidden><div id="libViewPanel" class="lvpanel" role="dialog" aria-modal="true"></div></div>
+<div id="ctScrim" class="scrim libview" hidden><div id="ctPanel" class="lvpanel" role="dialog" aria-modal="true"></div></div>
 <div id="owScrim" class="ow-scrim" hidden><div id="oppWindow" class="ow" role="dialog" aria-modal="true" aria-labelledby="owTitle">
   <header class="ow-head"><h2 class="ow-title" id="owTitle"></h2>
     <div class="ow-head-acts">
@@ -1500,7 +1559,13 @@ function buildBoard(){
           lib_renamed:"Link name was taken, renamed to {s}.", lib_delete:"Delete", lib_del_confirm:"Delete this page permanently? Its live link will stop working.", lib_del_cancel:"Cancel", lib_deleting:"Deleting…", lib_del_failed:"Could not delete. Nothing changed.",
           lib_view_h:"Library", lib_add:"Add templates", lib_search_ph:"Search by title, link, or task", lib_task_k:"Task:", lib_untasked:"Unclassified", lib_no_match:"No templates match your search.", lib_empty:"No templates yet. Add templates to begin.", lib_preview:"Preview",
           lib_tab_templates:"Templates", lib_tab_archive:"Archive", lib_arch_open:"History", lib_restore:"Restore", lib_arch_empty:"No archived cards yet.",
-          lib_promote:"Promote", lib_prom_ph:"Recipient email (or several, comma separated)", lib_prom_go:"Add to Operations", lib_prom_need:"Enter at least one valid email.", lib_prom_saving:"Adding to Operations...", lib_prom_done:"Added to Operations. Write the message there.", lib_prom_failed:"Could not add to Operations." },
+          lib_promote:"Promote", lib_prom_ph:"Recipient email (or several, comma separated)", lib_prom_go:"Add to Operations", lib_prom_need:"Enter at least one valid email.", lib_prom_saving:"Adding to Operations...", lib_prom_done:"Added to Operations. Write the message there.", lib_prom_failed:"Could not add to Operations.",
+          ct_open:"Contacts", ct_h:"Contacts", ct_search_ph:"Search by name, email, or tag", ct_empty:"No contacts yet.", ct_no_match:"No contacts match your search.",
+          ct_count_one:"contact", ct_count_n:"contacts", ct_sends:"sends", ct_tmpls:"templates", ct_more_addr:"more",
+          ct_reply_one:"reply", ct_reply_n:"replies", ct_open_convo:"Open the conversation", ct_back:"Back to contacts",
+          ct_tpl_h:"Templates sent", ct_no_tpl:"No templates sent to this contact yet.", ct_convo_h:"Conversation", ct_no_convo:"No conversation yet.",
+          ct_send_one:"send", ct_send_n:"sends", ct_mem_open:"Sent to", ct_mem_h:"Sent to", ct_mem_none:"Not sent to anyone yet.",
+          ct_sent_by:"Sent by", ct_sender_unknown:"a team member" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -1605,7 +1670,13 @@ function buildBoard(){
           lib_renamed:"اسم الرابط كان مستخدماً، فأُعيدت تسميته إلى {s}.", lib_delete:"حذف", lib_del_confirm:"حذف هذه الصفحة نهائياً؟ سيتوقف رابطها الحيّ.", lib_del_cancel:"إلغاء", lib_deleting:"جارٍ الحذف…", lib_del_failed:"تعذّر الحذف. لم يتغيّر شيء.",
           lib_view_h:"المكتبة", lib_add:"إضافة قوالب", lib_search_ph:"ابحث بالعنوان أو الرابط أو المهمة", lib_task_k:"المهمة:", lib_untasked:"غير مصنّف", lib_no_match:"لا قوالب تطابق بحثك.", lib_empty:"لا قوالب بعد. أضف قوالب للبدء.", lib_preview:"معاينة",
           lib_tab_templates:"القوالب", lib_tab_archive:"الأرشيف", lib_arch_open:"السجل", lib_restore:"استرجاع", lib_arch_empty:"لا بطاقات مؤرشفة بعد.",
-          lib_promote:"أضف مستلماً", lib_prom_ph:"بريد المستلم (أو عدة، مفصولة بفواصل)", lib_prom_go:"أضف إلى العمليات", lib_prom_need:"أدخل بريداً صحيحاً واحداً على الأقل.", lib_prom_saving:"جارٍ الإضافة إلى العمليات...", lib_prom_done:"أُضيف إلى العمليات. اكتب الرسالة هناك.", lib_prom_failed:"تعذّرت الإضافة إلى العمليات." }
+          lib_promote:"أضف مستلماً", lib_prom_ph:"بريد المستلم (أو عدة، مفصولة بفواصل)", lib_prom_go:"أضف إلى العمليات", lib_prom_need:"أدخل بريداً صحيحاً واحداً على الأقل.", lib_prom_saving:"جارٍ الإضافة إلى العمليات...", lib_prom_done:"أُضيف إلى العمليات. اكتب الرسالة هناك.", lib_prom_failed:"تعذّرت الإضافة إلى العمليات.",
+          ct_open:"جهات الاتصال", ct_h:"جهات الاتصال", ct_search_ph:"ابحث بالاسم أو البريد أو الوسم", ct_empty:"لا جهات اتصال بعد.", ct_no_match:"لا جهات اتصال تطابق بحثك.",
+          ct_count_one:"جهة اتصال", ct_count_n:"جهات اتصال", ct_sends:"إرسالات", ct_tmpls:"قوالب", ct_more_addr:"أخرى",
+          ct_reply_one:"رد", ct_reply_n:"ردود", ct_open_convo:"فتح المحادثة", ct_back:"العودة إلى جهات الاتصال",
+          ct_tpl_h:"القوالب المُرسَلة", ct_no_tpl:"لم يُرسَل أي قالب إلى جهة الاتصال هذه بعد.", ct_convo_h:"المحادثة", ct_no_convo:"لا محادثة بعد.",
+          ct_send_one:"إرسال", ct_send_n:"إرسالات", ct_mem_open:"أُرسل إلى", ct_mem_h:"أُرسل إلى", ct_mem_none:"لم يُرسَل إلى أحد بعد.",
+          ct_sent_by:"أرسله", ct_sender_unknown:"أحد أعضاء الفريق" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1822,6 +1893,7 @@ ${RECIP_SRC}
 ${EDITOR_SRC}
 ${NEWMSG_SRC}
 ${UPLOAD_SRC}
+${CONTACTS_SRC}
   function normFrom(s){ return String(s==null?"":s).trim().toLowerCase(); }
   // One resolver, linked-everywhere-or-nowhere (§3): a reply belongs to a card ONLY by its stored resolved opp
   // (the server attributed it on write); auto-replies and bounces move no card; dedup by sender keeping the
@@ -1933,6 +2005,8 @@ ${UPLOAD_SRC}
         '<button class="link" id="newMsgBtn" type="button">' + esc(t("nm_open")) + '</button>' +
         // PR1 Library: upload html templates for documentation + activation only (no message, no recipient, no card).
         '<button class="link" id="libBtn" type="button">' + esc(t("lib_open")) + '</button>' +
+        // Phase 3 Contacts: the networked address book (templates sent + full conversation), retiring Legacy Contacts.
+        '<button class="link" id="contactsBtn" type="button">' + esc(t("ct_open")) + '</button>' +
         '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
         '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
         '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
@@ -1950,6 +2024,7 @@ ${UPLOAD_SRC}
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
     var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ owNewMessage(); });   // opens the window on the mode selector
     var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibraryView(); });   // PR-L1: the Library surface (Add templates inside opens the upload)
+    var ctB=document.getElementById("contactsBtn"); if(ctB) ctB.addEventListener("click", function(){ openContactsView(); });   // Phase 3: the Contacts surface
     var ab=document.getElementById("adminBtn"); if(ab) ab.addEventListener("click", function(){ openAdmin(); });   // Step 2D
     var pb=document.getElementById("profileBtn"); if(pb) pb.addEventListener("click", function(){ openProfile(); });   // Step 2B
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
@@ -2463,6 +2538,9 @@ ${UPLOAD_SRC}
   // Stable seams for the window and its tests: owSelectMode lets a test drive the window's mode directly; the
   // card tap and "New message" reach the window through openOppWindow.
   try{ window.openOppWindow = openOppWindow; window.closeOppWindow = closeOppWindow; window.owSelectMode = owSelectMode; window.owNewMessage = owNewMessage; }catch(e){}
+  // Phase 3 seams: open the Contacts surface and drive a contact/conversation directly (the nav button reaches
+  // openContactsView; these let a test land on the surface without depending on the header paint).
+  try{ window.openContactsView = openContactsView; window.closeContactsView = closeContactsView; window.ctDetailRender = ctDetailRender; window.ctOpenConvo = ctOpenConvo; }catch(e){}
   // G5: the standalone campaign-upload overlay lost its nav entry (campaign upload now lives in the window's Page
   // tab), but the overlay + its shared parser/commit engine are retained; expose openUpload as a utility seam so
   // the upload-engine E2E can still drive it. (Not a user path - the nav no longer surfaces it.)
@@ -2720,11 +2798,13 @@ ${UPLOAD_SRC}
     if(us) us.addEventListener("click", function(e){ if(e.target===us) closeUpload(); });
     var lvs=document.getElementById("libViewScrim");                                      // PR-L1 Library surface
     if(lvs) lvs.addEventListener("click", function(e){ if(e.target===lvs) closeLibraryView(); });
+    var cts=document.getElementById("ctScrim");                                           // Phase 3 Contacts surface
+    if(cts) cts.addEventListener("click", function(e){ if(e.target===cts) closeContactsView(); });
     var ow=document.getElementById("owScrim");                                            // G1 centered opportunity window
     if(ow) ow.addEventListener("click", function(e){ if(e.target===ow) closeOppWindow(); });
     var owc=document.getElementById("owClose"); if(owc) owc.addEventListener("click", function(){ closeOppWindow(); });
     var owm=document.getElementById("owChangeMode"); if(owm) owm.addEventListener("click", function(){ __owMode=null; owRender(); });   // switch mode back from the header
-    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeOppWindow(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); } });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"){ closeOppWindow(); closeProfile(); closeAdmin(); closeNewMessage(); closeUpload(); closeLibraryView(); closeContactsView(); } });
   }catch(e){} })();
   boot();
 })();
