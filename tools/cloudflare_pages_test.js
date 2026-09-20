@@ -6,14 +6,15 @@
    pagePublish_ and the relay unchanged and netlify.toml KEPT for instant DNS-only rollback.
 
    This proves the wiring Cloudflare Pages depends on, end to end:
-     * the in-repo Cloudflare config declares the publish/ output and pins a Node the build can run on;
+     * NO wrangler.toml (its presence routes the dashboard to the Workers path, not Pages);
+     * a Node the build can run on is pinned (.node-version);
      * netlify.toml is STILL present (this PR must not remove the rollback path);
      * `node tools/bundle.js` emits the deployable publish/ tree with the no-stale _headers;
      * the integrity probe will PASS on any host: sha256(publish/library/board.html) equals
        version.json.boardSha256, and the served root points at the current BUILD.
 
-   FAILS-WHEN-BROKEN: drop the publish output declaration / the Node pin / netlify.toml, weaken the
-   no-stale _headers, or let version.json's boardSha256 drift from the shipped board.html -> fails.
+   FAILS-WHEN-BROKEN: add a wrangler.toml, drop the Node pin / netlify.toml, weaken the no-stale
+   _headers, or let version.json's boardSha256 drift from the shipped board.html -> fails.
 
    It runs the real bundle first, so the assertions are about the actual deployable output. */
 const fs = require("fs");
@@ -31,10 +32,12 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 const exists = (p) => fs.existsSync(path.join(ROOT, p));
 
 // ---- in-repo Cloudflare config -------------------------------------------------------------------
-const wr = exists("wrangler.toml") ? read("wrangler.toml") : "";
-ck("wrangler.toml declares the Pages build output directory: publish",
-   /pages_build_output_dir\s*=\s*"publish"/.test(wr), wr);
-ck("wrangler.toml names the Pages project", /^\s*name\s*=\s*"[^"]+"/m.test(wr), wr);
+// NO wrangler.toml: its presence makes Cloudflare's unified "Workers & Pages" wizard treat the repo as a
+// WORKERS project (deploy command `npx wrangler deploy`, empty build command) instead of a PAGES project.
+// A classic Pages "Connect to Git" project needs no repo config file - build command + output directory are
+// set in the dashboard - and _headers is honored on the Pages path. Keep this file out of the repo.
+ck("no wrangler.toml in the repo (it would route the Cloudflare dashboard to the Workers path, not Pages)",
+   !exists("wrangler.toml"));
 
 const nodeVer = exists(".node-version") ? read(".node-version").trim() : "";
 const major = parseInt((nodeVer.split(".")[0] || "0"), 10);
@@ -64,7 +67,7 @@ const oppDir = path.join(ROOT, "publish/opp");
 const oneOpp = exists("publish/opp") && fs.readdirSync(oppDir).find((d) => exists("publish/opp/" + d + "/index.html"));
 ck("publish/opp/<slug>/index.html is served (the relay's page output, directory-index form)", !!oneOpp, oneOpp);
 
-const NEVER = ["tools", "docs", "relay", "dist", ".git", "wrangler.toml", ".node-version"];
+const NEVER = ["tools", "docs", "relay", "dist", ".git", ".node-version"];
 NEVER.forEach((d) => ck("publish/ does NOT leak the dev/config file: " + d, !exists("publish/" + d)));
 
 // ---- the no-stale-HTML header Cloudflare Pages honors --------------------------------------------
