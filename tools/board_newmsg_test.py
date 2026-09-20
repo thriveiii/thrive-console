@@ -178,12 +178,15 @@ with sync_playwright() as p:
        last.get("outreach_subject")=="Hello there" and "First line." in str(last.get("outreach_text","")), last)
     ck("2: a green Saved status shows", "ok" in (pg.evaluate("()=>{var e=document.getElementById('nmStatus'); return e?e.className:'';}") or ""))
 
-    # ===== E0: an EMPTY signature yields NO sig block (optional) =====
+    # ===== E0 (Phase 2): the G7.1 signature is GUARANTEED - an empty field falls back to the default block =====
+    # Phase 2 supersedes the old "empty field -> no signature" behavior with "GUARANTEE the G7.1 signature on
+    # every send": when the signature field is empty, sendCompile falls back to the operator's localized default
+    # block (edSignatureDefault), so every compiled message carries a signature.
     art = pg.evaluate("async()=>{ return await window.__thriveComposeArtifact(window.__thriveNewMessageSlug()); }")
     htm0 = art.get("html","")
-    ck("E0: an empty signature field yields NO sig block (no #595959 / #888888 sig div)",
-       "#595959" not in htm0 and "#888888" not in htm0, htm0[:200])
-    ck("E0: the body renders verbatim (no auto-signature fused in)",
+    ck("E0: an empty signature field falls back to the guaranteed G7.1 default (a sig block IS present)",
+       ("#595959" in htm0 or "#888888" in htm0) and "Thrive Digital Solutions" in htm0, htm0[-260:])
+    ck("E0: the body still renders verbatim (the signature is a separate block, never fused into the body)",
        "First line." in htm0 and "Growth Lead" not in htm0, htm0[:200])
 
     # ===== 3: IDENTITY (NEWMSG_AUDIT) - New message ALWAYS starts FRESH; a draft is recovered via its CARD =====

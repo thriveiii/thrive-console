@@ -123,7 +123,60 @@ function edHasLink(slug, body){
 // the send path uses, so the preview html equals the send payload html for identical inputs.
 function edLiveData(slug){
   var base = __edBase[slug] || {};
-  return Object.assign({}, base, { outreach_subject:edVal("edSubj"), outreach_text:edVal("edBody"), sig:edSignature() });
+  // Phase 2: the preview compiles for the LIVE recipients (from #recIn + the bulk field, with the primary name
+  // field applied), and carries the live platform + greeting mode, so the greeting toggle and the smart-name
+  // fields change the preview at once, per the first recipient.
+  var recips = (typeof sendToList==="function") ? sendToList() : [];
+  if(!recips.length && Array.isArray(base.recipients)) recips = base.recipients;
+  return Object.assign({}, base, {
+    outreach_subject:edVal("edSubj"), outreach_text:edVal("edBody"), sig:edSignature(),
+    platform:(edVal("crPlatform").trim() || base.platform || ""),
+    greeting:edGreeting(slug),
+    recipients:recips
+  });
+}
+// ---- Phase 2 greeting state (in-memory on __edBase for a live preview; persisted by the compose writer) ----
+function edGreeting(slug){ var d=__edBase[slug]||{}; return (d.greeting==="platform") ? "platform" : "name"; }
+function edSetGreeting(slug, mode){
+  mode = (mode==="platform") ? "platform" : "name";
+  if(!__edBase[slug]) __edBase[slug] = {};
+  __edBase[slug].greeting = mode;
+  edApplyGreeting(slug); edRenderPreview(slug); edScheduleSave(slug, 300);
+}
+function edApplyGreeting(slug){
+  var mode=edGreeting(slug), root=edRoot();
+  if(root && root.querySelectorAll){ [].forEach.call(root.querySelectorAll("[data-greet]"), function(b){ b.classList.toggle("on", b.getAttribute("data-greet")===mode); }); }
+  edGreetAsk(slug);
+}
+// Gentle ask (never blocks): in name mode with no person name known - the field empty AND nothing inferable from
+// the address - show the "add a name" hint. The send still falls back to the platform team greeting and proceeds.
+function edGreetAsk(slug){
+  var ask=edEl("crNameAsk"); if(!ask) return;
+  var nm=edVal("crName").trim();
+  var first=(typeof sendToList==="function") ? (sendToList()[0]||null) : null;
+  var inferred = (first && typeof smartPerson==="function") ? smartPerson(first.addr) : "";
+  ask.hidden = !(edGreeting(slug)==="name" && !nm && !inferred);
+}
+// The greeting toggle + the smart-name (contact) and platform fields. Prefilled from the record and inferred from
+// the first recipient's address; both editable; neither ever blocks the send.
+function greetingHtml(slug, row, detail){
+  if(!editorEligible(row)) return "";
+  var data = (detail && detail.opp && detail.opp.data) || __edBase[slug] || {};
+  var mode = (data.greeting==="platform") ? "platform" : "name";
+  var first = (typeof firstRecipient==="function") ? firstRecipient(data) : null;
+  var nameVal = (first && first.name) ? first.name : ((first && typeof smartPerson==="function") ? smartPerson(first.addr) : "");
+  var platVal = String(data.platform||"").trim() || ((first && typeof smartPlatform==="function") ? smartPlatform(first.addr) : "") || (row&&row.business) || "";
+  var opt=function(k,key){ return '<button class="g-opt'+(mode===k?" on":"")+'" type="button" role="tab" data-greet="'+k+'">'+esc(t(key))+'</button>'; };
+  return '<div class="dw-sec g-greet"><h3>'+esc(t("g_greet_h"))+'</h3>'+
+    '<div class="g-toggle" role="tablist">'+opt("name","g_greet_name")+opt("platform","g_greet_team")+'</div>'+
+    '<div class="g-fields">'+
+      '<label class="g-field"><span class="g-lab">'+esc(t("g_name_lab"))+'</span>'+
+        '<input class="g-in" id="crName" type="text" dir="auto" autocomplete="off" spellcheck="false" value="'+esc(nameVal)+'" placeholder="'+esc(t("g_name_ph"))+'"></label>'+
+      '<label class="g-field"><span class="g-lab">'+esc(t("g_platform_lab"))+'</span>'+
+        '<input class="g-in" id="crPlatform" type="text" dir="auto" autocomplete="off" spellcheck="false" value="'+esc(platVal)+'" placeholder="'+esc(t("g_platform_ph"))+'"></label>'+
+    '</div>'+
+    '<div class="g-ask" id="crNameAsk" hidden>'+esc(t("g_name_ask"))+'</div>'+
+  '</div>';
 }
 function edCompileFrom(slug, data){
   var row = findRow(slug) || { slug:slug, business:(data&&data.business)||"" };
@@ -306,7 +359,7 @@ function edSaveNow(slug){
   oppReadData(slug).then(function(data){
     var wasEmpty = !(String(data.outreach_subject||"").trim() || String(data.outreach_text||"").trim());
     var nowHas = !!(subj.trim() || body.trim());
-    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig });
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, greeting:edGreeting(slug), platform:(edVal("crPlatform").trim()||data.platform||"") });
     return oppPatch(slug, { data:next, up:Date.now() }).then(function(){
       __edSaving = false;
       __edBase[slug] = next;                                   // keep the preview base in sync with the persisted record
@@ -338,6 +391,14 @@ function wireEditor(slug){
   var lk=edEl("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
   var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
   edRenderSavedSigs(slug);                                     // G7.1: the per-user saved-signatures strip + "+"
+  // Phase 2: the greeting toggle, the smart-name (contact) + platform fields, and the bulk "related contacts".
+  var groot=edRoot();
+  if(groot && groot.querySelectorAll){ [].forEach.call(groot.querySelectorAll("[data-greet]"), function(b){ b.addEventListener("click", function(){ edSetGreeting(slug, b.getAttribute("data-greet")); }); }); }
+  var nmn=edEl("crName"); if(nmn) nmn.addEventListener("input", function(){ edRenderPreview(slug); edGreetAsk(slug); edScheduleSave(slug, 700); });
+  var plt=edEl("crPlatform"); if(plt) plt.addEventListener("input", function(){ edRenderPreview(slug); edScheduleSave(slug, 700); });
+  var bchk=edEl("crBulkChk"); if(bchk) bchk.addEventListener("change", function(){ var bd=edEl("crBulkBody"); if(bd) bd.hidden=!bchk.checked; edTick(slug); });
+  var bin=edEl("crBulkIn"); if(bin) bin.addEventListener("input", function(){ edTick(slug); edScheduleSave(slug, 700); });
+  edApplyGreeting(slug);                                       // mark the active toggle + the gentle name ask
   edTick(slug);                                                // initial checklist + gate + preview
 }
 

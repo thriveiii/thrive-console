@@ -210,19 +210,94 @@ function lightHtml(bodyPlain, sig, lang, bulk){
 // three. The multipart/alternative text part stays in both modes (it helps deliverability).
 function sendMode(data){ return (data && data.source === "upload") ? "campaign" : "personal"; }
 
+// ==== SMART NAME + GREETING (Phase 2) =========================================================================
+// Infer a person name and a platform name from an email address, so the greeting can open with "Hi <Name>," or
+// "Hi <Platform> team," even when nothing was typed. Pure functions - no I/O, no storage - reused by the compile
+// (below) and by the compose UI's gentle prefill.
+var ROLE_LOCALS = { hello:1, hi:1, hey:1, info:1, team:1, contact:1, contactus:1, sales:1, support:1, admin:1,
+  office:1, hq:1, mail:1, email:1, press:1, media:1, marketing:1, events:1, event:1, bookings:1, booking:1,
+  reservations:1, reservation:1, orders:1, order:1, help:1, service:1, services:1, enquiries:1, inquiries:1,
+  enquiry:1, inquiry:1, general:1, welcome:1, noreply:1, "no-reply":1, newsletter:1, hola:1, salam:1, ceo:1,
+  founders:1, founder:1, jobs:1, careers:1, billing:1, accounts:1, finance:1, pr:1, partnerships:1, hi5:1 };
+function localPart(addr){ return String(addr||"").split("@")[0] || ""; }
+function domainOf(addr){ return String(addr||"").split("@")[1] || ""; }
+function titleCasePart(s){
+  return String(s||"").split(/[.\-_+ ]+/).filter(Boolean)
+    .map(function(w){ return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }).join(" ");
+}
+// PERSON: a role/generic local-part (hello@, team@, info@) names no person -> "" (the platform greeting is used).
+// A dotted/underscored handle (first.last) or a single plausible given-name token becomes a titled person name.
+// A digit-only or opaque handle (a1b2, x7k9) yields nothing. Trailing digits are dropped (john2 -> John).
+function smartPerson(addr){
+  var lp = localPart(addr).toLowerCase().replace(/^["'\s]+|["'\s]+$/g, "").replace(/\+.*$/, "").replace(/\d+$/, "");
+  if(!lp) return "";
+  var flat = lp.replace(/[._\-]/g, "");
+  if(ROLE_LOCALS[lp] || ROLE_LOCALS[flat]) return "";
+  if(/[._\-]/.test(lp)){ var t = titleCasePart(lp); return /[a-z]/i.test(t) ? t : ""; }   // first.last -> First Last
+  if(/^[a-z][a-z'’]{1,14}$/.test(lp)) return titleCasePart(lp);                             // a single given name
+  return "";                                                                                // opaque handle -> no name
+}
+// PLATFORM: the domain's second-level label, title-cased (bardsalley.com -> Bards Alley). A freemail domain
+// (gmail/outlook/...) names no platform -> "" (the business/page name is used instead upstream).
+var FREEMAIL = { gmail:1, googlemail:1, yahoo:1, ymail:1, hotmail:1, outlook:1, live:1, msn:1, icloud:1, me:1,
+  mac:1, aol:1, proton:1, protonmail:1, pm:1, gmx:1, zoho:1, mail:1, fastmail:1, hey:1, yandex:1, qq:1 };
+function smartPlatform(addr){
+  var host = domainOf(addr).toLowerCase().split(":")[0];
+  var parts = host.split(".").filter(Boolean); if(!parts.length) return "";
+  if(parts[0] === "www") parts.shift();
+  var label = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+  if(FREEMAIL[label]) return "";
+  return titleCasePart(label);
+}
+// The {{NAME}} fill for a greeting: the person in name mode (when known), else the platform team, else "" (the
+// empty-name cleanup in mergeFieldsInto tidies "Hi ," -> "Hi,"). AR wraps the platform as "فريق <platform>".
+function greetFill(greetMode, person, platform, lang){
+  if(greetMode === "name" && person) return person;
+  if(platform) return (lang === "ar") ? ("فريق " + platform) : (platform + " team");
+  return "";
+}
+// The greeting line prepended to a body that has no greeting of its own. Built through the SAME {{NAME}} slot so
+// the empty case tidies identically: "Hi {{NAME}}," / "مرحبا {{NAME}}،" filled with greetFill.
+function greetingLine(greetMode, person, platform, lang){
+  var open = (lang === "ar") ? "مرحبا " : "Hi ";
+  var close = (lang === "ar") ? "،" : ",";
+  var fill = greetFill(greetMode, person, platform, lang);
+  return fill ? (open + fill + close) : (open.replace(/\s+$/, "") + close);   // no fill -> "Hi," / "مرحبا،"
+}
+// Does the body already open with its own salutation (so the compile must NOT prepend a second greeting)?
+// Conservative: the first non-empty line starts with a known salutation word.
+function hasSalutation(body){
+  var line = (String(body||"").split("\n").map(function(s){ return s.trim(); }).filter(Boolean)[0] || "");
+  return /^(hi|hello|hey|dear|greetings|good\s+(morning|afternoon|evening))\b/i.test(line)
+      || /^(مرحبا|أهلا|أهلًا|عزيز|تحية|السلام)/.test(line);
+}
+
 function sendCompile(slug, row, data, rcpt, mode){
   data = data || {}; rcpt = rcpt || {};
   mode = mode || sendMode(data);
   var bulk = (mode === "campaign");                 // personal omits pixel + footer; campaign keeps them
-  var full = String(rcpt.name==null?"":rcpt.name).trim();
-  var name = (data.firstName && full) ? full.split(/\s+/)[0] : full;
   var lang = (rcpt.lang==="ar" || data.lang==="ar") ? "ar" : "en";
   var addr = bareAddress(rcpt.addr||"");
+  // SMART NAME: the explicit recipient name wins; otherwise infer a person from the email local-part (a role
+  // address yields none). firstName trims to the given name. This is the {{NAME}} person for name-mode greetings.
+  var full = String(rcpt.name==null?"":rcpt.name).trim() || smartPerson(addr);
+  var person = (data.firstName && full) ? full.split(/\s+/)[0] : full;
+  // GREETING: the toggle (data.greeting) picks name vs platform; no person name safely falls back to the platform
+  // team. The platform is the operator's field, else the business, else inferred from the domain.
+  var platform = String(data.platform||"").trim() || (row&&row.business) || data.business || smartPlatform(addr) || "";
+  var greetMode = (data.greeting==="platform") ? "platform" : "name";
+  var fill = greetFill(greetMode, person, platform, lang);          // the {{NAME}} value, per recipient
   var pageSlug = (data && data.page_slug) || slug;   // PR-A0: a promoted card carries its own slug but points at the SHARED template page
   var ctx = { business:(row&&row.business)||data.business||"", link:liveUrl(pageSlug), month:data.month||"" };
-  var inner = mergeFieldsInto(data.outreach_text||"", name, ctx);   // PR-A: body sent verbatim, no signature strip
-  var subject = mergeFieldsInto(data.outreach_subject||"", name, ctx).replace(/^\s+|\s+$/g, "");
-  var sig = data.sig || "";
+  var body0 = String(data.outreach_text||"");
+  // A body that carries no {{NAME}} and no salutation of its own gets the toggle-owned greeting prepended, so
+  // every send opens with a greeting; a body that already greets is left untouched (no double greeting).
+  var greeted = (/\{\{\s*NAME\s*\}\}/.test(body0) || hasSalutation(body0)) ? body0 : (greetingLine(greetMode, person, platform, lang) + "\n\n" + body0);
+  var inner = mergeFieldsInto(greeted, fill, ctx);                  // {{NAME}} -> fill (empty-name cleanup for a no-name/no-platform fill)
+  var subject = mergeFieldsInto(data.outreach_subject||"", fill, ctx).replace(/^\s+|\s+$/g, "");
+  // GUARANTEE the G7.1 signature: an empty signature field falls back to the operator's localized default block,
+  // so every send carries a signature. edSignatureDefault (board-editor) reads the per-user identity.
+  var sig = (data.sig && String(data.sig).trim()) ? data.sig : ((typeof edSignatureDefault==="function") ? edSignatureDefault(lang) : "");
   var plan = planAttachments(data.attachments||[]);
   var bodyPlain = inner + attachHostedBlockText(plan.hosted, lang);   // hosted-image links ride as text lines
   var token = recipientOpenToken(slug, addr, subject);       // == the console_mail row id; still the open-pixel token below
@@ -234,7 +309,7 @@ function sendCompile(slug, row, data, rcpt, mode){
   var text = toPlainText(bodyPlain, sig) + (bulk ? footerText(lang) : "");   // plain-text alternative part; footer only for campaigns
   var html = lightHtml(bodyPlain, sig, lang, bulk);                          // light-HTML primary part; footer only for campaigns
   if(token && bulk) html = html + openPixelHtml(slug, token, relayEp());     // channel 1: the open pixel - campaign only (never on a personal 1:1)
-  return { to:addr, name:name, subject:subject, html:html, text:text, token:token, lang:lang, mode:mode, attachments:plan.attach };
+  return { to:addr, name:person, subject:subject, html:html, text:text, token:token, lang:lang, mode:mode, attachments:plan.attach };
 }
 
 // ---- eligibility + recipient (the engine's own gate) ------------------------------------------------
