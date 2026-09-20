@@ -924,7 +924,8 @@ function buildBoard(){
   html,body{margin:0;background:#07070b;color:#e7e7ea;font-family:Lato,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
   *{box-sizing:border-box}
   a{color:#71BFCC}
-  .wrap{max-width:1200px;margin:0 auto;padding:16px}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top));padding-inline:calc(16px + env(safe-area-inset-left)) calc(16px + env(safe-area-inset-right))}
+  .compose-send .act.send{min-height:44px}   /* comfortable touch target; the phone media query pins this bar to the bottom */
   .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 14px;border-bottom:1px solid #17171f}
   .brand{font-weight:800;letter-spacing:.02em;font-size:16px}
   .muted{color:#8a8a93;font-size:12px}
@@ -1098,10 +1099,63 @@ function buildBoard(){
   html[dir="rtl"] .g-opt,html[dir="rtl"] .g-lab,html[dir="rtl"] .g-bulk-chk{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .cr-h,html[dir="rtl"] .cr-contact-name,html[dir="rtl"] .cr-k{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .ow-tab,html[dir="rtl"] .ow-title,html[dir="rtl"] .ow-mode-btn{letter-spacing:normal;text-transform:none}
+  /* ===== MOBILE-FIRST (phone): a clean, one-handed app, not a shrunken desktop page. Safe-area aware; the board
+     swipes; the control room is a full-height sheet with big tab targets, an un-clipped preview, and a sticky
+     Send. Desktop/iPad keep the layouts above (this block is phone-only). ===== */
   @media (max-width:720px){
-    .ow-scrim{padding:0;align-items:flex-end}
-    .ow{width:100%;max-height:92vh;height:92vh;border-radius:16px 16px 0 0}
+    /* Contain horizontal overflow at the root so the ONLY horizontal scroller is the board's .lanes strip.
+       Without this the swipe-strip's off-screen columns widen the document, and the mobile browser
+       shrink-to-fit zooms the whole page (layout viewport jumps 390->490), clipping the control-room sheet
+       at the right edge. overflow-x:clip (not :hidden) contains it WITHOUT creating a scroll container, so
+       the sticky Send bar keeps working. */
+    html,body{max-width:100%;overflow-x:clip}
+    .wrap{max-width:100%;overflow-x:clip;padding:calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 14px calc(12px + env(safe-area-inset-left))}
+    /* THE BOARD: horizontally swipeable lanes (a mobile Kanban), each near-full-width and legible - never a
+       shrunken multi-column grid. Scroll-snap gives a clean column-by-column swipe. */
+    .lanes{display:flex;grid-template-columns:none;gap:12px;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scroll-padding-inline:0;padding-bottom:6px;margin-inline:-2px}
+    .lane{flex:0 0 86%;scroll-snap-align:start;min-width:0}
+    .card{padding:13px 13px}
+    .card .b{font-size:15px}
+    .tray-body{grid-template-columns:1fr}
+    /* THE HEADER: let the operator chip, send-cap and the nav links wrap onto their own rows instead of
+       cramming into one squeezed line (the desktop single-row toolbar). The nav links get comfortable
+       spacing and a real touch height, so every control is thumb-reachable without a shrunk tap target. */
+    .top{flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+    .send-cap{margin-inline-start:0}
+    .row-actions{flex-wrap:wrap;gap:10px 16px;width:100%;margin-top:2px}
+    .row-actions .link{min-height:32px;display:inline-flex;align-items:center;font-size:15px}
+    /* THE CONTROL ROOM / any opp window: a full-height bottom sheet, safe-area padded. */
+    .ow-scrim{padding:0;align-items:stretch}
+    .ow{width:100%;max-height:100dvh;height:100dvh;border-radius:0;border:0}
+    .ow-head{padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
+    /* the four gates as a full-width tab strip with big comfortable targets */
+    .ow-tabs{gap:0;padding:0;border-bottom:1px solid #17171f}
+    .ow-tab{flex:1 1 0;text-align:center;padding:13px 4px;font-size:13.5px}
+    .ow-tab.on{border-bottom-width:3px}
+    /* the body scrolls; leave room at the bottom for the sticky Send bar, and pad the sides with the safe area */
+    .ow-body{padding:16px calc(14px + env(safe-area-inset-right)) 92px calc(14px + env(safe-area-inset-left))}
+    /* PREVIEWS: tall, scrollable, un-clipped, readable */
+    iframe.ed-preview{height:56vh;min-height:340px}
+    .cr-page-box .lv-frame,.ow-prev-box .lv-frame,#owPageReview .lv-frame{height:60vh;min-height:340px}
+    /* full-width fields; stack the greeting name/platform */
+    .g-fields{flex-direction:column}
+    .g-field{flex:1 1 auto}
+    .g-toggle{flex-direction:column}
+    .g-opt{min-width:0}
+    /* NEW MESSAGE option cards + the path chooser: full-width, thumb-friendly */
+    .ow-mode-btn{padding:18px 18px;font-size:16px}
+    .ow-mode-btn .ow-mode-sub{font-size:13px}
+    /* STICKY SEND: the MESSAGE-gate / Mode-A / overlay Send bar pins to the bottom of the scroll area, full-bleed,
+       above the home bar - always reachable one-handed. Mode B's Commit bar (.ow-foot) gets the same safe-area. */
+    .compose-send{position:sticky;inset-block-end:0;z-index:6;display:flex;flex-direction:column;gap:8px;
+      margin-inline:calc(-14px - env(safe-area-inset-left)) calc(-14px - env(safe-area-inset-right));margin-block-start:12px;
+      padding:10px calc(14px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+      background:#0b0b11;border-top:1px solid #17171f}
+    .compose-send .act.send{width:100%;padding:14px;font-size:15px}
+    .ow-foot{position:sticky;inset-block-end:0;padding-block-end:calc(12px + env(safe-area-inset-bottom))}
+    .ow-foot .act.send{flex:1 1 auto;padding:14px}
   }
+  @media (prefers-reduced-motion:reduce){ .lanes{scroll-behavior:auto} }
   /* G5: the drawer chrome (.dw-top/.dw-name/.dw-stage/.dw-close) is retired; the shared section styles below
      (.dw-sec, signals, thread, notes, activity) now render inside the window's Details view. */
   .dw-sec{margin:16px 0 0}
@@ -1295,7 +1349,7 @@ function buildBoard(){
   html[dir="rtl"] .ed-sig-pick,html[dir="rtl"] .ed-sig-add{letter-spacing:normal}
   .ed-prev-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:6px 0 6px}
   html[dir="rtl"] .ed-prev-h{text-transform:none;letter-spacing:normal}
-  iframe.ed-preview{width:100%;height:220px;border:1px solid #22222e;border-radius:9px;background:#fff}
+  iframe.ed-preview{width:100%;height:clamp(240px,38vh,520px);border:1px solid #22222e;border-radius:9px;background:#fff}   /* tall + scrollable, never clipped */
 </style>
 </head>
 <body>
