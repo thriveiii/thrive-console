@@ -151,11 +151,11 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: perr.append(str(e)))
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(500); wait_ident(pg)
 
-    # ===== 1: the header New message button opens the WINDOW on the mode selector (G5); the drawer is gone =====
+    # ===== 1: the header New message button opens the WINDOW on the THREE-option first screen; the drawer is gone =====
     ck("1: the header carries a New message button", pg.evaluate("()=>!!document.getElementById('newMsgBtn')"))
     pg.evaluate("()=>{ var b=document.getElementById('newMsgBtn'); if(b) b.click(); }"); pg.wait_for_timeout(400)
-    ck("1: New message opens the centered window on the mode selector (without / with campaign)",
-       pg.evaluate("()=>!document.getElementById('owScrim').hidden && !!document.getElementById('owPickA') && !!document.getElementById('owPickB')"))
+    ck("1: New message opens on the THREE options (text / upload / pick), not a two-option mode selector",
+       pg.evaluate("()=>!document.getElementById('owScrim').hidden && !!document.getElementById('owPickText') && !!document.getElementById('owPickUpload') && !!document.getElementById('owPickLib') && !document.getElementById('owPickA') && !document.getElementById('owPickB')"))
     ck("1: there is NO card drawer anywhere in the DOM (retired at G5)",
        pg.evaluate("()=>!document.getElementById('drawer') && !document.getElementById('scrim')"))
     pg.evaluate("()=>window.closeOppWindow()"); pg.wait_for_timeout(150)

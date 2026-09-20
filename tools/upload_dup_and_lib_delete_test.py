@@ -104,8 +104,8 @@ with sync_playwright() as p:
     pg.evaluate("()=>window.owNewMessage()"); pg.wait_for_timeout(150)
     pg.evaluate("()=>window.owSelectMode('b')"); pg.wait_for_timeout(150)
     pg.click('#owTabs [data-ow-tab="page"]'); pg.wait_for_timeout(150)
-    pg.click("#owPathCampaign"); pg.wait_for_timeout(150)
-    pg.set_input_files("#owCampaignFile", ZIP_PATH); pg.wait_for_timeout(1500)
+    pg.click("#owPathUpload"); pg.wait_for_timeout(150)                 # unified upload path (single page or multi-page zip)
+    pg.set_input_files("#owUploadFile", ZIP_PATH); pg.wait_for_timeout(1500)
     plan = pg.evaluate("()=>window.__thriveUploadPlan()")
     prows = (plan or {}).get("rows", [])
     ck("A: the plan holds both folder rows, each with its message + recipient (folder-pairing)",

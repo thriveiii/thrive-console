@@ -51,7 +51,7 @@ ck("ROOT: the served-shell probe tests board.html against its published digest",
 
 # The board.html the root now lands on must carry the daily flow, or the flip would lose a capability.
 ck("FLIP TARGET: campaign zip upload is present in board.html",
-   "owCampaignFile" in board and "ow_campaign_upload" in board)
+   "owUploadFile" in board and "ow_campaign_upload" in board)
 ck("FLIP TARGET: Library delete is present in board.html",
    "lib_del_confirm" in board)
 ck("FLIP TARGET: the unified window is present (card tap -> detail, New message -> mode selector)",

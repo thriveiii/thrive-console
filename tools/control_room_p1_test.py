@@ -83,7 +83,7 @@ with sync_playwright() as p:
     pg.evaluate("(s)=>window.openOppWindow(s,'detail')", SLUG)
     pg.wait_for_selector("#owTabs [data-cr-gate='msg']", timeout=6000)
     ck("a card tap opens the control room, NOT a mode selector",
-       pg.evaluate("()=>!document.getElementById('owPickA') && !document.getElementById('owModeA') && !document.getElementById('owMsgPanel')"))
+       pg.evaluate("()=>!document.getElementById('owPickText') && !document.getElementById('owModeA') && !document.getElementById('owMsgPanel')"))
     ck("the MESSAGE gate is the one shown first (its panel is visible, the others hidden)",
        pg.evaluate("""()=>{var m=document.getElementById('crMsgPanel'),p=document.getElementById('crPagePanel');
          return !!(m && !m.hidden) && !!(p && p.hidden);}"""))

@@ -196,9 +196,9 @@ with sync_playwright() as p:
     ctx2 = b.new_context(); wire(ctx2); pg2 = ctx2.new_page(); perr2=[]
     pg2.on("pageerror", lambda e: perr2.append(str(e)))
     pg2.goto(f"{base}/library/board.html", wait_until="load"); pg2.wait_for_timeout(500); wait_ident(pg2)
-    pg2.evaluate("()=>{var b=document.getElementById('newMsgBtn'); if(b) b.click();}")   # G5: New message opens the window on the mode selector
-    pg2.wait_for_selector("#owPickA", timeout=8000)
-    pg2.evaluate("()=>window.owSelectMode('a')")                                          # message without campaign
+    pg2.evaluate("()=>{var b=document.getElementById('newMsgBtn'); if(b) b.click();}")   # New message opens the window on the THREE-option first screen
+    pg2.wait_for_selector("#owPickText", timeout=8000)
+    pg2.evaluate("()=>window.owSelectMode('a')")                                          # text message only
     pg2.wait_for_selector("#owModeA #edSubj", timeout=8000)
     pg2.fill("#owModeA #edSubj", "A standalone note")
     pg2.fill("#owModeA #edBody", "Hello there.")
