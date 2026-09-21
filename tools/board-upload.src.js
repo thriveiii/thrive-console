@@ -1294,6 +1294,7 @@ function owPageLoadExisting(){
 function owPageSetReview(row){
   row.slug = row.slug || __owSlug; row.warnings = row.warnings || []; if(row.included==null) row.included = true;
   __upPlan = { rows:[row] };
+  if(__owPickAwaiting){ __owPickAwaiting = false; owRevealPickEditor(); }   // FIX B: a template was picked -> reveal the editor + review + commit (scoped to the pick entry)
   owReviewRender();                     // the SAME accordion the multi-page upload uses (one section here)
 }
 // Entry mode 1: UPLOAD a new page/template (the SHARED upBuildPlan parse). First page row becomes the review.
@@ -1487,7 +1488,8 @@ function owPageMount(slug){
 // upload parse, the accordion review, the commit routing and every send invariant are the existing ones.
 // ===================================================================================================
 function owDirectHostHtml(kind){
-  var src = (kind==="pick")
+  var pick = (kind==="pick");
+  var src = pick
     ? '<div class="ow-pick" id="owPick">'+
         '<input class="lib-in" id="owPickSearch" type="text" placeholder="'+esc(t("lib_search_ph"))+'" autocomplete="off">'+
         '<div class="ow-pick-list" id="owPickList"></div>'+
@@ -1495,14 +1497,24 @@ function owDirectHostHtml(kind){
     : '<div class="ow-path-body" id="owBodyUpload">'+
         '<label class="act ow-up-btn">'+esc(t("ow_campaign_upload"))+'<input type="file" id="owUploadFile" accept=".zip,.html,.htm" hidden></label>'+
       '</div>';
+  // FIX B: in PICK mode the editor + review + commit start HIDDEN, so only the Library list shows until a
+  // template is chosen (Use/Duplicate); the pick reveals them. Upload mode shows the compose up front as before.
+  var h = pick ? " hidden" : "";
   return '<div class="ow-mode ow-direct" id="owDirect">'+
       '<div class="ow-direct-src" id="owPagePanel">'+src+'</div>'+       // the source: upload input OR the Library picker
-      '<div class="up-rows" id="owPageReview"></div>'+                    // the accordion review (per-row preview + include/exclude)
-      '<div class="ow-panel ow-direct-msg" id="owMsgPanel"></div>'+       // the shared message (single page / picked template)
+      '<div class="up-rows" id="owPageReview"'+h+'></div>'+               // the accordion review (per-row preview + include/exclude)
+      '<div class="ow-panel ow-direct-msg" id="owMsgPanel"'+h+'></div>'+  // the shared message (single page / picked template)
       '<div class="act-status" id="owPageStatus" role="status" aria-live="polite"></div>'+
-      '<div class="ow-foot"><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
+      '<div class="ow-foot" id="owDirectFoot"'+h+'><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
         '<div class="act-status" id="owCommitStatus" role="status" aria-live="polite"></div></div>'+
     '</div>';
+}
+// FIX B: reveal the editor + review + commit AFTER a template is picked in the new-message pick entry (only).
+var __owPickAwaiting = false;
+function owRevealPickEditor(){
+  ["owPageReview","owMsgPanel","owDirectFoot"].forEach(function(id){ var el=document.getElementById(id); if(el) el.removeAttribute("hidden"); });
+  try{ if(typeof owMsgMount==="function" && document.getElementById("owMsgPanel")) owMsgMount(__owSlug); }catch(e){}   // mount the compose now, not before a pick
+  try{ if(typeof owRefreshTitle==="function") owRefreshTitle(); }catch(e){}
 }
 function owUploadEntryMount(slug){
   try{ if(typeof owMsgMount==="function") owMsgMount(slug); }catch(e){}    // shared compose fields (subject/body/signature/recipient)
@@ -1513,8 +1525,8 @@ function owUploadEntryMount(slug){
   try{ if(uf) uf.click(); }catch(e){}                                     // open the OS file picker IMMEDIATELY (still inside the button-click gesture)
 }
 function owPickEntryMount(slug){
-  try{ if(typeof owMsgMount==="function") owMsgMount(slug); }catch(e){}
-  __owPagePath="pick"; __upPlan=null;
+  // FIX B: the compose editor is NOT mounted yet; only the Library search + list show. A pick reveals the rest.
+  __owPickAwaiting = true; __owPagePath="pick"; __upPlan=null;
   var q=document.getElementById("owPickSearch"); if(q) q.addEventListener("input", function(){ owPagePickList(); });
   var cb=document.getElementById("owCommit"); if(cb) cb.addEventListener("click", function(){ if(typeof owCommitCampaign==="function") owCommitCampaign(slug); });
   owPagePickList();                                                       // owPagePickList loads the existing pages itself
