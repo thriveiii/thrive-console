@@ -777,6 +777,11 @@ function libCollectRows(autoSuffix){
   var plan = __upPlan; if(!plan || !plan.rows) return { ok:false, firstBad:-1 };
   var seen = {}, ok = true, firstBad = -1;
   plan.rows.forEach(function(r, i){
+    if(r && r.included===false){                                          // an excluded row is dropped at commit; it never validates or blocks
+      var e0=document.getElementById("libErr-"+i); if(e0){ e0.textContent=""; e0.className="lib-rowerr"; }
+      var s0=document.getElementById("libSlug-"+i); if(s0) s0.className="lib-in mono-iso";
+      return;
+    }
     var si = document.getElementById("libSlug-" + i), ti = document.getElementById("libTitle-" + i), ki = document.getElementById("libTask-" + i);
     var slug = si ? String(si.value||"").trim().toLowerCase() : (r.slug||"");
     var renamed = "";
@@ -1287,14 +1292,9 @@ function owPageLoadExisting(){
 // Mount a single row into the SAME review component the Library upload uses (libRowHtml), then wire its slug
 // input to libCollectRows exactly as libOnFile does. The row is held on __upPlan (one place, one review).
 function owPageSetReview(row){
-  row.slug = row.slug || __owSlug; row.warnings = row.warnings || [];
+  row.slug = row.slug || __owSlug; row.warnings = row.warnings || []; if(row.included==null) row.included = true;
   __upPlan = { rows:[row] };
-  var box=document.getElementById("owPageReview"); if(!box) return;
-  box.innerHTML = libTasksDatalist(libDistinctTasks(__libPages||[])) + libRowHtml(row, 0);
-  try{ libCollectRows(); }catch(e){}
-  var si=document.getElementById("libSlug-0"); if(si) si.addEventListener("input", function(){ try{ libCollectRows(); }catch(e){} });
-  var ti=document.getElementById("libTitle-0"); if(ti) ti.addEventListener("input", function(){ try{ libCollectRows(); }catch(e){} });
-  owPageStatus("", "");
+  owReviewRender();                     // the SAME accordion the multi-page upload uses (one section here)
 }
 // Entry mode 1: UPLOAD a new page/template (the SHARED upBuildPlan parse). First page row becomes the review.
 function owPageOnFile(files){
@@ -1366,8 +1366,22 @@ function owCampaignOnFile(files){
     var plan=a[0], rows=(plan&&plan.rows)||[];
     if(!rows.length){ owPageStatus(t("up_no_html"), "bad"); return; }
     if(rows.length === 1 && __owSlug){ rows[0].slug = __owSlug; }        // a single page -> the opp's own slug (old one-page behavior)
+    rows.forEach(function(r){ if(r.included==null) r.included = true; }); // per-item include/exclude: default all included
     __upPlan = plan;                                                    // the WHOLE plan (all pages), never rows[0]
-    owCampaignRenderReview();
+    owReviewRender();
+  }, function(e){ owPageStatus((e&&e.message==="not_a_zip")?t("up_not_zip"):t("up_read_failed"), "bad"); });
+}
+// Append more files to the held plan without dropping the rows already reviewed (the "add more" control). Every
+// appended page row defaults to included; the review re-renders with the combined set.
+function owCampaignAddFiles(files){
+  if(!files || !files.length) return;
+  owPageStatus(t("up_reading"), "");
+  upBuildPlan(files).then(function(plan){
+    var add=(plan&&plan.rows)||[];
+    if(!add.length){ owPageStatus(t("up_no_html"), "bad"); return; }
+    if(!__upPlan || !__upPlan.rows) __upPlan = { rows:[] };
+    add.forEach(function(r){ if(r.included==null) r.included = true; __upPlan.rows.push(r); });
+    owReviewRender();
   }, function(e){ owPageStatus((e&&e.message==="not_a_zip")?t("up_not_zip"):t("up_read_failed"), "bad"); });
 }
 // The matched recipient + subject line for one campaign row (read-only), above its editable fields + page preview.
@@ -1377,24 +1391,63 @@ function owCampMetaHtml(r){
     '<span class="up-k">'+esc(t("up_col_subject"))+':</span> '+esc(r.subject||t("none"))+' '+
     upWarnChips(r.warnings||[])+'</div>';
 }
-// Render EVERY page row into the SAME review component the single-page/Library paths use (libRowHtml: editable
-// title/slug/task + the pageFrameIframe preview + the per-row error slot), each preceded by its matched
-// recipient/subject. Wire every row's inputs to libCollectRows (the shared per-row validation), exactly as
-// libOnFile does for the Library batch. __upPlan already holds all rows.
-function owCampaignRenderReview(){
+function owRowIncluded(r){ return !r || r.included!==false; }
+function owReviewIncluded(){ return ((__upPlan&&__upPlan.rows)||[]).filter(owRowIncluded); }
+// The review: a LIGHT accordion, one collapsible section per page/row. Each section carries its per-row
+// include/exclude toggle, a remove, the matched recipient/subject (its message) and the existing srcdoc
+// preview + editable title/slug/task (libRowHtml). One shared renderer for 1..N rows (single page, picked
+// template, or a multi-page zip), plus an "add more" control. Nothing here writes; the plan is held for review.
+function owReviewRender(){
   var box=document.getElementById("owPageReview"); if(!box) return;
   var rows=(__upPlan&&__upPlan.rows)||[];
+  if(!rows.length){ box.innerHTML=""; owPageStatus("", ""); return; }
+  var incN = rows.filter(owRowIncluded).length;
   var html = libTasksDatalist(libDistinctTasks(__libPages||[]));
-  html += '<div class="up-count">'+esc(t("up_matched"))+' '+rows.length+'</div>';
-  rows.forEach(function(r, i){ html += '<div class="ow-camp-row">'+owCampMetaHtml(r)+libRowHtml(r, i)+'</div>'; });
+  html += '<div class="up-count" id="owReviewCount">'+esc(t("up_matched"))+' '+incN+'</div>';
+  rows.forEach(function(r, i){
+    var inc = owRowIncluded(r);
+    var title=(r.title&&String(r.title).trim())||upPretty(r.slug||("page-"+(i+1)));
+    var meta=(r.email||r.subject) ? owCampMetaHtml(r) : "";
+    html += '<div class="ow-acc'+(inc?"":" ow-acc-out")+'" data-acc="'+i+'">'+
+        '<div class="ow-acc-sum">'+
+          '<label class="ow-acc-inc"><input type="checkbox" data-row-inc="'+i+'"'+(inc?" checked":"")+'> <span>'+esc(t("ow_row_include"))+'</span></label>'+
+          '<button type="button" class="ow-acc-toggle" data-acc-toggle="'+i+'" aria-expanded="true"><span class="ow-acc-t" dir="auto">'+esc(title)+'</span></button>'+
+          '<button type="button" class="ow-acc-rm" data-row-remove="'+i+'">'+esc(t("ow_row_remove"))+'</button>'+
+        '</div>'+
+        '<div class="ow-acc-body" id="owAccBody-'+i+'">'+meta+libRowHtml(r, i)+'</div>'+
+      '</div>';
+  });
+  html += '<div class="ow-add-more-wrap"><label class="act ow-add-more">'+esc(t("ow_add_more"))+'<input type="file" id="owAddFile" accept=".zip,.html,.htm" hidden></label></div>';
   box.innerHTML = html;
   try{ libCollectRows(); }catch(e){}
   rows.forEach(function(r, i){
     ["libSlug-","libTitle-","libTask-"].forEach(function(pre){
       var el=document.getElementById(pre+i); if(el) el.addEventListener("input", function(){ try{ libCollectRows(); }catch(e){} });
     });
+    var inc=box.querySelector('[data-row-inc="'+i+'"]'); if(inc) inc.addEventListener("change", function(){ owRowSetIncluded(i, inc.checked); });
+    var rm=box.querySelector('[data-row-remove="'+i+'"]'); if(rm) rm.addEventListener("click", function(){ owRowRemove(i); });
+    var tg=box.querySelector('[data-acc-toggle="'+i+'"]'); if(tg) tg.addEventListener("click", function(){ owAccToggle(i); });
   });
+  var af=document.getElementById("owAddFile"); if(af) af.addEventListener("change", function(){ owCampaignAddFiles(af.files); });
   owPageStatus("", "");
+}
+function owAccToggle(i){
+  var body=document.getElementById("owAccBody-"+i); var tg=document.querySelector('[data-acc-toggle="'+i+'"]');
+  if(!body) return; var open=body.hasAttribute("hidden");
+  if(open){ body.removeAttribute("hidden"); if(tg) tg.setAttribute("aria-expanded","true"); }
+  else { body.setAttribute("hidden",""); if(tg) tg.setAttribute("aria-expanded","false"); }
+}
+function owRowSetIncluded(i, on){
+  var rows=(__upPlan&&__upPlan.rows)||[]; if(!rows[i]) return;
+  rows[i].included = !!on;
+  var acc=document.querySelector('[data-acc="'+i+'"]'); if(acc) acc.classList.toggle("ow-acc-out", !on);
+  var cnt=document.getElementById("owReviewCount"); if(cnt) cnt.textContent = t("up_matched")+" "+owReviewIncluded().length;
+  try{ libCollectRows(); }catch(e){}   // re-validate: an excluded row no longer blocks the commit
+}
+function owRowRemove(i){
+  var rows=(__upPlan&&__upPlan.rows)||[]; if(i<0 || i>=rows.length) return;
+  rows.splice(i, 1);
+  owReviewRender();                     // re-render with re-indexed rows (a removed file is gone from the plan)
 }
 // Mount the Page tab: the THREE labelled paths, the input each reveals, the shared review, the status line.
 // owModeBMount calls this. A fresh mount starts with no path chosen (__owPagePath null): the operator picks.
@@ -1426,6 +1479,46 @@ function owPageMount(slug){
   var q=document.getElementById("owPickSearch");  if(q) q.addEventListener("input", function(){ owPagePickList(); });
   owPageLoadExisting();
 }
+
+// ===================================================================================================
+// DIRECT NEW-MESSAGE ENTRY (no Mode B tab shell, no duplicate path buttons). Each first-screen button lands
+// straight on its destination. The surface carries the SAME element ids the review + commit reuse (owMsgPanel
+// for the shared message, owPageReview / owPageStatus / owCommit / owCommitStatus), so nothing forks: the
+// upload parse, the accordion review, the commit routing and every send invariant are the existing ones.
+// ===================================================================================================
+function owDirectHostHtml(kind){
+  var src = (kind==="pick")
+    ? '<div class="ow-pick" id="owPick">'+
+        '<input class="lib-in" id="owPickSearch" type="text" placeholder="'+esc(t("lib_search_ph"))+'" autocomplete="off">'+
+        '<div class="ow-pick-list" id="owPickList"></div>'+
+      '</div>'
+    : '<div class="ow-path-body" id="owBodyUpload">'+
+        '<label class="act ow-up-btn">'+esc(t("ow_campaign_upload"))+'<input type="file" id="owUploadFile" accept=".zip,.html,.htm" hidden></label>'+
+      '</div>';
+  return '<div class="ow-mode ow-direct" id="owDirect">'+
+      '<div class="ow-direct-src" id="owPagePanel">'+src+'</div>'+       // the source: upload input OR the Library picker
+      '<div class="up-rows" id="owPageReview"></div>'+                    // the accordion review (per-row preview + include/exclude)
+      '<div class="ow-panel ow-direct-msg" id="owMsgPanel"></div>'+       // the shared message (single page / picked template)
+      '<div class="act-status" id="owPageStatus" role="status" aria-live="polite"></div>'+
+      '<div class="ow-foot"><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
+        '<div class="act-status" id="owCommitStatus" role="status" aria-live="polite"></div></div>'+
+    '</div>';
+}
+function owUploadEntryMount(slug){
+  try{ if(typeof owMsgMount==="function") owMsgMount(slug); }catch(e){}    // shared compose fields (subject/body/signature/recipient)
+  __owPagePath="upload"; __upPlan=null;
+  var uf=document.getElementById("owUploadFile"); if(uf) uf.addEventListener("change", function(){ owCampaignOnFile(uf.files); });
+  var cb=document.getElementById("owCommit"); if(cb) cb.addEventListener("click", function(){ if(typeof owCommitCampaign==="function") owCommitCampaign(slug); });
+  owPageLoadExisting();
+  try{ if(uf) uf.click(); }catch(e){}                                     // open the OS file picker IMMEDIATELY (still inside the button-click gesture)
+}
+function owPickEntryMount(slug){
+  try{ if(typeof owMsgMount==="function") owMsgMount(slug); }catch(e){}
+  __owPagePath="pick"; __upPlan=null;
+  var q=document.getElementById("owPickSearch"); if(q) q.addEventListener("input", function(){ owPagePickList(); });
+  var cb=document.getElementById("owCommit"); if(cb) cb.addEventListener("click", function(){ if(typeof owCommitCampaign==="function") owCommitCampaign(slug); });
+  owPagePickList();                                                       // owPagePickList loads the existing pages itself
+}
 // The ONE primary action: COMMIT the campaign. Reuses the upCommit-shape primitives (oppUpsert + pageUpsert +
 // pagePublishRelay + upActivateBackground) in the same order, but MERGES the campaign fields into the opp's
 // EXISTING data so the interactive compose (subject/body/signature) and any notes are preserved (upCommit's
@@ -1436,12 +1529,13 @@ function owCommitCampaign(slug){
   // Route by ROW COUNT, not by path name: a multi-page upload (N>1 rows, each folder-paired to its own message)
   // iterates into N cards with those paired messages; a single page or a picked template (1 row) takes the
   // interactively-written Message-tab message into ONE card. Both come from the one unified upload/pick surface.
-  var rows=(__upPlan&&__upPlan.rows)||[];
-  if(rows.length > 1) return owCommitCampaignAll(slug);                 // multi-page: paired messages, N cards
+  var inc=owReviewIncluded();                                          // per-item include/exclude: route by INCLUDED count
+  if(!inc.length){ owCommitStatus(t("ow_none_included"), "bad"); return Promise.resolve(false); }   // guard: no empty publish
+  if(inc.length > 1) return owCommitCampaignAll(slug);                 // multi-page: paired messages, N cards
   if(__owCommitting) return Promise.resolve(false);
   var subj=edVal("edSubj"), body=edVal("edBody");
   if(!(subj.trim() && body.trim())){ owCommitStatus(t("nm_need_msg"), "bad"); return Promise.resolve(false); }
-  var pr=rows[0];
+  var pr=inc[0];
   if(!pr || !(pr.page && String(pr.page.html).trim())){ owCommitStatus(t("ow_need_page"), "bad"); return Promise.resolve(false); }
   var v=libCollectRows(true); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }   // format/dup/exists validation gate
   __owCommitting=true; owCommitStatus(t("up_writing"), "");
@@ -1471,11 +1565,11 @@ function owCommitCampaign(slug){
 // format / dup / already-exists) and writes the edited slug/title/task back onto the plan rows before the commit.
 function owCommitCampaignAll(slug){
   if(__owCommitting) return Promise.resolve(false);
-  var plan=__upPlan, rows=(plan&&plan.rows)||[];
-  if(!rows.length){ owCommitStatus(t("ow_need_page"), "bad"); return Promise.resolve(false); }
+  var rows=owReviewIncluded();                                          // per-item include/exclude: commit ONLY the included rows
+  if(!rows.length){ owCommitStatus(t("ow_none_included"), "bad"); return Promise.resolve(false); }   // guard: no empty publish
   var v=libCollectRows(true); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }
   __owCommitting=true; owCommitStatus(t("up_writing"), "");
-  return upCommit(plan).then(function(res){
+  return upCommit({ rows:rows }).then(function(res){
     try{ upActivateBackground(res.published); }catch(e){}                          // F1 publish-truth, per page
     return reloadBoardData().then(function(){ return res; }, function(){ return res; });
   }).then(function(res){
@@ -1595,6 +1689,7 @@ try{
   window.__thriveOppRecipients = function(slug){ return owRecipLoad(slug); };              // G4: await the recipient ledger
   window.__thriveOppCommitCampaign = function(slug){ return owCommitCampaign(slug); };   // G3: await the campaign commit
   window.__thriveUploadPlan = function(){ return __upPlan; };
+  window.__thriveSetUploadPlan = function(rows){ __upPlan = { rows:(rows||[]).map(function(r){ if(r.included==null) r.included=true; return r; }) }; try{ owReviewRender(); }catch(e){} return __upPlan; };   // test seam: inject a plan + render the accordion (no real zip needed)
   window.__thriveUploadVerify = function(slug){ return verifyLive(slug); };
   window.__thriveLibraryCommit = function(plan){ return upCommitLibrary(plan); };   // PR1: page-only commit + activate
   window.__thriveLibraryDoneHtml = function(results){ return libDoneHtml(results); };
