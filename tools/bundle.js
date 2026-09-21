@@ -924,91 +924,230 @@ function buildBoard(){
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
 (function(){try{var d=document.documentElement,l=localStorage.getItem("thrive_lang");d.setAttribute("lang",l==="ar"?"ar":"en");d.setAttribute("dir",l==="ar"?"rtl":"ltr");}catch(e){}})();</script>
+<script>/* First paint in the operator's theme: pin data-theme before any render so there is no flash. Per user: the stored choice is keyed to the signed-in uid, with a device-level fallback. No stored choice pins dark, preserving today's console (the CSS still supports system default when nothing is pinned). */
+(function(){try{var d=document.documentElement,uid="";try{var s=JSON.parse(localStorage.getItem("console_sb_session")||"{}");uid=(s&&s.uid)||"";}catch(e){}var th="";try{th=localStorage.getItem("thrive_theme:"+uid)||localStorage.getItem("thrive_theme")||"";}catch(e){}d.setAttribute("data-theme",(th==="light"||th==="dark")?th:"dark");}catch(e){}})();</script>
 <style>
-  html,body{margin:0;background:#07070b;color:#e7e7ea;font-family:Lato,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
+  /* ============================================================================================
+     DESIGN TOKENS (foundation). Additive and behavior-preserving: every DARK value below equals the
+     literal it replaces, so the default (dark) console renders byte-identically. Light values are new
+     and apply only when data-theme="light" is set (or, where no explicit choice is stored, the system
+     prefers light and no data-theme pins it). Brand rules: no em dash anywhere; letter-spacing stays
+     scoped to Latin classes; Arabic carries letter-spacing:normal; spacing is a multiple of 8.
+     ============================================================================================ */
+  :root{
+    /* Type. Brand fonts first, then the exact current fallback stacks, so an unloaded brand font
+       falls back to today's rendering (no duplicate loading, Arabic letters stay joined). */
+    --font-body: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;   /* English body + UI */
+    --font-display: Syne, var(--font-body);                                                /* English display */
+    --font-ar: itfGhroob, "SF Arabic", "Geeza Pro", -apple-system, "Segoe UI", Tahoma, Arial, sans-serif; /* all Arabic */
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    /* Responsive type scale (clamp: min, fluid, max). Foundation for later surfaces. */
+    --fs-hero:    clamp(30px, 4.2vw, 48px);
+    --fs-display: clamp(24px, 3.2vw, 34px);
+    --fs-large:   clamp(19px, 2.2vw, 24px);
+    --fs-medium:  clamp(16px, 1.6vw, 18px);
+    --fs-prose:   clamp(14px, 1.3vw, 16px);
+    --fs-small:   clamp(12px, 1.1vw, 13px);
+    --fs-micro:   clamp(10px, 1vw, 11px);
+    /* Latin-only tracking tokens (never applied to Arabic). */
+    --track-tight: -0.01em;
+    --track-caps: 0.08em;
+
+    /* Spacing, 8-based (equal padding on all four sides is enforced per component, not here). */
+    --space-1: 8px;  --space-2: 16px; --space-3: 24px; --space-4: 32px;
+    --space-5: 40px; --space-6: 48px; --space-8: 64px;
+
+    /* Radius. */
+    --radius-s: 8px; --radius-m: 10px; --radius-l: 14px; --radius-pill: 999px;
+
+    /* Elevation / shadow. */
+    --elev-1: 0 1px 2px rgba(0,0,0,.30);
+    --elev-2: 0 6px 20px rgba(0,0,0,.45);
+    --elev-3: 0 18px 48px rgba(0,0,0,.55);
+
+    /* Motion. */
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-1: 200ms; --dur-2: 400ms; --dur-3: 800ms;
+
+    /* ---- COLOR (dark base; values equal the current literals) ---- */
+    /* Neutral surfaces (60 percent of the canvas). */
+    --bg: #07070b;
+    --surface: #0e0e14;
+    --surface-raised: #111119;
+    --surface-sunken: #0c0c12;
+    --surface-inset: #0b0b11;
+    --field-bg: #14141c;
+    --page-canvas: #ffffff;   /* hosted-page preview surface: white in BOTH themes */
+    /* Neutral text (30 percent). Light body text lands at #1a1a1a in the light theme. */
+    --text: #e7e7ea;
+    --text-hi: #eef;
+    --text-max: #fff;
+    --text-muted: #8a8a93;
+    --text-muted-2: #9a9aa6;
+    --text-dim: #6a6a74;
+    --text-faint: #5a5a64;
+    /* Borders. */
+    --border: #22222e;
+    --border-soft: #191921;
+    --border-hair: #17171f;
+    --border-2: #1c1c26;
+    --border-3: #1e1e28;
+    --border-card: #20202a;
+    /* Brand (10 percent). The dusty rose accent is a NEW brand token, defined here for later surfaces;
+       the existing teal keeps its role so nothing is redesigned yet. Semantics are kept separate. */
+    --brand-teal: #71BFCC;
+    --on-brand: #04252b;
+    --focus: #5D7FB7;
+    --accent: #C98B8B;
+    --accent-ink: #2b1414;
+    /* Semantic (separate from brand): success / warning / error. */
+    --success: #7fd18b;   --success-bg: #0c130c; --success-border: #1e2a1e;
+    --warning: #c9a24a;   --warning-2: #e6b34a;  --warning-bg: #17130a; --warning-border: #2a2410;
+    --error: #ff8a8a;     --error-2: #e37a7a;    --error-bg: #1a0e11;   --error-border: #4a1d24;
+    /* Overlay scrim. */
+    --scrim: rgba(2,2,6,.66);
+    --scrim-strong: rgba(2,2,6,.72);
+  }
+
+  /* ---- LIGHT theme color values (new; behavior unchanged until chosen) ---- */
+  :root[data-theme="light"]{
+    --bg: #f7f7f8;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-sunken: #f0f0f2;
+    --surface-inset: #ffffff;
+    --field-bg: #ffffff;
+    --text: #1a1a1a;
+    --text-hi: #0d0d0d;
+    --text-max: #000000;
+    --text-muted: #5a5a63;
+    --text-muted-2: #6a6a74;
+    --text-dim: #8a8a93;
+    --text-faint: #9a9aa6;
+    --border: #e2e2e6;
+    --border-soft: #ececf0;
+    --border-hair: #e8e8ec;
+    --border-2: #e2e2e6;
+    --border-3: #e6e6ea;
+    --border-card: #e2e2e6;
+    --brand-teal: #1f7f90;
+    --on-brand: #ffffff;
+    --focus: #3a5f97;
+    --accent: #b56f6f;
+    --accent-ink: #ffffff;
+    --success: #1f7a3a;   --success-bg: #e9f6ec; --success-border: #bfe3c8;
+    --warning: #8a6a1f;   --warning-2: #8a6a1f;  --warning-bg: #fbf4e2; --warning-border: #e6d8b0;
+    --error: #b3261e;     --error-2: #b3261e;    --error-bg: #fbeceb;   --error-border: #e8b4b0;
+    --scrim: rgba(20,20,28,.40);
+    --scrim-strong: rgba(20,20,28,.50);
+  }
+
+  /* System default: follow prefers-color-scheme ONLY when no explicit theme is pinned. The boot script
+     pins data-theme so today's dark console is preserved on deploy; this block is the wired hook that a
+     one-line boot change activates once every surface is tokenized. */
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]):not([data-theme="light"]){
+      --bg: #f7f7f8; --surface: #ffffff; --surface-raised: #ffffff; --surface-sunken: #f0f0f2;
+      --surface-inset: #ffffff; --field-bg: #ffffff; --text: #1a1a1a; --text-hi: #0d0d0d; --text-max: #000000;
+      --text-muted: #5a5a63; --text-muted-2: #6a6a74; --text-dim: #8a8a93; --text-faint: #9a9aa6;
+      --border: #e2e2e6; --border-soft: #ececf0; --border-hair: #e8e8ec; --border-2: #e2e2e6;
+      --border-3: #e6e6ea; --border-card: #e2e2e6; --brand-teal: #1f7f90; --on-brand: #ffffff;
+      --focus: #3a5f97; --accent: #b56f6f; --accent-ink: #ffffff;
+      --success: #1f7a3a; --success-bg: #e9f6ec; --success-border: #bfe3c8;
+      --warning: #8a6a1f; --warning-2: #8a6a1f; --warning-bg: #fbf4e2; --warning-border: #e6d8b0;
+      --error: #b3261e; --error-2: #b3261e; --error-bg: #fbeceb; --error-border: #e8b4b0;
+      --scrim: rgba(20,20,28,.40); --scrim-strong: rgba(20,20,28,.50);
+    }
+  }
+  /* Both themes get a smooth surface/text transition, honoring reduced motion. */
+  @media (prefers-reduced-motion: no-preference){
+    html body{ transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+  }
+
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);-webkit-text-size-adjust:100%}
   *{box-sizing:border-box}
-  a{color:#71BFCC}
+  a{color:var(--brand-teal)}
   .wrap{max-width:1200px;margin:0 auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top));padding-inline:calc(16px + env(safe-area-inset-left)) calc(16px + env(safe-area-inset-right))}
   .compose-send .act.send{min-height:44px}   /* comfortable touch target; the phone media query pins this bar to the bottom */
-  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 14px;border-bottom:1px solid #17171f}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 14px;border-bottom:1px solid var(--border-hair)}
   .brand{font-weight:800;letter-spacing:.02em;font-size:16px}
-  .muted{color:#8a8a93;font-size:12px}
-  .send-cap{font-size:12px;color:#8a8a93;unicode-bidi:isolate;margin-inline-start:auto}
-  .send-cap.warn{color:#e6b34a}
+  .muted{color:var(--text-muted);font-size:12px}
+  .send-cap{font-size:12px;color:var(--text-muted);unicode-bidi:isolate;margin-inline-start:auto}
+  .send-cap.warn{color:var(--warning-2)}
   .send-cap:empty{display:none}
   .row-actions{display:flex;gap:10px;align-items:center}
-  .link{background:none;border:0;color:#71BFCC;font:inherit;cursor:pointer;padding:0}
-  .err{margin:10px 0;padding:10px 12px;border:1px solid #4a1d24;background:#1a0e11;color:#ff8a8a;border-radius:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  .signin{max-width:340px;margin:8vh auto 0;background:#0e0e14;border:1px solid #1e1e28;border-radius:14px;padding:26px 22px;text-align:center}
+  .link{background:none;border:0;color:var(--brand-teal);font:inherit;cursor:pointer;padding:0}
+  .err{margin:10px 0;padding:10px 12px;border:1px solid var(--error-border);background:var(--error-bg);color:var(--error);border-radius:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .signin{max-width:340px;margin:8vh auto 0;background:var(--surface);border:1px solid var(--border-3);border-radius:14px;padding:26px 22px;text-align:center}
   .signin h1{font-size:18px;margin:0 0 6px}
-  .signin p{color:#8a8a93;font-size:13px;margin:0 0 16px}
-  input{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:11px 12px;font-size:15px;margin:6px 0;font-family:inherit;outline:none}
-  input:focus{border-color:#5D7FB7}
-  button.primary{width:100%;margin-top:10px;padding:11px 16px;border:0;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;color:#04252b;background:#71BFCC;font-family:inherit}
+  .signin p{color:var(--text-muted);font-size:13px;margin:0 0 16px}
+  input{width:100%;background:var(--field-bg);border:1px solid var(--border);border-radius:9px;color:var(--text-max);padding:11px 12px;font-size:15px;margin:6px 0;font-family:inherit;outline:none}
+  input:focus{border-color:var(--focus)}
+  button.primary{width:100%;margin-top:10px;padding:11px 16px;border:0;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;color:var(--on-brand);background:var(--brand-teal);font-family:inherit}
   button.primary:disabled{opacity:.6;cursor:default}
   .lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:start;margin-top:12px}
-  .lane{background:#0c0c12;border:1px solid #191921;border-radius:12px;padding:10px}
-  .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#9a9aa6;margin:2px 4px 10px;display:flex;justify-content:space-between;align-items:center}
-  .lane h2 .n{color:#6a6a74;font-weight:700}
-  .card{background:#111119;border:1px solid #20202a;border-radius:10px;padding:10px 11px;margin:0 0 8px}
+  .lane{background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:12px;padding:10px}
+  .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted-2);margin:2px 4px 10px;display:flex;justify-content:space-between;align-items:center}
+  .lane h2 .n{color:var(--text-dim);font-weight:700}
+  .card{background:var(--surface-raised);border:1px solid var(--border-card);border-radius:10px;padding:10px 11px;margin:0 0 8px}
   /* Edge-mark by page state (rendered from the view's has_page / has_email, no client computation): a card with
      a rich hosted page carries a solid brand edge; a text-only message carries a distinct lighter dashed edge.
      border-inline-start so the mark sits on the leading edge in both LTR and RTL. */
-  .card.card-offer{border-inline-start:3px solid #71BFCC}
-  .card.card-msg{border-inline-start:3px dashed #5D7FB7}
+  .card.card-offer{border-inline-start:3px solid var(--brand-teal)}
+  .card.card-msg{border-inline-start:3px dashed var(--focus)}
   .card .b{font-weight:700;font-size:14px;word-break:break-word}
-  .card .s{color:#8a8a93;font-size:12px;margin-top:4px;word-break:break-word}
-  .badge{display:inline-block;font-size:11px;color:#8a8a93;border:1px solid #26262f;border-radius:999px;padding:1px 7px;margin-block-start:6px;margin-inline-end:6px}
-  .empty{color:#5a5a64;font-size:12px;padding:8px 4px}
+  .card .s{color:var(--text-muted);font-size:12px;margin-top:4px;word-break:break-word}
+  .badge{display:inline-block;font-size:11px;color:var(--text-muted);border:1px solid #26262f;border-radius:999px;padding:1px 7px;margin-block-start:6px;margin-inline-end:6px}
+  .empty{color:var(--text-faint);font-size:12px;padding:8px 4px}
   /* RTL: Arabic is chrome-language only. A system Arabic stack keeps the page self-contained (no webfont);
      no letter-spacing and no uppercase on Arabic. Lane column order follows the base direction of .lanes,
      so dir=rtl flows the first lane (draft) to the right automatically. */
-  html[dir="rtl"] body, html[dir="rtl"] input, html[dir="rtl"] button{font-family:"SF Arabic","Geeza Pro",-apple-system,"Segoe UI",Tahoma,Arial,sans-serif}
+  html[dir="rtl"] body, html[dir="rtl"] input, html[dir="rtl"] button{font-family:var(--font-ar);letter-spacing:normal}
   html[dir="rtl"] .brand{letter-spacing:normal}
   html[dir="rtl"] .lane h2{text-transform:none;letter-spacing:normal}
   /* L2 read fidelity: verdict hero, pipeline strip, chips, pills, reply grouping + N-badge, new-activity dot, tray */
   .verdict{display:flex;align-items:baseline;gap:10px;padding:10px 2px 2px}
-  .vnum{font-size:30px;font-weight:800;color:#fff;line-height:1}
-  .vlabel{color:#9a9aa6;font-size:13px}
+  .vnum{font-size:30px;font-weight:800;color:var(--text-max);line-height:1}
+  .vlabel{color:var(--text-muted-2);font-size:13px}
   .pipe{display:flex;flex-wrap:wrap;gap:8px;padding:6px 2px}
-  .pchip{font-size:12px;color:#9a9aa6;background:#0c0c12;border:1px solid #191921;border-radius:999px;padding:3px 9px}
-  .pchip .pn{color:#e7e7ea;font-weight:700}
+  .pchip{font-size:12px;color:var(--text-muted-2);background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:999px;padding:3px 9px}
+  .pchip .pn{color:var(--text);font-weight:700}
   .chips{display:flex;flex-wrap:wrap;gap:8px;padding:2px}
-  .chip{font-size:11.5px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:999px;padding:2px 9px}
+  .chip{font-size:11.5px;color:var(--warning);background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:999px;padding:2px 9px}
   .pills{display:flex;flex-wrap:wrap;gap:8px;padding:2px 2px 6px}
-  .pill{font-size:11px;border-radius:999px;padding:2px 9px;border:1px solid #1e2a1e;background:#0c130c;color:#7fd18b}
-  .pill.warn{border-color:#2a2410;background:#17130a;color:#c9a24a}
+  .pill{font-size:11px;border-radius:999px;padding:2px 9px;border:1px solid #1e2a1e;background:var(--success-bg);color:var(--success)}
+  .pill.warn{border-color:var(--warning-border);background:var(--warning-bg);color:var(--warning)}
   .card{position:relative}
-  .newdot{position:absolute;top:8px;inset-inline-end:8px;width:8px;height:8px;border-radius:50%;background:#71BFCC;box-shadow:0 0 0 2px #111119}
-  .nbadge{display:inline-block;font-size:11px;font-weight:700;color:#04252b;background:#7fd18b;border-radius:999px;padding:0 7px;vertical-align:middle}
+  .newdot{position:absolute;top:8px;inset-inline-end:8px;width:8px;height:8px;border-radius:50%;background:var(--brand-teal);box-shadow:0 0 0 2px var(--surface-raised)}
+  .nbadge{display:inline-block;font-size:11px;font-weight:700;color:var(--on-brand);background:var(--success);border-radius:999px;padding:0 7px;vertical-align:middle}
   .reps{margin-top:6px;border-top:1px solid #1c1c24;padding-top:6px;display:flex;flex-direction:column;gap:3px}
   .rep{font-size:12px;color:#b9c6bb;word-break:break-word}
-  .repn{display:inline-block;min-width:15px;color:#6a6a74}
-  .tray{margin-top:14px;border-top:1px solid #17171f;padding-top:10px}
+  .repn{display:inline-block;min-width:15px;color:var(--text-dim)}
+  .tray{margin-top:14px;border-top:1px solid var(--border-hair);padding-top:10px}
   .tray-toggle{font-size:13px;font-weight:700}
   .tray-body{margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;align-items:start}
   /* L3 opportunity detail drawer (read-only), cloned from the engine card modal. Logical properties
      (inset/border-inline) so RTL flips the panel to the opposite edge automatically. */
   .card{cursor:pointer}
-  .card:focus-visible{outline:2px solid #5D7FB7;outline-offset:2px}
-  .scrim{position:fixed;inset:0;background:rgba(2,2,6,.66);z-index:40;display:flex;justify-content:flex-end}
+  .card:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .scrim{position:fixed;inset:0;background:var(--scrim);z-index:40;display:flex;justify-content:flex-end}
   .scrim[hidden]{display:none}
   html[dir="rtl"] .scrim{justify-content:flex-start}
-  .drawer{width:min(480px,100%);height:100%;background:#0b0b11;border-inline-start:1px solid #1c1c26;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px 48px}
+  .drawer{width:min(480px,100%);height:100%;background:var(--surface-inset);border-inline-start:1px solid var(--border-2);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px 48px}
   /* G1: the centered opportunity window (#oppWindow). Equal padding on all four sides; a fixed header + a fixed
      tab strip, only the body scrolls; a bottom sheet under 720px. The drawer stays until G5 - this is the
      default opp-open path. Logical properties so RTL mirrors without a second rule. */
-  .ow-scrim{position:fixed;inset:0;z-index:60;background:rgba(2,2,6,.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:24px}
+  .ow-scrim{position:fixed;inset:0;z-index:60;background:var(--scrim-strong);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:24px}
   .ow-scrim[hidden]{display:none}
-  .ow{display:flex;flex-direction:column;width:min(920px,92vw);max-height:88vh;background:#0b0b11;border:1px solid #1c1c26;border-radius:16px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.6)}
-  .ow-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid #17171f}
-  .ow-title{font-weight:800;font-size:17px;color:#eef;margin:0;word-break:break-word}
+  .ow{display:flex;flex-direction:column;width:min(920px,92vw);max-height:88vh;background:var(--surface-inset);border:1px solid var(--border-2);border-radius:16px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.6)}
+  .ow-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border-hair)}
+  .ow-title{font-weight:800;font-size:17px;color:var(--text-hi);margin:0;word-break:break-word}
   .ow-head-acts{display:flex;align-items:center;gap:12px}
-  .ow-close{font-size:22px;line-height:1;color:#9a9aa6;background:none;border:0;cursor:pointer;padding:0 6px}
-  .ow-tabs{flex:0 0 auto;display:flex;gap:10px;padding:8px 20px 0;border-bottom:1px solid #17171f;overflow-x:auto}
+  .ow-close{font-size:22px;line-height:1;color:var(--text-muted-2);background:none;border:0;cursor:pointer;padding:0 6px}
+  .ow-tabs{flex:0 0 auto;display:flex;gap:10px;padding:8px 20px 0;border-bottom:1px solid var(--border-hair);overflow-x:auto}
   .ow-tabs[hidden]{display:none}
-  .ow-tab{background:none;border:none;border-bottom:2px solid transparent;color:#8a8a93;font:inherit;font-size:14px;padding:6px 4px 10px;cursor:pointer;white-space:nowrap}
-  .ow-tab.on{color:#eef;border-bottom-color:#71BFCC}
+  .ow-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font:inherit;font-size:14px;padding:6px 4px 10px;cursor:pointer;white-space:nowrap}
+  .ow-tab.on{color:var(--text-hi);border-bottom-color:var(--brand-teal)}
   .ow-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px}
   .ow-mode{display:flex;flex-direction:column;gap:12px}
   .ow-modes{display:flex;flex-direction:column;gap:12px}
@@ -1021,11 +1160,11 @@ function buildBoard(){
   .ow-up-btn{cursor:pointer}
   .ow-pick{display:flex;flex-direction:column;gap:8px}
   .ow-pick-list{display:flex;flex-direction:column;gap:8px;max-height:44vh;overflow:auto}
-  .ow-pick-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #22222e;border-radius:10px;padding:10px 12px;background:#0e0e14}
+  .ow-pick-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface)}
   .ow-pick-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
-  .ow-pick-t{font-weight:650;color:#eef;word-break:break-word}
-  .ow-pick-s{font-size:12px;color:#8a8a93}
-  .ow-foot{position:sticky;inset-block-end:0;background:#0b0b11;border-top:1px solid #17171f;padding:12px 0 0;margin-block-start:16px;display:flex;align-items:center;gap:12px}
+  .ow-pick-t{font-weight:650;color:var(--text-hi);word-break:break-word}
+  .ow-pick-s{font-size:12px;color:var(--text-muted)}
+  .ow-foot{position:sticky;inset-block-end:0;background:var(--surface-inset);border-top:1px solid var(--border-hair);padding:12px 0 0;margin-block-start:16px;display:flex;align-items:center;gap:12px}
   .ow-prev-tabs{display:flex;gap:8px}
   .ow-prev-box{min-height:60vh}
   #owPageReview .lv-frame,.ow-prev-box .lv-frame{height:62vh;min-height:360px}
@@ -1033,24 +1172,24 @@ function buildBoard(){
      the status colors echo the board lanes (sent neutral, opened blue, replied green, bounced red, queued amber,
      suppressed/none muted). A suppressed row is dimmed (B2 posture - it will be refused at send regardless). */
   .ow-recip-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-  .ow-recip{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #22222e;border-radius:10px;padding:14px;background:#0e0e14}
+  .ow-recip{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--surface)}
   .ow-recip.supp{opacity:.72}
   .ow-recip-who{display:flex;flex-direction:column;gap:2px;min-width:0}
-  .ow-recip-name{font-weight:650;color:#eef;word-break:break-word}
-  .ow-recip-addr{font-size:12px;color:#8a8a93}
+  .ow-recip-name{font-weight:650;color:var(--text-hi);word-break:break-word}
+  .ow-recip-addr{font-size:12px;color:var(--text-muted)}
   .ow-rs{flex:0 0 auto;font-size:12px;font-weight:650;padding:4px 10px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
   .ow-rs-sent{background:#15151d;color:#a9a9b4;border-color:#2a2a36}
   .ow-rs-queued{background:#241f0e;color:#e3c163;border-color:#4a4021}
   .ow-rs-opened{background:#0e2130;color:#63b7e3;border-color:#214a5c}
   .ow-rs-replied{background:#0e2417;color:#63e39a;border-color:#215c3a}
-  .ow-rs-bounced_hard,.ow-rs-bounced_soft{background:#2a1214;color:#e37a7a;border-color:#5c2121}
+  .ow-rs-bounced_hard,.ow-rs-bounced_soft{background:#2a1214;color:var(--error-2);border-color:#5c2121}
   .ow-rs-suppressed,.ow-rs-none{background:#15151d;color:#7a7a85;border-color:#2a2a36}
   html[dir="rtl"] .ow-recip-name,html[dir="rtl"] .ow-rs{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .ow-pick-t,html[dir="rtl"] .ow-pick-s{letter-spacing:normal}
-  .ow-mode-h{font-size:14px;color:#9a9aa6;margin:0 0 4px}
-  .ow-mode-btn{display:block;width:100%;text-align:start;background:#0e0e14;border:1px solid #22222e;border-radius:12px;padding:16px 18px;color:#eef;font:inherit;font-size:15px;font-weight:650;cursor:pointer}
+  .ow-mode-h{font-size:14px;color:var(--text-muted-2);margin:0 0 4px}
+  .ow-mode-btn{display:block;width:100%;text-align:start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;color:var(--text-hi);font:inherit;font-size:15px;font-weight:650;cursor:pointer}
   .ow-mode-btn:hover{border-color:#37505c}
-  .ow-mode-btn .ow-mode-sub{display:block;font-weight:400;font-size:12.5px;color:#8a8a93;margin-top:4px}
+  .ow-mode-btn .ow-mode-sub{display:block;font-weight:400;font-size:12.5px;color:var(--text-muted);margin-top:4px}
   /* G7: the three Page-tab paths reuse .ow-mode-btn; .on marks the chosen one, and its body (the file input or
      the Library picker) sits below the chooser with equal padding on all four sides. */
   .ow-page-paths{display:flex;flex-direction:column;gap:10px}
@@ -1065,32 +1204,32 @@ function buildBoard(){
   .cr-panel[hidden]{display:none}
   @keyframes cr-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){ .cr-panel{animation:none} }
-  .cr-sec{display:flex;flex-direction:column;gap:12px;border:1px solid #1e1e28;border-radius:14px;background:#0d0d13;padding:16px}
+  .cr-sec{display:flex;flex-direction:column;gap:12px;border:1px solid var(--border-3);border-radius:14px;background:#0d0d13;padding:16px}
   .cr-h{margin:0;font-size:13px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:#9aa4ad}
   .cr-field{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
-  .cr-k{flex:0 0 auto;font-size:12.5px;color:#8a8a93}
-  .cr-v{flex:1 1 60%;min-width:0;color:#eef;word-break:break-word}
-  .cr-prev-h{font-size:12.5px;color:#8a8a93;margin-top:2px}
-  .cr-page-box{border:1px solid #22222e;border-radius:10px;overflow:hidden;background:#fff}
+  .cr-k{flex:0 0 auto;font-size:12.5px;color:var(--text-muted)}
+  .cr-v{flex:1 1 60%;min-width:0;color:var(--text-hi);word-break:break-word}
+  .cr-prev-h{font-size:12.5px;color:var(--text-muted);margin-top:2px}
+  .cr-page-box{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--page-canvas)}
   .cr-page-box .lv-frame{height:56vh;min-height:320px;border:0;border-radius:0}
   .cr-contact-list{display:flex;flex-direction:column;gap:8px}
-  .cr-contact-row{display:flex;flex-direction:column;gap:2px;border:1px solid #22222e;border-radius:10px;padding:12px 14px;background:#0e0e14}
-  .cr-contact-name{font-weight:650;color:#eef;word-break:break-word}
+  .cr-contact-row{display:flex;flex-direction:column;gap:2px;border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--surface)}
+  .cr-contact-name{font-weight:650;color:var(--text-hi);word-break:break-word}
   .cr-contact-addr{font-size:12.5px;color:#9aa4ad}
-  .cr-count{font-size:12.5px;color:#8a8a93}
-  .cr-msg-subj{font-weight:700;color:#eef;font-size:15px;word-break:break-word}
+  .cr-count{font-size:12.5px;color:var(--text-muted)}
+  .cr-msg-subj{font-weight:700;color:var(--text-hi);font-size:15px;word-break:break-word}
   .cr-msg-body{color:#c7c7d1;white-space:pre-wrap;word-break:break-word;line-height:1.5}
   /* PHASE 2: the greeting toggle + smart-name fields + the bulk "related contacts" block. Brand-neutral, equal
      padding on all four sides, a clear two-option segmented toggle, no letter-spacing on Arabic. */
   .g-greet,.g-bulk{display:flex;flex-direction:column;gap:10px}
   .g-toggle{display:flex;gap:8px;flex-wrap:wrap}
-  .g-opt{flex:1 1 0;min-width:140px;background:#0e0e14;border:1px solid #22222e;border-radius:10px;padding:10px 12px;color:#c7c7d1;font:inherit;font-size:13.5px;cursor:pointer;text-align:center}
+  .g-opt{flex:1 1 0;min-width:140px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:#c7c7d1;font:inherit;font-size:13.5px;cursor:pointer;text-align:center}
   .g-opt:hover{border-color:#37505c}
-  .g-opt.on{background:#101019;border-color:#71BFCC;color:#eef;font-weight:650}
+  .g-opt.on{background:#101019;border-color:var(--brand-teal);color:var(--text-hi);font-weight:650}
   .g-fields{display:flex;flex-wrap:wrap;gap:10px}
   .g-field{flex:1 1 200px;display:flex;flex-direction:column;gap:4px;min-width:0}
-  .g-lab{font-size:12px;color:#8a8a93}
-  .g-in{width:100%;box-sizing:border-box;background:#0e0e14;border:1px solid #22222e;border-radius:9px;padding:10px 12px;color:#eef;font:inherit;font-size:14px}
+  .g-lab{font-size:12px;color:var(--text-muted)}
+  .g-in{width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;color:var(--text-hi);font:inherit;font-size:14px}
   .g-in:focus{outline:none;border-color:#4a7688}
   .g-ask{font-size:12.5px;color:#e3c163}
   .g-bulk-chk{display:flex;align-items:flex-start;gap:9px;cursor:pointer;color:#c7c7d1;font-size:13.5px}
@@ -1099,7 +1238,7 @@ function buildBoard(){
   .g-bulk-body{display:flex;flex-direction:column;gap:6px}
   .g-bulk-body[hidden]{display:none}   /* the [hidden] attr must beat .g-bulk-body's display:flex, or the field shows while unchecked */
   .g-bulk-in{width:100%;box-sizing:border-box}
-  .g-bulk-hint{font-size:12px;color:#8a8a93}
+  .g-bulk-hint{font-size:12px;color:var(--text-muted)}
   html[dir="rtl"] .g-opt,html[dir="rtl"] .g-lab,html[dir="rtl"] .g-bulk-chk{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .cr-h,html[dir="rtl"] .cr-contact-name,html[dir="rtl"] .cr-k{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .ow-tab,html[dir="rtl"] .ow-title,html[dir="rtl"] .ow-mode-btn{letter-spacing:normal;text-transform:none}
@@ -1133,7 +1272,7 @@ function buildBoard(){
     .ow{width:100%;max-height:100dvh;height:100dvh;border-radius:0;border:0}
     .ow-head{padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
     /* the four gates as a full-width tab strip with big comfortable targets */
-    .ow-tabs{gap:0;padding:0;border-bottom:1px solid #17171f}
+    .ow-tabs{gap:0;padding:0;border-bottom:1px solid var(--border-hair)}
     .ow-tab{flex:1 1 0;text-align:center;padding:13px 4px;font-size:13.5px}
     .ow-tab.on{border-bottom-width:3px}
     /* the body scrolls; leave room at the bottom for the sticky Send bar, and pad the sides with the safe area */
@@ -1154,7 +1293,7 @@ function buildBoard(){
     .compose-send{position:sticky;inset-block-end:0;z-index:6;display:flex;flex-direction:column;gap:8px;
       margin-inline:calc(-14px - env(safe-area-inset-left)) calc(-14px - env(safe-area-inset-right));margin-block-start:12px;
       padding:10px calc(14px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
-      background:#0b0b11;border-top:1px solid #17171f}
+      background:var(--surface-inset);border-top:1px solid var(--border-hair)}
     .compose-send .act.send{width:100%;padding:14px;font-size:15px}
     .ow-foot{position:sticky;inset-block-end:0;padding-block-end:calc(12px + env(safe-area-inset-bottom))}
     .ow-foot .act.send{flex:1 1 auto;padding:14px}
@@ -1163,84 +1302,84 @@ function buildBoard(){
   /* G5: the drawer chrome (.dw-top/.dw-name/.dw-stage/.dw-close) is retired; the shared section styles below
      (.dw-sec, signals, thread, notes, activity) now render inside the window's Details view. */
   .dw-sec{margin:16px 0 0}
-  .dw-sec h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:0 0 8px;display:flex;gap:8px;align-items:center}
+  .dw-sec h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin:0 0 8px;display:flex;gap:8px;align-items:center}
   html[dir="rtl"] .dw-sec h3{text-transform:none;letter-spacing:normal}
   .dw-nums{display:flex;flex-wrap:wrap;gap:8px}
-  .dw-num{flex:1 1 90px;background:#0e0e14;border:1px solid #191921;border-radius:10px;padding:8px 10px}
-  .dw-num .k{font-size:22px;font-weight:800;color:#fff;line-height:1}
-  .dw-num .l{font-size:11px;color:#8a8a93;margin-top:3px}
-  .dw-num .src{font-size:10px;color:#5a5a64;margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .dw-num{flex:1 1 90px;background:var(--surface);border:1px solid var(--border-soft);border-radius:10px;padding:8px 10px}
+  .dw-num .k{font-size:22px;font-weight:800;color:var(--text-max);line-height:1}
+  .dw-num .l{font-size:11px;color:var(--text-muted);margin-top:3px}
+  .dw-num .src{font-size:10px;color:var(--text-faint);margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px;margin:0}
-  .dl dt{color:#8a8a93}
+  .dl dt{color:var(--text-muted)}
   .dl dd{margin:0;color:#d7d7de;word-break:break-word}
   .thread{display:flex;flex-direction:column;gap:8px}
-  .msg{border:1px solid #1c1c26;border-radius:10px;padding:8px 10px;max-width:92%}
+  .msg{border:1px solid var(--border-2);border-radius:10px;padding:8px 10px;max-width:92%}
   .msg.in{background:#0e1512;border-color:#1e2a24;align-self:flex-start}
   .msg.out{background:#0e0e17;border-color:#20202e;align-self:flex-end}
   .msg .mh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-  .msg .mnum{color:#04252b;background:#7fd18b;border-radius:999px;font-weight:700;padding:0 7px;font-size:11px}
+  .msg .mnum{color:var(--on-brand);background:var(--success);border-radius:999px;font-weight:700;padding:0 7px;font-size:11px}
   .msg .maddr{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#9fb0c9;word-break:break-all;unicode-bidi:isolate;direction:ltr}
   .msg .mwho{color:#b9c6bb;font-weight:700;font-size:12px}
   .msg .msubj{font-size:12px;color:#c9c9d2;margin-top:3px}
-  .msg .msnip{font-size:12px;color:#9a9aa6;margin-top:3px;white-space:pre-wrap;word-break:break-word}
-  .msg .mwhen{font-size:10px;color:#5a5a64;margin-top:4px;unicode-bidi:isolate}
+  .msg .msnip{font-size:12px;color:var(--text-muted-2);margin-top:3px;white-space:pre-wrap;word-break:break-word}
+  .msg .mwhen{font-size:10px;color:var(--text-faint);margin-top:4px;unicode-bidi:isolate}
   .log{display:flex;flex-direction:column;gap:5px}
   .logrow{font-size:12px;color:#b9b9c2;display:flex;gap:8px;align-items:baseline}
-  .logrow .lt{color:#6a6a74;font-size:11px;unicode-bidi:isolate;white-space:nowrap}
-  .note{font-size:11.5px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:8px;padding:6px 9px;margin-bottom:8px}
+  .logrow .lt{color:var(--text-dim);font-size:11px;unicode-bidi:isolate;white-space:nowrap}
+  .note{font-size:11.5px;color:var(--warning);background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:8px;padding:6px 9px;margin-bottom:8px}
   /* L4 write actions (drawer): stage moves, archive/reopen, note composer. Buttons are calm and full-width
      on narrow drawers; a busy write disables the set and shows a status line; a failure shows red, never black. */
   .acts{display:flex;flex-wrap:wrap;gap:8px}
   .act{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border-radius:9px;padding:8px 12px;border:1px solid #26303a;background:#0e141b;color:#cfe0e6}
   .act:hover{border-color:#37505c}
-  .act:focus-visible{outline:2px solid #5D7FB7;outline-offset:2px}
-  .act.win{border-color:#1e2a1e;background:#0c130c;color:#7fd18b}
-  .act.warn{border-color:#2a2410;background:#17130a;color:#c9a24a}
+  .act:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .act.win{border-color:#1e2a1e;background:var(--success-bg);color:var(--success)}
+  .act.warn{border-color:var(--warning-border);background:var(--warning-bg);color:var(--warning)}
   .act.danger{border-color:#3a1d24;background:#160e11;color:#e59aa2}
   .act:disabled{opacity:.5;cursor:default}
   .act.send{border-color:#1d3a4a;background:#0c1620;color:#8fd4ff}
   .sendmark{display:inline-block;font-size:11px;color:#8fd4ff;border:1px solid #1d3a4a;background:#0c1620;border-radius:999px;padding:1px 8px;margin:6px 6px 0 0;animation:sendpulse 1.1s ease-in-out infinite}
   @keyframes sendpulse{0%,100%{opacity:.55}50%{opacity:1}}
   @media (prefers-reduced-motion:reduce){.sendmark{animation:none}}
-  .act-status{font-size:12px;margin-top:8px;color:#8a8a93;min-height:16px;unicode-bidi:isolate}
-  .act-status.ok{color:#7fd18b}
-  .act-status.warn{color:#e6b34a}
-  .act-status.bad{color:#ff8a8a}
+  .act-status{font-size:12px;margin-top:8px;color:var(--text-muted);min-height:16px;unicode-bidi:isolate}
+  .act-status.ok{color:var(--success)}
+  .act-status.warn{color:var(--warning-2)}
+  .act-status.bad{color:var(--error)}
   .del-confirm{margin-top:10px;padding:10px 12px;border:1px solid #3a1d24;border-radius:10px;background:#140b0e}
   .del-confirm .del-q{display:block;font-size:12.5px;color:#e6b3b8;margin-bottom:8px}
   .arch-facts{display:flex;flex-direction:column;gap:4px}
   .arch-facts .af-row{font-size:12.5px;color:#9aa0aa}
   .arch-facts .af-k{color:#7a7a84;margin-inline-end:6px}
   .pf-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 4px}
-  .pf-h2{font-size:16px;font-weight:650;color:#eef;margin:0}
+  .pf-h2{font-size:16px;font-weight:650;color:var(--text-hi);margin:0}
   .nm-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 10px}
-  .nm-head h2{font-size:17px;font-weight:650;color:#eef;margin:0}
+  .nm-head h2{font-size:17px;font-weight:650;color:var(--text-hi);margin:0}
   .nm-x{white-space:nowrap}
   .nm-body .dw-sec{margin-top:14px}
-  .up-hint{font-size:12.5px;color:#8a8a93;margin:2px 0 10px;line-height:1.5}
+  .up-hint{font-size:12.5px;color:var(--text-muted);margin:2px 0 10px;line-height:1.5}
   input.up-file{display:block;width:100%;font-size:13px;color:#cdd;margin-bottom:12px}
   .up-count{font-size:13px;color:#a9d5b6;margin:6px 0 4px}
   .up-orphans{font-size:12px;color:#d8b48a;margin:2px 0 8px}
   .up-info{font-size:12px;color:#8a93a6;margin:2px 0 8px}
   .up-rows{display:flex;flex-direction:column;gap:10px;margin:6px 0}
-  .up-row{border:1px solid #22222e;border-radius:10px;padding:10px 12px;background:#0e0e14}
+  .up-row{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface)}
   .up-row-warn{border-color:#4b3a27}
   .up-row-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:4px}
-  .up-slug{font-size:12px;color:#8a8a93}
-  .up-title{font-size:14px;font-weight:600;color:#eef}
+  .up-slug{font-size:12px;color:var(--text-muted)}
+  .up-title{font-size:14px;font-weight:600;color:var(--text-hi)}
   .up-warn{font-size:11px;color:#d8b48a;border:1px solid #4b3a27;border-radius:999px;padding:2px 8px}
   .up-meta{font-size:12px;color:#9aa0aa;margin:2px 0 6px}
   .up-k{color:#6f7480}
-  .up-frame{border:1px solid #22222e;border-radius:8px;background:#14141c;max-height:160px;overflow:auto;padding:8px 10px}
+  .up-frame{border:1px solid var(--border);border-radius:8px;background:var(--field-bg);max-height:160px;overflow:auto;padding:8px 10px}
   .up-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.5;color:#c7c7cf;font-family:inherit;unicode-bidi:plaintext}
-  .up-empty{font-size:12px;color:#6a6a74;font-style:italic}
-  .up-state{font-size:13px;padding:8px 11px;border-radius:8px;border:1px solid #22222e;background:#0e0e14;color:#cdd}
+  .up-empty{font-size:12px;color:var(--text-dim);font-style:italic}
+  .up-state{font-size:13px;padding:8px 11px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:#cdd}
   /* PR-L1: editable upload rows (slug / title / task, set before publish) */
   .lib-edit{display:flex;flex-direction:column;gap:8px}
   .lib-fields{display:flex;flex-direction:column;gap:8px}
   .lib-f{display:flex;flex-direction:column;gap:3px}
-  .lib-fl{font-size:11px;color:#8a8a93}
-  .lib-in{width:100%;box-sizing:border-box;background:#0b0b11;border:1px solid #262632;border-radius:8px;padding:8px 10px;color:#eef;font-size:14px;font-family:inherit}
+  .lib-fl{font-size:11px;color:var(--text-muted)}
+  .lib-in{width:100%;box-sizing:border-box;background:var(--surface-inset);border:1px solid #262632;border-radius:8px;padding:8px 10px;color:var(--text-hi);font-size:14px;font-family:inherit}
   .lib-in:focus{outline:none;border-color:#3a5;box-shadow:0 0 0 2px rgba(51,170,85,.18)}
   .lib-in.bad{border-color:#7a3838;box-shadow:0 0 0 2px rgba(150,60,60,.16)}
   .lib-rowerr{font-size:11.5px;color:#9aa0aa;min-height:0}
@@ -1249,35 +1388,35 @@ function buildBoard(){
   /* PR-L1: the standalone Library surface */
   .scrim.libview{justify-content:center;align-items:flex-start}
   html[dir="rtl"] .scrim.libview{justify-content:center}
-  .lvpanel{width:min(1000px,100%);height:100%;background:#0b0b11;border-inline-start:1px solid #1c1c26;border-inline-end:1px solid #1c1c26;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(18px + env(safe-area-inset-top)) calc(22px + env(safe-area-inset-right)) calc(56px + env(safe-area-inset-bottom)) calc(22px + env(safe-area-inset-left))}
+  .lvpanel{width:min(1000px,100%);height:100%;background:var(--surface-inset);border-inline-start:1px solid var(--border-2);border-inline-end:1px solid var(--border-2);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(18px + env(safe-area-inset-top)) calc(22px + env(safe-area-inset-right)) calc(56px + env(safe-area-inset-bottom)) calc(22px + env(safe-area-inset-left))}
   .lv-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin:2px 0 12px}
-  .lv-title{font-size:20px;font-weight:680;color:#eef;margin:0}
+  .lv-title{font-size:20px;font-weight:680;color:var(--text-hi);margin:0}
   .lv-head-acts{display:flex;align-items:center;gap:12px}
   .btnp{background:#1a5;background:linear-gradient(180deg,#2b7,#1a5);border:0;border-radius:9px;padding:8px 14px;color:#05130b;font-weight:650;font-size:13px;cursor:pointer}
   .btnp:hover{filter:brightness(1.06)}
-  .lv-tabs{display:flex;gap:8px;margin:0 0 14px;border-bottom:1px solid #1e1e28}
-  .lv-tab{background:none;border:none;border-bottom:2px solid transparent;color:#8a8a93;font-size:14px;font-family:inherit;padding:6px 4px 9px;cursor:pointer}
-  .lv-tab.on{color:#eef;border-bottom-color:#3a5}
+  .lv-tabs{display:flex;gap:8px;margin:0 0 14px;border-bottom:1px solid var(--border-3)}
+  .lv-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:14px;font-family:inherit;padding:6px 4px 9px;cursor:pointer}
+  .lv-tab.on{color:var(--text-hi);border-bottom-color:#3a5}
   .lv-arch-meta{font-size:12.5px;color:#9aa0aa}
   .lv-arch-meta .lv-k{color:#7a7a84;margin-inline-end:4px}
   .lv-arch-st{margin-top:2px}
   .lv-act-b{border-color:#1d3a4a;background:#0c1620;color:#8fd4ff}
   .lv-search{margin:0 0 16px}
-  .lv-q{width:100%;box-sizing:border-box;background:#0e0e14;border:1px solid #262632;border-radius:10px;padding:10px 13px;color:#eef;font-size:15px;font-family:inherit}
+  .lv-q{width:100%;box-sizing:border-box;background:var(--surface);border:1px solid #262632;border-radius:10px;padding:10px 13px;color:var(--text-hi);font-size:15px;font-family:inherit}
   .lv-q:focus{outline:none;border-color:#3a5}
   .lv-body{display:flex;flex-direction:column;gap:22px}
   .lv-sec{display:flex;flex-direction:column;gap:11px}
-  .lv-task{font-size:13px;font-weight:600;color:#cdd;margin:0;display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid #1c1c26}
-  .lv-task-k{font-size:11px;color:#8a8a93}
-  .lv-n{font-size:11px;color:#8a8a93;background:#14141c;border:1px solid #22222e;border-radius:999px;padding:1px 8px}
+  .lv-task{font-size:13px;font-weight:600;color:#cdd;margin:0;display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--border-2)}
+  .lv-task-k{font-size:11px;color:var(--text-muted)}
+  .lv-n{font-size:11px;color:var(--text-muted);background:var(--field-bg);border:1px solid var(--border);border-radius:999px;padding:1px 8px}
   .lv-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-  .lv-card{border:1px solid #22222e;border-radius:12px;background:#0e0e14;padding:14px 15px;display:flex;flex-direction:column;gap:8px;min-width:0}
+  .lv-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:14px 15px;display:flex;flex-direction:column;gap:8px;min-width:0}
   .lv-card-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .lv-card-t{font-size:15px;font-weight:620;color:#eef;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .lv-card-t{font-size:15px;font-weight:620;color:var(--text-hi);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .lv-state{flex:0 0 auto;font-size:11px;color:#d8b48a;border:1px solid #4b3a27;border-radius:999px;padding:2px 9px}
   .lv-state.ok{color:#8fd6a6;border-color:#2f5a3d}
   .lv-state.bad{color:#e79aa0;border-color:#5a2f34}
-  .lv-slug{font-size:12px;color:#8a8a93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lv-slug{font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lv-link{font-size:12px;color:#9aa0aa;overflow:hidden}
   .lv-link .lv-k{color:#7a7a84}
   .lv-url{color:#9fb6d8;word-break:break-all}
@@ -1291,99 +1430,99 @@ function buildBoard(){
      bordered box under the card. .lv-prev/.lv-mem have no display of their own, but guard them too for parity. */
   .lv-prev[hidden],.lv-mem[hidden],.lv-prom[hidden],.lv-del[hidden]{display:none}
   /* BUG-2: the Delete action + its inline confirm. A quiet danger button; the confirm box echoes the promote box. */
-  .lv-del-b:hover{border-color:#5c2121;color:#e37a7a}
-  .lv-del-b.on{border-color:#5c2121;color:#e37a7a}
+  .lv-del-b:hover{border-color:#5c2121;color:var(--error-2)}
+  .lv-del-b.on{border-color:#5c2121;color:var(--error-2)}
   .lv-del{margin-top:8px;display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid #3a2222;border-radius:10px;background:#140d0d}
   .lv-del-warn{font-size:12.5px;color:#e0b3b3}
-  .lv-del-go{border-color:#5c2121;color:#e37a7a}
-  .lv-prom-in{width:100%;box-sizing:border-box;resize:vertical;min-height:38px;border:1px solid #262632;border-radius:8px;background:#0e0e14;color:#dfe3ea;padding:9px 10px;font-size:13px}
+  .lv-del-go{border-color:#5c2121;color:var(--error-2)}
+  .lv-prom-in{width:100%;box-sizing:border-box;resize:vertical;min-height:38px;border:1px solid #262632;border-radius:8px;background:var(--surface);color:#dfe3ea;padding:9px 10px;font-size:13px}
   .lv-prom-in:focus{outline:none;border-color:#3d5a7a}
   .lv-prom-acts{display:flex;justify-content:flex-start}
   .lv-prom-st{margin:0}
-  .lv-frame{width:100%;height:260px;border:1px solid #22222e;border-radius:9px;background:#fff}
-  .lv-empty{font-size:14px;color:#8a8a93;padding:24px 4px;text-align:center}
+  .lv-frame{width:100%;height:260px;border:1px solid var(--border);border-radius:9px;background:var(--page-canvas)}
+  .lv-empty{font-size:14px;color:var(--text-muted);padding:24px 4px;text-align:center}
   /* ===== PHASE 3: Contacts + Template memory + Reply tags. Mobile-first (the .lvpanel host is already full-width
      and full-height on phone); equal padding on all four sides; RTL correct via logical properties. ===== */
   .ct-body{display:flex;flex-direction:column;gap:14px}
-  .ct-count{font-size:12px;color:#8a8a93;unicode-bidi:isolate}
+  .ct-count{font-size:12px;color:var(--text-muted);unicode-bidi:isolate}
   .ct-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
-  .ct-card{border:1px solid #22222e;border-radius:12px;background:#0e0e14;padding:14px 15px;display:flex;flex-direction:column;gap:7px;min-width:0;cursor:pointer}
+  .ct-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:14px 15px;display:flex;flex-direction:column;gap:7px;min-width:0;cursor:pointer}
   .ct-card:hover{border-color:#2c2c3a}
   .ct-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .ct-name{font-size:15px;font-weight:640;color:#eef;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-  .ct-name-lg{font-size:19px;font-weight:720;color:#fff;min-width:0;word-break:break-word}
+  .ct-name{font-size:15px;font-weight:640;color:var(--text-hi);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .ct-name-lg{font-size:19px;font-weight:720;color:var(--text-max);min-width:0;word-break:break-word}
   .ct-addr{font-size:12px;color:#9fb0c9;word-break:break-all;unicode-bidi:isolate}
-  .ct-more{font-size:11px;color:#6a6a74}
+  .ct-more{font-size:11px;color:var(--text-dim)}
   .ct-tags{display:flex;flex-wrap:wrap;gap:6px}
-  .ct-tag{font-size:11px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:999px;padding:1px 9px}
+  .ct-tag{font-size:11px;color:var(--warning);background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:999px;padding:1px 9px}
   .ct-metrics{display:flex;gap:16px;margin-top:2px}
-  .ct-metric{font-size:12px;color:#8a8a93}
-  .ct-metric b{color:#e7e7ea;font-weight:700}
+  .ct-metric{font-size:12px;color:var(--text-muted)}
+  .ct-metric b{color:var(--text);font-weight:700}
   /* the reply tag: one control, one behavior (opens the conversation), everywhere a contact appears */
-  .ct-replytag{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;color:#8a8a93;background:#0e0e17;border:1px solid #20202e;border-radius:999px;padding:4px 11px;cursor:pointer;min-height:30px}
-  .ct-replytag.on{color:#04252b;background:#7fd18b;border-color:#7fd18b;font-weight:700}
+  .ct-replytag{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;color:var(--text-muted);background:#0e0e17;border:1px solid #20202e;border-radius:999px;padding:4px 11px;cursor:pointer;min-height:30px}
+  .ct-replytag.on{color:var(--on-brand);background:var(--success);border-color:var(--success);font-weight:700}
   .ct-replytag.on:hover{filter:brightness(1.05)}
   .ct-replytag.lg{font-size:13px;padding:6px 13px;min-height:34px}
   .ct-rt-n{font-weight:800}
   .ct-back{align-self:flex-start;padding:6px 0;font-size:14px}
-  .ct-detail-head{display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #17171f;padding-bottom:14px}
+  .ct-detail-head{display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--border-hair);padding-bottom:14px}
   .ct-dh-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
   .ct-addrs{display:flex;flex-direction:column;gap:3px}
-  .ct-note{font-size:13px;color:#c9a24a;background:#17130a;border:1px solid #2a2410;border-radius:8px;padding:8px 10px}
+  .ct-note{font-size:13px;color:var(--warning);background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:8px;padding:8px 10px}
   .ct-sec{margin-top:6px}
-  .ct-sh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:0 0 9px;display:flex;gap:8px;align-items:center}
+  .ct-sh{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin:0 0 9px;display:flex;gap:8px;align-items:center}
   html[dir="rtl"] .ct-sh{text-transform:none;letter-spacing:normal}
   .ct-tpl-list{display:flex;flex-direction:column;gap:8px}
-  .ct-tpl-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;border:1px solid #191921;border-radius:9px;background:#0e0e14;padding:9px 11px}
-  .ct-tpl-t{font-size:14px;color:#eef;font-weight:600;min-width:0}
+  .ct-tpl-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;border:1px solid var(--border-soft);border-radius:9px;background:var(--surface);padding:9px 11px}
+  .ct-tpl-t{font-size:14px;color:var(--text-hi);font-weight:600;min-width:0}
   .ct-tpl-slug{font-size:11px;color:#9fb0c9;word-break:break-all}
-  .ct-tpl-n{font-size:11.5px;color:#8a8a93;margin-inline-start:auto;white-space:nowrap}
+  .ct-tpl-n{font-size:11.5px;color:var(--text-muted);margin-inline-start:auto;white-space:nowrap}
   .ct-thread{margin-top:2px}
-  .ct-b-tpl{font-size:10.5px;color:#8a8a93;background:#0b0b11;border:1px solid #20202e;border-radius:999px;padding:0 7px;margin-inline-start:8px}
-  .ct-empty{font-size:13px;color:#8a8a93;padding:14px 4px;text-align:center}
+  .ct-b-tpl{font-size:10.5px;color:var(--text-muted);background:var(--surface-inset);border:1px solid #20202e;border-radius:999px;padding:0 7px;margin-inline-start:8px}
+  .ct-empty{font-size:13px;color:var(--text-muted);padding:14px 4px;text-align:center}
   /* template memory (inline under a Library card) */
   .lv-mem{margin-top:2px}
-  .ct-mem{display:flex;flex-direction:column;gap:8px;border-top:1px solid #191921;padding-top:10px}
-  .ct-mem-h{font-size:12px;color:#8a8a93}
-  .ct-mem-n{font-weight:800;color:#e7e7ea}
-  .ct-mem-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;border:1px solid #191921;border-radius:9px;background:#0b0b11;padding:9px 11px}
+  .ct-mem{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border-soft);padding-top:10px}
+  .ct-mem-h{font-size:12px;color:var(--text-muted)}
+  .ct-mem-n{font-weight:800;color:var(--text)}
+  .ct-mem-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;border:1px solid var(--border-soft);border-radius:9px;background:var(--surface-inset);padding:9px 11px}
   .ct-mem-who{display:flex;flex-direction:column;gap:2px;min-width:0}
   .ct-mem-meta{display:flex;flex-direction:column;gap:2px;margin-inline-start:auto;text-align:end}
-  .ct-mem-by{font-size:11.5px;color:#8a8a93}
+  .ct-mem-by{font-size:11.5px;color:var(--text-muted)}
   .ct-mem-by b{color:#c9c9d2}
-  .ct-mem-when{font-size:10.5px;color:#6a6a74;unicode-bidi:isolate}
+  .ct-mem-when{font-size:10.5px;color:var(--text-dim);unicode-bidi:isolate}
   .ct-mem-tag{flex-basis:100%}
   .up-state.ok{color:#a9d5b6;border-color:#274b34}
   .up-state.bad{color:#d8b48a;border-color:#4b3a27}
-  .pf-ro{font-size:14px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:9px 11px;word-break:break-word}
-  .pf-note{font-size:11.5px;color:#6a6a74;margin-top:6px}
-  .pf-admin{border-top:1px solid #191921;padding-top:14px;margin-top:20px}
-  .pf-mem{background:#0e0e14;border:1px solid #191921;border-radius:9px;padding:10px 11px;margin:8px 0}
+  .pf-ro{font-size:14px;color:#d7d7de;background:var(--surface);border:1px solid var(--border-soft);border-radius:8px;padding:9px 11px;word-break:break-word}
+  .pf-note{font-size:11.5px;color:var(--text-dim);margin-top:6px}
+  .pf-admin{border-top:1px solid var(--border-soft);padding-top:14px;margin-top:20px}
+  .pf-mem{background:var(--surface);border:1px solid var(--border-soft);border-radius:9px;padding:10px 11px;margin:8px 0}
   .pf-mem-id{display:flex;flex-direction:column;gap:2px;margin-bottom:7px}
-  .pf-mem-name{font-size:13.5px;color:#eef;font-weight:600}
+  .pf-mem-name{font-size:13.5px;color:var(--text-hi);font-weight:600}
   .pf-mem-email{font-size:11px;color:#7a7a84}
   input.pf-title-in{margin-bottom:6px}
   .notes-list{display:flex;flex-direction:column;gap:6px;margin:2px 0 10px}
-  .note-item{font-size:12.5px;color:#d7d7de;background:#0e0e14;border:1px solid #191921;border-radius:8px;padding:7px 9px;word-break:break-word}
-  .note-item .nmeta{display:block;font-size:10.5px;color:#6a6a74;margin-top:3px;unicode-bidi:isolate}
+  .note-item{font-size:12.5px;color:#d7d7de;background:var(--surface);border:1px solid var(--border-soft);border-radius:8px;padding:7px 9px;word-break:break-word}
+  .note-item .nmeta{display:block;font-size:10.5px;color:var(--text-dim);margin-top:3px;unicode-bidi:isolate}
   .note-form{display:flex;flex-direction:column;gap:8px;margin-top:6px}
-  textarea.note-in{width:100%;min-height:64px;resize:vertical;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:9px 11px;font-size:13px;font-family:inherit;outline:none}
-  textarea.rec-in{width:100%;min-height:44px;resize:vertical;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:10px 12px;font-size:14px;line-height:1.4;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;outline:none;margin-bottom:8px;direction:ltr;unicode-bidi:isolate}
-  textarea.rec-in:focus{border-color:#5D7FB7}
-  textarea.note-in:focus{border-color:#5D7FB7}
+  textarea.note-in{width:100%;min-height:64px;resize:vertical;background:var(--field-bg);border:1px solid var(--border);border-radius:9px;color:var(--text-max);padding:9px 11px;font-size:13px;font-family:inherit;outline:none}
+  textarea.rec-in{width:100%;min-height:44px;resize:vertical;background:var(--field-bg);border:1px solid var(--border);border-radius:9px;color:var(--text-max);padding:10px 12px;font-size:14px;line-height:1.4;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;outline:none;margin-bottom:8px;direction:ltr;unicode-bidi:isolate}
+  textarea.rec-in:focus{border-color:var(--focus)}
+  textarea.note-in:focus{border-color:var(--focus)}
   /* Unified message editor (compose + reply) */
   /* G7.1: the compose subject/body/signature type comfortably in both languages. dir="auto" (in the markup) +
      unicode-bidi:plaintext make each field flow RTL for Arabic content and LTR for English, aligned to that
      side, with no manual toggle; the console (sans) font, equal 12px padding on all four sides, and a roomy
      line-height replace the cramped monospace box. Scoped to the editor fields, so the recipient (#recIn) stays
      LTR - emails are LTR. No letter-spacing on Arabic. */
-  input.ed-subj{width:100%;background:#14141c;border:1px solid #22222e;border-radius:9px;color:#fff;padding:12px;font-size:14px;line-height:1.5;font-family:inherit;outline:none;margin-bottom:8px;unicode-bidi:plaintext}
-  input.ed-subj:focus{border-color:#5D7FB7}
+  input.ed-subj{width:100%;background:var(--field-bg);border:1px solid var(--border);border-radius:9px;color:var(--text-max);padding:12px;font-size:14px;line-height:1.5;font-family:inherit;outline:none;margin-bottom:8px;unicode-bidi:plaintext}
+  input.ed-subj:focus{border-color:var(--focus)}
   textarea.ed-body{min-height:140px;line-height:1.6;padding:12px;font-family:inherit;unicode-bidi:plaintext}
   html[dir="rtl"] input.ed-subj,html[dir="rtl"] textarea.ed-body,html[dir="rtl"] textarea.ed-sig-in{letter-spacing:normal}
   .act:disabled{opacity:.45;cursor:not-allowed}
   .ed-checks{list-style:none;margin:8px 0 4px;padding:0;display:flex;flex-wrap:wrap;gap:6px}
-  .ed-ck{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid #22222e;color:#8a8a93;background:#14141c;display:flex;align-items:center;gap:5px}
+  .ed-ck{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--border);color:var(--text-muted);background:var(--field-bg);display:flex;align-items:center;gap:5px}
   .ed-ck::before{content:"";width:7px;height:7px;border-radius:50%;background:#4a4a55;display:inline-block}
   .ed-ck.ck-ok{color:#a9d5b6;border-color:#274b34}
   .ed-ck.ck-ok::before{background:#3fae63}
@@ -1391,23 +1530,23 @@ function buildBoard(){
   .ed-ck.ck-no::before{background:#c98b3a}
   .ed-sig-field{margin:6px 0 10px}
   .ed-sig-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
-  .ed-sig-lab{font-size:12px;color:#8a8a93}
+  .ed-sig-lab{font-size:12px;color:var(--text-muted)}
   .ed-sig-use{font-size:12px;padding:5px 10px}
   textarea.ed-sig-in{min-height:66px;line-height:1.6;padding:12px;font-family:inherit;unicode-bidi:plaintext;font-size:13px}
   /* the saved-signatures strip: pickable name chips (each with a remove x), then a "+" to save the current
      field text as a new named signature. Equal padding; chips wrap; Arabic names keep no letter-spacing. */
   .ed-sig-saved{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-  .ed-sig-chip{display:inline-flex;align-items:stretch;border:1px solid #22222e;border-radius:999px;overflow:hidden;background:#14141c}
+  .ed-sig-chip{display:inline-flex;align-items:stretch;border:1px solid var(--border);border-radius:999px;overflow:hidden;background:var(--field-bg)}
   .ed-sig-pick{background:transparent;border:0;color:#cdd;font:inherit;font-size:12px;padding:5px 11px;cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .ed-sig-pick:hover{color:#eef}
-  .ed-sig-rm{background:transparent;border:0;border-inline-start:1px solid #22222e;color:#8a8a93;font:inherit;font-size:13px;padding:0 9px;cursor:pointer}
-  .ed-sig-rm:hover{color:#e37a7a}
-  .ed-sig-add{background:#14141c;border:1px dashed #33333f;border-radius:999px;color:#9a9aa6;font:inherit;font-size:12px;padding:5px 11px;cursor:pointer}
-  .ed-sig-add:hover{border-color:#5D7FB7;color:#cdd}
+  .ed-sig-pick:hover{color:var(--text-hi)}
+  .ed-sig-rm{background:transparent;border:0;border-inline-start:1px solid var(--border);color:var(--text-muted);font:inherit;font-size:13px;padding:0 9px;cursor:pointer}
+  .ed-sig-rm:hover{color:var(--error-2)}
+  .ed-sig-add{background:var(--field-bg);border:1px dashed #33333f;border-radius:999px;color:var(--text-muted-2);font:inherit;font-size:12px;padding:5px 11px;cursor:pointer}
+  .ed-sig-add:hover{border-color:var(--focus);color:#cdd}
   html[dir="rtl"] .ed-sig-pick,html[dir="rtl"] .ed-sig-add{letter-spacing:normal}
-  .ed-prev-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a93;margin:6px 0 6px}
+  .ed-prev-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin:6px 0 6px}
   html[dir="rtl"] .ed-prev-h{text-transform:none;letter-spacing:normal}
-  iframe.ed-preview{width:100%;height:clamp(240px,38vh,520px);border:1px solid #22222e;border-radius:9px;background:#fff}   /* tall + scrollable, never clipped */
+  iframe.ed-preview{width:100%;height:clamp(240px,38vh,520px);border:1px solid var(--border);border-radius:9px;background:var(--page-canvas)}   /* tall + scrollable, never clipped */
 </style>
 </head>
 <body>
@@ -1565,7 +1704,8 @@ function buildBoard(){
           ct_reply_one:"reply", ct_reply_n:"replies", ct_open_convo:"Open the conversation", ct_back:"Back to contacts",
           ct_tpl_h:"Templates sent", ct_no_tpl:"No templates sent to this contact yet.", ct_convo_h:"Conversation", ct_no_convo:"No conversation yet.",
           ct_send_one:"send", ct_send_n:"sends", ct_mem_open:"Sent to", ct_mem_h:"Sent to", ct_mem_none:"Not sent to anyone yet.",
-          ct_sent_by:"Sent by", ct_sender_unknown:"a team member" },
+          ct_sent_by:"Sent by", ct_sender_unknown:"a team member",
+          theme_light:"Light", theme_dark:"Dark" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -1676,7 +1816,8 @@ function buildBoard(){
           ct_reply_one:"رد", ct_reply_n:"ردود", ct_open_convo:"فتح المحادثة", ct_back:"العودة إلى جهات الاتصال",
           ct_tpl_h:"القوالب المُرسَلة", ct_no_tpl:"لم يُرسَل أي قالب إلى جهة الاتصال هذه بعد.", ct_convo_h:"المحادثة", ct_no_convo:"لا محادثة بعد.",
           ct_send_one:"إرسال", ct_send_n:"إرسالات", ct_mem_open:"أُرسل إلى", ct_mem_h:"أُرسل إلى", ct_mem_none:"لم يُرسَل إلى أحد بعد.",
-          ct_sent_by:"أرسله", ct_sender_unknown:"أحد أعضاء الفريق" }
+          ct_sent_by:"أرسله", ct_sender_unknown:"أحد أعضاء الفريق",
+          theme_light:"فاتح", theme_dark:"داكن" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -1684,6 +1825,18 @@ function buildBoard(){
   function applyLang(){ try{ var d=document.documentElement; d.setAttribute("lang", LANG==="ar"?"ar":"en"); d.setAttribute("dir", LANG==="ar"?"rtl":"ltr"); }catch(e){} }
   function setLang(l){ LANG = (l==="ar"?"ar":"en"); try{ localStorage.setItem(LANG_KEY, LANG); }catch(e){} applyLang(); rerender(); }
   function toggleLang(){ setLang(LANG==="ar"?"en":"ar"); }
+  // ---- Theme (light/dark), persisted PER logged-in user. The lightest additive per-user mechanism:
+  // localStorage keyed by the current uid (thrive_theme:<uid>), with a device-level fallback so a choice
+  // made before sign-in is honored. No Supabase, no schema. data-theme on <html> flips the CSS token
+  // values live (no rerender needed); the default is dark, preserving the current console. ----
+  var THEME_KEY = "thrive_theme";
+  function themeUserKey(){ var u=""; try{ u=(typeof currentUid==="function" && currentUid())||""; }catch(e){} return THEME_KEY+":"+u; }
+  function readTheme(){ var v=""; try{ v=localStorage.getItem(themeUserKey())||localStorage.getItem(THEME_KEY)||""; }catch(e){} return (v==="light"||v==="dark")?v:""; }
+  function currentTheme(){ var a=""; try{ a=document.documentElement.getAttribute("data-theme")||""; }catch(e){} return (a==="light"||a==="dark")?a:(readTheme()||"dark"); }
+  function applyTheme(){ try{ var th=readTheme()||"dark"; document.documentElement.setAttribute("data-theme", th); }catch(e){} }
+  function setTheme(th){ th=(th==="light"?"light":"dark"); try{ localStorage.setItem(themeUserKey(), th); localStorage.setItem(THEME_KEY, th); }catch(e){} try{ document.documentElement.setAttribute("data-theme", th); }catch(e){} var b=document.getElementById("themeBtn"); if(b) b.textContent=themeLabel(); }
+  function toggleTheme(){ setTheme(currentTheme()==="light"?"dark":"light"); }
+  function themeLabel(){ return currentTheme()==="light" ? t("theme_dark") : t("theme_light"); }   // the label names the target the toggle switches TO
 
   var root = document.getElementById("root");
 
@@ -1938,6 +2091,7 @@ ${CONTACTS_SRC}
   // ---- views (localized; a lang toggle sits on the sign-in card and in the board header) ----
   var VIEW = "signin", __data = null;
   function langBtn(){ return '<button class="link" id="langBtn" type="button">' + esc(langLabel()) + '</button>'; }
+  function themeBtn(){ return '<button class="link" id="themeBtn" type="button">' + esc(themeLabel()) + '</button>'; }   // minimal toggle; visual polish later
   function rerender(){ if(VIEW==="board" && __data){ renderBoard(__data); } else if(VIEW==="board"){ loadBoard(); } else { signinView(); } }
 
   // Synchronous "connecting" card: painted before any network call so a warm boot (an expired token that
@@ -1994,7 +2148,7 @@ ${CONTACTS_SRC}
     return '<div class="top" style="padding:8px 2px">' +
       '<span class="muted" id="opChip">' + esc(authEmail()) + '</span>' +
       '<span class="send-cap" id="sendCap"></span>' +   // SEND-HEALTH: live daily/monthly send-cap counter (server truth)
-      '<span class="row-actions">' + langBtn() +
+      '<span class="row-actions">' + langBtn() + themeBtn() +
         // Step 2D: the Admin executive surface is a SEPARATE header entry, hidden by default and revealed only
         // for an owner. isOwner() resolves async (loadIdentity), so paintAdminSlot() runs both now and again
         // from finishIdentity once the role settles. A member never sees this control, and openAdmin() is a
@@ -2022,6 +2176,7 @@ ${CONTACTS_SRC}
   try{ window.__thrivePaintAdminSlot = paintAdminSlot; }catch(e){}
   function wireHeader(){
     var lb=document.getElementById("langBtn"); if(lb) lb.addEventListener("click", toggleLang);
+    var tb=document.getElementById("themeBtn"); if(tb) tb.addEventListener("click", toggleTheme);
     var nm=document.getElementById("newMsgBtn"); if(nm) nm.addEventListener("click", function(){ owNewMessage(); });   // opens the window on the mode selector
     var libB=document.getElementById("libBtn"); if(libB) libB.addEventListener("click", function(){ openLibraryView(); });   // PR-L1: the Library surface (Add templates inside opens the upload)
     var ctB=document.getElementById("contactsBtn"); if(ctB) ctB.addEventListener("click", function(){ openContactsView(); });   // Phase 3: the Contacts surface
@@ -2778,6 +2933,7 @@ ${CONTACTS_SRC}
   // 400/401), never a black screen (everything wrapped; an auth failure returns the sign-in card, not red text).
   function boot(){
     applyLang();
+    applyTheme();                                                       // re-resolve the theme once the session (and its uid) is in memory
     try{
       if(!signedIn()){ signinView(); return; }
       var s=session();
