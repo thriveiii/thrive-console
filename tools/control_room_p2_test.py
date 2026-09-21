@@ -114,30 +114,20 @@ with sync_playwright() as p:
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(700)
     pg.wait_for_selector(".card[data-slug='alpha']", timeout=8000)
 
-    # ===== 1: GREETING TOGGLE changes the compiled message LIVE =====
+    # ===== 1: the {{NAME}} token resolves from the smart name (live preview); greeting is now an OPT-IN =====
     open_msg(pg, "alpha")
     pg.wait_for_function("()=>((document.getElementById('edPreview')||{}).getAttribute('srcdoc')||'').indexOf('Hi Sarah,')>=0", timeout=6000)
-    ck("1: name-mode greeting compiles to 'Hi Sarah,' (smart name from the address, live preview)",
+    ck("1: {{NAME}} resolves to the smart name 'Hi Sarah,' in the live preview",
        "Hi Sarah," in srcdoc(pg))
-    ck("1: the greeting toggle shows both forms (Name / Platform)",
-       pg.evaluate("()=>!!document.querySelector('#crMsgPanel [data-greet=\"name\"]') && !!document.querySelector('#crMsgPanel [data-greet=\"platform\"]')"))
-    pg.click('#crMsgPanel [data-greet="platform"]')
-    pg.wait_for_function("()=>((document.getElementById('edPreview')||{}).getAttribute('srcdoc')||'').indexOf('Hi Bards Alley team,')>=0", timeout=6000)
-    sd = srcdoc(pg)
-    ck("1: platform-mode greeting compiles to 'Hi Bards Alley team,' (toggle changed the compiled message)",
-       "Hi Bards Alley team," in sd and "Hi Sarah," not in sd, sd[:200])
-    pg.click('#crMsgPanel [data-greet="name"]')
-    pg.wait_for_function("()=>((document.getElementById('edPreview')||{}).getAttribute('srcdoc')||'').indexOf('Hi Sarah,')>=0", timeout=6000)
-    ck("1: toggling back to name-mode restores 'Hi Sarah,'", "Hi Sarah," in srcdoc(pg))
+    ck("1: the greeting is now an OPTIONAL opt-in, off by default, and the name/platform toggle is gone",
+       pg.evaluate("()=>{var c=document.querySelector('#crMsgPanel #crGreetOn'); return !!c && !c.checked && !document.querySelector('#crMsgPanel [data-greet]');}"))
 
-    # ===== 2: NO-NAME never blocks; falls back to the platform team greeting and SENDS =====
+    # ===== 2: NO-NAME never blocks; {{NAME}} falls back to the platform team and SENDS =====
     pg.evaluate("()=>window.closeOppWindow()"); pg.wait_for_timeout(200)
     open_msg(pg, "roleco")
     pg.wait_for_function("()=>((document.getElementById('edPreview')||{}).getAttribute('srcdoc')||'').indexOf('team,')>=0", timeout=6000)
-    ck("2: a role address has no person name -> the greeting falls back to 'Hi Example Shop team,'",
+    ck("2: a role address {{NAME}} falls back to 'Hi Example Shop team,'",
        "Hi Example Shop team," in srcdoc(pg), srcdoc(pg)[:200])
-    ck("2: the gentle 'add a name' hint is shown (never a block)",
-       pg.evaluate("()=>{var a=document.getElementById('crNameAsk');return !!a && !a.hidden;}"))
     ck("2: Send is ENABLED despite the missing name (a name never gates the send)",
        pg.evaluate("()=>{var b=document.querySelector('#crMsgPanel #nmSend');return !!b && !b.disabled;}"))
     pg.click("#crMsgPanel #nmSend")

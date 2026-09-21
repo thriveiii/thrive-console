@@ -130,52 +130,50 @@ function edLiveData(slug){
   if(!recips.length && Array.isArray(base.recipients)) recips = base.recipients;
   return Object.assign({}, base, {
     outreach_subject:edVal("edSubj"), outreach_text:edVal("edBody"), sig:edSignature(),
-    platform:(edVal("crPlatform").trim() || base.platform || ""),
-    greeting:edGreeting(slug),
+    greetOn:edGreetOn(slug),                                        // OPTIONAL greeting: applied only when the suggestion is checked
+    lang:(LANG==="ar" ? "ar" : (base.lang||"en")),                  // the operator's UI language, so the greeting suggestion == preview == send
     recipients:recips
   });
 }
-// ---- Phase 2 greeting state (in-memory on __edBase for a live preview; persisted by the compose writer) ----
-function edGreeting(slug){ var d=__edBase[slug]||{}; return (d.greeting==="platform") ? "platform" : "name"; }
-function edSetGreeting(slug, mode){
-  mode = (mode==="platform") ? "platform" : "name";
+// ---- Optional greeting state (in-memory on __edBase for a live preview; persisted by the compose writer). It is
+//      a single opt-in: OFF by default, applied only when the operator checks the suggestion chip. ----
+function edGreetOn(slug){ var d=__edBase[slug]||{}; return d.greetOn === true; }
+function edSetGreetOn(slug, on){
   if(!__edBase[slug]) __edBase[slug] = {};
-  __edBase[slug].greeting = mode;
-  edApplyGreeting(slug); edRenderPreview(slug); edScheduleSave(slug, 300);
+  __edBase[slug].greetOn = !!on;
+  edRenderPreview(slug); edScheduleSave(slug, 300);   // the exact-send preview reflects the change at once
 }
-function edApplyGreeting(slug){
-  var mode=edGreeting(slug), root=edRoot();
-  if(root && root.querySelectorAll){ [].forEach.call(root.querySelectorAll("[data-greet]"), function(b){ b.classList.toggle("on", b.getAttribute("data-greet")===mode); }); }
-  edGreetAsk(slug);
+// The greeting line the suggestion would prepend, for the FIRST live recipient, in the operator's UI language.
+// It is a SUGGESTION only: no recipient (or a role address with no inferable person) never blocks a send; the
+// chip simply shows "" or the team form. Reuses smartPerson / smartPlatform / greetingLine (no fork).
+function greetSuggestText(slug, data){
+  data = data || __edBase[slug] || {};
+  var lang = (LANG==="ar") ? "ar" : "en";
+  var first = (typeof sendToList==="function" && sendToList()[0]) || ((typeof firstRecipient==="function") ? firstRecipient(data) : null);
+  if(!first || !first.addr) return "";
+  var person = (first.name && String(first.name).trim()) || ((typeof smartPerson==="function") ? smartPerson(first.addr) : "");
+  var platform = ((typeof smartPlatform==="function") ? smartPlatform(first.addr) : "");
+  return greetingLine("name", person, platform, lang);   // "Hi Ahmed," / "Hi Kentucky team," / AR equivalents
 }
-// Gentle ask (never blocks): in name mode with no person name known - the field empty AND nothing inferable from
-// the address - show the "add a name" hint. The send still falls back to the platform team greeting and proceeds.
-function edGreetAsk(slug){
-  var ask=edEl("crNameAsk"); if(!ask) return;
-  var nm=edVal("crName").trim();
-  var first=(typeof sendToList==="function") ? (sendToList()[0]||null) : null;
-  var inferred = (first && typeof smartPerson==="function") ? smartPerson(first.addr) : "";
-  ask.hidden = !(edGreeting(slug)==="name" && !nm && !inferred);
+// Keep the chip's suggested text current as the recipient changes (never blocks; shows "" until a recipient).
+function edGreetRefresh(slug){
+  var el=edEl("crGreetSugg"); if(!el) return;
+  var sugg=greetSuggestText(slug, __edBase[slug]||{});
+  el.textContent = sugg || t("g_greet_none");
+  var wrap=edEl("crGreet"); if(wrap) wrap.classList.toggle("g-greet-empty", !sugg);
 }
-// The greeting toggle + the smart-name (contact) and platform fields. Prefilled from the record and inferred from
-// the first recipient's address; both editable; neither ever blocks the send.
+// FIX: the greeting control is a COMPACT opt-in in the settings ABOVE the editor - one checkbox that applies the
+// inferred suggestion, no large always-visible name/platform fields. OFF by default.
 function greetingHtml(slug, row, detail){
   if(!editorEligible(row)) return "";
   var data = (detail && detail.opp && detail.opp.data) || __edBase[slug] || {};
-  var mode = (data.greeting==="platform") ? "platform" : "name";
-  var first = (typeof firstRecipient==="function") ? firstRecipient(data) : null;
-  var nameVal = (first && first.name) ? first.name : ((first && typeof smartPerson==="function") ? smartPerson(first.addr) : "");
-  var platVal = String(data.platform||"").trim() || ((first && typeof smartPlatform==="function") ? smartPlatform(first.addr) : "") || (row&&row.business) || "";
-  var opt=function(k,key){ return '<button class="g-opt'+(mode===k?" on":"")+'" type="button" role="tab" data-greet="'+k+'">'+esc(t(key))+'</button>'; };
-  return '<div class="dw-sec g-greet"><h3>'+esc(t("g_greet_h"))+'</h3>'+
-    '<div class="g-toggle" role="tablist">'+opt("name","g_greet_name")+opt("platform","g_greet_team")+'</div>'+
-    '<div class="g-fields">'+
-      '<label class="g-field"><span class="g-lab">'+esc(t("g_name_lab"))+'</span>'+
-        '<input class="g-in" id="crName" type="text" dir="auto" autocomplete="off" spellcheck="false" value="'+esc(nameVal)+'" placeholder="'+esc(t("g_name_ph"))+'"></label>'+
-      '<label class="g-field"><span class="g-lab">'+esc(t("g_platform_lab"))+'</span>'+
-        '<input class="g-in" id="crPlatform" type="text" dir="auto" autocomplete="off" spellcheck="false" value="'+esc(platVal)+'" placeholder="'+esc(t("g_platform_ph"))+'"></label>'+
-    '</div>'+
-    '<div class="g-ask" id="crNameAsk" hidden>'+esc(t("g_name_ask"))+'</div>'+
+  var on = data.greetOn === true;
+  var sugg = greetSuggestText(slug, data);
+  return '<div class="dw-sec g-greet" id="crGreet">'+
+    '<label class="g-apply"><input type="checkbox" id="crGreetOn"'+(on?" checked":"")+'>'+
+      '<span class="g-apply-l">'+esc(t("g_greet_apply"))+'</span>'+
+      '<span class="g-sugg" id="crGreetSugg" dir="auto">'+esc(sugg||t("g_greet_none"))+'</span></label>'+
+    '<div class="g-hint">'+esc(t("g_greet_hint"))+'</div>'+
   '</div>';
 }
 function edCompileFrom(slug, data){
@@ -252,7 +250,7 @@ function edRenderPreview(slug){
     var f=edEl("edPreview"); if(f) f.setAttribute("srcdoc", art.html);
   }catch(e){}
 }
-function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); try{ if(typeof owRefreshTitle==="function") owRefreshTitle(); }catch(e){} }   // FIX A: the window header follows the typed subject
+function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); try{ edGreetRefresh(slug); }catch(e){} try{ if(typeof owRefreshTitle==="function") owRefreshTitle(); }catch(e){} }   // the header follows the subject; the greeting chip follows the recipient
 
 // Insert the opp link. With a selection, EMBED the link on the chosen phrase as a markdown link
 // [selected]({{LINK}}) (ConTh 11: an anchor, not a naked URL - bodyParasHtml renders it as <a>). With no
@@ -359,7 +357,7 @@ function edSaveNow(slug){
   oppReadData(slug).then(function(data){
     var wasEmpty = !(String(data.outreach_subject||"").trim() || String(data.outreach_text||"").trim());
     var nowHas = !!(subj.trim() || body.trim());
-    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, greeting:edGreeting(slug), platform:(edVal("crPlatform").trim()||data.platform||"") });
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
     return oppPatch(slug, { data:next, up:Date.now() }).then(function(){
       __edSaving = false;
       __edBase[slug] = next;                                   // keep the preview base in sync with the persisted record
@@ -391,14 +389,11 @@ function wireEditor(slug){
   var lk=edEl("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
   var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
   edRenderSavedSigs(slug);                                     // G7.1: the per-user saved-signatures strip + "+"
-  // Phase 2: the greeting toggle, the smart-name (contact) + platform fields, and the bulk "related contacts".
-  var groot=edRoot();
-  if(groot && groot.querySelectorAll){ [].forEach.call(groot.querySelectorAll("[data-greet]"), function(b){ b.addEventListener("click", function(){ edSetGreeting(slug, b.getAttribute("data-greet")); }); }); }
-  var nmn=edEl("crName"); if(nmn) nmn.addEventListener("input", function(){ edRenderPreview(slug); edGreetAsk(slug); edScheduleSave(slug, 700); });
-  var plt=edEl("crPlatform"); if(plt) plt.addEventListener("input", function(){ edRenderPreview(slug); edScheduleSave(slug, 700); });
+  // Optional greeting (one opt-in checkbox) + the bulk "related contacts".
+  var gon=edEl("crGreetOn"); if(gon) gon.addEventListener("change", function(){ edSetGreetOn(slug, gon.checked); });
   var bchk=edEl("crBulkChk"); if(bchk) bchk.addEventListener("change", function(){ var bd=edEl("crBulkBody"); if(bd) bd.hidden=!bchk.checked; edTick(slug); });
   var bin=edEl("crBulkIn"); if(bin) bin.addEventListener("input", function(){ edTick(slug); edScheduleSave(slug, 700); });
-  edApplyGreeting(slug);                                       // mark the active toggle + the gentle name ask
+  edGreetRefresh(slug);                                        // seed the suggestion text from the current recipient
   edTick(slug);                                                // initial checklist + gate + preview
 }
 
@@ -408,6 +403,8 @@ function wireEditor(slug){
 //   __thriveReplyTo(slug): the Reply-To the send stamps, proving a reply carries the opp slug (never a campaign).
 try{
   window.__thriveComposeArtifact = function(slug){ return oppReadData(slug).then(function(data){ return edCompileFrom(slug, data); }); };
+  window.__thriveLiveArtifact = function(slug){ return edCompileFrom(slug, edLiveData(slug)); };   // the LIVE compose (fields as typed), for greeting tests
+  window.__thriveGreetSuggest = function(slug){ return greetSuggestText(slug, __edBase[slug]||{}); };
   window.__thriveReplyTo = function(slug){ try{ return outboundHeaders(slug)["Reply-To"]; }catch(e){ return ""; } };
   //   __thriveSendHeaders(slug): the exact header set the send stamps for a slug's own mode (personal 1:1 vs
   //     campaign), proving a personal send carries NO List-Unsubscribe. Derives mode from the persisted record.
