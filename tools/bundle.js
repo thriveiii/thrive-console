@@ -928,6 +928,27 @@ function buildBoard(){
 (function(){try{var d=document.documentElement,uid="";try{var s=JSON.parse(localStorage.getItem("console_sb_session")||"{}");uid=(s&&s.uid)||"";}catch(e){}var th="";try{th=localStorage.getItem("thrive_theme:"+uid)||localStorage.getItem("thrive_theme")||"";}catch(e){}d.setAttribute("data-theme",(th==="light"||th==="dark")?th:"dark");}catch(e){}})();</script>
 <style>
   /* ============================================================================================
+     BRAND FONTS. Self-hosted from the pinned public Supabase assets bucket, reusing the exact woff2
+     the published opp pages already reference by their ASSET_MANIFEST filenames (no new vendor, no
+     inline base64, no guessed URL). font-display:swap paints immediately in the fallback and swaps in
+     the brand file when it arrives. These rules only DEFINE the families the type tokens above already
+     name (--font-body Lato, --font-ar itfGhroob); no element is restyled here, so the diff is fonts
+     only. Latin loads Lato in the weights the console actually uses (400 body, 700 and 900 for the
+     heavier steps; the 600 to 800 requests match to the nearest of these inside the family). Arabic
+     loads itfGhroob in every available weight, so every Arabic surface resolves to the brand face and
+     never a system Arabic fallback. Syne (display) has no pinned asset yet, so it is intentionally not
+     declared here; --font-display keeps its Lato fallback until Syne is pinned (assets/fonts, font-09)
+     ahead of the display-typography pass. Western numerals stay Western; Arabic stays joined via the
+     RTL letter-spacing:normal rule already in the tokens sheet.
+     ============================================================================================ */
+  @font-face{font-family:Lato;font-style:normal;font-weight:400;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-02-22937cf9.woff2) format("woff2")}
+  @font-face{font-family:Lato;font-style:normal;font-weight:700;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-03-151d08ee.woff2) format("woff2")}
+  @font-face{font-family:Lato;font-style:normal;font-weight:900;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-04-dd8e8c5a.woff2) format("woff2")}
+  @font-face{font-family:itfGhroob;font-style:normal;font-weight:300;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-05-e36207c4.woff2) format("woff2")}
+  @font-face{font-family:itfGhroob;font-style:normal;font-weight:400;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-06-58a22f0f.woff2) format("woff2")}
+  @font-face{font-family:itfGhroob;font-style:normal;font-weight:700;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-07-ee5dbf54.woff2) format("woff2")}
+  @font-face{font-family:itfGhroob;font-style:normal;font-weight:900;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-08-e35f45ee.woff2) format("woff2")}
+  /* ============================================================================================
      DESIGN TOKENS (foundation). Additive and behavior-preserving: every DARK value below equals the
      literal it replaces, so the default (dark) console renders byte-identically. Light values are new
      and apply only when data-theme="light" is set (or, where no explicit choice is stored, the system
