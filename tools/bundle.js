@@ -1196,6 +1196,26 @@ function buildBoard(){
   .ow-mode-btn.on{border-color:#4a7688;background:#101019}
   .ow-path-body{padding:2px}
   .ow-camp-row{display:flex;flex-direction:column;gap:6px}
+  /* DIRECT new-message entry + the accordion review. Token-based, equal padding on all four sides, spacing in
+     multiples of 8, --ease motion. No bespoke palette. Arabic keeps letter-spacing:normal (below). */
+  .ow-direct{display:flex;flex-direction:column;gap:16px}
+  .ow-direct-src{padding:0}
+  .ow-add-more-wrap{display:flex;justify-content:flex-start;padding-top:8px}
+  .ow-add-more{cursor:pointer}
+  .ow-acc{border:1px solid var(--border);border-radius:var(--radius-m);background:var(--surface);overflow:hidden;transition:opacity var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease)}
+  .ow-acc + .ow-acc{margin-top:8px}
+  .ow-acc-sum{display:flex;align-items:center;gap:8px;padding:8px 8px}
+  .ow-acc-inc{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);cursor:pointer;white-space:nowrap}
+  .ow-acc-inc input{width:auto;margin:0;accent-color:var(--brand-teal)}
+  .ow-acc-toggle{flex:1 1 auto;min-width:0;text-align:start;background:none;border:0;color:var(--text-hi);font:inherit;font-weight:650;cursor:pointer;padding:8px}
+  .ow-acc-t{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ow-acc-rm{background:none;border:1px solid var(--border);border-radius:var(--radius-s);color:var(--text-muted);font:inherit;font-size:12px;cursor:pointer;padding:8px 8px}
+  .ow-acc-rm:hover{color:var(--error-2);border-color:var(--error-border)}
+  .ow-acc-body{padding:8px}
+  .ow-acc-body[hidden]{display:none}
+  .ow-acc-out{opacity:.5}
+  .ow-acc-out .ow-acc-t{text-decoration:line-through}
+  html[dir="rtl"] .ow-acc-toggle,html[dir="rtl"] .ow-acc-t,html[dir="rtl"] .ow-acc-inc,html[dir="rtl"] .ow-acc-rm{letter-spacing:normal;text-transform:none}
   /* CONTROL ROOM (Phase 1): a card tap opens the opp organized into gates (MESSAGE / PAGE / CONTACT / ACTIVITY),
      opening on MESSAGE with the editor + live preview and the message loaded. The gate strip reuses .ow-tab; each
      gate is a .cr-panel (only the active one shown). Sections are placed by need with equal padding on all four
@@ -1671,7 +1691,8 @@ function buildBoard(){
           ow_path_campaign:"Full campaign (zip)", ow_path_campaign_sub:"Many pages, messages and recipients in one zip. Each page becomes its own card.",
           ow_path_page:"One page and a written message", ow_path_page_sub:"Upload a single page and write its message in the Message tab.",
           ow_path_pick:"Pick a Library template", ow_path_pick_sub:"Reuse a page already in your Library.",
-          ow_campaign_upload:"Upload a campaign zip", ow_committed_n:"Campaign created. Cards: {n}",
+          ow_campaign_upload:"Choose files", ow_committed_n:"Campaign created. Cards: {n}",
+          ow_row_include:"Include", ow_row_remove:"Remove", ow_add_more:"Add more files", ow_none_included:"No files are included. Include at least one, or add a file.",
           ow_prev_msg:"Message", ow_prev_page:"Page", ow_recip_none:"No recipients yet.",
           ow_rs_suppressed:"Do not contact", ow_rs_bounced_hard:"Bounced (hard)", ow_rs_bounced_soft:"Bounced (soft)",
           ow_rs_replied:"Replied", ow_rs_opened:"Opened", ow_rs_sent:"Sent", ow_rs_queued:"Queued", ow_rs_none:"Not sent",
@@ -1783,7 +1804,8 @@ function buildBoard(){
           ow_path_campaign:"حملة كاملة (ملف مضغوط)", ow_path_campaign_sub:"عدة صفحات ورسائل ومستلمين في ملف واحد. كل صفحة تصبح بطاقة مستقلة.",
           ow_path_page:"صفحة واحدة ورسالة تكتبها", ow_path_page_sub:"ارفع صفحة واحدة واكتب رسالتها في تبويب الرسالة.",
           ow_path_pick:"اختر قالبًا من المكتبة", ow_path_pick_sub:"أعد استخدام صفحة موجودة في مكتبتك.",
-          ow_campaign_upload:"ارفع ملف حملة مضغوط", ow_committed_n:"أُنشئت الحملة. البطاقات: {n}",
+          ow_campaign_upload:"اختر الملفات", ow_committed_n:"أُنشئت الحملة. البطاقات: {n}",
+          ow_row_include:"مُضمَّنة", ow_row_remove:"إزالة", ow_add_more:"أضف ملفات أخرى", ow_none_included:"لا ملفات مُضمَّنة. ضمِّن ملفًا واحدًا على الأقل، أو أضف ملفًا.",
           ow_prev_msg:"الرسالة", ow_prev_page:"الصفحة", ow_recip_none:"لا مستلمين بعد.",
           ow_rs_suppressed:"عدم التواصل", ow_rs_bounced_hard:"ارتداد نهائي", ow_rs_bounced_soft:"ارتداد مؤقت",
           ow_rs_replied:"ردّ", ow_rs_opened:"فتحت", ow_rs_sent:"أُرسلت", ow_rs_queued:"في الانتظار", ow_rs_none:"لم تُرسل",
@@ -2419,19 +2441,25 @@ ${CONTACTS_SRC}
     if(__owMode==="a"){                                            // G2 Mode A: a single lean compose surface, no tab strip
       if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
       if(body){ body.innerHTML = '<div class="ow-mode" id="owModeA"></div>'; if(typeof owModeAMount==="function") owModeAMount(__owSlug); }
+    } else if(__owMode==="upload" || __owMode==="pick"){           // DIRECT new-message entry: no tab shell
+      if(tabs){ tabs.hidden=true; tabs.innerHTML=""; }
+      if(body){ body.innerHTML = (typeof owDirectHostHtml==="function") ? owDirectHostHtml(__owMode) : "";
+        if(__owMode==="upload"){ if(typeof owUploadEntryMount==="function") owUploadEntryMount(__owSlug); }
+        else { if(typeof owPickEntryMount==="function") owPickEntryMount(__owSlug); }
+      }
     } else {                                                        // G3 Mode B: tabs (Message/Page/Recipients/Preview) + the one campaign Commit
       if(tabs){ tabs.hidden=false; tabs.innerHTML = owTabsHtml(); owWireTabs(); }
       if(body){ body.innerHTML = owModeBBodyHtml(); if(typeof owModeBMount==="function") owModeBMount(__owSlug); }
     }
   }
-  // "upload" and "pick" are first-screen shortcuts into Mode B: open on the Page tab with that path pre-selected,
-  // so the operator lands straight in the upload control or the Library picker (no nested with-campaign step).
-  // "a"/"b"/"detail" behave as before (owSelectMode('a')/('b') remain the compose seams the tests drive).
+  // DIRECT ROUTING: each first-screen button lands straight on its destination, no double layer. "upload" and
+  // "pick" are their OWN tab-less modes (no Mode B 4-tab shell, no duplicate Page-tab path buttons): "upload"
+  // opens the OS file picker immediately, "pick" opens the Library list. "a" is the lean text compose. Mode "b"
+  // (the tabbed campaign window) is left intact for an existing card and for the owSelectMode('b') test seam.
   var __owStartPath = null;
   function owSelectMode(mode){
-    if(mode==="upload" || mode==="pick"){
-      __owStartPath = mode; __owTab = "page"; __owMode = "b"; owRender(); return;
-    }
+    if(mode==="upload" || mode==="pick"){ __owStartPath = null; __owMode = mode; owRender(); return; }
+    if(mode==="b"){ __owStartPath = null; __owTab = "msg"; __owMode = "b"; owRender(); return; }
     __owStartPath = null; __owTab = "msg"; __owMode = mode; owRender();
   }
   // ---- G3 Mode B: the tabbed campaign window. Tabs switch instantly; the compose fields live in #owMsgPanel
@@ -2492,11 +2520,11 @@ ${CONTACTS_SRC}
   // its autosave through the SAME single writer (nmSaveNow: subject + body + signature + recipients together) and
   // edRoot/edEl bind every compose lookup + the #edPreview to it. The fields stay mounted while other gates show,
   // so an in-progress edit is never dropped on a gate switch (owComposeActive is not gated on the active gate).
-  function owComposeActive(){ return !!(__owSlug && (__owMode==="a" || __owMode==="b" || (__owMode==="detail" && !!document.getElementById("crMsgPanel")))); }
+  function owComposeActive(){ return !!(__owSlug && (__owMode==="a" || __owMode==="b" || __owMode==="upload" || __owMode==="pick" || (__owMode==="detail" && !!document.getElementById("crMsgPanel")))); }
   function owComposeRoot(){
     if(!__owSlug) return null;
     if(__owMode==="a") return document.getElementById("owModeA");
-    if(__owMode==="b") return document.getElementById("owMsgPanel");
+    if(__owMode==="b" || __owMode==="upload" || __owMode==="pick") return document.getElementById("owMsgPanel");   // direct upload/pick share the compose panel
     if(__owMode==="detail") return document.getElementById("crMsgPanel");   // the control-room MESSAGE gate
     return null;
   }
@@ -2693,6 +2721,7 @@ ${CONTACTS_SRC}
   // Stable seams for the window and its tests: owSelectMode lets a test drive the window's mode directly; the
   // card tap and "New message" reach the window through openOppWindow.
   try{ window.openOppWindow = openOppWindow; window.closeOppWindow = closeOppWindow; window.owSelectMode = owSelectMode; window.owNewMessage = owNewMessage; }catch(e){}
+  try{ window.__thriveOwState = function(){ return { slug:__owSlug, mode:__owMode }; }; }catch(e){}   // test seam: the open opp + its mode
   // Phase 3 seams: open the Contacts surface and drive a contact/conversation directly (the nav button reaches
   // openContactsView; these let a test land on the surface without depending on the header paint).
   try{ window.openContactsView = openContactsView; window.closeContactsView = closeContactsView; window.ctDetailRender = ctDetailRender; window.ctOpenConvo = ctOpenConvo; }catch(e){}

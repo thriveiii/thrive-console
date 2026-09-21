@@ -80,14 +80,17 @@ with sync_playwright() as p:
     # ===== option 3: Pick from the Library -> straight to the Library picker =====
     open_new(pg)
     pg.click("#owPickLib")
-    pg.wait_for_function("()=>{var b=document.getElementById('owBodyPick');return b && !b.hidden && !!document.getElementById('owPickList');}", timeout=6000); pg.wait_for_timeout(150)
+    # DIRECT flow: the pick surface renders the search + list straight away (no owBodyPick wrapper, no Mode B shell).
+    pg.wait_for_function("()=>!!document.getElementById('owPickList') && !!document.getElementById('owPickSearch')", timeout=6000); pg.wait_for_timeout(150)
     pk = pg.evaluate("""()=>{
-      var body=document.getElementById('owBodyPick');
-      return { pickVisible: !!body && !body.hidden, hasList: !!document.getElementById('owPickList'),
-               hasSearch: !!document.getElementById('owPickSearch'), commit: !!document.getElementById('owCommit') };
+      var pick=document.getElementById('owPick');
+      return { pickVisible: !!pick, hasList: !!document.getElementById('owPickList'),
+               hasSearch: !!document.getElementById('owPickSearch'), commit: !!document.getElementById('owCommit'),
+               noTabShell: document.querySelectorAll('#owTabs .ow-tab').length===0 && !document.getElementById('owPathPick') };
     }""")
     ck("Pick option lands directly on the Library picker (search + list)",
        pk["pickVisible"] and pk["hasList"] and pk["hasSearch"], pk)
+    ck("Pick lands with NO Mode B tab shell and NO duplicate path buttons", pk["noTabShell"], pk)
     ck("the pick surface has a working commit control (#owCommit)", pk["commit"], pk)
 
     # ===== option 1: Text message only -> the lean compose with a working Send button =====
