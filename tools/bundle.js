@@ -1241,17 +1241,15 @@ function buildBoard(){
   .cr-msg-body{color:#c7c7d1;white-space:pre-wrap;word-break:break-word;line-height:1.5}
   /* PHASE 2: the greeting toggle + smart-name fields + the bulk "related contacts" block. Brand-neutral, equal
      padding on all four sides, a clear two-option segmented toggle, no letter-spacing on Arabic. */
-  .g-greet,.g-bulk{display:flex;flex-direction:column;gap:10px}
-  .g-toggle{display:flex;gap:8px;flex-wrap:wrap}
-  .g-opt{flex:1 1 0;min-width:140px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:#c7c7d1;font:inherit;font-size:13.5px;cursor:pointer;text-align:center}
-  .g-opt:hover{border-color:#37505c}
-  .g-opt.on{background:#101019;border-color:var(--brand-teal);color:var(--text-hi);font-weight:650}
-  .g-fields{display:flex;flex-wrap:wrap;gap:10px}
-  .g-field{flex:1 1 200px;display:flex;flex-direction:column;gap:4px;min-width:0}
-  .g-lab{font-size:12px;color:var(--text-muted)}
-  .g-in{width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;color:var(--text-hi);font:inherit;font-size:14px}
-  .g-in:focus{outline:none;border-color:#4a7688}
-  .g-ask{font-size:12.5px;color:#e3c163}
+  .g-greet,.g-bulk{display:flex;flex-direction:column;gap:8px}
+  /* Optional greeting: one compact opt-in in the settings above the editor. A checkbox + a suggestion chip that
+     shows the exact line it would prepend. Token-based; equal padding; spacing in multiples of 8. */
+  .g-apply{display:flex;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer;color:var(--text);font-size:13.5px}
+  .g-apply input{width:auto;margin:0;flex:0 0 auto;accent-color:var(--brand-teal)}   /* natural checkbox size (beats the global input width:100%) */
+  .g-apply-l{flex:0 0 auto}
+  .g-sugg{flex:1 1 auto;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:4px 12px;color:var(--text-hi);font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .g-greet-empty .g-sugg{color:var(--text-muted);font-weight:400}
+  .g-hint{font-size:12px;color:var(--text-muted)}
   .g-bulk-chk{display:flex;align-items:flex-start;gap:9px;cursor:pointer;color:#c7c7d1;font-size:13.5px}
   .g-bulk-chk input{width:auto;margin-top:2px;flex:0 0 auto}   /* width:auto beats the global input width:100% so the checkbox is its natural size */
   .g-bulk-chk span{flex:1 1 auto;min-width:0}
@@ -1259,7 +1257,7 @@ function buildBoard(){
   .g-bulk-body[hidden]{display:none}   /* the [hidden] attr must beat .g-bulk-body's display:flex, or the field shows while unchecked */
   .g-bulk-in{width:100%;box-sizing:border-box}
   .g-bulk-hint{font-size:12px;color:var(--text-muted)}
-  html[dir="rtl"] .g-opt,html[dir="rtl"] .g-lab,html[dir="rtl"] .g-bulk-chk{letter-spacing:normal;text-transform:none}
+  html[dir="rtl"] .g-apply,html[dir="rtl"] .g-sugg,html[dir="rtl"] .g-hint,html[dir="rtl"] .g-bulk-chk{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .cr-h,html[dir="rtl"] .cr-contact-name,html[dir="rtl"] .cr-k{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .ow-tab,html[dir="rtl"] .ow-title,html[dir="rtl"] .ow-mode-btn{letter-spacing:normal;text-transform:none}
   /* ===== MOBILE-FIRST (phone): a clean, one-handed app, not a shrunken desktop page. Safe-area aware; the board
@@ -1300,11 +1298,8 @@ function buildBoard(){
     /* PREVIEWS: tall, scrollable, un-clipped, readable */
     iframe.ed-preview{height:56vh;min-height:340px}
     .cr-page-box .lv-frame,.ow-prev-box .lv-frame,#owPageReview .lv-frame{height:60vh;min-height:340px}
-    /* full-width fields; stack the greeting name/platform */
-    .g-fields{flex-direction:column}
-    .g-field{flex:1 1 auto}
-    .g-toggle{flex-direction:column}
-    .g-opt{min-width:0}
+    /* the greeting opt-in stays one compact row; the suggestion chip wraps below on a narrow phone */
+    .g-sugg{flex-basis:100%}
     /* NEW MESSAGE option cards + the path chooser: full-width, thumb-friendly */
     .ow-mode-btn{padding:18px 18px;font-size:16px}
     .ow-mode-btn .ow-mode-sub{font-size:13px}
@@ -1682,9 +1677,7 @@ function buildBoard(){
           cr_gate_msg:"Message", cr_gate_page:"Page", cr_gate_contact:"Contact", cr_gate_activity:"Activity",
           cr_page_h:"Page", cr_page_title:"Title", cr_page_link_name:"Link name", cr_page_none:"No page for this card yet.",
           cr_page_preview:"Preview", cr_contact_h:"Contact", cr_contact_count:"recipient(s)", cr_msg_none:"No message yet.",
-          g_greet_h:"Greeting", g_greet_name:"Hi [Name],", g_greet_team:"Hi [Platform] team,",
-          g_name_lab:"Contact name", g_name_ph:"e.g. Sarah", g_platform_lab:"Platform / company", g_platform_ph:"e.g. Bards Alley",
-          g_name_ask:"No name detected. Add one, or the team greeting is used.",
+          g_greet_h:"Greeting", g_greet_apply:"Add a greeting", g_greet_hint:"Off by default. When on, this line opens each message.", g_greet_none:"add a recipient to suggest one",
           g_bulk_lab:"Also send to related contacts (same subject)", g_bulk_ph:"2-3 more emails, comma or line separated",
           g_bulk_hint:"Each person gets their own individual message.",
           ow_commit:"Create campaign", ow_committed:"Campaign created.", ow_need_page:"Add a page first.",
@@ -1795,9 +1788,7 @@ function buildBoard(){
           cr_gate_msg:"الرسالة", cr_gate_page:"الصفحة", cr_gate_contact:"جهة الاتصال", cr_gate_activity:"النشاط",
           cr_page_h:"الصفحة", cr_page_title:"العنوان", cr_page_link_name:"اسم الرابط", cr_page_none:"لا صفحة لهذه البطاقة بعد.",
           cr_page_preview:"المعاينة", cr_contact_h:"جهة الاتصال", cr_contact_count:"مستلم/مستلمون", cr_msg_none:"لا رسالة بعد.",
-          g_greet_h:"التحية", g_greet_name:"مرحبا [الاسم]،", g_greet_team:"مرحبا فريق [المنصة]،",
-          g_name_lab:"اسم جهة الاتصال", g_name_ph:"مثال: سارة", g_platform_lab:"المنصة أو الشركة", g_platform_ph:"مثال: باردز آلي",
-          g_name_ask:"لا اسم مكتشف. أضف اسمًا، أو تُستخدم تحية الفريق.",
+          g_greet_h:"التحية", g_greet_apply:"أضف تحية", g_greet_hint:"معطّلة افتراضيًا. عند التفعيل تُفتتح بها كل رسالة.", g_greet_none:"أضف مستلمًا لاقتراح تحية",
           g_bulk_lab:"أرسل أيضًا إلى جهات اتصال ذات صلة (نفس الموضوع)", g_bulk_ph:"2-3 عناوين إضافية، مفصولة بفواصل أو أسطر",
           g_bulk_hint:"يتلقى كل شخص رسالته الفردية.",
           ow_commit:"إنشاء الحملة", ow_committed:"أُنشئت الحملة.", ow_need_page:"أضف صفحة أولًا.",

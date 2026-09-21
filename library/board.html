@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="dad91be0">
+<meta name="thrive-build" content="9170d19b">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -326,17 +326,15 @@
   .cr-msg-body{color:#c7c7d1;white-space:pre-wrap;word-break:break-word;line-height:1.5}
   /* PHASE 2: the greeting toggle + smart-name fields + the bulk "related contacts" block. Brand-neutral, equal
      padding on all four sides, a clear two-option segmented toggle, no letter-spacing on Arabic. */
-  .g-greet,.g-bulk{display:flex;flex-direction:column;gap:10px}
-  .g-toggle{display:flex;gap:8px;flex-wrap:wrap}
-  .g-opt{flex:1 1 0;min-width:140px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:#c7c7d1;font:inherit;font-size:13.5px;cursor:pointer;text-align:center}
-  .g-opt:hover{border-color:#37505c}
-  .g-opt.on{background:#101019;border-color:var(--brand-teal);color:var(--text-hi);font-weight:650}
-  .g-fields{display:flex;flex-wrap:wrap;gap:10px}
-  .g-field{flex:1 1 200px;display:flex;flex-direction:column;gap:4px;min-width:0}
-  .g-lab{font-size:12px;color:var(--text-muted)}
-  .g-in{width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;color:var(--text-hi);font:inherit;font-size:14px}
-  .g-in:focus{outline:none;border-color:#4a7688}
-  .g-ask{font-size:12.5px;color:#e3c163}
+  .g-greet,.g-bulk{display:flex;flex-direction:column;gap:8px}
+  /* Optional greeting: one compact opt-in in the settings above the editor. A checkbox + a suggestion chip that
+     shows the exact line it would prepend. Token-based; equal padding; spacing in multiples of 8. */
+  .g-apply{display:flex;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer;color:var(--text);font-size:13.5px}
+  .g-apply input{width:auto;margin:0;flex:0 0 auto;accent-color:var(--brand-teal)}   /* natural checkbox size (beats the global input width:100%) */
+  .g-apply-l{flex:0 0 auto}
+  .g-sugg{flex:1 1 auto;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:4px 12px;color:var(--text-hi);font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .g-greet-empty .g-sugg{color:var(--text-muted);font-weight:400}
+  .g-hint{font-size:12px;color:var(--text-muted)}
   .g-bulk-chk{display:flex;align-items:flex-start;gap:9px;cursor:pointer;color:#c7c7d1;font-size:13.5px}
   .g-bulk-chk input{width:auto;margin-top:2px;flex:0 0 auto}   /* width:auto beats the global input width:100% so the checkbox is its natural size */
   .g-bulk-chk span{flex:1 1 auto;min-width:0}
@@ -344,7 +342,7 @@
   .g-bulk-body[hidden]{display:none}   /* the [hidden] attr must beat .g-bulk-body's display:flex, or the field shows while unchecked */
   .g-bulk-in{width:100%;box-sizing:border-box}
   .g-bulk-hint{font-size:12px;color:var(--text-muted)}
-  html[dir="rtl"] .g-opt,html[dir="rtl"] .g-lab,html[dir="rtl"] .g-bulk-chk{letter-spacing:normal;text-transform:none}
+  html[dir="rtl"] .g-apply,html[dir="rtl"] .g-sugg,html[dir="rtl"] .g-hint,html[dir="rtl"] .g-bulk-chk{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .cr-h,html[dir="rtl"] .cr-contact-name,html[dir="rtl"] .cr-k{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .ow-tab,html[dir="rtl"] .ow-title,html[dir="rtl"] .ow-mode-btn{letter-spacing:normal;text-transform:none}
   /* ===== MOBILE-FIRST (phone): a clean, one-handed app, not a shrunken desktop page. Safe-area aware; the board
@@ -385,11 +383,8 @@
     /* PREVIEWS: tall, scrollable, un-clipped, readable */
     iframe.ed-preview{height:56vh;min-height:340px}
     .cr-page-box .lv-frame,.ow-prev-box .lv-frame,#owPageReview .lv-frame{height:60vh;min-height:340px}
-    /* full-width fields; stack the greeting name/platform */
-    .g-fields{flex-direction:column}
-    .g-field{flex:1 1 auto}
-    .g-toggle{flex-direction:column}
-    .g-opt{min-width:0}
+    /* the greeting opt-in stays one compact row; the suggestion chip wraps below on a narrow phone */
+    .g-sugg{flex-basis:100%}
     /* NEW MESSAGE option cards + the path chooser: full-width, thumb-friendly */
     .ow-mode-btn{padding:18px 18px;font-size:16px}
     .ow-mode-btn .ow-mode-sub{font-size:13px}
@@ -659,7 +654,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build dad91be0</span>
+    <span class="muted">build 9170d19b</span>
   </div>
   <div id="root"></div>
 </div>
@@ -683,7 +678,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "dad91be0";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "9170d19b";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -767,9 +762,7 @@
           cr_gate_msg:"Message", cr_gate_page:"Page", cr_gate_contact:"Contact", cr_gate_activity:"Activity",
           cr_page_h:"Page", cr_page_title:"Title", cr_page_link_name:"Link name", cr_page_none:"No page for this card yet.",
           cr_page_preview:"Preview", cr_contact_h:"Contact", cr_contact_count:"recipient(s)", cr_msg_none:"No message yet.",
-          g_greet_h:"Greeting", g_greet_name:"Hi [Name],", g_greet_team:"Hi [Platform] team,",
-          g_name_lab:"Contact name", g_name_ph:"e.g. Sarah", g_platform_lab:"Platform / company", g_platform_ph:"e.g. Bards Alley",
-          g_name_ask:"No name detected. Add one, or the team greeting is used.",
+          g_greet_h:"Greeting", g_greet_apply:"Add a greeting", g_greet_hint:"Off by default. When on, this line opens each message.", g_greet_none:"add a recipient to suggest one",
           g_bulk_lab:"Also send to related contacts (same subject)", g_bulk_ph:"2-3 more emails, comma or line separated",
           g_bulk_hint:"Each person gets their own individual message.",
           ow_commit:"Create campaign", ow_committed:"Campaign created.", ow_need_page:"Add a page first.",
@@ -880,9 +873,7 @@
           cr_gate_msg:"الرسالة", cr_gate_page:"الصفحة", cr_gate_contact:"جهة الاتصال", cr_gate_activity:"النشاط",
           cr_page_h:"الصفحة", cr_page_title:"العنوان", cr_page_link_name:"اسم الرابط", cr_page_none:"لا صفحة لهذه البطاقة بعد.",
           cr_page_preview:"المعاينة", cr_contact_h:"جهة الاتصال", cr_contact_count:"مستلم/مستلمون", cr_msg_none:"لا رسالة بعد.",
-          g_greet_h:"التحية", g_greet_name:"مرحبا [الاسم]،", g_greet_team:"مرحبا فريق [المنصة]،",
-          g_name_lab:"اسم جهة الاتصال", g_name_ph:"مثال: سارة", g_platform_lab:"المنصة أو الشركة", g_platform_ph:"مثال: باردز آلي",
-          g_name_ask:"لا اسم مكتشف. أضف اسمًا، أو تُستخدم تحية الفريق.",
+          g_greet_h:"التحية", g_greet_apply:"أضف تحية", g_greet_hint:"معطّلة افتراضيًا. عند التفعيل تُفتتح بها كل رسالة.", g_greet_none:"أضف مستلمًا لاقتراح تحية",
           g_bulk_lab:"أرسل أيضًا إلى جهات اتصال ذات صلة (نفس الموضوع)", g_bulk_ph:"2-3 عناوين إضافية، مفصولة بفواصل أو أسطر",
           g_bulk_hint:"يتلقى كل شخص رسالته الفردية.",
           ow_commit:"إنشاء الحملة", ow_committed:"أُنشئت الحملة.", ow_need_page:"أضف صفحة أولًا.",
@@ -1870,18 +1861,20 @@ function sendCompile(slug, row, data, rcpt, mode){
   // address yields none). firstName trims to the given name. This is the {{NAME}} person for name-mode greetings.
   var full = String(rcpt.name==null?"":rcpt.name).trim() || smartPerson(addr);
   var person = (data.firstName && full) ? full.split(/\s+/)[0] : full;
-  // GREETING: the toggle (data.greeting) picks name vs platform; no person name safely falls back to the platform
-  // team. The platform is the operator's field, else the business, else inferred from the domain.
-  var platform = String(data.platform||"").trim() || (row&&row.business) || data.business || smartPlatform(addr) || "";
-  var greetMode = (data.greeting==="platform") ? "platform" : "name";
-  var fill = greetFill(greetMode, person, platform, lang);          // the {{NAME}} value, per recipient
+  // GREETING (OPTIONAL, OFF by default): the body is EXACTLY what the operator typed. A greeting line is added
+  // ONLY when the operator applied the suggestion (data.greetOn === true), and then only a single line is
+  // prepended here at compile time (the textarea the operator sees is never mutated). name mode infers the
+  // person from the recipient and falls back to the platform team, so each recipient opens with their own
+  // "Hi <Name>," / "مرحبا <الاسم>،" or "Hi <Team> team," / "مرحبا فريق <المنصة>،". No forced greeting, ever.
+  // The team form is inferred from the RECIPIENT EMAIL first (info@kentucky... -> "Kentucky"), then the card's
+  // business, so the greeting is auto-captured from the address the operator chose (the task's inference rule).
+  var platform = String(data.platform||"").trim() || smartPlatform(addr) || (row&&row.business) || data.business || "";
+  var fill = greetFill("name", person, platform, lang);            // the {{NAME}} value for any user-typed token, per recipient
   var pageSlug = (data && data.page_slug) || slug;   // PR-A0: a promoted card carries its own slug but points at the SHARED template page
   var ctx = { business:(row&&row.business)||data.business||"", link:liveUrl(pageSlug), month:data.month||"" };
   var body0 = String(data.outreach_text||"");
-  // A body that carries no {{NAME}} and no salutation of its own gets the toggle-owned greeting prepended, so
-  // every send opens with a greeting; a body that already greets is left untouched (no double greeting).
-  var greeted = (/\{\{\s*NAME\s*\}\}/.test(body0) || hasSalutation(body0)) ? body0 : (greetingLine(greetMode, person, platform, lang) + "\n\n" + body0);
-  var inner = mergeFieldsInto(greeted, fill, ctx);                  // {{NAME}} -> fill (empty-name cleanup for a no-name/no-platform fill)
+  var lead = (data.greetOn === true) ? (greetingLine("name", person, platform, lang) + "\n\n") : "";   // opt-in only
+  var inner = mergeFieldsInto(lead + body0, fill, ctx);            // OFF -> the typed body verbatim (user tokens still resolve)
   var subject = mergeFieldsInto(data.outreach_subject||"", fill, ctx).replace(/^\s+|\s+$/g, "");
   // GUARANTEE the G7.1 signature: an empty signature field falls back to the operator's localized default block,
   // so every send carries a signature. edSignatureDefault (board-editor) reads the per-user identity.
@@ -2461,52 +2454,50 @@ function edLiveData(slug){
   if(!recips.length && Array.isArray(base.recipients)) recips = base.recipients;
   return Object.assign({}, base, {
     outreach_subject:edVal("edSubj"), outreach_text:edVal("edBody"), sig:edSignature(),
-    platform:(edVal("crPlatform").trim() || base.platform || ""),
-    greeting:edGreeting(slug),
+    greetOn:edGreetOn(slug),                                        // OPTIONAL greeting: applied only when the suggestion is checked
+    lang:(LANG==="ar" ? "ar" : (base.lang||"en")),                  // the operator's UI language, so the greeting suggestion == preview == send
     recipients:recips
   });
 }
-// ---- Phase 2 greeting state (in-memory on __edBase for a live preview; persisted by the compose writer) ----
-function edGreeting(slug){ var d=__edBase[slug]||{}; return (d.greeting==="platform") ? "platform" : "name"; }
-function edSetGreeting(slug, mode){
-  mode = (mode==="platform") ? "platform" : "name";
+// ---- Optional greeting state (in-memory on __edBase for a live preview; persisted by the compose writer). It is
+//      a single opt-in: OFF by default, applied only when the operator checks the suggestion chip. ----
+function edGreetOn(slug){ var d=__edBase[slug]||{}; return d.greetOn === true; }
+function edSetGreetOn(slug, on){
   if(!__edBase[slug]) __edBase[slug] = {};
-  __edBase[slug].greeting = mode;
-  edApplyGreeting(slug); edRenderPreview(slug); edScheduleSave(slug, 300);
+  __edBase[slug].greetOn = !!on;
+  edRenderPreview(slug); edScheduleSave(slug, 300);   // the exact-send preview reflects the change at once
 }
-function edApplyGreeting(slug){
-  var mode=edGreeting(slug), root=edRoot();
-  if(root && root.querySelectorAll){ [].forEach.call(root.querySelectorAll("[data-greet]"), function(b){ b.classList.toggle("on", b.getAttribute("data-greet")===mode); }); }
-  edGreetAsk(slug);
+// The greeting line the suggestion would prepend, for the FIRST live recipient, in the operator's UI language.
+// It is a SUGGESTION only: no recipient (or a role address with no inferable person) never blocks a send; the
+// chip simply shows "" or the team form. Reuses smartPerson / smartPlatform / greetingLine (no fork).
+function greetSuggestText(slug, data){
+  data = data || __edBase[slug] || {};
+  var lang = (LANG==="ar") ? "ar" : "en";
+  var first = (typeof sendToList==="function" && sendToList()[0]) || ((typeof firstRecipient==="function") ? firstRecipient(data) : null);
+  if(!first || !first.addr) return "";
+  var person = (first.name && String(first.name).trim()) || ((typeof smartPerson==="function") ? smartPerson(first.addr) : "");
+  var platform = ((typeof smartPlatform==="function") ? smartPlatform(first.addr) : "");
+  return greetingLine("name", person, platform, lang);   // "Hi Ahmed," / "Hi Kentucky team," / AR equivalents
 }
-// Gentle ask (never blocks): in name mode with no person name known - the field empty AND nothing inferable from
-// the address - show the "add a name" hint. The send still falls back to the platform team greeting and proceeds.
-function edGreetAsk(slug){
-  var ask=edEl("crNameAsk"); if(!ask) return;
-  var nm=edVal("crName").trim();
-  var first=(typeof sendToList==="function") ? (sendToList()[0]||null) : null;
-  var inferred = (first && typeof smartPerson==="function") ? smartPerson(first.addr) : "";
-  ask.hidden = !(edGreeting(slug)==="name" && !nm && !inferred);
+// Keep the chip's suggested text current as the recipient changes (never blocks; shows "" until a recipient).
+function edGreetRefresh(slug){
+  var el=edEl("crGreetSugg"); if(!el) return;
+  var sugg=greetSuggestText(slug, __edBase[slug]||{});
+  el.textContent = sugg || t("g_greet_none");
+  var wrap=edEl("crGreet"); if(wrap) wrap.classList.toggle("g-greet-empty", !sugg);
 }
-// The greeting toggle + the smart-name (contact) and platform fields. Prefilled from the record and inferred from
-// the first recipient's address; both editable; neither ever blocks the send.
+// FIX: the greeting control is a COMPACT opt-in in the settings ABOVE the editor - one checkbox that applies the
+// inferred suggestion, no large always-visible name/platform fields. OFF by default.
 function greetingHtml(slug, row, detail){
   if(!editorEligible(row)) return "";
   var data = (detail && detail.opp && detail.opp.data) || __edBase[slug] || {};
-  var mode = (data.greeting==="platform") ? "platform" : "name";
-  var first = (typeof firstRecipient==="function") ? firstRecipient(data) : null;
-  var nameVal = (first && first.name) ? first.name : ((first && typeof smartPerson==="function") ? smartPerson(first.addr) : "");
-  var platVal = String(data.platform||"").trim() || ((first && typeof smartPlatform==="function") ? smartPlatform(first.addr) : "") || (row&&row.business) || "";
-  var opt=function(k,key){ return '<button class="g-opt'+(mode===k?" on":"")+'" type="button" role="tab" data-greet="'+k+'">'+esc(t(key))+'</button>'; };
-  return '<div class="dw-sec g-greet"><h3>'+esc(t("g_greet_h"))+'</h3>'+
-    '<div class="g-toggle" role="tablist">'+opt("name","g_greet_name")+opt("platform","g_greet_team")+'</div>'+
-    '<div class="g-fields">'+
-      '<label class="g-field"><span class="g-lab">'+esc(t("g_name_lab"))+'</span>'+
-        '<input class="g-in" id="crName" type="text" dir="auto" autocomplete="off" spellcheck="false" value="'+esc(nameVal)+'" placeholder="'+esc(t("g_name_ph"))+'"></label>'+
-      '<label class="g-field"><span class="g-lab">'+esc(t("g_platform_lab"))+'</span>'+
-        '<input class="g-in" id="crPlatform" type="text" dir="auto" autocomplete="off" spellcheck="false" value="'+esc(platVal)+'" placeholder="'+esc(t("g_platform_ph"))+'"></label>'+
-    '</div>'+
-    '<div class="g-ask" id="crNameAsk" hidden>'+esc(t("g_name_ask"))+'</div>'+
+  var on = data.greetOn === true;
+  var sugg = greetSuggestText(slug, data);
+  return '<div class="dw-sec g-greet" id="crGreet">'+
+    '<label class="g-apply"><input type="checkbox" id="crGreetOn"'+(on?" checked":"")+'>'+
+      '<span class="g-apply-l">'+esc(t("g_greet_apply"))+'</span>'+
+      '<span class="g-sugg" id="crGreetSugg" dir="auto">'+esc(sugg||t("g_greet_none"))+'</span></label>'+
+    '<div class="g-hint">'+esc(t("g_greet_hint"))+'</div>'+
   '</div>';
 }
 function edCompileFrom(slug, data){
@@ -2583,7 +2574,7 @@ function edRenderPreview(slug){
     var f=edEl("edPreview"); if(f) f.setAttribute("srcdoc", art.html);
   }catch(e){}
 }
-function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); try{ if(typeof owRefreshTitle==="function") owRefreshTitle(); }catch(e){} }   // FIX A: the window header follows the typed subject
+function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); try{ edGreetRefresh(slug); }catch(e){} try{ if(typeof owRefreshTitle==="function") owRefreshTitle(); }catch(e){} }   // the header follows the subject; the greeting chip follows the recipient
 
 // Insert the opp link. With a selection, EMBED the link on the chosen phrase as a markdown link
 // [selected]({{LINK}}) (ConTh 11: an anchor, not a naked URL - bodyParasHtml renders it as <a>). With no
@@ -2690,7 +2681,7 @@ function edSaveNow(slug){
   oppReadData(slug).then(function(data){
     var wasEmpty = !(String(data.outreach_subject||"").trim() || String(data.outreach_text||"").trim());
     var nowHas = !!(subj.trim() || body.trim());
-    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, greeting:edGreeting(slug), platform:(edVal("crPlatform").trim()||data.platform||"") });
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
     return oppPatch(slug, { data:next, up:Date.now() }).then(function(){
       __edSaving = false;
       __edBase[slug] = next;                                   // keep the preview base in sync with the persisted record
@@ -2722,14 +2713,11 @@ function wireEditor(slug){
   var lk=edEl("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
   var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
   edRenderSavedSigs(slug);                                     // G7.1: the per-user saved-signatures strip + "+"
-  // Phase 2: the greeting toggle, the smart-name (contact) + platform fields, and the bulk "related contacts".
-  var groot=edRoot();
-  if(groot && groot.querySelectorAll){ [].forEach.call(groot.querySelectorAll("[data-greet]"), function(b){ b.addEventListener("click", function(){ edSetGreeting(slug, b.getAttribute("data-greet")); }); }); }
-  var nmn=edEl("crName"); if(nmn) nmn.addEventListener("input", function(){ edRenderPreview(slug); edGreetAsk(slug); edScheduleSave(slug, 700); });
-  var plt=edEl("crPlatform"); if(plt) plt.addEventListener("input", function(){ edRenderPreview(slug); edScheduleSave(slug, 700); });
+  // Optional greeting (one opt-in checkbox) + the bulk "related contacts".
+  var gon=edEl("crGreetOn"); if(gon) gon.addEventListener("change", function(){ edSetGreetOn(slug, gon.checked); });
   var bchk=edEl("crBulkChk"); if(bchk) bchk.addEventListener("change", function(){ var bd=edEl("crBulkBody"); if(bd) bd.hidden=!bchk.checked; edTick(slug); });
   var bin=edEl("crBulkIn"); if(bin) bin.addEventListener("input", function(){ edTick(slug); edScheduleSave(slug, 700); });
-  edApplyGreeting(slug);                                       // mark the active toggle + the gentle name ask
+  edGreetRefresh(slug);                                        // seed the suggestion text from the current recipient
   edTick(slug);                                                // initial checklist + gate + preview
 }
 
@@ -2739,6 +2727,8 @@ function wireEditor(slug){
 //   __thriveReplyTo(slug): the Reply-To the send stamps, proving a reply carries the opp slug (never a campaign).
 try{
   window.__thriveComposeArtifact = function(slug){ return oppReadData(slug).then(function(data){ return edCompileFrom(slug, data); }); };
+  window.__thriveLiveArtifact = function(slug){ return edCompileFrom(slug, edLiveData(slug)); };   // the LIVE compose (fields as typed), for greeting tests
+  window.__thriveGreetSuggest = function(slug){ return greetSuggestText(slug, __edBase[slug]||{}); };
   window.__thriveReplyTo = function(slug){ try{ return outboundHeaders(slug)["Reply-To"]; }catch(e){ return ""; } };
   //   __thriveSendHeaders(slug): the exact header set the send stamps for a slug's own mode (personal 1:1 vs
   //     campaign), proving a personal send carries NO List-Unsubscribe. Derives mode from the persisted record.
@@ -2828,8 +2818,8 @@ function nmBusiness(subj){ var s=String(subj==null?"":subj).trim(); return s ? s
 // by reference at every compose surface. composeBodyHtml adds the overlay/Mode-A Send; G3 Mode B mounts the
 // fields alone on its Message tab (the window's ONE Commit is the action, not a per-tab send).
 function composeFieldsHtml(slug, row, detail){
-  return editorHtml(slug, row, detail)+
-    greetingHtml(slug, row, detail)+                                      // Phase 2: greeting toggle + smart-name + platform
+  return greetingHtml(slug, row, detail)+                                 // SETTINGS above the editor: the optional greeting opt-in
+    editorHtml(slug, row, detail)+
     recipientHtml(slug, row, detail)+                                     // UNIFY: the SAME #recIn field the drawer mounts
     bulkHtml(slug, row, detail);                                          // Phase 2: "also send to related contacts" (each one-to-one)
 }
@@ -2924,7 +2914,7 @@ function nmSaveNow(slug){
   var subj=String(subjEl.value||""), body=String(bodyEl.value||""), sig=edSignature(), recips=sendToList();
   nmSetStatus(t("a_saving"), "");
   oppReadData(slug).then(function(data){
-    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greeting:edGreeting(slug), platform:(edVal("crPlatform").trim()||data.platform||"") });
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
     return oppUpsert(slug, { business:nmBusiness(subj), data:next, up:Date.now() }).then(function(){
       __nmSaving = false;
       __edBase[slug] = next;                 // keep the editor's preview base in sync with the persisted record
@@ -3001,7 +2991,7 @@ function unifiedSend(slug){
   if(over){ nmSetStatus(t("s_sending"), ""); var sd=document.getElementById("nmSend"); if(sd) sd.disabled=true; }
   var row = findRow(slug) || { slug:slug };
   oppReadData(slug).then(function(data){
-    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greeting:edGreeting(slug), platform:(edVal("crPlatform").trim()||data.platform||"") });
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
     return oppUpsert(slug, { business:(row.business || nmBusiness(subj)), data:next, up:Date.now() });
   }).then(function(){
     return reloadBoardData();                          // so the opp is a board row runSend can find

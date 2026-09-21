@@ -77,8 +77,8 @@ function nmBusiness(subj){ var s=String(subj==null?"":subj).trim(); return s ? s
 // by reference at every compose surface. composeBodyHtml adds the overlay/Mode-A Send; G3 Mode B mounts the
 // fields alone on its Message tab (the window's ONE Commit is the action, not a per-tab send).
 function composeFieldsHtml(slug, row, detail){
-  return editorHtml(slug, row, detail)+
-    greetingHtml(slug, row, detail)+                                      // Phase 2: greeting toggle + smart-name + platform
+  return greetingHtml(slug, row, detail)+                                 // SETTINGS above the editor: the optional greeting opt-in
+    editorHtml(slug, row, detail)+
     recipientHtml(slug, row, detail)+                                     // UNIFY: the SAME #recIn field the drawer mounts
     bulkHtml(slug, row, detail);                                          // Phase 2: "also send to related contacts" (each one-to-one)
 }
@@ -173,7 +173,7 @@ function nmSaveNow(slug){
   var subj=String(subjEl.value||""), body=String(bodyEl.value||""), sig=edSignature(), recips=sendToList();
   nmSetStatus(t("a_saving"), "");
   oppReadData(slug).then(function(data){
-    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greeting:edGreeting(slug), platform:(edVal("crPlatform").trim()||data.platform||"") });
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
     return oppUpsert(slug, { business:nmBusiness(subj), data:next, up:Date.now() }).then(function(){
       __nmSaving = false;
       __edBase[slug] = next;                 // keep the editor's preview base in sync with the persisted record
@@ -250,7 +250,7 @@ function unifiedSend(slug){
   if(over){ nmSetStatus(t("s_sending"), ""); var sd=document.getElementById("nmSend"); if(sd) sd.disabled=true; }
   var row = findRow(slug) || { slug:slug };
   oppReadData(slug).then(function(data){
-    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greeting:edGreeting(slug), platform:(edVal("crPlatform").trim()||data.platform||"") });
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
     return oppUpsert(slug, { business:(row.business || nmBusiness(subj)), data:next, up:Date.now() });
   }).then(function(){
     return reloadBoardData();                          // so the opp is a board row runSend can find

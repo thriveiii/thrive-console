@@ -282,18 +282,20 @@ function sendCompile(slug, row, data, rcpt, mode){
   // address yields none). firstName trims to the given name. This is the {{NAME}} person for name-mode greetings.
   var full = String(rcpt.name==null?"":rcpt.name).trim() || smartPerson(addr);
   var person = (data.firstName && full) ? full.split(/\s+/)[0] : full;
-  // GREETING: the toggle (data.greeting) picks name vs platform; no person name safely falls back to the platform
-  // team. The platform is the operator's field, else the business, else inferred from the domain.
-  var platform = String(data.platform||"").trim() || (row&&row.business) || data.business || smartPlatform(addr) || "";
-  var greetMode = (data.greeting==="platform") ? "platform" : "name";
-  var fill = greetFill(greetMode, person, platform, lang);          // the {{NAME}} value, per recipient
+  // GREETING (OPTIONAL, OFF by default): the body is EXACTLY what the operator typed. A greeting line is added
+  // ONLY when the operator applied the suggestion (data.greetOn === true), and then only a single line is
+  // prepended here at compile time (the textarea the operator sees is never mutated). name mode infers the
+  // person from the recipient and falls back to the platform team, so each recipient opens with their own
+  // "Hi <Name>," / "مرحبا <الاسم>،" or "Hi <Team> team," / "مرحبا فريق <المنصة>،". No forced greeting, ever.
+  // The team form is inferred from the RECIPIENT EMAIL first (info@kentucky... -> "Kentucky"), then the card's
+  // business, so the greeting is auto-captured from the address the operator chose (the task's inference rule).
+  var platform = String(data.platform||"").trim() || smartPlatform(addr) || (row&&row.business) || data.business || "";
+  var fill = greetFill("name", person, platform, lang);            // the {{NAME}} value for any user-typed token, per recipient
   var pageSlug = (data && data.page_slug) || slug;   // PR-A0: a promoted card carries its own slug but points at the SHARED template page
   var ctx = { business:(row&&row.business)||data.business||"", link:liveUrl(pageSlug), month:data.month||"" };
   var body0 = String(data.outreach_text||"");
-  // A body that carries no {{NAME}} and no salutation of its own gets the toggle-owned greeting prepended, so
-  // every send opens with a greeting; a body that already greets is left untouched (no double greeting).
-  var greeted = (/\{\{\s*NAME\s*\}\}/.test(body0) || hasSalutation(body0)) ? body0 : (greetingLine(greetMode, person, platform, lang) + "\n\n" + body0);
-  var inner = mergeFieldsInto(greeted, fill, ctx);                  // {{NAME}} -> fill (empty-name cleanup for a no-name/no-platform fill)
+  var lead = (data.greetOn === true) ? (greetingLine("name", person, platform, lang) + "\n\n") : "";   // opt-in only
+  var inner = mergeFieldsInto(lead + body0, fill, ctx);            // OFF -> the typed body verbatim (user tokens still resolve)
   var subject = mergeFieldsInto(data.outreach_subject||"", fill, ctx).replace(/^\s+|\s+$/g, "");
   // GUARANTEE the G7.1 signature: an empty signature field falls back to the operator's localized default block,
   // so every send carries a signature. edSignatureDefault (board-editor) reads the per-user identity.
