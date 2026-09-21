@@ -1382,6 +1382,7 @@ function buildBoard(){
   .up-orphans{font-size:12px;color:#d8b48a;margin:2px 0 8px}
   .up-info{font-size:12px;color:#8a93a6;margin:2px 0 8px}
   .up-rows{display:flex;flex-direction:column;gap:10px;margin:6px 0}
+  .up-rows[hidden],.ow-foot[hidden]{display:none}   /* the [hidden] attr must beat their explicit display (FIX B: pick reveals these) */
   .up-row{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface)}
   .up-row-warn{border-color:#4b3a27}
   .up-row-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:4px}
@@ -2417,9 +2418,26 @@ ${CONTACTS_SRC}
       card("owPickLib","ow_new_pick","ow_new_pick_sub")+
       '</div>';
   }
+  // FIX A: a READABLE window header, never the raw msg-... id. Priority: an existing card's real title, then a
+  // composed subject (live from the editor, or the saved outreach_subject), then the page/template being worked
+  // on (the held plan's first included row title), then an existing non-msg slug, else "New message". The slug
+  // stays the internal id only; it is never shown when it is a fresh msg-... mint.
+  function owRenderTitle(){
+    var el=document.getElementById("owTitle"); if(!el) return;
+    var slug=__owSlug, row=findRow(slug);
+    if(row && row.business && String(row.business).trim()){ el.textContent=String(row.business).trim(); return; }
+    var subj=""; try{ subj=(edVal("edSubj")||"").trim(); }catch(e){}
+    if(!subj){ try{ var d=(__edBase&&__edBase[slug])||{}; subj=String(d.outreach_subject||"").trim(); }catch(e){} }
+    if(subj){ el.textContent=subj; return; }
+    try{ var rows=(typeof __upPlan!=="undefined" && __upPlan && __upPlan.rows) || [];
+      for(var i=0;i<rows.length;i++){ if(rows[i] && rows[i].included!==false && rows[i].title && String(rows[i].title).trim()){ el.textContent=String(rows[i].title).trim(); return; } } }catch(e){}
+    if(row && row.slug && !/^msg-/.test(String(row.slug))){ el.textContent=String(row.slug); return; }   // an existing real slug (e.g. a page slug), never a msg-... id
+    el.textContent=t("nm_h");                                                                            // fresh new message
+  }
+  try{ window.__thriveOwTitle = function(){ var e=document.getElementById("owTitle"); return e?e.textContent:""; }; }catch(e){}
+  function owRefreshTitle(){ try{ if(__owSlug) owRenderTitle(); }catch(e){} }   // live update as the subject is typed
   function owRender(){
-    var title=document.getElementById("owTitle");
-    if(title){ var row=findRow(__owSlug); title.textContent = (row && (row.business||row.slug)) || __owSlug || t("ow_title"); }
+    owRenderTitle();
     // The header button: from a compose mode it "changes mode" (back to the selector); from the Details view it
     // is the "Compose" entry (a new message for this opp). Both land on the selector; only the label differs.
     var chg=document.getElementById("owChangeMode"); if(chg){ chg.hidden = !__owMode; chg.textContent = (__owMode==="detail") ? t("ow_compose") : t("ow_change_mode"); }

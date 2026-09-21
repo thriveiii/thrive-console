@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="60fbe4b8">
+<meta name="thrive-build" content="dad91be0">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -467,6 +467,7 @@
   .up-orphans{font-size:12px;color:#d8b48a;margin:2px 0 8px}
   .up-info{font-size:12px;color:#8a93a6;margin:2px 0 8px}
   .up-rows{display:flex;flex-direction:column;gap:10px;margin:6px 0}
+  .up-rows[hidden],.ow-foot[hidden]{display:none}   /* the [hidden] attr must beat their explicit display (FIX B: pick reveals these) */
   .up-row{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--surface)}
   .up-row-warn{border-color:#4b3a27}
   .up-row-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:4px}
@@ -658,7 +659,7 @@
 <div class="wrap">
   <div class="top">
     <span class="brand">Thrive Board</span>
-    <span class="muted">build 60fbe4b8</span>
+    <span class="muted">build dad91be0</span>
   </div>
   <div id="root"></div>
 </div>
@@ -682,7 +683,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "60fbe4b8";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "dad91be0";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -2582,7 +2583,7 @@ function edRenderPreview(slug){
     var f=edEl("edPreview"); if(f) f.setAttribute("srcdoc", art.html);
   }catch(e){}
 }
-function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); }
+function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); try{ if(typeof owRefreshTitle==="function") owRefreshTitle(); }catch(e){} }   // FIX A: the window header follows the typed subject
 
 // Insert the opp link. With a selection, EMBED the link on the chosen phrase as a markdown link
 // [selected]({{LINK}}) (ConTh 11: an anchor, not a naked URL - bodyParasHtml renders it as <a>). With no
@@ -4323,6 +4324,7 @@ function owPageLoadExisting(){
 function owPageSetReview(row){
   row.slug = row.slug || __owSlug; row.warnings = row.warnings || []; if(row.included==null) row.included = true;
   __upPlan = { rows:[row] };
+  if(__owPickAwaiting){ __owPickAwaiting = false; owRevealPickEditor(); }   // FIX B: a template was picked -> reveal the editor + review + commit (scoped to the pick entry)
   owReviewRender();                     // the SAME accordion the multi-page upload uses (one section here)
 }
 // Entry mode 1: UPLOAD a new page/template (the SHARED upBuildPlan parse). First page row becomes the review.
@@ -4516,7 +4518,8 @@ function owPageMount(slug){
 // upload parse, the accordion review, the commit routing and every send invariant are the existing ones.
 // ===================================================================================================
 function owDirectHostHtml(kind){
-  var src = (kind==="pick")
+  var pick = (kind==="pick");
+  var src = pick
     ? '<div class="ow-pick" id="owPick">'+
         '<input class="lib-in" id="owPickSearch" type="text" placeholder="'+esc(t("lib_search_ph"))+'" autocomplete="off">'+
         '<div class="ow-pick-list" id="owPickList"></div>'+
@@ -4524,14 +4527,24 @@ function owDirectHostHtml(kind){
     : '<div class="ow-path-body" id="owBodyUpload">'+
         '<label class="act ow-up-btn">'+esc(t("ow_campaign_upload"))+'<input type="file" id="owUploadFile" accept=".zip,.html,.htm" hidden></label>'+
       '</div>';
+  // FIX B: in PICK mode the editor + review + commit start HIDDEN, so only the Library list shows until a
+  // template is chosen (Use/Duplicate); the pick reveals them. Upload mode shows the compose up front as before.
+  var h = pick ? " hidden" : "";
   return '<div class="ow-mode ow-direct" id="owDirect">'+
       '<div class="ow-direct-src" id="owPagePanel">'+src+'</div>'+       // the source: upload input OR the Library picker
-      '<div class="up-rows" id="owPageReview"></div>'+                    // the accordion review (per-row preview + include/exclude)
-      '<div class="ow-panel ow-direct-msg" id="owMsgPanel"></div>'+       // the shared message (single page / picked template)
+      '<div class="up-rows" id="owPageReview"'+h+'></div>'+               // the accordion review (per-row preview + include/exclude)
+      '<div class="ow-panel ow-direct-msg" id="owMsgPanel"'+h+'></div>'+  // the shared message (single page / picked template)
       '<div class="act-status" id="owPageStatus" role="status" aria-live="polite"></div>'+
-      '<div class="ow-foot"><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
+      '<div class="ow-foot" id="owDirectFoot"'+h+'><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
         '<div class="act-status" id="owCommitStatus" role="status" aria-live="polite"></div></div>'+
     '</div>';
+}
+// FIX B: reveal the editor + review + commit AFTER a template is picked in the new-message pick entry (only).
+var __owPickAwaiting = false;
+function owRevealPickEditor(){
+  ["owPageReview","owMsgPanel","owDirectFoot"].forEach(function(id){ var el=document.getElementById(id); if(el) el.removeAttribute("hidden"); });
+  try{ if(typeof owMsgMount==="function" && document.getElementById("owMsgPanel")) owMsgMount(__owSlug); }catch(e){}   // mount the compose now, not before a pick
+  try{ if(typeof owRefreshTitle==="function") owRefreshTitle(); }catch(e){}
 }
 function owUploadEntryMount(slug){
   try{ if(typeof owMsgMount==="function") owMsgMount(slug); }catch(e){}    // shared compose fields (subject/body/signature/recipient)
@@ -4542,8 +4555,8 @@ function owUploadEntryMount(slug){
   try{ if(uf) uf.click(); }catch(e){}                                     // open the OS file picker IMMEDIATELY (still inside the button-click gesture)
 }
 function owPickEntryMount(slug){
-  try{ if(typeof owMsgMount==="function") owMsgMount(slug); }catch(e){}
-  __owPagePath="pick"; __upPlan=null;
+  // FIX B: the compose editor is NOT mounted yet; only the Library search + list show. A pick reveals the rest.
+  __owPickAwaiting = true; __owPagePath="pick"; __upPlan=null;
   var q=document.getElementById("owPickSearch"); if(q) q.addEventListener("input", function(){ owPagePickList(); });
   var cb=document.getElementById("owCommit"); if(cb) cb.addEventListener("click", function(){ if(typeof owCommitCampaign==="function") owCommitCampaign(slug); });
   owPagePickList();                                                       // owPagePickList loads the existing pages itself
@@ -5423,9 +5436,26 @@ function ctOpenConvoFromLibrary(cid){
       card("owPickLib","ow_new_pick","ow_new_pick_sub")+
       '</div>';
   }
+  // FIX A: a READABLE window header, never the raw msg-... id. Priority: an existing card's real title, then a
+  // composed subject (live from the editor, or the saved outreach_subject), then the page/template being worked
+  // on (the held plan's first included row title), then an existing non-msg slug, else "New message". The slug
+  // stays the internal id only; it is never shown when it is a fresh msg-... mint.
+  function owRenderTitle(){
+    var el=document.getElementById("owTitle"); if(!el) return;
+    var slug=__owSlug, row=findRow(slug);
+    if(row && row.business && String(row.business).trim()){ el.textContent=String(row.business).trim(); return; }
+    var subj=""; try{ subj=(edVal("edSubj")||"").trim(); }catch(e){}
+    if(!subj){ try{ var d=(__edBase&&__edBase[slug])||{}; subj=String(d.outreach_subject||"").trim(); }catch(e){} }
+    if(subj){ el.textContent=subj; return; }
+    try{ var rows=(typeof __upPlan!=="undefined" && __upPlan && __upPlan.rows) || [];
+      for(var i=0;i<rows.length;i++){ if(rows[i] && rows[i].included!==false && rows[i].title && String(rows[i].title).trim()){ el.textContent=String(rows[i].title).trim(); return; } } }catch(e){}
+    if(row && row.slug && !/^msg-/.test(String(row.slug))){ el.textContent=String(row.slug); return; }   // an existing real slug (e.g. a page slug), never a msg-... id
+    el.textContent=t("nm_h");                                                                            // fresh new message
+  }
+  try{ window.__thriveOwTitle = function(){ var e=document.getElementById("owTitle"); return e?e.textContent:""; }; }catch(e){}
+  function owRefreshTitle(){ try{ if(__owSlug) owRenderTitle(); }catch(e){} }   // live update as the subject is typed
   function owRender(){
-    var title=document.getElementById("owTitle");
-    if(title){ var row=findRow(__owSlug); title.textContent = (row && (row.business||row.slug)) || __owSlug || t("ow_title"); }
+    owRenderTitle();
     // The header button: from a compose mode it "changes mode" (back to the selector); from the Details view it
     // is the "Compose" entry (a new message for this opp). Both land on the selector; only the label differs.
     var chg=document.getElementById("owChangeMode"); if(chg){ chg.hidden = !__owMode; chg.textContent = (__owMode==="detail") ? t("ow_compose") : t("ow_change_mode"); }

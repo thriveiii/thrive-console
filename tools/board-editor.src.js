@@ -252,7 +252,7 @@ function edRenderPreview(slug){
     var f=edEl("edPreview"); if(f) f.setAttribute("srcdoc", art.html);
   }catch(e){}
 }
-function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); }
+function edTick(slug){ edRefreshChecks(slug); edApplyGate(slug); edRenderPreview(slug); try{ if(typeof owRefreshTitle==="function") owRefreshTitle(); }catch(e){} }   // FIX A: the window header follows the typed subject
 
 // Insert the opp link. With a selection, EMBED the link on the chosen phrase as a markdown link
 // [selected]({{LINK}}) (ConTh 11: an anchor, not a naked URL - bodyParasHtml renders it as <a>). With no
