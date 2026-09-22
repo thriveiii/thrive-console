@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="6150379e">
+<meta name="thrive-build" content="47a40555">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -303,6 +303,15 @@
   .reps{margin-top:6px;border-top:1px solid var(--border-soft);padding-top:6px;display:flex;flex-direction:column;gap:3px}
   .rep{font-size:12px;color:var(--text-muted-2);word-break:break-word}
   .repn{display:inline-block;min-width:15px;color:var(--text-dim)}
+  /* CARD FOOT: who owns it (a neutral chip, never the gradient) + the recipient email (LTR-isolated, truncating).
+     One quiet hairline row on every card; the lane color stays the semantic carrier, the owner chip is neutral. */
+  .card-foot{margin-top:6px;border-top:1px solid var(--border-soft);padding-top:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+  .owner{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;max-width:58%;overflow:hidden;white-space:nowrap;font-size:var(--fs-xs);color:var(--text-muted);background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:var(--r-pill);padding-block:2px;padding-inline:3px 9px}
+  .owner-mono{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;border-radius:50%;background:var(--panel-2);color:var(--text-muted-2);font-size:9px;font-weight:700;line-height:1;unicode-bidi:isolate}
+  .owner-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:isolate}
+  .owner-none{color:var(--text-dim);background:transparent;border-style:dashed;padding-inline:9px}
+  .card-to{flex:1 1 auto;min-width:0;text-align:end;font-size:var(--fs-xs);color:var(--text-muted-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:isolate}
+  html[dir="rtl"] .owner-nm,html[dir="rtl"] .owner-mono,html[dir="rtl"] .card-to{letter-spacing:normal;text-transform:none}
   .tray{margin-top:14px;border-top:1px solid var(--border-hair);padding-top:10px}
   .tray-toggle{font-size:13px;font-weight:700}
   .tray-body{margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;align-items:start}
@@ -810,7 +819,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "6150379e";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "47a40555";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -822,6 +831,15 @@
   var TRAY_STAGES = ["won","lost","dropped"];
   var SEEN_KEY = "thrive_board_seen";
   var __seen = {}, __reps = { count:{}, list:{}, waiting:0 };
+  // CARD META (owner + recipient email), keyed by slug, filled by a bounded best-effort read of console_opps at
+  // board load (fetchCardMeta). owner is the additive console_opps.owner column (the creator/uploader uid); the
+  // email is the opp's first recipient (data.recipients[0].addr). Both degrade to empty on any failure - a card
+  // with no meta simply shows no email line and an unassigned owner, never a broken board.
+  var __cardMeta = {};
+  // The two known members map their email to a canonical short name so the chip reads Thyab / Basel exactly,
+  // regardless of the display_name a profile carries. Agha is intentionally absent (his identifier is unknown);
+  // his cards resolve through resolveActor (his profile display_name) and are never guessed. Latin identifiers.
+  var OWNER_CANON = { "abdu.thyab@gmail.com":"Thyab", "alnajjarjawad97@gmail.com":"Basel" };
   var LANG_KEY = "thrive_lang", SESSION_KEY = "console_sb_session", FETCH_TIMEOUT_MS = 6000;
 
   // ---- i18n (a compact clone of i18n.js t/setLang/applyLang, EN + AR). CHROME language (ui_lang) only; the
@@ -840,7 +858,7 @@
           pf_admin_save:"Save title", pf_admin_failed:"Could not save. Nothing changed.",
           adm_open:"Admin", adm_title:"Team admin",
           refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
-          none:"none", unnamed:"(unnamed)",
+          none:"none", unnamed:"(unnamed)", owner_by:"Owner", owner_unassigned:"Unassigned",
           l_draft:"Under review", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
           b_send:"send", b_sends:"sends", b_open:"open", b_opens:"opens", b_replied:"replied", b_idle:"days idle",
           bg_page:"page", bg_email:"email", bg_archived:"archived",
@@ -951,7 +969,7 @@
           pf_admin_save:"حفظ المسمى", pf_admin_failed:"تعذّر الحفظ. لم يتغير شيء.",
           adm_open:"الإدارة", adm_title:"إدارة الفريق",
           refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
-          none:"لا شيء", unnamed:"(بدون اسم)",
+          none:"لا شيء", unnamed:"(بدون اسم)", owner_by:"المالك", owner_unassigned:"غير مُسنَد",
           l_draft:"قيد المراجعة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
           b_send:"إرسال", b_sends:"إرسال", b_open:"فتح", b_opens:"فتح", b_replied:"ردّ", b_idle:"يوم خمول",
           bg_page:"صفحة", bg_email:"رسالة", bg_archived:"مؤرشفة",
@@ -3160,7 +3178,8 @@ function nmSaveNow(slug){
   var subj=String(subjEl.value||""), body=String(bodyEl.value||""), sig=edSignature(), recips=sendToList();
   nmSetStatus(t("a_saving"), "");
   oppReadData(slug).then(function(data){
-    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")),
+      owner:(data && data.owner) || currentUid() });   // OWNER: stamp the creator once; a re-save preserves the original owner (never clobbers)
     return oppUpsert(slug, { business:nmBusiness(subj), data:next, up:Date.now() }).then(function(){
       __nmSaving = false;
       __edBase[slug] = next;                 // keep the editor's preview base in sync with the persisted record
@@ -3237,7 +3256,8 @@ function unifiedSend(slug){
   if(over){ nmSetStatus(t("s_sending"), ""); var sd=document.getElementById("nmSend"); if(sd) sd.disabled=true; }
   var row = findRow(slug) || { slug:slug };
   oppReadData(slug).then(function(data){
-    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
+    var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")),
+      owner:(data && data.owner) || currentUid() });   // OWNER: a send-created opp is owned by the sender; an existing owner is preserved (a re-send never re-owns)
     return oppUpsert(slug, { business:(row.business || nmBusiness(subj)), data:next, up:Date.now() });
   }).then(function(){
     return reloadBoardData();                          // so the opp is a board row runSend can find
@@ -3632,6 +3652,7 @@ function upCommit(plan){
     done[r.slug] = 1;
     var data = { source:"upload", page_title:r.title,
       outreach_subject:r.subject || "", outreach_text:r.body || "",
+      owner: currentUid(),   // OWNER: the uploading member owns each card this campaign creates
       // B2: strip a suppressed recipient - the opp/page still commit, but the do-not-contact address is not stored.
       recipients: (r.email && !isSuppressed(r.email)) ? [{ addr:r.email, name:"", lang:"en" }] : [] };
     // Resolve {{ASSET_BASE}} on the page html ONCE, up front, so BOTH the stored console_pages row (Library
@@ -4521,7 +4542,7 @@ function libPromoteConfirm(slug){
   libPromStatus(slug, t("lib_prom_saving"), "");
   var title = libPromoteTitle(slug);
   var oppSlug = slug + "-" + libShortId();                                                   // this promote's OWN card identity
-  return oppUpsert(oppSlug, { business: title, published: true, up: Date.now(), data: { recipients: [], page_slug: slug } })
+  return oppUpsert(oppSlug, { business: title, published: true, up: Date.now(), data: { recipients: [], page_slug: slug, owner: currentUid() } })   // OWNER: the promoting member owns this new card
     .then(function(){ return saveRecipients(oppSlug, list); })                               // attach recipient(s), read-back confirmed
     .then(function(){ return reloadBoardData(); })                                           // the promoted card is now a board row
     .then(function(){ __libPromoting = false; if(go) go.disabled = false; libPromStatus(slug, t("lib_prom_done"), "ok"); return oppSlug; })
@@ -4822,7 +4843,8 @@ function owCommitCampaign(slug){
   var kept=sendToList().filter(function(r){ return !isSuppressed(r.addr); });   // B2 strip at commit
   return oppReadData(slug).then(function(data){
     var next=Object.assign({}, data, { source:"upload", page_title:pr.title||pageSlug,
-      outreach_subject:subj, outreach_text:body, sig:sig, recipients:kept });
+      outreach_subject:subj, outreach_text:body, sig:sig, recipients:kept,
+      owner:(data && data.owner) || currentUid() });                            // OWNER: stamp the creator once; preserved on a later re-commit
     if(pageSlug!==slug) next.page_slug=pageSlug;                                 // a renamed page: the card references it by page_slug
     return oppUpsert(slug, { business:pr.title||slug, data:next, up:Date.now(), cycle:cycle })
       .then(function(){ return pageUpsert(pageSlug, html, { title:pr.title, task:pr.task }); })
@@ -5450,7 +5472,7 @@ function ctOpenConvoFromLibrary(cid){
         iconBtn("reload", "refresh", t("refresh")) +
         iconBtn("signout", "logout", t("signout")) +
       '</span>' +
-      '<span class="build-mini muted" title="build 6150379e">6150379e</span>';
+      '<span class="build-mini muted" title="build 47a40555">47a40555</span>';
   }
   // Reveal the Admin entry only for an owner. Safe to call repeatedly (idempotent) and before the role settles.
   function paintAdminSlot(){
@@ -5491,6 +5513,38 @@ function ctOpenConvoFromLibrary(cid){
     return "other";
   }
   // A card. The NAME (business) is shown in BOTH languages, never the slug (the slug is only a last resort when
+  // OWNER label from a stored owner value (a uid, or a legacy email). The known two members map their email to a
+  // canonical short name (Thyab / Basel); anyone else resolves through resolveActor (their profile display_name),
+  // then the email local part, and never a guessed name. Returns "" when the owner is unset OR cannot be resolved
+  // to a confident identity, so the chip shows a clean unassigned state rather than a wrong owner.
+  function ownerLabel(ownerVal){
+    var v = String(ownerVal==null ? "" : ownerVal).trim();
+    if(!v) return "";
+    var r = null; try{ if(typeof resolveActor==="function") r = resolveActor(v); }catch(e){}
+    var email = String((r && r.email) || (v.indexOf("@")>=0 ? v : "")).toLowerCase();
+    if(email && OWNER_CANON[email]) return OWNER_CANON[email];
+    if(r && r.name) return r.name;
+    if(email) return email.split("@")[0];
+    return "";                                          // a uid with no known profile -> unassigned, never a wrong name
+  }
+  function ownerMono(name){                             // a 1-2 char monogram from the resolved name (Latin, LTR)
+    var parts = String(name||"").trim().split(/\s+/).filter(Boolean);
+    if(!parts.length) return "";
+    var m = parts[0].charAt(0) + (parts.length>1 ? parts[parts.length-1].charAt(0) : "");
+    return m.toUpperCase();
+  }
+  // The owner chip: a neutral (never-gradient) chip on every card. A resolved member shows a monogram + short
+  // name; an unset/unresolvable owner shows a calm "unassigned". aria-label carries the full owner statement.
+  function ownerChipHtml(ownerVal){
+    var name = ownerLabel(ownerVal);
+    if(!name){
+      return '<span class="owner owner-none" aria-label="'+esc(t("owner_by")+": "+t("owner_unassigned"))+'">'+esc(t("owner_unassigned"))+'</span>';
+    }
+    var mono = ownerMono(name);
+    return '<span class="owner" aria-label="'+esc(t("owner_by")+": "+name)+'">'+
+      (mono ? '<span class="owner-mono" aria-hidden="true" dir="ltr">'+esc(mono)+'</span>' : '')+
+      '<span class="owner-nm" dir="ltr">'+esc(name)+'</span></span>';
+  }
   // an opp has no business at all). Counts/opens/idle and the reply N-badge come from the server; no stage math.
   function cardHtml(row){
     row = row || {};
@@ -5517,6 +5571,16 @@ function ctOpenConvoFromLibrary(cid){
         return '<div class="rep"><span class="repn">' + it.num + '</span> ' + esc(it.from || t("unnamed")) + '</div>';
       }).join("") + '</div>';
     }
+    // CARD FACE (all lanes): a quiet foot under a canon hairline carrying WHO owns it (a neutral owner chip) and
+    // the opp's recipient email, LTR-isolated and truncating. The email + owner come from __cardMeta (the bounded
+    // console_opps read); a card with no recipient shows just the owner chip, and the foot always renders so every
+    // card links to its owner (a resolved member, or a clean unassigned state - never a guessed owner).
+    var meta = (__cardMeta && __cardMeta[slug]) || {};
+    var toEmail = String(meta.email || "");
+    var ownerVal = meta.owner || meta.derived || "";      // durable data.owner, else the derived earliest-sender, else unassigned
+    var foot = '<div class="card-foot">' + ownerChipHtml(ownerVal) +
+      (toEmail ? '<bdi class="card-to mono-iso" dir="ltr" title="'+esc(toEmail)+'">'+esc(toEmail)+'</bdi>' : '') +
+      '</div>';
     // Edge class from the view fields, verbatim: a rich page -> card-offer; a text-only message (message, no
     // page) -> card-msg; neither -> plain. No client stage/page computation.
     var edge = row.has_page ? " card-offer" : ((row.has_email && !row.has_page) ? " card-msg" : "");
@@ -5525,6 +5589,7 @@ function ctOpenConvoFromLibrary(cid){
            (bits.length ? ('<div class="s">' + bits.map(function(bt){ return '<bdi>' + esc(bt) + '</bdi>'; }).join("  \u00b7  ") + '</div>') : '') +
            (badges || sendmark ? ('<div>' + sendmark + badges + '</div>') : '') +
            reps +
+           foot +
            '</div>';
   }
   // ---- L3 opportunity detail drawer (read-only): open and view; no edit/send/archive. Cloned from the engine
@@ -6241,9 +6306,30 @@ function ctOpenConvoFromLibrary(cid){
   // ONE read path (fetchBoard + fetchInbound -> renderBoard), reused by the first load AND by every post-write
   // re-read: after a confirmed write, the board reads console_board again and paints from SERVER TRUTH, never
   // from the optimistic local stage (§3 stage-authority). Returns the settled promise so a write can chain on it.
+  // CARD META read: the owner (additive console_opps.owner column) and the first recipient email
+  // (data.recipients[0].addr), for every opp, in TWO bounded best-effort selects so the email always resolves
+  // even before the owner column is applied in Supabase. A missing owner column (unapplied SQL) or any failure
+  // 400s to [] via restGet, so owner stays unknown (unassigned) and the email line still shows - never a break.
+  function fetchCardMeta(){
+    return Promise.all([
+      // owner (stamped into data.owner at create) + the first recipient email, both from the existing data jsonb
+      // (no schema change needed for new cards), in one bounded best-effort read.
+      restGet("console_opps?select=slug,ow:data->>owner,to:data->recipients->0->>addr"),
+      // DERIVED owner fallback for cards created before data.owner existed: the earliest send's actor per opp
+      // (console_mail is ordered ts.asc, so the first actor seen is the original sender). No SQL needed; an
+      // optional backfill can later make it durable in data.owner.
+      restGet("console_mail?select=opp,actor,ts&order=ts.asc")
+    ]).then(function(a){
+      var m = {};
+      (Array.isArray(a[0]) ? a[0] : []).forEach(function(r){ if(r && r.slug){ var e = m[r.slug] || (m[r.slug] = {}); e.owner = String(r.ow || ""); e.email = String(r.to || ""); } });
+      (Array.isArray(a[1]) ? a[1] : []).forEach(function(r){ if(r && r.opp && r.actor){ var e = m[r.opp] || (m[r.opp] = {}); if(!e.derived) e.derived = String(r.actor); } });
+      return m;
+    }, function(){ return {}; });
+  }
   function reloadBoardData(){
     return fetchBoard(false).then(function(rows){
-      return fetchInbound().then(function(inbound){
+      return Promise.all([ fetchInbound(), fetchCardMeta() ]).then(function(res){
+        var inbound = res[0]; __cardMeta = res[1] || {};
         rows = Array.isArray(rows) ? rows : [];
         __seen = readSeen();
         __reps = buildReplies(inbound);
