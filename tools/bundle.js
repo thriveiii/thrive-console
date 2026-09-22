@@ -1019,8 +1019,13 @@ function buildBoard(){
     --brand-teal: #71BFCC;
     --on-brand: #04252b;
     --focus: #5D7FB7;
-    --accent: #C98B8B;
+    --accent: #C98B8B;         /* the light brand rose: non-text roles only (borders, indicators), never a label fill */
     --accent-ink: #2b1414;
+    /* Primary action button: an accessible DEEP dusty rose that carries a WHITE label at AA (5.36:1) in both
+       themes. The light --accent above is too pale to hold legible text, so buttons use these tokens instead. */
+    --btn-primary-bg: #9c5757;  --btn-primary-fg: #ffffff;  --btn-primary-bg-hover: #8a4d4d;
+    /* Neutral secondary control: a raised fill that stays visible on the panel in both themes. */
+    --btn-neutral-bg: #16161d;  --btn-neutral-border: #2a2a36;
     /* Semantic (separate from brand): success / warning / error. */
     --success: #7fd18b;   --success-bg: #0c130c; --success-border: #1e2a1e;
     --warning: #c9a24a;   --warning-2: #e6b34a;  --warning-bg: #17130a; --warning-border: #2a2410;
@@ -1059,8 +1064,10 @@ function buildBoard(){
     --brand-teal: #1f7f90;
     --on-brand: #ffffff;
     --focus: #3a5f97;
-    --accent: #a85f5f;    /* dusty rose, darkened for the light theme so white ink on the primary button holds AA (4.5:1) */
+    --accent: #a85f5f;    /* dusty rose brand accent (light theme), non-text roles */
     --accent-ink: #ffffff;
+    --btn-primary-bg: #9c5757;  --btn-primary-fg: #ffffff;  --btn-primary-bg-hover: #8a4d4d;
+    --btn-neutral-bg: #f0f1f4;  --btn-neutral-border: #d7d8de;
     --success: #1f7a3a;   --success-bg: #e9f6ec; --success-border: #bfe3c8;
     --warning: #8a6a1f;   --warning-2: #8a6a1f;  --warning-bg: #fbf4e2; --warning-border: #e6d8b0;
     --error: #b3261e;     --error-2: #b3261e;    --error-bg: #fbeceb;   --error-border: #e8b4b0;
@@ -1082,6 +1089,8 @@ function buildBoard(){
       --border: #e2e2e6; --border-soft: #ececf0; --border-hair: #e8e8ec; --border-2: #e2e2e6;
       --border-3: #e6e6ea; --border-card: #e2e2e6; --brand-teal: #1f7f90; --on-brand: #ffffff;
       --focus: #3a5f97; --accent: #a85f5f; --accent-ink: #ffffff;
+      --btn-primary-bg: #9c5757; --btn-primary-fg: #ffffff; --btn-primary-bg-hover: #8a4d4d;
+      --btn-neutral-bg: #f0f1f4; --btn-neutral-border: #d7d8de;
       --success: #1f7a3a; --success-bg: #e9f6ec; --success-border: #bfe3c8;
       --warning: #8a6a1f; --warning-2: #8a6a1f; --warning-bg: #fbf4e2; --warning-border: #e6d8b0;
       --error: #b3261e; --error-2: #b3261e; --error-bg: #fbeceb; --error-border: #e8b4b0;
@@ -1100,35 +1109,39 @@ function buildBoard(){
   a{color:var(--brand-teal)}
   .wrap{max-width:1200px;margin:0 auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top));padding-inline:calc(16px + env(safe-area-inset-left)) calc(16px + env(safe-area-inset-right))}
   .compose-send .act.send{min-height:44px}   /* comfortable touch target; the phone media query pins this bar to the bottom */
-  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 14px;border-bottom:1px solid var(--border-hair)}
-  .brand{font-weight:800;letter-spacing:.02em;font-size:16px}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 2px 16px;border-bottom:1px solid var(--border-hair)}
+  .brand{font-weight:800;letter-spacing:.01em;font-size:20px;color:var(--text-max);line-height:1.15}
   .muted{color:var(--text-muted);font-size:12px}
   .send-cap{font-size:12px;color:var(--text-muted);unicode-bidi:isolate;margin-inline-start:auto}
   .send-cap.warn{color:var(--warning-2)}
   .send-cap:empty{display:none}
   .row-actions{display:flex;gap:10px;align-items:center}
-  .link{background:none;border:0;color:var(--brand-teal);font:inherit;cursor:pointer;padding:0}
+  .link{background:none;border:0;color:var(--brand-teal);font:inherit;cursor:pointer;padding:0;transition:color var(--dur-1) var(--ease)}
+  .link:hover{text-decoration:underline;text-underline-offset:3px}
   .err{margin:10px 0;padding:10px 12px;border:1px solid var(--error-border);background:var(--error-bg);color:var(--error);border-radius:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .signin{max-width:340px;margin:8vh auto 0;background:var(--surface);border:1px solid var(--border-3);border-radius:14px;padding:26px 22px;text-align:center}
   .signin h1{font-size:18px;margin:0 0 6px}
   .signin p{color:var(--text-muted);font-size:13px;margin:0 0 16px}
   input{width:100%;background:var(--field-bg);border:1px solid var(--border);border-radius:9px;color:var(--text-max);padding:11px 12px;font-size:15px;margin:6px 0;font-family:inherit;outline:none}
   input:focus{border-color:var(--focus)}
-  button.primary{width:100%;margin-top:10px;padding:11px 16px;border:0;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;color:var(--accent-ink);background:var(--accent);font-family:inherit;transition:background-color var(--dur-1) var(--ease),opacity var(--dur-1) var(--ease)}
-  button.primary:hover{background:var(--accent)}
+  /* Visible keyboard focus on every interactive control (mouse clicks stay clean via :focus-visible). */
+  a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[tabindex]:focus-visible,.link:focus-visible,.ow-tab:focus-visible,.lv-tab:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px}
+  button.primary{width:100%;margin-top:10px;padding:11px 16px;border:0;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;color:var(--btn-primary-fg);background:var(--btn-primary-bg);font-family:inherit;transition:background-color var(--dur-1) var(--ease)}
+  button.primary:hover{background:var(--btn-primary-bg-hover)}
   button.primary:disabled{opacity:.6;cursor:default}
-  .lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:start;margin-top:12px}
-  .lane{background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:12px;padding:10px}
-  .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted-2);margin:2px 4px 10px;display:flex;justify-content:space-between;align-items:center}
-  .lane h2 .n{color:var(--text-dim);font-weight:700}
-  .card{background:var(--surface-raised);border:1px solid var(--border-card);border-radius:10px;padding:10px 11px;margin:0 0 8px}
+  .lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;align-items:start;margin-top:16px}
+  .lane{background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:var(--radius-l);padding:12px}
+  .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;color:var(--text-muted-2);margin:2px 4px 12px;display:flex;justify-content:space-between;align-items:center}
+  .lane h2 .n{color:var(--text-muted);font-weight:700}
+  .card{background:var(--surface-raised);border:1px solid var(--border-card);border-radius:var(--radius-m);padding:12px;margin:0 0 10px;box-shadow:var(--elev-1);transition:border-color var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
+  .card:hover{border-color:var(--hover-border);box-shadow:var(--elev-2)}
   /* Edge-mark by page state (rendered from the view's has_page / has_email, no client computation): a card with
      a rich hosted page carries a solid brand edge; a text-only message carries a distinct lighter dashed edge.
      border-inline-start so the mark sits on the leading edge in both LTR and RTL. */
   .card.card-offer{border-inline-start:3px solid var(--brand-teal)}
   .card.card-msg{border-inline-start:3px dashed var(--focus)}
-  .card .b{font-weight:700;font-size:14px;word-break:break-word}
-  .card .s{color:var(--text-muted);font-size:12px;margin-top:4px;word-break:break-word}
+  .card .b{font-weight:700;font-size:15px;color:var(--text-hi);line-height:1.3;word-break:break-word}
+  .card .s{color:var(--text-muted);font-size:12.5px;margin-top:5px;word-break:break-word}
   .badge{display:inline-block;font-size:11px;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;padding:1px 7px;margin-block-start:6px;margin-inline-end:6px}
   .empty{color:var(--text-faint);font-size:12px;padding:8px 4px}
   /* RTL: Arabic is chrome-language only. A system Arabic stack keeps the page self-contained (no webfont);
@@ -1379,15 +1392,16 @@ function buildBoard(){
   /* L4 write actions (drawer): stage moves, archive/reopen, note composer. Buttons are calm and full-width
      on narrow drawers; a busy write disables the set and shows a status line; a failure shows red, never black. */
   .acts{display:flex;flex-wrap:wrap;gap:8px}
-  .act{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border-radius:9px;padding:8px 12px;border:1px solid var(--border);background:var(--surface);color:var(--text);transition:border-color var(--dur-1) var(--ease),background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease)}
-  .act:hover{border-color:var(--hover-border)}
+  .act{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border-radius:9px;padding:8px 12px;border:1px solid var(--btn-neutral-border);background:var(--btn-neutral-bg);color:var(--text);transition:border-color var(--dur-1) var(--ease),background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease)}
+  .act:hover{border-color:var(--hover-border);background:var(--surface-raised)}
   .act:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   .act.win{border-color:var(--success-border);background:var(--success-bg);color:var(--success)}
   .act.warn{border-color:var(--warning-border);background:var(--warning-bg);color:var(--warning)}
   .act.danger{border-color:var(--error-border);background:var(--error-bg);color:var(--error)}
   .act:disabled{opacity:.5;cursor:default}
-  .act.send{border-color:transparent;background:var(--accent);color:var(--accent-ink);font-weight:800}
-  .act.send:hover{background:var(--accent);opacity:.92}
+  .act.send{border-color:transparent;background:var(--btn-primary-bg);color:var(--btn-primary-fg);font-weight:800}
+  .act.send:hover{background:var(--btn-primary-bg-hover)}
+  .act.send:disabled{opacity:.55;cursor:default}
   .sendmark{display:inline-block;font-size:11px;color:var(--info);border:1px solid var(--info-border);background:var(--info-bg);border-radius:999px;padding:1px 8px;margin:6px 6px 0 0;animation:sendpulse 1.1s ease-in-out infinite}
   @keyframes sendpulse{0%,100%{opacity:.55}50%{opacity:1}}
   @media (prefers-reduced-motion:reduce){.sendmark{animation:none}}
@@ -1443,8 +1457,8 @@ function buildBoard(){
   .lv-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin:2px 0 12px}
   .lv-title{font-size:20px;font-weight:680;color:var(--text-hi);margin:0}
   .lv-head-acts{display:flex;align-items:center;gap:12px}
-  .btnp{background:var(--accent);border:0;border-radius:9px;padding:8px 14px;color:var(--accent-ink);font-weight:800;font-size:13px;cursor:pointer;transition:opacity var(--dur-1) var(--ease)}
-  .btnp:hover{opacity:.92}
+  .btnp{background:var(--btn-primary-bg);border:0;border-radius:9px;padding:8px 14px;color:var(--btn-primary-fg);font-weight:800;font-size:13px;cursor:pointer;transition:background-color var(--dur-1) var(--ease)}
+  .btnp:hover{background:var(--btn-primary-bg-hover)}
   .lv-tabs{display:flex;gap:8px;margin:0 0 14px;border-bottom:1px solid var(--border-3)}
   .lv-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:14px;font-family:inherit;padding:6px 4px 9px;cursor:pointer}
   .lv-tab.on{color:var(--text-hi);border-bottom-color:var(--brand-teal)}
