@@ -44,18 +44,19 @@ def wire(ctx, ar=False):
     for tname in ["console_opps","console_pages","console_mail","console_hits","console_inbound","console_suppressions","console_profiles","console_profile_names","console_members","console_team_roster","console_admins","console_contacts"]:
         ctx.route(f"**/rest/v1/{tname}**", lambda r: J(r, []))
 
-CORE_TOKENS = ["--bg","--surface","--text","--text-muted","--border","--brand-teal","--on-brand",
-               "--accent","--success","--warning","--error","--focus","--page-canvas",
-               "--font-body","--font-ar","--space-1","--radius-m","--ease"]
+CORE_TOKENS = ["--bg","--panel","--surface","--text","--text-muted","--border","--brand-teal","--on-brand",
+               "--grad","--lane-draft","--lane-replied","--success","--warning","--error","--focus","--page-canvas",
+               "--font","--font-ar","--s-1","--r-md","--t-base","--e-standard","--ease"]
 
-# ---- source guards -------------------------------------------------------------------------------
+# ---- source guards (the CANON token layer, ported from IDENTITY/MOTION/styles.css) ----------------
 src = open(f"{ROOT}/library/board.html").read()
-ck("the :root token layer is defined", ":root{" in src and "--bg: #07070b" in src)
-ck("a light theme is defined (data-theme=light)", '[data-theme="light"]' in src and "--text: #1a1a1a" in src)
+ck("the :root token layer is defined on the canon surfaces", ":root{" in src and "--bg: #0a0a0c" in src)
+ck("a light theme is defined (data-theme=light)", '[data-theme="light"]' in src and "--ink-2: #1a1a1a" in src)
 ck("system default is wired (prefers-color-scheme block present)", "prefers-color-scheme: light" in src)
-ck("the dusty rose accent token is defined, separate from brand teal", "--accent: #C98B8B" in src and "--brand-teal: #71BFCC" in src)
-ck("motion easing token is the specified curve", "cubic-bezier(0.16, 1, 0.3, 1)" in src)
-ck("spacing scale is 8-based", "--space-1: 8px" in src and "--space-2: 16px" in src)
+ck("the brand gradient + lane scale are defined, separate from brand teal",
+   "--grad: linear-gradient(120deg,#72BECE" in src and "--lane-sent: #9685CA" in src and "--brand-teal: #71BFCC" in src)
+ck("the canon motion easing token is the specified curve", "--e-standard: cubic-bezier(.2,.7,.2,1)" in src)
+ck("the canon 4px spacing scale is defined", "--s-1: 4px" in src and "--s-2: 8px" in src)
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH)
@@ -72,7 +73,7 @@ with sync_playwright() as p:
 
     def token_vals(theme_sel=""):
         return pg.evaluate("""()=>{ var cs=getComputedStyle(document.documentElement); var out={};
-            ["--bg","--surface","--text","--text-muted","--border","--brand-teal","--on-brand","--accent","--success","--warning","--error","--focus","--page-canvas","--font-body","--font-ar","--space-1","--radius-m","--ease"].forEach(function(k){ out[k]=cs.getPropertyValue(k).trim(); }); return out; }""")
+            ["--bg","--panel","--surface","--text","--text-muted","--border","--brand-teal","--on-brand","--grad","--lane-draft","--lane-replied","--success","--warning","--error","--focus","--page-canvas","--font","--font-ar","--s-1","--r-md","--t-base","--e-standard","--ease"].forEach(function(k){ out[k]=cs.getPropertyValue(k).trim(); }); return out; }""")
     dtok = token_vals()
     for k in CORE_TOKENS:
         ck("1: token resolves in dark: "+k, bool(dtok.get(k)), dtok)
@@ -82,10 +83,10 @@ with sync_playwright() as p:
         return { bg:b.backgroundColor, color:b.color,
                  link:a?getComputedStyle(a).color:'', muted:m?getComputedStyle(m).color:'',
                  font:b.fontFamily }; }""")
-    ck("2: dark body background equals the original #07070b", darkComputed["bg"]==rgb(7,7,11), darkComputed)
-    ck("2: dark body text equals the original #e7e7ea", darkComputed["color"]==rgb(231,231,234), darkComputed)
-    ck("2: the interactive teal equals the original #71BFCC", darkComputed["link"]==rgb(113,191,204), darkComputed)
-    ck("2: muted text equals the original #8a8a93", darkComputed["muted"]==rgb(138,138,147), darkComputed)
+    ck("2: dark body background equals the canon --bg #0a0a0c", darkComputed["bg"]==rgb(10,10,12), darkComputed)
+    ck("2: dark body text equals the canon ink --ink-2 #d1d5db", darkComputed["color"]==rgb(209,213,219), darkComputed)
+    ck("2: the interactive teal equals the canon #71BFCC (draft lane)", darkComputed["link"]==rgb(113,191,204), darkComputed)
+    ck("2: muted text equals the canon --ink-3 #9ca3af", darkComputed["muted"]==rgb(156,163,175), darkComputed)
     ck("2: body font-family begins with Lato (brand font first, system fallback)", darkComputed["font"].lower().startswith("lato"), darkComputed)
     ck("4: the page-canvas token is white in dark", dtok["--page-canvas"].lower() in ("#ffffff","rgb(255, 255, 255)","#fff"), dtok["--page-canvas"])
 

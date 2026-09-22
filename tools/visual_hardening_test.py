@@ -21,6 +21,7 @@ def ck(n, c, d=None):
         fails.append(n)
         if d is not None: print("      " + str(d)[:300])
 
+src = open(f"{ROOT}/library/board.html", encoding="utf-8").read()
 BOARD = [{"slug":"alpha","business":"Alpha Co","stage":"live","sent_count":0,"open_count":0,"replied":False,"idle_days":0,"last_activity_ts":"2026-02-01T00:00:00Z","has_page":True,"has_email":True,"archived":False}]
 OPP_SLUGS=set(); OPPDATA={}
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
@@ -52,26 +53,30 @@ def wire(ctx):
     for tn in ["console_hits","console_inbound","console_profiles","console_profile_names","console_members","console_team_roster","console_admins","console_contacts"]:
         ctx.route(f"**/rest/v1/{tn}**", lambda r: J(r,[]))
 
-# WCAG contrast, computed in the page from the ACTUAL composited colours (so it catches any override).
+# WCAG contrast of the label against its fill. The canon primary is the brand GRADIENT, so this samples
+# EVERY stop of the background-image gradient (a gradient has no single backgroundColor) and returns the
+# WORST stop; for a solid button it falls back to backgroundColor. Catches any low-contrast stop.
 CONTRAST = r"""
 (sel_or_el) => {
-  function parse(c){ var m=c.match(/rgba?\(([^)]+)\)/); if(!m) return null;
+  function one(c){ var m=c.match(/rgba?\(([^)]+)\)/); if(!m) return null;
     var p=m[1].split(',').map(function(x){return parseFloat(x);});
     return {r:p[0], g:p[1], b:p[2], a:(p[3]==null?1:p[3])}; }
   function lin(v){ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); }
   function L(c){ return 0.2126*lin(c.r)+0.7152*lin(c.g)+0.0722*lin(c.b); }
   function over(fg,a,bg){ return {r:fg.r*a+bg.r*(1-a), g:fg.g*a+bg.g*(1-a), b:fg.b*a+bg.b*(1-a)}; }
+  function cr(fg,bg){ var l1=L(fg)+0.05,l2=L(bg)+0.05; return Math.max(l1,l2)/Math.min(l1,l2); }
   var el = (typeof sel_or_el==='string') ? document.querySelector(sel_or_el) : sel_or_el;
   if(!el) return null;
   var cs = getComputedStyle(el);
-  // composite the button fill over the page background in case of any alpha
-  var page = parse(getComputedStyle(document.body).backgroundColor) || {r:255,g:255,b:255,a:1};
-  var bg = parse(cs.backgroundColor); var fg = parse(cs.color);
-  if(!bg||!fg) return null;
-  var effBg = over(bg, bg.a, page);
-  var l1 = L(fg)+0.05, l2 = L(effBg)+0.05;
-  var ratio = Math.max(l1,l2)/Math.min(l1,l2);
-  return { ratio: Math.round(ratio*100)/100, fg:[fg.r,fg.g,fg.b], bg:[effBg.r,effBg.g,effBg.b], label:(el.textContent||'').trim().slice(0,24) };
+  var page = one(getComputedStyle(document.body).backgroundColor) || {r:255,g:255,b:255,a:1};
+  var fg = one(cs.color); if(!fg) return null;
+  var img = cs.backgroundImage || "";
+  var stops = (img.match(/rgba?\([^)]+\)/g) || []).map(one).filter(Boolean);
+  var isGrad = img.indexOf('gradient')>=0 && stops.length>=2;
+  var ratio;
+  if(isGrad){ ratio = Math.min.apply(null, stops.map(function(s){ return cr(fg, over(s, s.a, page)); })); }
+  else { var bg=one(cs.backgroundColor); if(!bg) return null; ratio = cr(fg, over(bg,bg.a,page)); }
+  return { ratio: Math.round(ratio*100)/100, grad:isGrad, nstops:stops.length, label:(el.textContent||'').trim().slice(0,24) };
 }
 """
 PROBE_MAKE = r"""
@@ -93,11 +98,11 @@ with sync_playwright() as p:
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(700)
     pg.wait_for_selector(".lane", timeout=8000)
 
-    # the primary fill is the deep rose, NOT the pale brand accent
+    # the primary fill is the brand gradient (canon Law 4.2), never the pale rose that failed AA
     def cssvar(v): return pg.evaluate("(v)=>getComputedStyle(document.documentElement).getPropertyValue(v).trim()", v)
-    ck("(a) the primary-button fill token is distinct from the pale --accent (no washed-out regression)",
-       cssvar("--btn-primary-bg").lower() != cssvar("--accent").lower(),
-       {"btn":cssvar("--btn-primary-bg"), "accent":cssvar("--accent")})
+    ck("(a) the primary-button fill is the brand gradient (no washed-out rose regression)",
+       "gradient" in cssvar("--btn-primary-bg").lower() and "C98B8B" not in src and "9c5757" not in src,
+       {"btn":cssvar("--btn-primary-bg")})
 
     sels = pg.evaluate(PROBE_MAKE)
     for theme in ("dark", "light"):

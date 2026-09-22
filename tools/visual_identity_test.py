@@ -33,7 +33,7 @@ ck("(a) the restyled component CSS block was located", len(comp) > 2000, len(com
 lits = re.findall(r"#[0-9a-fA-F]{3,8}\b", comp)
 ck("(a) the component CSS carries NO raw colour literal (every colour is a token var())", lits == [], lits[:12])
 ck("(a) the component CSS actually uses tokens", comp.count("var(--") > 150, comp.count("var(--"))
-for tk in ["--info:", "--info-bg:", "--chip-bg:", "--chip-fg:", "--hover-border:", "--accent:"]:
+for tk in ["--info:", "--info-bg:", "--chip-bg:", "--chip-fg:", "--hover-border:", "--grad:", "--lane-sent:"]:
     ck("(a) on-palette role token defined: " + tk, tk in src)
 ck("(a) no em dash anywhere in board.html", "—" not in src)
 # the icon set is one inline-SVG source, currentColor (themes), no glyph font / external fetch
@@ -95,23 +95,21 @@ with sync_playwright() as p:
     pg.wait_for_selector(".lane", timeout=8000)
     ck("(d) the board renders (lanes present)", pg.evaluate("()=>document.querySelectorAll('.lane').length")>=3)
 
-    # the primary-action fill is the accessible deep-rose --btn-primary-bg (the accent role), distinct from teal
-    accent = probe(pg, "--btn-primary-bg"); teal = probe(pg, "--brand-teal")
-    ck("(b) the primary-action token is distinct from the brand teal", accent != teal, {"accent":accent,"teal":teal})
-
-    # compose surface: exactly one accent-filled button (Send), and it IS #nmSend
+    # the ONE primary action per surface is the brand gradient (canon Law 4.2). Count buttons whose
+    # background-image is the multi-stop gradient; the compose surface must carry exactly one (the Send).
     pg.evaluate("()=>window.owNewMessage()"); pg.wait_for_selector("#owPickText", timeout=5000)
     pg.evaluate("()=>window.owSelectMode('a')"); pg.wait_for_selector("#owModeA #edSubj", timeout=5000)
     pg.fill("#owModeA #edSubj", "A note"); pg.fill("#owModeA #edBody", "Hello there.")
     pg.wait_for_timeout(200)
-    acc = pg.evaluate("""(accent)=>{ var win=document.getElementById('owScrim')||document;
+    acc = pg.evaluate("""()=>{ var win=document.getElementById('owScrim')||document;
         var btns=[].slice.call(win.querySelectorAll('button'));
-        var fill=btns.filter(function(x){ var s=getComputedStyle(x); return s.backgroundColor===accent && x.offsetParent!==null; });
+        function isGrad(x){ var im=getComputedStyle(x).backgroundImage||""; return im.indexOf('gradient')>=0 && (im.match(/rgba?\\(/g)||[]).length>=5; }
+        var fill=btns.filter(function(x){ return isGrad(x) && x.offsetParent!==null; });
         var send=document.getElementById('nmSend');
-        return { n:fill.length, sendIsAccent: !!send && getComputedStyle(send).backgroundColor===accent,
-                 ids:fill.map(function(x){return x.id||x.className;}) }; }""", accent)
-    ck("(b) the primary Send button uses the accent token", acc["sendIsAccent"], acc)
-    ck("(b) exactly ONE accent-filled button on the compose surface (no two competing accents)", acc["n"]==1, acc)
+        return { n:fill.length, sendIsGrad: !!send && isGrad(send),
+                 ids:fill.map(function(x){return x.id||x.className;}) }; }""")
+    ck("(b) the primary Send button wears the brand gradient (Law 4.2)", acc["sendIsGrad"], acc)
+    ck("(b) exactly ONE gradient-primary button on the compose surface (no two competing accents)", acc["n"]==1, acc)
 
     # (d) smoke: opp-window tabs, upload path, Library, Contacts
     pg.evaluate("()=>window.closeOppWindow()"); pg.wait_for_timeout(150)
