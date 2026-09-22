@@ -55,22 +55,18 @@ ck("(a) no inline base64 font data was added (reuse the pinned URLs only)", "dat
 # brand rules: no em dash anywhere; the Arabic forms keep Western numerals in the filenames
 ck("(a) no em dash anywhere in board.html", "—" not in src)
 
-# ---- (c) fonts ONLY: strip @font-face + build stamp, compare to origin/main -----------------------
-def strip(s):
-    s = re.sub(r"\s*@font-face\{[^}]*\}", "", s)              # remove all @font-face rules (the only new CSS RULES)
-    s = re.sub(r"/\*.*?\*/", "", s, flags=re.S)               # remove CSS/JS block comments on BOTH sides (the fonts
-                                                              # block carries a documenting comment; comments are not
-                                                              # layout tokens, so normalize them away symmetrically)
-    s = re.sub(r"[0-9a-f]{8}", "HASH", s)                      # neutralize the 8-hex build stamp everywhere
-    s = re.sub(r"\s+", " ", s)                                # collapse whitespace so comment removal leaves no residue
-    return s
-try:
-    main_src = subprocess.check_output(["git", "-C", ROOT, "show", "origin/main:library/board.html"], text=True)
-    ck("(c) board.html minus @font-face and build stamp is byte-identical to origin/main (fonts-only diff)",
-       strip(src) == strip(main_src),
-       "lengths cur=%d main=%d" % (len(strip(src)), len(strip(main_src))))
-except Exception as e:
-    ck("(c) could compare against origin/main", False, str(e))
+# ---- (c) the type tokens the fonts BIND to are intact, so the loaded faces still resolve ----------
+# NOTE: this check originally proved the fonts PR (#331) was a fonts-only diff vs origin/main. That
+# one-time scope proof is superseded by the visual-identity pass, which deliberately restyles the board
+# CSS. The durable invariant worth guarding is that the #327 type tokens the @font-face rules bind to are
+# still present and still name the brand families first, so Lato / itfGhroob keep resolving. A restyle that
+# renamed or dropped --font-body / --font-ar would break the whole point of loading the fonts and fails here.
+ck("(c) the --font-body token still names Lato first (the loaded Lato face binds to it)",
+   re.search(r"--font-body:\s*Lato\b", src) is not None)
+ck("(c) the --font-ar token still names itfGhroob first (the loaded Arabic face binds to it)",
+   re.search(r"--font-ar:\s*itfGhroob\b", src) is not None)
+ck("(c) the RTL rule still routes Arabic to --font-ar with letter-spacing:normal (fonts reach Arabic joined)",
+   re.search(r'html\[dir="rtl"\][^{]*\{[^}]*font-family:var\(--font-ar\)[^}]*letter-spacing:normal', src) is not None)
 
 # ---- (b) behavior: the tokens resolve to the brand families; Arabic joined, normal tracking --------
 Handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)

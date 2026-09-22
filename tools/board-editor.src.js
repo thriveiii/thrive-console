@@ -32,6 +32,25 @@
 //     send is the existing L5 single-recipient path (runSend). No fork, no duplicate send logic.
 // ===================================================================================================
 
+// ICONS: one inline-SVG set, the single source reused across the window chrome (close), the compose
+// signature chips (remove) and the add affordances. currentColor so each icon inherits the button's text
+// colour and themes in light and dark; no glyph font, no icon library, no external fetch. viewBox 0 0 20 20,
+// round joins, warm 1.8 stroke. Kept tiny; new names go here only (never an ad-hoc glyph in the markup).
+// The one static Close button in the board shell (tools/bundle.js) inlines the same "x" path by hand.
+function icon(name, size){
+  var s = size || 16;
+  var P = {
+    x:       'M5 5l10 10M15 5L5 15',
+    plus:    'M10 4v12M4 10h12',
+    check:   'M4 10l4 4 8-9',
+    chevron: 'M5 8l5 5 5-5'
+  };
+  var d = P[name] || "";
+  return '<svg class="icn" width="' + s + '" height="' + s + '" viewBox="0 0 20 20" fill="none" ' +
+    'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ' +
+    'aria-hidden="true" focusable="false"><path d="' + d + '"></path></svg>';
+}
+
 var __edT = {};        // per-slug debounce timer id
 var __edSaving = false; // editor's own in-flight guard (separate from the shared __writing send/note lock)
 var __edBase = {};      // per-slug base data jsonb (non-message fields), captured at render for the preview compile
@@ -324,9 +343,9 @@ function edRenderSavedSigs(slug){
   var list=edSavedSigs();
   var chips = list.map(function(s){
     return '<span class="ed-sig-chip"><button class="ed-sig-pick" type="button" data-sig-pick="'+esc(s.id)+'" dir="auto" title="'+esc(t("ed_sig_pick"))+'">'+esc(s.name||t("ed_sig"))+'</button>'+
-      '<button class="ed-sig-rm" type="button" data-sig-rm="'+esc(s.id)+'" aria-label="'+esc(t("ed_sig_remove"))+'" title="'+esc(t("ed_sig_remove"))+'">×</button></span>';
+      '<button class="ed-sig-rm" type="button" data-sig-rm="'+esc(s.id)+'" aria-label="'+esc(t("ed_sig_remove"))+'" title="'+esc(t("ed_sig_remove"))+'">'+icon("x",14)+'</button></span>';
   }).join("");
-  box.innerHTML = chips + '<button class="ed-sig-add" id="edSigAdd" type="button" title="'+esc(t("ed_sig_add"))+'">+ '+esc(t("ed_sig_add"))+'</button>';
+  box.innerHTML = chips + '<button class="ed-sig-add" id="edSigAdd" type="button" title="'+esc(t("ed_sig_add"))+'">'+icon("plus",14)+' '+esc(t("ed_sig_add"))+'</button>';
   [].forEach.call(box.querySelectorAll("[data-sig-pick]"), function(b){ b.addEventListener("click", function(){ edPickSig(slug, b.getAttribute("data-sig-pick")); }); });
   [].forEach.call(box.querySelectorAll("[data-sig-rm]"), function(b){ b.addEventListener("click", function(){ edRemoveSig(slug, b.getAttribute("data-sig-rm")); }); });
   var add=box.querySelector("#edSigAdd"); if(add) add.addEventListener("click", function(){ edSaveCurrentSig(slug); });
