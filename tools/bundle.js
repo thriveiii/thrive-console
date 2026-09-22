@@ -1109,23 +1109,29 @@ function buildBoard(){
   a{color:var(--brand-teal)}
   .wrap{max-width:1200px;margin:0 auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top));padding-inline:calc(16px + env(safe-area-inset-left)) calc(16px + env(safe-area-inset-right))}
   .compose-send .act.send{min-height:44px}   /* comfortable touch target; the phone media query pins this bar to the bottom */
-  .top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 2px 16px;border-bottom:1px solid var(--border-hair)}
   /* The wordmark is the logo moment (Law 4.2): the full gradient, clipped to the text, on dark. On the light
      theme the gradient's pale stops would not hold on white, so the wordmark falls back to solid ink there. */
   /* HEADER IDENTITY (canon Law 4.2, the logo moment): a slowly rotating brand-gradient asterisk mark leads
      the wordmark THE CONSOLE / غرفة التحكم. The mark leads on the right in RTL (logical flex order). The
      wordmark wears the gradient on dark and solid ink on light where the gradient would pale. Display face is
      Lato heavy until Syne is pinned. */
-  .brand{display:inline-flex;align-items:center;gap:var(--s-3);text-decoration:none}
+  /* ONE top bar: the official Thrive logo (rotating slowly) + the wordmark, the account, the quota and the
+     iconified nav on a single aligned row under one hairline. Equal padding on all four sides; canon spacing.
+     It stays one row on desktop/iPad and, on a phone, the trailing group wraps within the SAME bar (one
+     container, one hairline), never a second slab. */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:var(--s-4);flex-wrap:nowrap;padding:var(--s-2) var(--s-1);border-bottom:1px solid var(--hair)}
+  .brand{display:inline-flex;align-items:center;gap:var(--s-3);text-decoration:none;flex:0 0 auto}
   .brand-mark{display:inline-flex;flex:0 0 auto;line-height:0;animation:brandspin 22s linear infinite}
-  .brand-mark svg{display:block}
+  .brand-logo{display:block;width:28px;height:28px;object-fit:contain}
   @keyframes brandspin{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){ .brand-mark{animation:none} }
   html.tab-hidden .brand-mark{animation-play-state:paused}
   .brand-word{font-weight:var(--w-max);letter-spacing:.06em;font-size:var(--fs-xl);line-height:1.15;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
   :root[data-theme="light"] .brand-word{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink)}
-  :root[data-theme="light"] .brand-mark path{stroke:var(--ink)}
-  @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .brand-word{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink)} :root:not([data-theme="dark"]) .brand-mark path{stroke:var(--ink)}}
+  @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .brand-word{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink)}}
+  .topbar-end{display:flex;align-items:center;gap:var(--s-3);flex:1 1 auto;justify-content:flex-end;min-width:0;flex-wrap:wrap}
+  .op-chip{font-size:var(--fs-sm);color:var(--text-muted);unicode-bidi:isolate;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+  .build-mini{font-size:var(--fs-micro);color:var(--text-faint);font-family:var(--font-mono);unicode-bidi:isolate;flex:0 0 auto}
   .muted{color:var(--text-muted);font-size:12px}
   .send-cap{font-size:12px;color:var(--text-muted);unicode-bidi:isolate;margin-inline-start:auto}
   .send-cap.warn{color:var(--warning-2)}
@@ -1182,19 +1188,29 @@ function buildBoard(){
   .verdict{display:flex;align-items:baseline;gap:10px;padding:10px 2px 2px}
   .vnum{font-size:var(--fs-2xl);font-weight:var(--w-max);color:var(--text-max);line-height:1}
   .vlabel{color:var(--text-muted-2);font-size:13px}
-  .pipe{display:flex;flex-wrap:wrap;gap:8px;padding:6px 2px}
-  .pchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted-2);background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:999px;padding:3px 9px}
-  .pchip .pn{color:inherit;font-weight:700;unicode-bidi:isolate}   /* Western numeral stays isolated (Law 6.3) */
-  .pchip[data-lane="draft"]{color:var(--lane-draft)}
-  .pchip[data-lane="live"]{color:var(--lane-live)}
-  .pchip[data-lane="sent"]{color:var(--lane-sent)}
-  .pchip[data-lane="opened"]{color:var(--lane-opened)}
-  .pchip[data-lane="replied"]{color:var(--lane-replied)}
-  .chips{display:flex;flex-wrap:wrap;gap:8px;padding:2px}
-  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--warning);background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:999px;padding:2px 9px}
-  .pill .pn,.chip .pn{unicode-bidi:isolate;font-weight:700}
-  .pills{display:flex;flex-wrap:wrap;gap:8px;padding:2px 2px 6px}
+  /* Stat cluster: one deliberate chip system. Verdict hero + two semantic groups (pipeline states,
+     status flags) sharing a single chip shape. Grouped by meaning, hairline divider between groups.
+     Reflows into a compact grid at phone width (see media query) with no overflow or clipping. */
+  .statbar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s-3) var(--s-4);padding:var(--s-2) 2px var(--s-3)}
+  .stats{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s-2) var(--s-3);min-width:0}
+  .stat-group{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s-2)}
+  .stat-flags{padding-inline-start:var(--s-3);border-inline-start:1px solid var(--hair)}
+  .stat-flags:empty{padding-inline-start:0;border-inline-start:0}
+  .stat-total{margin-inline-start:auto;font-size:var(--fs-sm);color:var(--text-muted);unicode-bidi:isolate}
+  .stat{display:inline-flex;align-items:center;gap:6px;min-height:26px;box-sizing:border-box;font-size:var(--fs-xs);color:var(--text-muted-2);background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:var(--r-pill);padding:3px 10px;line-height:1;cursor:default;white-space:nowrap}
+  .stat svg{flex:0 0 auto}
+  .stat .pn{color:inherit;font-weight:700;unicode-bidi:isolate}   /* Western numeral stays isolated (Law 6.3) */
+  .stat[data-lane="draft"]{color:var(--lane-draft)}
+  .stat[data-lane="live"]{color:var(--lane-live)}
+  .stat[data-lane="sent"]{color:var(--lane-sent)}
+  .stat[data-lane="opened"]{color:var(--lane-opened)}
+  .stat[data-lane="replied"]{color:var(--lane-replied)}
+  .stat.is-live{color:var(--success)}
+  .stat.is-waiting{color:var(--info)}
+  .stat.is-stalled{color:var(--warning)}
+  .stat.is-archived{color:var(--text-muted)}
   .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;border-radius:999px;padding:2px 9px;border:1px solid var(--success-border);background:var(--success-bg);color:var(--success)}
+  .pill .pn{unicode-bidi:isolate;font-weight:700}
   .pill.warn{border-color:var(--warning-border);background:var(--warning-bg);color:var(--warning)}
   .card{position:relative}
   .newdot{position:absolute;top:8px;inset-inline-end:8px;width:8px;height:8px;border-radius:50%;background:var(--brand-teal);box-shadow:0 0 0 2px var(--surface-raised)}
@@ -1381,13 +1397,21 @@ function buildBoard(){
     .card{padding:13px 13px}
     .card .b{font-size:15px}
     .tray-body{grid-template-columns:1fr}
-    /* THE HEADER: let the operator chip, send-cap and the nav links wrap onto their own rows instead of
-       cramming into one squeezed line (the desktop single-row toolbar). The nav links get comfortable
-       spacing and a real touch height, so every control is thumb-reachable without a shrunk tap target. */
-    .top{flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+    /* THE HEADER stays ONE bar: the brand holds its line, and the account/quota/nav cluster wraps
+       beneath it (icons condense, never a broken second slab). The nav gets comfortable spacing and a
+       real touch height, so every control is thumb-reachable without a shrunk tap target. */
+    .topbar{gap:var(--s-2) var(--s-3);flex-wrap:wrap}
+    .topbar-end{flex:1 1 100%;justify-content:flex-start;gap:8px 14px;margin-top:2px}
     .send-cap{margin-inline-start:0}
-    .row-actions{flex-wrap:wrap;gap:10px 16px;width:100%;margin-top:2px}
+    .op-chip{max-width:100%}
+    .row-actions{flex-wrap:wrap;gap:10px 16px}
     .row-actions .link{min-height:32px;display:inline-flex;align-items:center;font-size:15px}
+    /* THE STAT CLUSTER: the two semantic groups become full-width rows so the pipeline states and the
+       status flags stack cleanly (no overflow, no clipping); the between-group divider is dropped. */
+    .statbar{gap:var(--s-2) var(--s-3)}
+    .stat-group{flex:1 1 100%}
+    .stat-flags{padding-inline-start:0;border-inline-start:0}
+    .stat-total{margin-inline-start:0;flex:1 1 100%}
     /* THE CONTROL ROOM / any opp window: a full-height bottom sheet, safe-area padded. */
     .ow-scrim{padding:0;align-items:stretch}
     .ow{width:100%;max-height:100dvh;height:100dvh;border-radius:0;border:0}
@@ -1672,13 +1696,13 @@ function buildBoard(){
 </head>
 <body>
 <div class="wrap">
-  <div class="top">
+  <header class="topbar">
     <a class="brand" href="#board" id="brandLink" aria-label="THE CONSOLE">
-      <span class="brand-mark" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="url(#thriveMark)" stroke-width="2.2" stroke-linecap="round"><defs><linearGradient id="thriveMark" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse"><stop stop-color="#72BECE"></stop><stop offset=".2" stop-color="#5D7FB7"></stop><stop offset=".4" stop-color="#9685CA"></stop><stop offset=".6" stop-color="#EE8C9D"></stop><stop offset=".8" stop-color="#A78CA7"></stop><stop offset="1" stop-color="#71BFCC"></stop></linearGradient></defs><path d="M12 3v18M4.5 6.75l15 10.5M19.5 6.75l-15 10.5"></path></svg></span>
+      <span class="brand-mark" aria-hidden="true"><img class="brand-logo" src="../assets/thrive-logo.png" alt="" width="28" height="28" decoding="async"></span>
       <span class="brand-word" id="brandWord">THE CONSOLE</span>
     </a>
-    <span class="muted">build ${BUILD}</span>
-  </div>
+    <div class="topbar-end" id="headNav"></div>
+  </header>
   <div id="root"></div>
 </div>
 <div id="pfScrim" class="scrim" hidden><div id="pfPanel" class="drawer" role="dialog" aria-modal="true"></div></div>
@@ -1828,7 +1852,7 @@ function buildBoard(){
           ct_tpl_h:"Templates sent", ct_no_tpl:"No templates sent to this contact yet.", ct_convo_h:"Conversation", ct_no_convo:"No conversation yet.",
           ct_send_one:"send", ct_send_n:"sends", ct_mem_open:"Sent to", ct_mem_h:"Sent to", ct_mem_none:"Not sent to anyone yet.",
           ct_sent_by:"Sent by", ct_sender_unknown:"a team member",
-          theme_light:"Light", theme_dark:"Dark" },
+          theme_light:"Light", theme_dark:"Dark", stats_pipe:"pipeline", stats_flags:"status" },
     ar: { title:"لوحة ثرايف", sub:"سجّل الدخول لعرض اللوحة.", email:"بريد المشغّل", pass:"كلمة المرور",
           go:"تسجيل الدخول", busy:"جارٍ تسجيل الدخول", err:"تعذّر تسجيل الدخول.",
           connecting:"جارٍ الاتصال.", retry:"إعادة المحاولة",
@@ -1939,7 +1963,7 @@ function buildBoard(){
           ct_tpl_h:"القوالب المُرسَلة", ct_no_tpl:"لم يُرسَل أي قالب إلى جهة الاتصال هذه بعد.", ct_convo_h:"المحادثة", ct_no_convo:"لا محادثة بعد.",
           ct_send_one:"إرسال", ct_send_n:"إرسالات", ct_mem_open:"أُرسل إلى", ct_mem_h:"أُرسل إلى", ct_mem_none:"لم يُرسَل إلى أحد بعد.",
           ct_sent_by:"أرسله", ct_sender_unknown:"أحد أعضاء الفريق",
-          theme_light:"فاتح", theme_dark:"داكن" }
+          theme_light:"فاتح", theme_dark:"داكن", stats_pipe:"المراحل", stats_flags:"الحالة" }
   };
   var LANG = (function(){ try{ return localStorage.getItem(LANG_KEY)==="ar" ? "ar" : "en"; }catch(e){ return "en"; } })();
   function t(k){ var d=STR[LANG]||STR.en; return d[k]!=null ? d[k] : (STR.en[k]!=null ? STR.en[k] : k); }
@@ -2229,6 +2253,9 @@ ${CONTACTS_SRC}
   }
   function signinView(){
     VIEW="signin"; applyLang();
+    // Clear the ONE top bar's trailing content: the account/quota/nav belong to a signed-in operator, so the
+    // sign-in screen shows only the brand (logo + wordmark), never a stale nav left over from a prior session.
+    var hn=document.getElementById("headNav"); if(hn) hn.innerHTML="";
     root.innerHTML =
       '<div class="signin">' +
       '<h1>' + esc(t("title")) + '</h1>' +
@@ -2267,9 +2294,10 @@ ${CONTACTS_SRC}
   }
 
   // Operator chip (signed-in email) + language toggle + refresh + sign-out.
+  // The trailing content of the ONE top bar (rendered into #headNav): account, quota, and the iconified nav.
+  // No wrapper row of its own; the .topbar in the shell is the single bar and the single hairline lives there.
   function headerHtml(){
-    return '<div class="top" style="padding:8px 2px">' +
-      '<span class="muted" id="opChip">' + esc(authEmail()) + '</span>' +
+    return '<span class="op-chip muted" id="opChip">' + esc(authEmail()) + '</span>' +
       '<span class="send-cap" id="sendCap"></span>' +   // SEND-HEALTH: live daily/monthly send-cap counter (server truth)
       '<span class="row-actions">' + langBtn() + themeBtn() +
         // Step 2D: the Admin executive surface is a SEPARATE header entry, hidden by default and revealed only
@@ -2289,7 +2317,8 @@ ${CONTACTS_SRC}
         iconBtn("profileBtn", "profile", t("pf_open")) +
         iconBtn("reload", "refresh", t("refresh")) +
         iconBtn("signout", "logout", t("signout")) +
-      '</span></div>';
+      '</span>' +
+      '<span class="build-mini muted" title="build ${BUILD}">${BUILD}</span>';
   }
   // Reveal the Admin entry only for an owner. Safe to call repeatedly (idempotent) and before the role settles.
   function paintAdminSlot(){
@@ -3002,26 +3031,43 @@ ${CONTACTS_SRC}
     else if(live>0){ heroN=live; heroK="v_ready"; }
     else { heroN=draft; heroK="v_draft"; }
     var verdict = '<div class="verdict"><span class="vnum" data-countup="' + heroN + '">0</span><span class="vlabel">' + esc(t(heroK)) + '</span></div>';
-    var pipe = '<div class="pipe">' + ["draft","live","sent","opened","replied"].map(function(st){
-      var lab = esc(t("l_"+st));
-      return '<span class="pchip" data-lane="' + st + '" aria-label="' + lab + '" title="' + lab + '" data-tip="' + lab + '">' +
-        icon(laneIcon(st), 14) + '<span class="pn" data-countup="' + laneN(st) + '">0</span></span>';
-    }).join("") + '</div>';
 
-    // Chips (display only in L2): stalled sent/opened cards, and archived count.
+    // The STAT CLUSTER: one consistent chip shape, grouped by meaning. Group 1 is the five pipeline states
+    // (the lane scale, left to right); group 2 is the status flags (live, replies waiting, stalled, archived).
+    // Every chip is a state glyph + its number, its name on hover AND on touch (data-tip), with a permanent
+    // aria-label. Colour is the lane/state hue (semantic, never the only carrier). The cluster wraps into a
+    // compact grid on a phone (CSS below). A stat helper keeps the shape identical everywhere.
+    function stat(cls, dataLane, glyph, valueHtml, label){
+      var aria = label + (valueHtml!=="" ? (": " + String(valueHtml).replace(/<[^>]*>/g,"")) : "");
+      return '<span class="stat' + (cls?" "+cls:"") + '"' + (dataLane?' data-lane="'+dataLane+'"':'') +
+        ' aria-label="' + esc(aria) + '" title="' + esc(label) + '" data-tip="' + esc(label) + '">' +
+        icon(glyph, 14) + (valueHtml!=="" ? '<span class="pn">' + valueHtml + '</span>' : '') + '</span>';
+    }
+    var pipeStats = ["draft","live","sent","opened","replied"].map(function(st){
+      var n = laneN(st);
+      return '<span class="stat" data-lane="' + st + '" aria-label="' + esc(t("l_"+st)) + ': ' + n + '" title="' + esc(t("l_"+st)) + '" data-tip="' + esc(t("l_"+st)) + '">' +
+        icon(laneIcon(st), 14) + '<span class="pn" data-countup="' + n + '">0</span></span>';
+    }).join("");
+
+    // Status flags (display only): the live-freshness flag, replies waiting to be filed (console_inbound), and
+    // the stalled / archived counts. Only the non-empty ones show, so the group stays tidy. The engine's
+    // drift/sync pills are intentionally NOT carried: the direct reader has no local ledger to drift from and no
+    // relay to be stale against, so there is nothing truthful to show.
     var stalled=0, archived=0;
     rows.forEach(function(r){ if(r && r.archived) archived++; else if((r.stage==="sent"||r.stage==="opened") && Number(r.idle_days||0)>7) stalled++; });
-    var chips=""; if(stalled) chips+='<span class="chip">'+icon("stalled",13)+'<span class="pn">'+stalled+'</span> '+esc(t("c_stalled"))+'</span>';
-    if(archived) chips+='<span class="chip">'+icon("archived",13)+'<span class="pn">'+archived+'</span> '+esc(t("c_archived"))+'</span>';
-    var chipsHtml = chips ? ('<div class="chips">'+chips+'</div>') : "";
-
-    // Pills: a truthful live-freshness pill, and the inbound-health pill (replies waiting to be filed) from the
-    // console_inbound read. The engine's drift/sync pills are intentionally NOT carried: the direct reader has
-    // no local ledger to drift from and no relay to be stale against, so there is nothing truthful to show.
-    var pills = '<span class="pill live">'+icon("live",13)+esc(t("p_live"))+'</span>';
     var waiting = (__reps && __reps.waiting) || 0;
-    if(waiting) pills += '<span class="pill warn">'+icon("replied",13)+'<span class="pn">'+waiting+'</span> '+esc(t("p_waiting"))+'</span>';
-    var pillsHtml = '<div class="pills">'+pills+'</div>';
+    var flags = stat("is-live", "", "live", "", t("p_live"));
+    if(waiting)  flags += stat("is-waiting", "", "replied", String(waiting), t("p_waiting"));
+    if(stalled)  flags += stat("is-stalled", "", "stalled", String(stalled), t("c_stalled"));
+    if(archived) flags += stat("is-archived", "", "archived", String(archived), t("c_archived"));
+
+    var statsHtml = '<div class="statbar">' + verdict +
+      '<div class="stats">' +
+        '<div class="stat-group stat-pipe" role="group" aria-label="' + esc(t("stats_pipe")) + '">' + pipeStats + '</div>' +
+        '<div class="stat-group stat-flags" role="group" aria-label="' + esc(t("stats_flags")) + '">' + flags + '</div>' +
+      '</div>' +
+      '<div class="muted stat-total">' + rows.length + ' ' + esc(t("opps")) + '</div>' +
+    '</div>';
 
     // Lanes: the five open lanes always; bounced/failed only when non-empty; "other" only if (unexpectedly) used.
     var order = ["draft","live","sent","opened","replied"];
@@ -3042,9 +3088,10 @@ ${CONTACTS_SRC}
       esc(t("tray")) + ' <span class="n">' + tray.length + '</span></button>' +
       '<div class="tray-body" id="trayBody" hidden>' + (tray.length ? tray.map(cardHtml).join("") : '<div class="empty">'+esc(t("none"))+'</div>') + '</div></section>';
 
-    root.innerHTML = headerHtml() + verdict + pipe + pillsHtml + chipsHtml +
-      '<div class="muted" style="padding:2px">' + rows.length + ' ' + esc(t("opps")) + '</div>' +
-      lanesHtml + trayHtml;
+    // ONE top bar: the account/quota/nav render into the shell's single .topbar (beside the logo + wordmark),
+    // not as a second row. The board content (the stat cluster + lanes + tray) fills #root below the one bar.
+    var hn=document.getElementById("headNav"); if(hn) hn.innerHTML = headerHtml();
+    root.innerHTML = statsHtml + lanesHtml + trayHtml;
     wireHeader();
     var tt=document.getElementById("trayToggle"), tb=document.getElementById("trayBody");
     if(tt && tb) tt.addEventListener("click", function(){ var open=tb.hidden; tb.hidden=!open; tt.setAttribute("aria-expanded", String(open)); });
@@ -3079,7 +3126,8 @@ ${CONTACTS_SRC}
     VIEW="board"; applyLang();
     try{ loadIdentity(); }catch(e){}   // Step 1: fire-and-forget profile/role load; NEVER gates the render
     try{ loadSuppressions().catch(function(){}); }catch(e){}   // B2: fire-and-forget do-not-contact set load; the send/upload paths re-await it (ensureSuppress). A failed preload leaves the set unloaded, so the FAIL-CLOSED send path blocks until a load succeeds; it never gates the render.
-    root.innerHTML = headerHtml() + '<div class="muted" style="padding:10px 2px">' + esc(t("loading")) + '</div>';
+    var hn=document.getElementById("headNav"); if(hn) hn.innerHTML = headerHtml();
+    root.innerHTML = '<div class="muted" style="padding:10px 2px">' + esc(t("loading")) + '</div>';
     wireHeader();
     reloadBoardData().catch(function(e){ if(e && e.authRequired){ signinView(); } else { redFull("board fetch", e); } });
   }

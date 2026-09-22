@@ -79,10 +79,11 @@ with sync_playwright() as p:
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_timeout(700)
     pg.wait_for_selector(".lane", timeout=8000)
 
-    # (a) mark spins, wordmark is THE CONSOLE
-    hd = pg.evaluate("""()=>{ var m=document.querySelector('.brand-mark'), w=document.getElementById('brandWord');
-        return { word:w&&w.textContent, anim:m?getComputedStyle(m).animationName:'', hasSvg:!!(m&&m.querySelector('svg')) }; }""")
-    ck("(a) the wordmark reads THE CONSOLE and the mark is a rotating SVG", hd["word"]=="THE CONSOLE" and hd["hasSvg"] and hd["anim"]=="brandspin", hd)
+    # (a) mark spins, wordmark is THE CONSOLE, and the mark is the OFFICIAL logo asset (a loaded <img>), not a hand-drawn shape
+    hd = pg.evaluate("""()=>{ var m=document.querySelector('.brand-mark'), w=document.getElementById('brandWord'), img=m&&m.querySelector('img.brand-logo');
+        return { word:w&&w.textContent, anim:m?getComputedStyle(m).animationName:'', hasLogo:!!img, logoSrc:img?img.getAttribute('src'):'', logoLoaded:!!(img&&img.complete&&img.naturalWidth>0) }; }""")
+    ck("(a) the wordmark reads THE CONSOLE and the mark rotates", hd["word"]=="THE CONSOLE" and hd["anim"]=="brandspin", hd)
+    ck("(a) the mark is the pinned official Thrive logo asset, loaded", hd["hasLogo"] and "thrive-logo.png" in (hd["logoSrc"] or "") and hd["logoLoaded"], hd)
 
     # (b) every iconbtn has a name + tooltip data; a touch tap reveals the ONE tooltip
     names = pg.evaluate("""()=>{ var bad=[]; [].forEach.call(document.querySelectorAll('.iconbtn'), function(b){
