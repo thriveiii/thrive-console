@@ -27,7 +27,7 @@ def ck(n, c, d=None):
 
 PIN = "https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/"
 LATO = {"400":"font-02-22937cf9.woff2", "700":"font-03-151d08ee.woff2", "900":"font-04-dd8e8c5a.woff2"}
-GHROOB = {"300":"font-05-e36207c4.woff2", "400":"font-06-58a22f0f.woff2", "700":"font-07-ee5dbf54.woff2", "900":"font-08-e35f45ee.woff2"}
+ALYAMAMA = {"300":"font-05-e36207c4.woff2", "400":"font-06-58a22f0f.woff2", "700":"font-07-ee5dbf54.woff2", "900":"font-08-e35f45ee.woff2"}
 
 src = open(f"{ROOT}/library/board.html", encoding="utf-8").read()
 
@@ -42,15 +42,16 @@ for w, fn in LATO.items():
     f = face_for("Lato", w)
     ck("(a) Lato %s @font-face references the pinned URL %s" % (w, fn), bool(f) and (PIN+fn) in f, f)
     ck("(a) Lato %s @font-face is font-display:swap" % w, "font-display:swap" in f.replace(" ", ""), f)
-for w, fn in GHROOB.items():
-    f = face_for("itfGhroob", w)
-    ck("(a) itfGhroob %s @font-face references the pinned URL %s" % (w, fn), bool(f) and (PIN+fn) in f, f)
-    ck("(a) itfGhroob %s @font-face is font-display:swap" % w, "font-display:swap" in f.replace(" ", ""), f)
-ck("(a) exactly the 7 brand faces are declared (3 Lato + 4 itfGhroob), no extras", len(faces)==7, len(faces))
+for w, fn in ALYAMAMA.items():
+    f = face_for("Alyamama", w)
+    ck("(a) Alyamama %s @font-face references the pinned URL %s" % (w, fn), bool(f) and (PIN+fn) in f, f)
+    ck("(a) Alyamama %s @font-face is font-display:swap" % w, "font-display:swap" in f.replace(" ", ""), f)
+ck("(a) exactly the 7 brand faces are declared (3 Lato + 4 Alyamama), no extras", len(faces)==7, len(faces))
+ck("(a) itfGhroob is fully removed (0 references)", "itfGhroob" not in src, src.count("itfGhroob"))
 ck("(a) Syne is intentionally NOT declared as an @font-face (no pinned asset, no guessed URL)",
    not any("font-family:Syne" in f.replace(" ", "").replace("'", "").replace('"', "") for f in faces))
 ck("(a) --font-display still falls back to Lato until Syne is pinned",
-   re.search(r"--font-display:\s*Syne,\s*var\(--font-body\)", src) is not None)
+   re.search(r"--font-display:\s*var\(--font\)", src) is not None)
 ck("(a) no inline base64 font data was added (reuse the pinned URLs only)", "data:font" not in src and "data:application/font" not in src)
 # brand rules: no em dash anywhere; the Arabic forms keep Western numerals in the filenames
 ck("(a) no em dash anywhere in board.html", "—" not in src)
@@ -61,10 +62,10 @@ ck("(a) no em dash anywhere in board.html", "—" not in src)
 # CSS. The durable invariant worth guarding is that the #327 type tokens the @font-face rules bind to are
 # still present and still name the brand families first, so Lato / itfGhroob keep resolving. A restyle that
 # renamed or dropped --font-body / --font-ar would break the whole point of loading the fonts and fails here.
-ck("(c) the --font-body token still names Lato first (the loaded Lato face binds to it)",
-   re.search(r"--font-body:\s*Lato\b", src) is not None)
-ck("(c) the --font-ar token still names itfGhroob first (the loaded Arabic face binds to it)",
-   re.search(r"--font-ar:\s*itfGhroob\b", src) is not None)
+ck("(c) the --font token names Lato first (Latin words render in Lato in both interfaces)",
+   re.search(r"--font:\s*Lato,\s*\"Alyamama\"", src) is not None)
+ck("(c) the --font-ar token binds Alyamama for Arabic glyphs, Lato first for Latin",
+   re.search(r"--font-ar:\s*Lato,\s*\"Alyamama\"", src) is not None)
 ck("(c) the RTL rule still routes Arabic to --font-ar with letter-spacing:normal (fonts reach Arabic joined)",
    re.search(r'html\[dir="rtl"\][^{]*\{[^}]*font-family:var\(--font-ar\)[^}]*letter-spacing:normal', src) is not None)
 
@@ -98,17 +99,21 @@ with sync_playwright() as p:
     ck("(b) a Lato @font-face is registered with the document", en["reg"] is True, en)
     pg.close(); ctx.close()
 
-    # Arabic (RTL): --font-ar resolves to itfGhroob first; joined; normal tracking; not uppercased
+    # Arabic (RTL): the stack lists Lato first (Latin words) then Alyamama (Arabic glyphs, per-character);
+    # an Alyamama @font-face is registered; joined; normal tracking; not uppercased.
     ctx2 = b.new_context(viewport={"width":390,"height":800}); wire(ctx2, ar=True)   # 390 = phone width guard
     pg2 = ctx2.new_page(); pg2.goto(f"{base}/library/board.html", wait_until="load"); pg2.wait_for_timeout(600)
     ar = pg2.evaluate("""()=>{ var b=getComputedStyle(document.body);
-        var reg=Array.from(document.fonts).some(function(f){return f.family.replace(/['\"]/g,'')==='itfGhroob';});
-        return { fam:b.fontFamily, ls:b.letterSpacing, tt:b.textTransform, reg:reg,
+        var reg=Array.from(document.fonts).some(function(f){return f.family.replace(/['\"]/g,'')==='Alyamama';});
+        var noneOld=Array.from(document.fonts).every(function(f){return f.family.replace(/['\"]/g,'')!=='itfGhroob';});
+        return { fam:b.fontFamily, ls:b.letterSpacing, tt:b.textTransform, reg:reg, noneOld:noneOld,
                  dir:document.documentElement.getAttribute('dir') }; }""")
     ck("(b) Arabic document is RTL", ar["dir"]=="rtl", ar)
-    first = ar["fam"].split(",")[0].replace('"','').replace("'","").strip().lower()
-    ck("(b) --font-ar resolves to itfGhroob FIRST for Arabic (never a system Arabic fallback)", first=="itfghroob", ar["fam"])
-    ck("(b) an itfGhroob @font-face is registered with the document", ar["reg"] is True, ar)
+    fam = ar["fam"].lower()
+    ck("(b) the Arabic stack lists Lato first (Latin words) and Alyamama (Arabic glyphs)",
+       fam.split(",")[0].replace('"','').replace("'","").strip()=="lato" and "alyamama" in fam, ar["fam"])
+    ck("(b) an Alyamama @font-face is registered with the document", ar["reg"] is True, ar)
+    ck("(b) no itfGhroob @font-face is registered (fully removed)", ar["noneOld"] is True, ar)
     ck("(b) Arabic body carries letter-spacing:normal (stays joined, no Latin tracking)", ar["ls"]=="normal", ar)
     ck("(b) Arabic body is not uppercased", ar["tt"]=="none", ar)
     pg2.close(); ctx2.close()

@@ -928,26 +928,22 @@ function buildBoard(){
 (function(){try{var d=document.documentElement,uid="";try{var s=JSON.parse(localStorage.getItem("console_sb_session")||"{}");uid=(s&&s.uid)||"";}catch(e){}var th="";try{th=localStorage.getItem("thrive_theme:"+uid)||localStorage.getItem("thrive_theme")||"";}catch(e){}d.setAttribute("data-theme",(th==="light"||th==="dark")?th:"dark");}catch(e){}})();</script>
 <style>
   /* ============================================================================================
-     BRAND FONTS. Self-hosted from the pinned public Supabase assets bucket, reusing the exact woff2
-     the published opp pages already reference by their ASSET_MANIFEST filenames (no new vendor, no
-     inline base64, no guessed URL). font-display:swap paints immediately in the fallback and swaps in
-     the brand file when it arrives. These rules only DEFINE the families the type tokens above already
-     name (--font-body Lato, --font-ar itfGhroob); no element is restyled here, so the diff is fonts
-     only. Latin loads Lato in the weights the console actually uses (400 body, 700 and 900 for the
-     heavier steps; the 600 to 800 requests match to the nearest of these inside the family). Arabic
-     loads itfGhroob in every available weight, so every Arabic surface resolves to the brand face and
-     never a system Arabic fallback. Syne (display) has no pinned asset yet, so it is intentionally not
-     declared here; --font-display keeps its Lato fallback until Syne is pinned (assets/fonts, font-09)
-     ahead of the display-typography pass. Western numerals stay Western; Arabic stays joined via the
-     RTL letter-spacing:normal rule already in the tokens sheet.
+     BRAND FONTS (canon Law 6.1): one Latin face (Lato) and one Arabic face (Alyamama), self-hosted from
+     the pinned public Supabase assets bucket by their exact ASSET_MANIFEST filenames (no new vendor, no
+     inline base64, no guessed URL). font-display:swap paints in the fallback and swaps the brand file in.
+     font-05..08 are the Alyamama weights (300/400/700/900) the published opp pages already reference; they
+     ARE Alyamama, so they bind to the Alyamama family here. The previous non-canon Arabic face is retired.
+     The type stack (--font / --font-ar below) lists Lato first then Alyamama, so Latin letters render in
+     Lato and Arabic glyphs, which Lato does not carry, fall through to Alyamama, in both the English and the
+     Arabic interface. Syne (display) has no pinned asset yet, so the display face falls back to Lato.
      ============================================================================================ */
   @font-face{font-family:Lato;font-style:normal;font-weight:400;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-02-22937cf9.woff2) format("woff2")}
   @font-face{font-family:Lato;font-style:normal;font-weight:700;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-03-151d08ee.woff2) format("woff2")}
   @font-face{font-family:Lato;font-style:normal;font-weight:900;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-04-dd8e8c5a.woff2) format("woff2")}
-  @font-face{font-family:itfGhroob;font-style:normal;font-weight:300;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-05-e36207c4.woff2) format("woff2")}
-  @font-face{font-family:itfGhroob;font-style:normal;font-weight:400;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-06-58a22f0f.woff2) format("woff2")}
-  @font-face{font-family:itfGhroob;font-style:normal;font-weight:700;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-07-ee5dbf54.woff2) format("woff2")}
-  @font-face{font-family:itfGhroob;font-style:normal;font-weight:900;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-08-e35f45ee.woff2) format("woff2")}
+  @font-face{font-family:Alyamama;font-style:normal;font-weight:300;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-05-e36207c4.woff2) format("woff2")}
+  @font-face{font-family:Alyamama;font-style:normal;font-weight:400;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-06-58a22f0f.woff2) format("woff2")}
+  @font-face{font-family:Alyamama;font-style:normal;font-weight:700;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-07-ee5dbf54.woff2) format("woff2")}
+  @font-face{font-family:Alyamama;font-style:normal;font-weight:900;font-display:swap;src:url(https://ssqhwdzgegzqcjfcclmr.supabase.co/storage/v1/object/public/assets/fonts/font-08-e35f45ee.woff2) format("woff2")}
   /* ============================================================================================
      DESIGN TOKENS (foundation). Additive and behavior-preserving: every DARK value below equals the
      literal it replaces, so the default (dark) console renders byte-identically. Light values are new
@@ -955,127 +951,129 @@ function buildBoard(){
      prefers light and no data-theme pins it). Brand rules: no em dash anywhere; letter-spacing stays
      scoped to Latin classes; Arabic carries letter-spacing:normal; spacing is a multiple of 8.
      ============================================================================================ */
+  /* ============================================================================================
+     CANON DESIGN TOKENS. Ported from docs/IDENTITY.md, docs/MOTION.md and library/styles.css onto this
+     standalone board. ONE token system: the canon names below are the source of truth; the legacy
+     component-facing names this file already uses (--surface, --text, --border, --radius-*, --dur-*,
+     --ease, --elev-*) are re-pointed onto the canon values, so every existing rule renders canon colours
+     without a rewrite. Law 6.1 fonts (Lato + Alyamama), Law 4 colour (the gradient is the one primary
+     action + the logo; the lane hues are the semantic scale), Law 5 radii, MOTION.md durations/easings.
+     The dusty rose and the non-canon Arabic face are gone: they had no canon basis. ============================== */
   :root{
-    /* Type. Brand fonts first, then the exact current fallback stacks, so an unloaded brand font
-       falls back to today's rendering (no duplicate loading, Arabic letters stay joined). */
-    --font-body: Lato, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;   /* English body + UI */
-    --font-display: Syne, var(--font-body);                                                /* English display */
-    --font-ar: itfGhroob, "SF Arabic", "Geeza Pro", -apple-system, "Segoe UI", Tahoma, Arial, sans-serif; /* all Arabic */
+    color-scheme:dark;
+    /* ---- Type (Law 6.1). One Latin face, one Arabic face; the stack resolves per character, so Latin
+       letters find Lato and Arabic glyphs fall through to Alyamama, in BOTH interfaces. No system family
+       sits between them (a system Arabic face would otherwise capture the glyph first). ---- */
+    --font: Lato, "Alyamama", sans-serif;
+    --font-ar: Lato, "Alyamama", sans-serif;
+    --font-lat: var(--font);
+    --font-display: var(--font);   /* Syne not pinned; Lato at its heaviest carries the display moment */
+    --font-body: var(--font);      /* legacy alias */
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    /* Responsive type scale (clamp: min, fluid, max). Foundation for later surfaces. */
-    --fs-hero:    clamp(30px, 4.2vw, 48px);
-    --fs-display: clamp(24px, 3.2vw, 34px);
-    --fs-large:   clamp(19px, 2.2vw, 24px);
-    --fs-medium:  clamp(16px, 1.6vw, 18px);
-    --fs-prose:   clamp(14px, 1.3vw, 16px);
-    --fs-small:   clamp(12px, 1.1vw, 13px);
-    --fs-micro:   clamp(10px, 1vw, 11px);
-    /* Latin-only tracking tokens (never applied to Arabic). */
-    --track-tight: -0.01em;
-    --track-caps: 0.08em;
+    /* Weights (Law 7.7): Alyamama reads heavier, so Arabic steps every display weight down one (RTL below). */
+    --w-body: 400; --w-strong: 700; --w-head: 800; --w-max: 900;
+    /* Type scale, fixed px (canon). Legacy --fs-* names alias onto it (they were unused clamps). */
+    --fs-micro: 10.5px; --fs-xs: 11.5px; --fs-sm: 12.5px; --fs-base: 13.5px;
+    --fs-md: 15px; --fs-lg: 17px; --fs-xl: 22px; --fs-2xl: 30px;
+    --lh-tight: 1.25; --lh-base: 1.55; --lh-read: 1.85;
+    --fs-hero: var(--fs-2xl); --fs-display: var(--fs-2xl); --fs-large: var(--fs-lg);
+    --fs-medium: var(--fs-md); --fs-prose: var(--fs-base); --fs-small: var(--fs-sm);
+    --track-tight: -0.01em; --track-caps: 0.08em;   /* Latin-only tracking; Arabic-safe variants scope it off */
 
-    /* Spacing, 8-based (equal padding on all four sides is enforced per component, not here). */
-    --space-1: 8px;  --space-2: 16px; --space-3: 24px; --space-4: 32px;
-    --space-5: 40px; --space-6: 48px; --space-8: 64px;
+    /* ---- Space: the canon 4px base scale. Legacy --space-* alias onto it (they were unused). ---- */
+    --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 26px; --s-7: 34px; --s-8: 48px;
+    --space-1: var(--s-2); --space-2: var(--s-4); --space-3: var(--s-5); --space-4: var(--s-6);
+    --space-5: 40px; --space-6: var(--s-8); --space-8: 64px;
 
-    /* Radius. */
-    --radius-s: 8px; --radius-m: 10px; --radius-l: 14px; --radius-pill: 999px;
+    /* ---- Radii: four canon values. Legacy --radius-* re-point onto them. ---- */
+    --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 18px; --r-pill: 999px;
+    --radius-s: var(--r-sm); --radius-m: var(--r-md); --radius-l: var(--r-lg); --radius-pill: var(--r-pill);
 
-    /* Elevation / shadow. */
-    --elev-1: 0 1px 2px rgba(0,0,0,.30);
-    --elev-2: 0 6px 20px rgba(0,0,0,.45);
-    --elev-3: 0 18px 48px rgba(0,0,0,.55);
+    /* ---- Elevation (objects only, never surfaces). Legacy --elev-* re-point onto them. ---- */
+    --el-raised: 0 6px 18px rgba(0,0,0,.40); --el-modal: 0 0 60px rgba(0,0,0,.60);
+    --el-accent: 0 8px 24px rgba(150,133,202,.28);
+    --elev-1: 0 1px 2px rgba(0,0,0,.30); --elev-2: var(--el-raised); --elev-3: var(--el-modal);
 
-    /* Motion. */
-    --ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --dur-1: 200ms; --dur-2: 400ms; --dur-3: 800ms;
+    /* ---- Motion (MOTION.md): five durations, three easings. Legacy --dur-*/--ease re-point onto them. ---- */
+    --t-instant: 90ms; --t-quick: 160ms; --t-base: 240ms; --t-slow: 320ms; --t-page: 420ms; --t-settle: 480ms;
+    --e-standard: cubic-bezier(.2,.7,.2,1); --e-enter: cubic-bezier(.16,1,.3,1); --e-exit: cubic-bezier(.4,0,1,1);
+    --ease: var(--e-standard); --dur-1: var(--t-base); --dur-2: var(--t-page); --dur-3: var(--t-settle);
 
-    /* ---- COLOR (dark base; values equal the current literals) ---- */
-    /* Neutral surfaces (60 percent of the canvas). */
-    --bg: #07070b;
-    --surface: #0e0e14;
-    --surface-raised: #111119;
-    --surface-sunken: #0c0c12;
-    --surface-inset: #0b0b11;
-    --field-bg: #14141c;
+    /* ---- Surfaces (Law 4.5, near-black). Legacy surface names re-point onto the canon panels. ---- */
+    --bg: #0a0a0c; --panel: #111116; --panel-2: #16161d;
+    --hair: rgba(255,255,255,.10); --hair-2: rgba(255,255,255,.06);
+    --surface: var(--panel); --surface-raised: var(--panel-2); --surface-sunken: #0d0d11;
+    --surface-inset: #0e0e12; --field-bg: #14141a;
     --page-canvas: #ffffff;   /* hosted-page preview surface: white in BOTH themes */
-    /* Neutral text (30 percent). Light body text lands at #1a1a1a in the light theme. */
-    --text: #e7e7ea;
-    --text-hi: #eef;
-    --text-max: #fff;
-    --text-muted: #8a8a93;
-    --text-muted-2: #9a9aa6;
-    --text-dim: #6a6a74;
-    --text-faint: #5a5a64;
-    /* Borders. */
-    --border: #22222e;
-    --border-soft: #191921;
-    --border-hair: #17171f;
-    --border-2: #1c1c26;
-    --border-3: #1e1e28;
-    --border-card: #20202a;
-    /* Brand (10 percent). The dusty rose accent is a NEW brand token, defined here for later surfaces;
-       the existing teal keeps its role so nothing is redesigned yet. Semantics are kept separate. */
-    --brand-teal: #71BFCC;
-    --on-brand: #04252b;
-    --focus: #5D7FB7;
-    --accent: #C98B8B;         /* the light brand rose: non-text roles only (borders, indicators), never a label fill */
-    --accent-ink: #2b1414;
-    /* Primary action button: an accessible DEEP dusty rose that carries a WHITE label at AA (5.36:1) in both
-       themes. The light --accent above is too pale to hold legible text, so buttons use these tokens instead. */
-    --btn-primary-bg: #9c5757;  --btn-primary-fg: #ffffff;  --btn-primary-bg-hover: #8a4d4d;
-    /* Neutral secondary control: a raised fill that stays visible on the panel in both themes. */
-    --btn-neutral-bg: #16161d;  --btn-neutral-border: #2a2a36;
-    /* Semantic (separate from brand): success / warning / error. */
-    --success: #7fd18b;   --success-bg: #0c130c; --success-border: #1e2a1e;
-    --warning: #c9a24a;   --warning-2: #e6b34a;  --warning-bg: #17130a; --warning-border: #2a2410;
-    --error: #ff8a8a;     --error-2: #e37a7a;    --error-bg: #1a0e11;   --error-border: #4a1d24;
-    /* Info (blue, drawn from the focus family) and a neutral status chip: on-palette roles the status chips and
-       the informational actions need, so no component carries a raw literal. Light values mirror these below. */
-    --info: #63b7e3;      --info-2: #8fd4ff;     --info-bg: #0e2130;    --info-border: #214a5c; --info-ink: #04222e;
-    --chip-bg: #15151d;   --chip-fg: #a9a9b4;    --chip-border: #2a2a36;
-    --hover-border: #37505c;   /* interactive hover border, neutral, both themes */
-    /* Overlay scrim. */
-    --scrim: rgba(2,2,6,.66);
-    --scrim-strong: rgba(2,2,6,.72);
+
+    /* ---- Ink (canon). Legacy --text-* re-point onto it. ---- */
+    --ink: #ffffff; --ink-2: #d1d5db; --ink-3: #9ca3af; --ink-4: #6b7280;
+    --text: var(--ink-2); --text-hi: #e8eaf0; --text-max: var(--ink);
+    --text-muted: var(--ink-3); --text-muted-2: #b0b4bd; --text-dim: var(--ink-4); --text-faint: #565b66;
+
+    /* ---- Borders: the 10 percent hairline (Law 5.1). Legacy --border-* re-point onto it. ---- */
+    --border: var(--hair); --border-soft: var(--hair-2); --border-hair: var(--hair-2);
+    --border-2: var(--hair); --border-3: var(--hair); --border-card: var(--hair);
+
+    /* ---- Brand + the gradient (Law 4). The full gradient is the ONE primary action per surface + the
+       logo, and nothing else. --on-brand is the warm near-black label the gradient carries; it clears AA
+       (>=4.8:1) on the gradient's lightest-to-darkest sweep. ---- */
+    --grad: linear-gradient(120deg,#72BECE,#5D7FB7,#9685CA,#EE8C9D,#A78CA7,#71BFCC);
+    --brand-teal: #71BFCC; --purple: #9685CA; --pink: #EE8C9D; --teal: #71BFCC;
+    --on-brand: #0e0b14; --focus: #9685CA;
+    /* The primary action wears the gradient with the near-black label; the neutral secondary is a raised panel. */
+    --btn-primary-bg: var(--grad); --btn-primary-fg: var(--on-brand);
+    --btn-neutral-bg: #17171f; --btn-neutral-border: rgba(255,255,255,.14);
+
+    /* ---- Lanes: colour as a scale, one hue per state of the journey (Law 4). Each carries a .12 tint. ---- */
+    --lane-draft: #71BFCC; --lane-live: #7F9FD4; --lane-sent: #9685CA;
+    --lane-opened: #EE8C9D; --lane-replied: #7EE0B8; --lane-closed: #6b7280;
+    --lane-draft-t: rgba(113,191,204,.12); --lane-live-t: rgba(127,159,212,.12);
+    --lane-sent-t: rgba(150,133,202,.12); --lane-opened-t: rgba(238,140,157,.12);
+    --lane-replied-t: rgba(126,224,184,.12); --lane-closed-t: rgba(107,114,128,.12);
+    --glow: #7EE0B8; --glow-1: rgba(126,224,184,.42); --glow-t: rgba(126,224,184,.10);
+
+    /* ---- Semantic states (canon; separate from the lane scale). ---- */
+    --success: #7EE0B8;   --success-bg: var(--lane-replied-t); --success-border: rgba(126,224,184,.34);
+    --warning: #F6CF5B;   --warning-2: #F6CF5B;  --warning-bg: rgba(246,207,91,.11); --warning-border: rgba(246,207,91,.34);
+    --error: #E0736F;     --error-2: #E0736F;    --error-bg: rgba(224,115,111,.16);  --error-border: rgba(224,115,111,.40);
+    /* Info takes the Live-lane blue (informational, on the scale). Neutral chip stays a quiet panel tone. */
+    --info: #7F9FD4;      --info-2: #9db6e6;     --info-bg: var(--lane-live-t);      --info-border: rgba(127,159,212,.34); --info-ink: #0a0f1a;
+    --chip-bg: rgba(255,255,255,.05); --chip-fg: var(--ink-3); --chip-border: var(--hair);
+    --hover-border: rgba(255,255,255,.22);
+
+    /* ---- Overlay scrim (canon). ---- */
+    --scrim: rgba(0,0,0,.58); --scrim-strong: rgba(0,0,0,.66);
   }
 
   /* ---- LIGHT theme color values (new; behavior unchanged until chosen) ---- */
+  /* ---- LIGHT theme: derived from the canon surfaces and lane scale (the canon is dark-only, so light is
+     re-derived for contrast, per IDENTITY section 11). The gradient and its near-black label are NOT
+     overridden, so the primary action is identical and AA in both themes. Lane hues are darkened to hold
+     AA as text on the light panels; their .12 tints inherit from :root and stay pale on white. ---- */
   :root[data-theme="light"]{
-    --bg: #f7f7f8;
-    --surface: #ffffff;
-    --surface-raised: #ffffff;
-    --surface-sunken: #f0f0f2;
-    --surface-inset: #ffffff;
-    --field-bg: #ffffff;
-    --text: #1a1a1a;
-    --text-hi: #0d0d0d;
-    --text-max: #000000;
-    --text-muted: #5a5a63;
-    --text-muted-2: #6a6a74;
-    --text-dim: #8a8a93;
-    --text-faint: #9a9aa6;
-    --border: #e2e2e6;
-    --border-soft: #ececf0;
-    --border-hair: #e8e8ec;
-    --border-2: #e2e2e6;
-    --border-3: #e6e6ea;
-    --border-card: #e2e2e6;
-    --brand-teal: #1f7f90;
-    --on-brand: #ffffff;
-    --focus: #3a5f97;
-    --accent: #a85f5f;    /* dusty rose brand accent (light theme), non-text roles */
-    --accent-ink: #ffffff;
-    --btn-primary-bg: #9c5757;  --btn-primary-fg: #ffffff;  --btn-primary-bg-hover: #8a4d4d;
-    --btn-neutral-bg: #f0f1f4;  --btn-neutral-border: #d7d8de;
-    --success: #1f7a3a;   --success-bg: #e9f6ec; --success-border: #bfe3c8;
-    --warning: #8a6a1f;   --warning-2: #8a6a1f;  --warning-bg: #fbf4e2; --warning-border: #e6d8b0;
-    --error: #b3261e;     --error-2: #b3261e;    --error-bg: #fbeceb;   --error-border: #e8b4b0;
-    --info: #1f6f8a;      --info-2: #1f6f8a;     --info-bg: #e6f1f8;    --info-border: #bcdcea; --info-ink: #ffffff;
-    --chip-bg: #eef0f3;   --chip-fg: #5a5a63;    --chip-border: #dcdce2;
-    --hover-border: #b7c3cb;
-    --scrim: rgba(20,20,28,.40);
-    --scrim-strong: rgba(20,20,28,.50);
+    color-scheme: light;
+    --bg: #f7f7f8; --panel: #ffffff; --panel-2: #f4f5f7;
+    --hair: rgba(0,0,0,.12); --hair-2: rgba(0,0,0,.07);
+    --surface: var(--panel); --surface-raised: #ffffff; --surface-sunken: #f0f0f2;
+    --surface-inset: #ffffff; --field-bg: #ffffff;
+    --ink: #0d0d0d; --ink-2: #1a1a1a; --ink-3: #5a5a63; --ink-4: #8a8a93;
+    --text: var(--ink-2); --text-hi: #0d0d0d; --text-max: #000000;
+    --text-muted: var(--ink-3); --text-muted-2: #6a6a74; --text-dim: var(--ink-4); --text-faint: #9a9aa6;
+    --border: var(--hair); --border-soft: var(--hair-2); --border-hair: var(--hair-2);
+    --border-2: var(--hair); --border-3: var(--hair); --border-card: var(--hair);
+    --brand-teal: #2e7480; --purple: #725bb8; --focus: #725bb8;
+    --btn-neutral-bg: #f0f1f4; --btn-neutral-border: #d7d8de;
+    /* lane text colours, darkened for AA on the light panels (hue preserved from the dark scale) */
+    --lane-draft: #2e7480; --lane-live: #3e6bb7; --lane-sent: #725bb8;
+    --lane-opened: #c0405a; --lane-replied: #1d7752; --lane-closed: #646a77;
+    --success: #1d7752;   --success-bg: rgba(126,224,184,.16); --success-border: rgba(29,119,82,.34);
+    --warning: #8a6a1f;   --warning-2: #8a6a1f;  --warning-bg: rgba(246,207,91,.20); --warning-border: rgba(138,106,31,.34);
+    --error: #b3261e;     --error-2: #b3261e;    --error-bg: rgba(224,115,111,.14);  --error-border: rgba(179,38,30,.34);
+    --info: #3e6bb7;      --info-2: #3e6bb7;     --info-bg: rgba(127,159,212,.16);   --info-border: rgba(62,107,183,.34); --info-ink: #ffffff;
+    --chip-bg: rgba(0,0,0,.05); --chip-fg: #5a5a63; --chip-border: rgba(0,0,0,.12);
+    --hover-border: rgba(0,0,0,.22);
+    --scrim: rgba(20,20,28,.40); --scrim-strong: rgba(20,20,28,.50);
   }
 
   /* System default: follow prefers-color-scheme ONLY when no explicit theme is pinned. The boot script
@@ -1083,19 +1081,21 @@ function buildBoard(){
      one-line boot change activates once every surface is tokenized. */
   @media (prefers-color-scheme: light){
     :root:not([data-theme="dark"]):not([data-theme="light"]){
-      --bg: #f7f7f8; --surface: #ffffff; --surface-raised: #ffffff; --surface-sunken: #f0f0f2;
-      --surface-inset: #ffffff; --field-bg: #ffffff; --text: #1a1a1a; --text-hi: #0d0d0d; --text-max: #000000;
-      --text-muted: #5a5a63; --text-muted-2: #6a6a74; --text-dim: #8a8a93; --text-faint: #9a9aa6;
-      --border: #e2e2e6; --border-soft: #ececf0; --border-hair: #e8e8ec; --border-2: #e2e2e6;
-      --border-3: #e6e6ea; --border-card: #e2e2e6; --brand-teal: #1f7f90; --on-brand: #ffffff;
-      --focus: #3a5f97; --accent: #a85f5f; --accent-ink: #ffffff;
-      --btn-primary-bg: #9c5757; --btn-primary-fg: #ffffff; --btn-primary-bg-hover: #8a4d4d;
+      color-scheme: light;
+      --bg: #f7f7f8; --panel: #ffffff; --panel-2: #f4f5f7; --hair: rgba(0,0,0,.12); --hair-2: rgba(0,0,0,.07);
+      --surface: var(--panel); --surface-raised: #ffffff; --surface-sunken: #f0f0f2; --surface-inset: #ffffff; --field-bg: #ffffff;
+      --ink: #0d0d0d; --ink-2: #1a1a1a; --ink-3: #5a5a63; --ink-4: #8a8a93;
+      --text: var(--ink-2); --text-hi: #0d0d0d; --text-max: #000000;
+      --text-muted: var(--ink-3); --text-muted-2: #6a6a74; --text-dim: var(--ink-4); --text-faint: #9a9aa6;
+      --border: var(--hair); --border-soft: var(--hair-2); --border-hair: var(--hair-2); --border-2: var(--hair); --border-3: var(--hair); --border-card: var(--hair);
+      --brand-teal: #2e7480; --purple: #725bb8; --focus: #725bb8;
       --btn-neutral-bg: #f0f1f4; --btn-neutral-border: #d7d8de;
-      --success: #1f7a3a; --success-bg: #e9f6ec; --success-border: #bfe3c8;
-      --warning: #8a6a1f; --warning-2: #8a6a1f; --warning-bg: #fbf4e2; --warning-border: #e6d8b0;
-      --error: #b3261e; --error-2: #b3261e; --error-bg: #fbeceb; --error-border: #e8b4b0;
-      --info: #1f6f8a; --info-2: #1f6f8a; --info-bg: #e6f1f8; --info-border: #bcdcea; --info-ink: #ffffff;
-      --chip-bg: #eef0f3; --chip-fg: #5a5a63; --chip-border: #dcdce2; --hover-border: #b7c3cb;
+      --lane-draft: #2e7480; --lane-live: #3e6bb7; --lane-sent: #725bb8; --lane-opened: #c0405a; --lane-replied: #1d7752; --lane-closed: #646a77;
+      --success: #1d7752; --success-bg: rgba(126,224,184,.16); --success-border: rgba(29,119,82,.34);
+      --warning: #8a6a1f; --warning-2: #8a6a1f; --warning-bg: rgba(246,207,91,.20); --warning-border: rgba(138,106,31,.34);
+      --error: #b3261e; --error-2: #b3261e; --error-bg: rgba(224,115,111,.14); --error-border: rgba(179,38,30,.34);
+      --info: #3e6bb7; --info-2: #3e6bb7; --info-bg: rgba(127,159,212,.16); --info-border: rgba(62,107,183,.34); --info-ink: #ffffff;
+      --chip-bg: rgba(0,0,0,.05); --chip-fg: #5a5a63; --chip-border: rgba(0,0,0,.12); --hover-border: rgba(0,0,0,.22);
       --scrim: rgba(20,20,28,.40); --scrim-strong: rgba(20,20,28,.50);
     }
   }
@@ -1110,7 +1110,11 @@ function buildBoard(){
   .wrap{max-width:1200px;margin:0 auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top));padding-inline:calc(16px + env(safe-area-inset-left)) calc(16px + env(safe-area-inset-right))}
   .compose-send .act.send{min-height:44px}   /* comfortable touch target; the phone media query pins this bar to the bottom */
   .top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 2px 16px;border-bottom:1px solid var(--border-hair)}
-  .brand{font-weight:800;letter-spacing:.01em;font-size:20px;color:var(--text-max);line-height:1.15}
+  /* The wordmark is the logo moment (Law 4.2): the full gradient, clipped to the text, on dark. On the light
+     theme the gradient's pale stops would not hold on white, so the wordmark falls back to solid ink there. */
+  .brand{font-weight:var(--w-max);letter-spacing:.01em;font-size:var(--fs-xl);line-height:1.15;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+  :root[data-theme="light"] .brand{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink)}
+  @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .brand{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink)}}
   .muted{color:var(--text-muted);font-size:12px}
   .send-cap{font-size:12px;color:var(--text-muted);unicode-bidi:isolate;margin-inline-start:auto}
   .send-cap.warn{color:var(--warning-2)}
@@ -1126,37 +1130,53 @@ function buildBoard(){
   input:focus{border-color:var(--focus)}
   /* Visible keyboard focus on every interactive control (mouse clicks stay clean via :focus-visible). */
   a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[tabindex]:focus-visible,.link:focus-visible,.ow-tab:focus-visible,.lv-tab:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px}
-  button.primary{width:100%;margin-top:10px;padding:11px 16px;border:0;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;color:var(--btn-primary-fg);background:var(--btn-primary-bg);font-family:inherit;transition:background-color var(--dur-1) var(--ease)}
-  button.primary:hover{background:var(--btn-primary-bg-hover)}
+  button.primary{width:100%;margin-top:10px;padding:11px 16px;border:0;border-radius:var(--r-md);font-weight:var(--w-max);font-size:14px;cursor:pointer;color:var(--btn-primary-fg);background:var(--btn-primary-bg);box-shadow:var(--el-accent);font-family:inherit;transition:filter var(--t-instant) var(--e-standard),box-shadow var(--t-instant) var(--e-standard)}
+  button.primary:hover{filter:brightness(1.06)}
   button.primary:disabled{opacity:.6;cursor:default}
   .lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;align-items:start;margin-top:16px}
   .lane{background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:var(--radius-l);padding:12px}
-  .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;color:var(--text-muted-2);margin:2px 4px 12px;display:flex;justify-content:space-between;align-items:center}
+  .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;font-weight:var(--w-head);color:var(--text-muted-2);margin:2px 4px 12px;display:flex;justify-content:space-between;align-items:center}
   .lane h2 .n{color:var(--text-muted);font-weight:700}
+  /* Lane colour as a semantic scale (Law 4): the five lane headers and the pipeline chips wear their lane
+     hue, left to right along the gradient (draft teal, live blue, sent violet, opened coral, replied green).
+     Colour is never the only carrier: the lane also has its text label and its count. */
+  .lane[data-lane="draft"] h2{color:var(--lane-draft)}
+  .lane[data-lane="live"] h2{color:var(--lane-live)}
+  .lane[data-lane="sent"] h2{color:var(--lane-sent)}
+  .lane[data-lane="opened"] h2{color:var(--lane-opened)}
+  .lane[data-lane="replied"] h2{color:var(--lane-replied)}
+  .lane[data-lane="bounced"] h2,.lane[data-lane="failed"] h2,.lane[data-lane="other"] h2{color:var(--lane-closed)}
+  .lane[data-lane] h2 .n{color:inherit;opacity:.85}
   .card{background:var(--surface-raised);border:1px solid var(--border-card);border-radius:var(--radius-m);padding:12px;margin:0 0 10px;box-shadow:var(--elev-1);transition:border-color var(--dur-1) var(--ease),box-shadow var(--dur-1) var(--ease)}
   .card:hover{border-color:var(--hover-border);box-shadow:var(--elev-2)}
-  /* Edge-mark by page state (rendered from the view's has_page / has_email, no client computation): a card with
-     a rich hosted page carries a solid brand edge; a text-only message carries a distinct lighter dashed edge.
-     border-inline-start so the mark sits on the leading edge in both LTR and RTL. */
-  .card.card-offer{border-inline-start:3px solid var(--brand-teal)}
-  .card.card-msg{border-inline-start:3px dashed var(--focus)}
-  .card .b{font-weight:700;font-size:15px;color:var(--text-hi);line-height:1.3;word-break:break-word}
+  /* Side strips are retired (IDENTITY section 13.7): state is position, so a coloured card edge was a
+     redundant second carrier and is forbidden as a device. A card's lane meaning is read from the lane it
+     sits in (the lane header and the pipeline chip carry the lane hue); the card itself stays neutral. */
+  .card .b{font-weight:var(--w-strong);font-size:15px;color:var(--text-hi);line-height:1.3;word-break:break-word}
   .card .s{color:var(--text-muted);font-size:12.5px;margin-top:5px;word-break:break-word}
   .badge{display:inline-block;font-size:11px;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;padding:1px 7px;margin-block-start:6px;margin-inline-end:6px}
   .empty{color:var(--text-faint);font-size:12px;padding:8px 4px}
   /* RTL: Arabic is chrome-language only. A system Arabic stack keeps the page self-contained (no webfont);
      no letter-spacing and no uppercase on Arabic. Lane column order follows the base direction of .lanes,
      so dir=rtl flows the first lane (draft) to the right automatically. */
+  /* Arabic weight step-down (Law 7.7): Alyamama reads heavier than Lato at the same nominal weight, so every
+     display weight the headings pull through --w-* drops one step in RTL. */
+  html[dir="rtl"]{--w-body:400; --w-strong:500; --w-head:600; --w-max:700}
   html[dir="rtl"] body, html[dir="rtl"] input, html[dir="rtl"] button{font-family:var(--font-ar);letter-spacing:normal}
   html[dir="rtl"] .brand{letter-spacing:normal}
   html[dir="rtl"] .lane h2{text-transform:none;letter-spacing:normal}
   /* L2 read fidelity: verdict hero, pipeline strip, chips, pills, reply grouping + N-badge, new-activity dot, tray */
   .verdict{display:flex;align-items:baseline;gap:10px;padding:10px 2px 2px}
-  .vnum{font-size:30px;font-weight:800;color:var(--text-max);line-height:1}
+  .vnum{font-size:var(--fs-2xl);font-weight:var(--w-max);color:var(--text-max);line-height:1}
   .vlabel{color:var(--text-muted-2);font-size:13px}
   .pipe{display:flex;flex-wrap:wrap;gap:8px;padding:6px 2px}
   .pchip{font-size:12px;color:var(--text-muted-2);background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:999px;padding:3px 9px}
   .pchip .pn{color:var(--text);font-weight:700}
+  .pchip[data-lane="draft"] .pn{color:var(--lane-draft)}
+  .pchip[data-lane="live"] .pn{color:var(--lane-live)}
+  .pchip[data-lane="sent"] .pn{color:var(--lane-sent)}
+  .pchip[data-lane="opened"] .pn{color:var(--lane-opened)}
+  .pchip[data-lane="replied"] .pn{color:var(--lane-replied)}
   .chips{display:flex;flex-wrap:wrap;gap:8px;padding:2px}
   .chip{font-size:11.5px;color:var(--warning);background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:999px;padding:2px 9px}
   .pills{display:flex;flex-wrap:wrap;gap:8px;padding:2px 2px 6px}
@@ -1186,7 +1206,7 @@ function buildBoard(){
   .ow-scrim[hidden]{display:none}
   .ow{display:flex;flex-direction:column;width:min(920px,92vw);max-height:88vh;background:var(--surface-inset);border:1px solid var(--border-2);border-radius:16px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.6)}
   .ow-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border-hair)}
-  .ow-title{font-weight:800;font-size:17px;color:var(--text-hi);margin:0;word-break:break-word}
+  .ow-title{font-weight:var(--w-head);font-size:var(--fs-lg);color:var(--text-hi);margin:0;word-break:break-word}
   .ow-head-acts{display:flex;align-items:center;gap:12px}
   .ow-close{display:inline-flex;align-items:center;justify-content:center;line-height:1;color:var(--text-muted-2);background:none;border:0;cursor:pointer;padding:4px 6px;border-radius:var(--radius-s);transition:color var(--dur-1) var(--ease),background-color var(--dur-1) var(--ease)}
   .ow-close:hover{color:var(--text-hi);background:var(--surface-sunken)}
@@ -1399,8 +1419,8 @@ function buildBoard(){
   .act.warn{border-color:var(--warning-border);background:var(--warning-bg);color:var(--warning)}
   .act.danger{border-color:var(--error-border);background:var(--error-bg);color:var(--error)}
   .act:disabled{opacity:.5;cursor:default}
-  .act.send{border-color:transparent;background:var(--btn-primary-bg);color:var(--btn-primary-fg);font-weight:800}
-  .act.send:hover{background:var(--btn-primary-bg-hover)}
+  .act.send{border-color:transparent;background:var(--btn-primary-bg);color:var(--btn-primary-fg);font-weight:var(--w-max);box-shadow:var(--el-accent)}
+  .act.send:hover{filter:brightness(1.06)}
   .act.send:disabled{opacity:.55;cursor:default}
   .sendmark{display:inline-block;font-size:11px;color:var(--info);border:1px solid var(--info-border);background:var(--info-bg);border-radius:999px;padding:1px 8px;margin:6px 6px 0 0;animation:sendpulse 1.1s ease-in-out infinite}
   @keyframes sendpulse{0%,100%{opacity:.55}50%{opacity:1}}
@@ -1457,8 +1477,8 @@ function buildBoard(){
   .lv-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin:2px 0 12px}
   .lv-title{font-size:20px;font-weight:680;color:var(--text-hi);margin:0}
   .lv-head-acts{display:flex;align-items:center;gap:12px}
-  .btnp{background:var(--btn-primary-bg);border:0;border-radius:9px;padding:8px 14px;color:var(--btn-primary-fg);font-weight:800;font-size:13px;cursor:pointer;transition:background-color var(--dur-1) var(--ease)}
-  .btnp:hover{background:var(--btn-primary-bg-hover)}
+  .btnp{background:var(--btn-primary-bg);border:0;border-radius:var(--r-md);padding:8px 14px;color:var(--btn-primary-fg);font-weight:var(--w-max);font-size:13px;cursor:pointer;box-shadow:var(--el-accent);transition:filter var(--t-instant) var(--e-standard)}
+  .btnp:hover{filter:brightness(1.06)}
   .lv-tabs{display:flex;gap:8px;margin:0 0 14px;border-bottom:1px solid var(--border-3)}
   .lv-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:14px;font-family:inherit;padding:6px 4px 9px;cursor:pointer}
   .lv-tab.on{color:var(--text-hi);border-bottom-color:var(--brand-teal)}
@@ -2936,7 +2956,7 @@ ${CONTACTS_SRC}
     else { heroN=draft; heroK="v_draft"; }
     var verdict = '<div class="verdict"><span class="vnum" data-countup="' + heroN + '">0</span><span class="vlabel">' + esc(t(heroK)) + '</span></div>';
     var pipe = '<div class="pipe">' + ["draft","live","sent","opened","replied"].map(function(st){
-      return '<span class="pchip"><span class="pn" data-countup="' + laneN(st) + '">0</span> ' + esc(t("l_"+st)) + '</span>';
+      return '<span class="pchip" data-lane="' + st + '"><span class="pn" data-countup="' + laneN(st) + '">0</span> ' + esc(t("l_"+st)) + '</span>';
     }).join("") + '</div>';
 
     // Chips (display only in L2): stalled sent/opened cards, and archived count.
@@ -2961,7 +2981,7 @@ ${CONTACTS_SRC}
     if((groups.other||[]).length) order.push("other");
     var lanesHtml = '<div class="lanes">' + order.map(function(l){
       var list = groups[l] || [];
-      return '<div class="lane"><h2>' + esc(t("l_"+l)) + '<span class="n">' + list.length + '</span></h2>' +
+      return '<div class="lane" data-lane="' + l + '"><h2>' + esc(t("l_"+l)) + '<span class="n">' + list.length + '</span></h2>' +
              (list.length ? list.map(cardHtml).join("") : '<div class="empty">' + esc(t("none")) + '</div>') + '</div>';
     }).join("") + '</div>';
 
