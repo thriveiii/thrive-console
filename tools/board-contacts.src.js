@@ -146,6 +146,7 @@ function openContactsView(){
   pn.innerHTML = ctViewHtml();
   ctWireShell();
   sc.hidden = false; pn.scrollTop = 0;
+  try{ shimmerOnce(pn); }catch(e){}
   ctLoad();
 }
 function closeContactsView(){ var sc=document.getElementById("ctScrim"); if(sc) sc.hidden = true; }

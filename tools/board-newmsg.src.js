@@ -86,7 +86,7 @@ function composeBodyHtml(slug, row, detail){
   // The Send action + its status live in one .compose-send bar so mobile-first CSS can pin it to the bottom of
   // the scroll area (a sticky, thumb-reachable Send on phone). On desktop it is a normal block.
   return composeFieldsHtml(slug, row, detail)+
-    '<div class="acts compose-send"><button class="act send" id="nmSend" type="button">'+esc(t("nm_send"))+'</button>'+
+    '<div class="acts compose-send"><button class="act send" id="nmSend" type="button">'+iconText("send", t("nm_send"))+'</button>'+
     '<div class="act-status" id="nmStatus" role="status" aria-live="polite"></div></div>';
 }
 // G3: mount the SHARED compose fields into the window's Mode B Message tab (#owMsgPanel), wired like the overlay

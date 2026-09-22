@@ -954,6 +954,7 @@ function openLibraryView(){
   __libQuery = ""; __libTab = "templates";
   libRenderView();
   sc.hidden = false; pn.scrollTop = 0;
+  try{ shimmerOnce(pn); }catch(e){}
 }
 function libRenderView(){
   var pn=document.getElementById("libViewPanel"); if(!pn) return;
@@ -1505,7 +1506,7 @@ function owDirectHostHtml(kind){
       '<div class="up-rows" id="owPageReview"'+h+'></div>'+               // the accordion review (per-row preview + include/exclude)
       '<div class="ow-panel ow-direct-msg" id="owMsgPanel"'+h+'></div>'+  // the shared message (single page / picked template)
       '<div class="act-status" id="owPageStatus" role="status" aria-live="polite"></div>'+
-      '<div class="ow-foot" id="owDirectFoot"'+h+'><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
+      '<div class="ow-foot" id="owDirectFoot"'+h+'><button class="act send" id="owCommit" type="button">'+iconText("check", t("ow_commit"))+'</button>'+
         '<div class="act-status" id="owCommitStatus" role="status" aria-live="polite"></div></div>'+
     '</div>';
 }
