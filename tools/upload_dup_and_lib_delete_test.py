@@ -1,10 +1,12 @@
 """BUG 1 + BUG 2 (board.html, fails-when-broken, ZERO network).
 
-BUG 1: a campaign zip whose page slugs ALREADY EXIST in console_pages must not drop the message or leave an
-empty card. The commit now auto-suffixes a taken slug to a free one (bards-alley-2) and commits the page + its
-message + recipient under it. Part A proves: a 2-folder campaign whose BOTH slugs already exist commits 2
-cards, each auto-suffixed, each carrying its outreach_subject + outreach_text + a recipient - zero empty cards.
-Fails-when-broken: revert libCollectRows(true) so the taken slug blocks -> zero cards commit (see the proof run).
+BUG 1 (updated for the slug-collision UPDATE behavior): a campaign zip whose page slugs ALREADY EXIST in
+console_pages must not drop the message, leave an empty card, or hard-fail with "already taken". Re-uploading
+to an existing link means UPDATING that page (same slug, same live link, a new version), not auto-suffixing to
+bards-alley-2. Part A proves: a 2-folder campaign whose BOTH slugs already exist commits 2 cards under the SAME
+existing slugs (bards-alley / fresh-labs), each carrying its outreach_subject + outreach_text + a recipient -
+zero empty cards - and re-writes the existing console_pages rows (the update = a new version).
+Fails-when-broken: revert to the hard-fail so the taken slug blocks -> zero cards commit (see the proof run).
 
 BUG 2: a Library page card gains a Delete action that removes ONLY that one console_pages row. Part B proves:
 a seeded template can be deleted (a DELETE hits console_pages?slug=eq.<slug>) and is gone from the list.
@@ -122,18 +124,19 @@ with sync_playwright() as p:
 
     ck("A: TWO cards were committed (not zero: a taken slug no longer blocks the whole batch)",
        len(OPP_POSTS) == 2, [o.get("slug") for o in OPP_POSTS])
-    ck("A: each committed card is AUTO-SUFFIXED off the taken slug (bards-alley-2 / fresh-labs-2)",
-       sorted(o.get("slug") for o in OPP_POSTS) == ["bards-alley-2", "fresh-labs-2"], [o.get("slug") for o in OPP_POSTS])
+    ck("A: each committed card UPDATES the existing page (same slug, no auto-suffix to -2)",
+       sorted(o.get("slug") for o in OPP_POSTS) == ["bards-alley", "fresh-labs"], [o.get("slug") for o in OPP_POSTS])
     def data_of(row): return (row.get("data") or {})
     empties = [o.get("slug") for o in OPP_POSTS if not (str(data_of(o).get("outreach_text","")).strip() and (data_of(o).get("recipients") or []))]
     ck("A: ZERO empty cards: every committed card carries its message body AND a recipient", empties == [], empties)
-    # the message + recipient survived the rename, matched to the RIGHT folder
-    bards = [o for o in OPP_POSTS if o.get("slug") == "bards-alley-2"]
-    ck("A: the renamed card kept its own message + recipient (bards-alley-2 <- bards-alley)",
+    # the message + recipient stayed with the RIGHT folder, under the same (updated) slug
+    bards = [o for o in OPP_POSTS if o.get("slug") == "bards-alley"]
+    ck("A: the updated card kept its own message + recipient (bards-alley, same slug)",
        bool(bards) and (data_of(bards[0]).get("recipients") or [{}])[0].get("addr") == "buyer.bards@example.test"
        and "Del Ray" in str(data_of(bards[0]).get("outreach_subject","")), bards[0] if bards else None)
-    ck("A: the pre-existing pages were NOT overwritten (the new pages committed under the suffixed slugs)",
-       "bards-alley-2" in [pp.get("slug") for pp in PAGE_POSTS] and "fresh-labs-2" in [pp.get("slug") for pp in PAGE_POSTS],
+    ck("A: the existing pages were UPDATED (a new version committed under the SAME slug, not a -2)",
+       "bards-alley" in [pp.get("slug") for pp in PAGE_POSTS] and "fresh-labs" in [pp.get("slug") for pp in PAGE_POSTS]
+       and "bards-alley-2" not in [pp.get("slug") for pp in PAGE_POSTS],
        [pp.get("slug") for pp in PAGE_POSTS])
     pg.evaluate("()=>window.closeOppWindow && window.closeOppWindow()"); pg.wait_for_timeout(200)
 

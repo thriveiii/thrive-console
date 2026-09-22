@@ -358,9 +358,9 @@ function pageStampLive(slug, retried){
 // yields a usable string). Written to console_opps.cycle; the send stamps console_mail.cycle with it.
 function upNewCycle(){ try{ return "cy" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }catch(e){ return "cy" + Date.now(); } }
 function upCommit(plan){
-  var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0, failed = [], published = [];
+  var rows = (plan && plan.rows) || [], done = {}, ok = 0, fail = 0, failed = [], published = [], pending = 0, pendingTitles = [];
   function one(i){
-    if(i >= rows.length) return Promise.resolve({ ok:ok, fail:fail, failed:failed, published:published });
+    if(i >= rows.length) return Promise.resolve({ ok:ok, fail:fail, failed:failed, published:published, pending:pending, pendingTitles:pendingTitles });
     var r = rows[i];
     if(done[r.slug]) return one(i + 1);
     done[r.slug] = 1;
@@ -381,12 +381,20 @@ function upCommit(plan){
       .then(function(){
         if(!String(html).trim()){ ok++; return one(i + 1); }                     // text-only row: no page to publish, untouched
         return pagePublishRelay(r.slug, withBeaconClient(html, cycle)).then(   // commit the static file NOW, carrying THIS transit's cycle
-          function(){ ok++; published.push(r.slug); return one(i + 1); },
+          function(){ ok++; published.push(r.slug); return one(i + 1); },       // the relay confirmed the commit landed
           function(e){
-            if(e && e.kind === "timeout"){ ok++; published.push(r.slug); return one(i + 1); }   // idempotent commit likely landed -> confirm in background
-            fail++; failed.push(r.title || r.slug); return one(i + 1);          // a real relay error: named, never a phantom success
+            // F1 COMMIT TRUTH (the "Created N of M. Failed" defect): a page whose commit may have LANDED must
+            // never be tallied Failed. pagePublish_ returns {ok:true} the instant the GitHub PUT lands (Cloudflare
+            // rebuilds AFTER), and a structured {ok:false} (__kind relayreject) is the ONLY relay signal the commit
+            // did not happen. A client TIMEOUT (kind timeout, idempotent commit) OR a relay-endpoint transport
+            // error (__kind relayhttp: an Apps Script 5xx or a failed 302 body-hop, which can arrive AFTER the
+            // commit already landed) is AMBIGUOUS, not a failure: mark the page PUBLISHED-PENDING ("going live
+            // shortly") and let the background live-verify (upActivateBackground, F1-safe) confirm. Only a genuine
+            // commit failure - relayreject here, or the opp/page write reject below - is ever tallied Failed.
+            if(e && e.__kind === "relayreject"){ fail++; failed.push(r.title || r.slug); return one(i + 1); }
+            published.push(r.slug); pending++; pendingTitles.push(r.title || r.slug); return one(i + 1);
           });
-      }, function(){ fail++; failed.push(r.title || r.slug); return one(i + 1); });   // opp/page write failure: name the file
+      }, function(){ fail++; failed.push(r.title || r.slug); return one(i + 1); });   // opp/page write failure (pre-publish): a genuine failure
   }
   return one(0);
 }
@@ -603,12 +611,20 @@ function upApprove(){
     return reloadBoardData().then(function(){ return res; }, function(){ return res; });
   }).then(function(res){
     __upBusy = false;
+    // committed = confirmed-ok + published-pending (both landed or likely-landed); ONLY res.fail is a real failure.
+    var committed = (res.ok || 0) + (res.pending || 0);
     if(res.fail){
-      // FEEDBACK: a file that failed to commit is named with the count, as a warning (amber if some landed, red
-      // if none), and the overlay stays OPEN so the operator reads which files failed - never a silent success.
+      // FEEDBACK: a file that GENUINELY failed to commit is named with the count, as a warning (amber if some
+      // landed, red if none), and the overlay stays OPEN so the operator reads which files failed - never a
+      // silent success, and (F1) never a false Failed for a page whose commit landed.
       var names = (res.failed || []).join(", ");
-      upSetStatus(t("up_done_partial").replace("{k}", String(res.ok || 0)).replace("{n}", String((res.ok || 0) + res.fail)) + " " + names, (res.ok ? "warn" : "bad"));
+      upSetStatus(t("up_done_partial").replace("{k}", String(committed)).replace("{n}", String(committed + res.fail)) + " " + names, (committed ? "warn" : "bad"));
       var ap2=document.getElementById("upApprove"); if(ap2) ap2.disabled = false;   // allow a retry
+    } else if(res.pending){
+      // F1 TRANSITIONAL: the commit landed (or very likely did) but liveness is not confirmed yet - published,
+      // going live shortly. Never a RED here; the background verify flips the card to live when the deploy lands.
+      upSetStatus(t("up_going_live").replace("{n}", String(committed)), "ok");
+      setTimeout(function(){ closeUpload(); }, 900);
     } else {
       upSetStatus(t("up_done") + " " + (res.ok || 0), "ok");
       setTimeout(function(){ closeUpload(); }, 600);
@@ -738,6 +754,9 @@ function libRowHtml(r, i){
         '<input class="lib-in" id="libTask-' + i + '" type="text" list="libTasks" value="' + esc(task) + '" autocomplete="off" placeholder="' + esc(t("lib_task_ph")) + '"></label>'+
     '</div>'+
     '<div class="lib-rowerr" id="libErr-' + i + '"></div>'+
+    // FIX B: the one-tap "publish as a new page" - shown only when this slug collides with an existing page
+    // (libRowUpdMark reveals it), so the default stays UPDATE and a rename is always one tap away.
+    '<button type="button" class="lib-asnew" id="libAsNew-' + i + '" data-lib-asnew="' + i + '" hidden>' + esc(t("lib_publish_new")) + '</button>'+
     // F2: render the actual page from the held html (srcdoc), not a source-text snippet, so the team sees the
     // real page BEFORE uploading. Tokens render as-is (raw-template preview).
     (r.page && r.page.html ? pageFrameIframe(r.page.html) : '<div class="up-empty">' + esc(t("up_no_text")) + '</div>')+
@@ -773,6 +792,35 @@ function upFreeSlug(slug, seen){
 // visible (info, not error) note shows the rename, so the page + its message + recipient commit under a free
 // slug and no card is ever left empty. Only a bad FORMAT still blocks (a genuine input error). The Library
 // upload keeps autoSuffix off, so a hand-named page still surfaces "already taken" for the operator to rename.
+// FIX B: reflect a slug collision on the row - the inline note is written by libCollectRows; here we reveal the
+// one-tap "publish as a new page" control AND (in the accordion) an always-visible summary badge, so a collision
+// is never hidden inside a collapsed body. An empty updTitle clears both (a fresh slug, or one renamed to new).
+function libRowUpdMark(i, updTitle){
+  var an = document.getElementById("libAsNew-" + i);
+  if(an) an.hidden = !updTitle;
+  var badge = document.getElementById("owAccUpd-" + i);
+  if(badge){
+    if(updTitle){ badge.hidden = false; badge.textContent = t("lib_updates_existing").replace("{s}", updTitle); }
+    else { badge.hidden = true; badge.textContent = ""; }
+  }
+}
+// FIX B: wire every visible "publish as a new page" button (both the Library flat rows and the campaign
+// accordion). One tap sets the row's asNew flag and re-validates, so the slug suffixes to a free link instead
+// of updating the existing page. Idempotent per fresh render (innerHTML replaced the old nodes).
+function libWireAsNewAll(){
+  [].forEach.call(document.querySelectorAll("[data-lib-asnew]"), function(b){
+    var i = Number(b.getAttribute("data-lib-asnew"));
+    b.addEventListener("click", function(){ var rr=(__upPlan&&__upPlan.rows)||[]; if(rr[i]) rr[i].asNew=true; try{ libCollectRows(); }catch(e){} });
+  });
+}
+// Read the edited slug/title/task back into the plan rows and validate. FIX B: an already-taken slug is NO LONGER
+// a hard "already taken" error, nor an automatic rename to slug-2. Re-uploading to an existing link means UPDATING
+// that page as a new version (same slug, same live link; pageUpsert merges + pagePublish_ re-commits by sha), so
+// the DEFAULT is update-in-place, shown as "updates existing page: X" (visible, never a silent clobber) with a
+// one-tap "publish as new" (r.asNew) that suffixes to a free link instead. Two INCLUDED rows fighting over one
+// link in a single batch is still a genuine conflict, auto-suffixed so no card is left empty. Only a bad slug
+// FORMAT still blocks. The autoSuffix argument is retained for call-site compatibility; the exists-case no longer
+// branches on it (update is the default on every path).
 function libCollectRows(autoSuffix){
   var plan = __upPlan; if(!plan || !plan.rows) return { ok:false, firstBad:-1 };
   var seen = {}, ok = true, firstBad = -1;
@@ -780,30 +828,41 @@ function libCollectRows(autoSuffix){
     if(r && r.included===false){                                          // an excluded row is dropped at commit; it never validates or blocks
       var e0=document.getElementById("libErr-"+i); if(e0){ e0.textContent=""; e0.className="lib-rowerr"; }
       var s0=document.getElementById("libSlug-"+i); if(s0) s0.className="lib-in mono-iso";
+      r.updatesExisting = ""; libRowUpdMark(i, "");
       return;
     }
     var si = document.getElementById("libSlug-" + i), ti = document.getElementById("libTitle-" + i), ki = document.getElementById("libTask-" + i);
     var slug = si ? String(si.value||"").trim().toLowerCase() : (r.slug||"");
-    var renamed = "";
-    if(autoSuffix && LIB_SLUG_RE.test(slug) && ((__libExisting && __libExisting[slug]) || seen[slug])){
-      var free = upFreeSlug(slug, seen);
-      if(free !== slug){ renamed = free; slug = free; if(si) si.value = slug; }   // rename to a free slug; keep the message
-    }
-    r.slug = slug;
     r.title = ti ? String(ti.value||"").trim() : (r.title||"");
     r.task  = ki ? String(ki.value||"").trim() : (r.task||"");
-    var msg = "";
-    if(!LIB_SLUG_RE.test(slug)) msg = t("lib_err_slug");
-    else if(seen[slug]) msg = t("lib_err_dup");
-    else if(!autoSuffix && __libExisting && __libExisting[slug]) msg = t("lib_err_exists");
-    seen[slug] = 1;
-    var err = document.getElementById("libErr-" + i);
-    if(err){
-      if(renamed){ err.textContent = t("lib_renamed").replace("{s}", slug); err.className = "lib-rowerr info"; }
-      else { err.textContent = msg; err.className = "lib-rowerr" + (msg ? " bad" : ""); }
+    var note = "", noteCls = "", updTitle = "";
+    if(!LIB_SLUG_RE.test(slug)){                                          // a bad FORMAT is the only genuine input error left
+      r.slug = slug; r.updatesExisting = ""; seen[slug] = 1;
+      var eF = document.getElementById("libErr-" + i); if(eF){ eF.textContent = t("lib_err_slug"); eF.className = "lib-rowerr bad"; }
+      if(si) si.className = "lib-in mono-iso bad";
+      libRowUpdMark(i, "");
+      ok = false; if(firstBad < 0) firstBad = i;
+      return;
     }
-    if(si){ si.className = "lib-in mono-iso" + (msg ? " bad" : ""); }
-    if(msg){ ok = false; if(firstBad < 0) firstBad = i; }
+    if(seen[slug]){                                                       // two included rows, one link, this batch: a real conflict -> suffix the later
+      var freeDup = upFreeSlug(slug, seen);
+      if(freeDup !== slug){ slug = freeDup; if(si) si.value = slug; }
+      note = t("lib_renamed").replace("{s}", slug); noteCls = "info";
+    } else if(__libExisting && __libExisting[slug]){
+      if(r.asNew){                                                        // ONE-TAP: publish as a NEW page instead of updating the existing one
+        var freeNew = upFreeSlug(slug, seen);
+        if(freeNew !== slug){ slug = freeNew; if(si) si.value = slug; }
+        note = t("lib_renamed").replace("{s}", slug); noteCls = "info";
+      } else {                                                            // DEFAULT: UPDATE the existing page (same slug, same live link, new version)
+        updTitle = String(__libExisting[slug]);
+        note = t("lib_updates_existing").replace("{s}", updTitle); noteCls = "info";
+      }
+    }
+    r.slug = slug; r.updatesExisting = updTitle; seen[slug] = 1;
+    var err = document.getElementById("libErr-" + i);
+    if(err){ err.textContent = note; err.className = "lib-rowerr" + (noteCls ? " " + noteCls : ""); }
+    if(si) si.className = "lib-in mono-iso";
+    libRowUpdMark(i, updTitle);
   });
   return { ok:ok, firstBad:firstBad };
 }
@@ -813,11 +872,12 @@ function libOnFile(files){
   Promise.all([ upBuildPlan(files), libFetchPages() ]).then(function(a){   // the SAME parser (never forked) + existing slugs/tasks
     var plan = a[0], pages = a[1] || [];
     __upPlan = plan;                                         // held for review; NOTHING written yet
-    __libExisting = {}; pages.forEach(function(p){ if(p && p.slug) __libExisting[p.slug] = 1; });
+    __libExisting = {}; pages.forEach(function(p){ if(p && p.slug) __libExisting[p.slug] = (p.title && String(p.title).trim()) || p.slug; });   // FIX B: keep the existing TITLE so a collision shows "updates existing page: X"
     var r2=document.getElementById("upResult"); if(r2){ r2.innerHTML = libResultHtml(plan, libDistinctTasks(pages));
       var ap=document.getElementById("libApprove"); if(ap) ap.addEventListener("click", function(){ libApprove(); });
-      libCollectRows();                                     // initial validation paint
-      (plan.rows||[]).forEach(function(r, i){ var si=document.getElementById("libSlug-"+i); if(si) si.addEventListener("input", function(){ libCollectRows(); }); });
+      libWireAsNewAll();                                     // FIX B: the one-tap "publish as new" per row
+      libCollectRows();                                     // initial validation paint (marks any "updates existing")
+      (plan.rows||[]).forEach(function(r, i){ var si=document.getElementById("libSlug-"+i); if(si) si.addEventListener("input", function(){ r.asNew=false; libCollectRows(); }); });
     }
   }, function(e){
     var r3=document.getElementById("upResult"); if(r3) r3.innerHTML = '<div class="act-status bad">' + esc((e && e.message==="not_a_zip") ? t("up_not_zip") : t("up_read_failed")) + '</div>';
@@ -1286,7 +1346,7 @@ function owCommitStatus(msg, cls){ var el=document.getElementById("owCommitStatu
 function owPageLoadExisting(){
   return libFetchPages().then(function(pages){
     __libPages = pages || [];
-    __libExisting = {}; (pages||[]).forEach(function(p){ if(p && p.slug && p.slug!==__owSlug) __libExisting[p.slug]=1; });
+    __libExisting = {}; (pages||[]).forEach(function(p){ if(p && p.slug && p.slug!==__owSlug) __libExisting[p.slug]=(p.title && String(p.title).trim()) || p.slug; });   // FIX B: existing TITLE for the "updates existing page: X" note
     return pages || [];
   }, function(){ __libExisting = __libExisting || {}; return []; });
 }
@@ -1410,21 +1470,26 @@ function owReviewRender(){
     var inc = owRowIncluded(r);
     var title=(r.title&&String(r.title).trim())||upPretty(r.slug||("page-"+(i+1)));
     var meta=(r.email||r.subject) ? owCampMetaHtml(r) : "";
+    // FIX C: every row is COLLAPSED by default - the summary (title + Include + Remove, plus a collision badge)
+    // is all that shows; clicking the title expands the body IN PLACE (calm grid-rows animation) to reveal the
+    // recipient/subject, the editable title/slug/task and the srcdoc preview. Rows toggle independently.
     html += '<div class="ow-acc'+(inc?"":" ow-acc-out")+'" data-acc="'+i+'">'+
         '<div class="ow-acc-sum">'+
           '<label class="ow-acc-inc"><input type="checkbox" data-row-inc="'+i+'"'+(inc?" checked":"")+'> <span>'+esc(t("ow_row_include"))+'</span></label>'+
-          '<button type="button" class="ow-acc-toggle" data-acc-toggle="'+i+'" aria-expanded="true"><span class="ow-acc-t" dir="auto">'+esc(title)+'</span></button>'+
+          '<button type="button" class="ow-acc-toggle" data-acc-toggle="'+i+'" aria-expanded="false" aria-controls="owAccBody-'+i+'"><span class="ow-acc-t" dir="auto">'+esc(title)+'</span></button>'+
+          '<span class="ow-acc-upd" id="owAccUpd-'+i+'" hidden></span>'+   // FIX B: always-visible "updates existing page: X" badge (never hidden in a collapsed body)
           '<button type="button" class="ow-acc-rm" data-row-remove="'+i+'">'+esc(t("ow_row_remove"))+'</button>'+
         '</div>'+
-        '<div class="ow-acc-body" id="owAccBody-'+i+'">'+meta+libRowHtml(r, i)+'</div>'+
+        '<div class="ow-acc-body" id="owAccBody-'+i+'"><div class="ow-acc-inner"><div class="ow-acc-pad">'+meta+libRowHtml(r, i)+'</div></div></div>'+
       '</div>';
   });
   html += '<div class="ow-add-more-wrap"><label class="act ow-add-more">'+esc(t("ow_add_more"))+'<input type="file" id="owAddFile" accept=".zip,.html,.htm" hidden></label></div>';
   box.innerHTML = html;
+  libWireAsNewAll();                         // FIX B: one-tap "publish as new" per row
   try{ libCollectRows(); }catch(e){}
   rows.forEach(function(r, i){
     ["libSlug-","libTitle-","libTask-"].forEach(function(pre){
-      var el=document.getElementById(pre+i); if(el) el.addEventListener("input", function(){ try{ libCollectRows(); }catch(e){} });
+      var el=document.getElementById(pre+i); if(el) el.addEventListener("input", function(){ if(pre==="libSlug-" && r) r.asNew=false; try{ libCollectRows(); }catch(e){} });
     });
     var inc=box.querySelector('[data-row-inc="'+i+'"]'); if(inc) inc.addEventListener("change", function(){ owRowSetIncluded(i, inc.checked); });
     var rm=box.querySelector('[data-row-remove="'+i+'"]'); if(rm) rm.addEventListener("click", function(){ owRowRemove(i); });
@@ -1433,11 +1498,17 @@ function owReviewRender(){
   var af=document.getElementById("owAddFile"); if(af) af.addEventListener("change", function(){ owCampaignAddFiles(af.files); });
   owPageStatus("", "");
 }
+// FIX C: toggle one row open/closed by class (a calm grid-rows expand/collapse in CSS), independent of the rest.
 function owAccToggle(i){
-  var body=document.getElementById("owAccBody-"+i); var tg=document.querySelector('[data-acc-toggle="'+i+'"]');
-  if(!body) return; var open=body.hasAttribute("hidden");
-  if(open){ body.removeAttribute("hidden"); if(tg) tg.setAttribute("aria-expanded","true"); }
-  else { body.setAttribute("hidden",""); if(tg) tg.setAttribute("aria-expanded","false"); }
+  var acc=document.querySelector('[data-acc="'+i+'"]'); var tg=document.querySelector('[data-acc-toggle="'+i+'"]');
+  if(!acc) return; var open=acc.classList.toggle("ow-acc-open");
+  if(tg) tg.setAttribute("aria-expanded", open ? "true" : "false");
+}
+// FIX C: open a specific row (used when a collapsed row carries a validation error the operator must see/fix).
+function owAccOpen(i){
+  var acc=document.querySelector('[data-acc="'+i+'"]'); if(!acc || acc.classList.contains("ow-acc-open")) return;
+  var tg=document.querySelector('[data-acc-toggle="'+i+'"]');
+  acc.classList.add("ow-acc-open"); if(tg) tg.setAttribute("aria-expanded","true");
 }
 function owRowSetIncluded(i, on){
   var rows=(__upPlan&&__upPlan.rows)||[]; if(!rows[i]) return;
@@ -1550,7 +1621,7 @@ function owCommitCampaign(slug){
   if(!(subj.trim() && body.trim())){ owCommitStatus(t("nm_need_msg"), "bad"); return Promise.resolve(false); }
   var pr=inc[0];
   if(!pr || !(pr.page && String(pr.page.html).trim())){ owCommitStatus(t("ow_need_page"), "bad"); return Promise.resolve(false); }
-  var v=libCollectRows(true); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }   // format/dup/exists validation gate
+  var v=libCollectRows(true); if(!v.ok){ try{ owAccOpen(v.firstBad); }catch(e){} owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }   // FIX C: reveal the offending (collapsed) row; only a bad slug FORMAT still blocks
   __owCommitting=true; owCommitStatus(t("up_writing"), "");
   var pageSlug=pr.slug||slug, html=assetBaseInto(pr.page.html), cycle=upNewCycle(), sig=edSignature();
   var kept=sendToList().filter(function(r){ return !isSuppressed(r.addr); });   // B2 strip at commit
@@ -1567,7 +1638,18 @@ function owCommitCampaign(slug){
   }).then(function(){
     __owCommitting=false; owCommitStatus(t("ow_committed"), "ok"); return true;
   }, function(e){
-    __owCommitting=false; owCommitStatus((e&&e.authRequired)?t("err"):t("up_write_failed"), "bad"); return false;
+    __owCommitting=false;
+    if(e && e.authRequired){ owCommitStatus(t("err"), "bad"); return false; }
+    // F1 COMMIT TRUTH (single page): a client TIMEOUT (idempotent commit) or a relay-endpoint transport error
+    // (__kind relayhttp: an Apps Script 5xx / failed 302 body-hop that can arrive AFTER the GitHub PUT landed) is
+    // AMBIGUOUS, not a failure - the page is published, going live shortly. Confirm in the background, never a
+    // false Failed. Only a structured relay refusal (relayreject) or a pre-publish Supabase write error is genuine.
+    if((e && e.__kind === "relayhttp") || (e && e.kind === "timeout")){
+      try{ upActivateBackground([pageSlug]); }catch(e2){}
+      reloadBoardData().then(function(){},function(){});
+      owCommitStatus(t("up_going_live").replace("{n}", "1"), "ok"); return true;
+    }
+    owCommitStatus(t("up_write_failed"), "bad"); return false;
   });
 }
 // G7 path 1 (FULL CAMPAIGN): commit EVERY row of the held plan - one card + its recipients + its page per row -
@@ -1580,17 +1662,24 @@ function owCommitCampaignAll(slug){
   if(__owCommitting) return Promise.resolve(false);
   var rows=owReviewIncluded();                                          // per-item include/exclude: commit ONLY the included rows
   if(!rows.length){ owCommitStatus(t("ow_none_included"), "bad"); return Promise.resolve(false); }   // guard: no empty publish
-  var v=libCollectRows(true); if(!v.ok){ owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }
+  var v=libCollectRows(true); if(!v.ok){ try{ owAccOpen(v.firstBad); }catch(e){} owCommitStatus(t("lib_fix_rows"), "bad"); return Promise.resolve(false); }
   __owCommitting=true; owCommitStatus(t("up_writing"), "");
   return upCommit({ rows:rows }).then(function(res){
     try{ upActivateBackground(res.published); }catch(e){}                          // F1 publish-truth, per page
     return reloadBoardData().then(function(){ return res; }, function(){ return res; });
   }).then(function(res){
     __owCommitting=false;
-    if(res.fail){                                                                   // name the failed rows, keep the panel
+    // committed = confirmed-ok + published-pending; a delivered send is never contradicted by a false "Failed"
+    // line, because ONLY a genuine commit failure (res.fail) is ever named here (F1 commit truth).
+    var committed = (res.ok||0) + (res.pending||0);
+    if(res.fail){                                                                   // name the GENUINELY failed rows, keep the panel
       var names=(res.failed||[]).join(", ");
-      owCommitStatus(t("up_done_partial").replace("{k}", String(res.ok||0)).replace("{n}", String((res.ok||0)+res.fail))+" "+names, (res.ok?"warn":"bad"));
-      return (res.ok||0)>0;
+      owCommitStatus(t("up_done_partial").replace("{k}", String(committed)).replace("{n}", String(committed+res.fail))+" "+names, (committed?"warn":"bad"));
+      return committed>0;
+    }
+    if(res.pending){                                                                // F1 transitional: published, going live shortly (never RED)
+      owCommitStatus(t("ow_going_live_n").replace("{n}", String(committed)), "ok");
+      return true;
     }
     owCommitStatus(t("ow_committed_n").replace("{n}", String(res.ok||0)), "ok");
     return true;
