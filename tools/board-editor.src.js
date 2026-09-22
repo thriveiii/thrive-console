@@ -40,15 +40,108 @@
 function icon(name, size){
   var s = size || 16;
   var P = {
-    x:       'M5 5l10 10M15 5L5 15',
-    plus:    'M10 4v12M4 10h12',
-    check:   'M4 10l4 4 8-9',
-    chevron: 'M5 8l5 5 5-5'
+    // chrome / nav / meta
+    x:        'M5 5l10 10M15 5L5 15',
+    plus:     'M10 4v12M4 10h12',
+    check:    'M4 10l4 4 8-9',
+    chevron:  'M5 8l5 5 5-5',
+    refresh:  'M15.5 6.5A6 6 0 1 0 16 10M15.5 3.5v3h-3',
+    logout:   'M12 6V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1M9 10h8M14 7l3 3-3 3',
+    library:  'M5 4h4v12H5zM11 4h4v12h-4M5 8h4M11 8h4',
+    contacts: 'M7.5 9a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5M3.5 16c0-2.2 1.8-3.75 4-3.75s4 1.55 4 3.75M13 5.2a2.1 2.1 0 0 1 0 4.1M14 12.4c1.6.35 2.5 1.5 2.5 3.1',
+    admin:    'M10 3.2l5.5 1.9v3.9c0 3.6-2.6 6-5.5 7.4-2.9-1.4-5.5-3.8-5.5-7.4V5.1zM7.7 9.7l1.7 1.7 3-3.4',
+    profile:  'M10 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6M4.5 16.5c0-3 2.5-4.6 5.5-4.6s5.5 1.6 5.5 4.6',
+    compose:  'M12.5 4.5l3 3-8.5 8.5H4v-3zM11.5 5.5l3 3',
+    sun:      'M10 6.75a3.25 3.25 0 1 0 0 6.5 3.25 3.25 0 0 0 0-6.5M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7l1.3 1.3M14 14l1.3 1.3M4.7 15.3l1.3-1.3M14 6l1.3-1.3',
+    moon:     'M15.5 11.3A6.2 6.2 0 0 1 8.7 4.5a5.2 5.2 0 1 0 6.8 6.8z',
+    globe:    'M10 3.2a6.8 6.8 0 1 0 0 13.6 6.8 6.8 0 0 0 0-13.6M3.4 10h13.2M10 3.2c1.9 2 1.9 11.6 0 13.6M10 3.2c-1.9 2-1.9 11.6 0 13.6',
+    // window tabs
+    spark:    'M10 3v14M4 6.5l12 7M16 6.5l-12 7',
+    text:     'M6 3.5h4.5L14 7v9.5H6zM10.5 3.5V7H14M8 10.5h4M8 13h4',
+    page:     'M4 5h12v10H4zM4 8.2h12',
+    send:     'M17 3.5L3 9l5.5 2.2L11 16l2-6zM8.5 11.2L17 3.5',
+    clock:    'M10 4.2a5.8 5.8 0 1 0 0 11.6 5.8 5.8 0 0 0 0-11.6M10 7v3.2l2.2 1.6',
+    channel:  'M4 5.5h12v7.5H8.5L5 16v-3H4z',
+    // lanes / states
+    review:   'M2.5 10s3-4.75 7.5-4.75S17.5 10 17.5 10s-3 4.75-7.5 4.75S2.5 10 2.5 10M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4',
+    live:     'M10 8.75a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5M6.5 6.5a5 5 0 0 0 0 7M13.5 6.5a5 5 0 0 1 0 7M4.5 4.5a8 8 0 0 0 0 11M15.5 4.5a8 8 0 0 1 0 11',
+    opened:   'M4 8.5l6-4 6 4v7H4zM4 8.5l6 4 6-4',
+    replied:  'M8 5.5L3.5 9.5 8 13.5M3.5 9.5H11a5 5 0 0 1 5 5',
+    stalled:  'M10 3.8l6.5 11.4H3.5zM10 8v3.2M10 13.6v.2',
+    archived: 'M3.5 5.5h13v3.5h-13zM4.5 9h11v6.5h-11zM8 12h4',
+    // send journey + misc
+    upload:   'M10 4v9.5M6.5 7.5L10 4l3.5 3.5M4.5 15.5h11',
+    at:       'M12.8 10a2.8 2.8 0 1 0-1 2.2M12.8 7.2V10a1.9 1.9 0 0 0 3.4 1.2A7 7 0 1 0 12.8 14.7',
+    greeting: 'M10 3.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13M7.5 9v.01M12.5 9v.01M7.3 12s1 1.5 2.7 1.5 2.7-1.5 2.7-1.5',
+    link:     'M8.5 11.5l3-3M7.8 9.2L6.3 10.7a2.4 2.4 0 0 0 3.4 3.4l1.5-1.5M12.2 10.8l1.5-1.5a2.4 2.4 0 0 0-3.4-3.4L8.8 7.4',
+    search:   'M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11M13 13l3.5 3.5',
+    trash:    'M4.5 6h11M8 6V4.2h4V6M6 6l.9 10h6.2L14 6',
+    undo:     'M9.5 5l-5 5 5 5M4.5 10h11'
   };
-  var d = P[name] || "";
+  var d = P[name] || P.spark;
   return '<svg class="icn" width="' + s + '" height="' + s + '" viewBox="0 0 20 20" fill="none" ' +
-    'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ' +
+    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" ' +
     'aria-hidden="true" focusable="false"><path d="' + d + '"></path></svg>';
+}
+
+// ICON-ONLY control: an icon that carries a permanent accessible name (aria-label + title) AND a visible
+// tooltip that reveals on hover (desktop) and on tap/long-press (touch). Never an icon whose meaning is
+// unreachable on touch. Used across the chrome, the window tabs and the overlays.
+function iconBtn(id, name, label, extraCls){
+  var lab = esc(label);
+  return '<button class="iconbtn' + (extraCls ? " " + extraCls : "") + '"' + (id ? ' id="' + id + '"' : '') +
+    ' type="button" aria-label="' + lab + '" title="' + lab + '" data-tip="' + lab + '">' + icon(name) + '</button>';
+}
+// TEXT-KEEPING control: a leading icon beside a word that MUST stay (the send journey, the lane headers).
+// Icon is decorative here (aria-hidden); the word carries the meaning.
+function iconText(name, label){ return '<span class="ib-ic">' + icon(name) + '</span><span class="ib-t">' + esc(label) + '</span>'; }
+
+// ONE tooltip component, wired once on the document (idempotent). Hover + keyboard focus reveal on desktop;
+// a touch tap/long-press reveals it briefly without swallowing the tap, because hover never fires on iPad.
+function tipWire(){
+  if (window.__thriveTipWired) return; window.__thriveTipWired = true;
+  var tip = document.getElementById("thriveTip");
+  if (!tip){ tip = document.createElement("div"); tip.id = "thriveTip"; tip.className = "thrive-tip"; tip.setAttribute("role","tooltip"); tip.hidden = true; document.body.appendChild(tip); }
+  var hideT = null;
+  function tgt(e){ return (e.target && e.target.closest) ? e.target.closest("[data-tip]") : null; }
+  function show(el){
+    var label = el.getAttribute("data-tip") || el.getAttribute("aria-label") || ""; if (!label) return;
+    if (hideT){ clearTimeout(hideT); hideT = null; }
+    tip.textContent = label; tip.dir = document.documentElement.getAttribute("dir") || "ltr"; tip.hidden = false;
+    var r = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+    var left = Math.max(8, Math.min(r.left + r.width/2 - tw/2, window.innerWidth - tw - 8));
+    var top = (r.bottom + 8 + th > window.innerHeight - 8) ? (r.top - th - 8) : (r.bottom + 8);
+    tip.style.left = left + "px"; tip.style.top = Math.max(8, top) + "px"; tip.classList.add("on");
+  }
+  function hide(){ tip.classList.remove("on"); if (hideT) clearTimeout(hideT); hideT = setTimeout(function(){ tip.hidden = true; }, 180); }
+  document.addEventListener("pointerover", function(e){ if (e.pointerType === "touch") return; var el = tgt(e); if (el) show(el); }, true);
+  document.addEventListener("pointerout",  function(e){ if (e.pointerType === "touch") return; var el = tgt(e); if (el) hide(); }, true);
+  document.addEventListener("focusin",  function(e){ var el = tgt(e); if (el) show(el); });
+  document.addEventListener("focusout", function(e){ var el = tgt(e); if (el) hide(); });
+  document.addEventListener("pointerdown", function(e){ if (e.pointerType !== "touch") return; var el = tgt(e); if (el){ show(el); if (hideT) clearTimeout(hideT); hideT = setTimeout(function(){ tip.classList.remove("on"); tip.hidden = true; }, 1600); } }, true);
+}
+
+// CALM GLASS SHIMMER on a surface as it arrives, in place of a hard cut. Re-triggers the one-shot CSS sweep by
+// removing the class, forcing a reflow, and re-adding it. Transform/opacity only; the rule itself is
+// reduced-motion guarded, so this is a no-op sheen for people who asked for less motion.
+function shimmerOnce(el){
+  if (!el) return;
+  try{ el.classList.remove("shimmer"); void el.offsetWidth; el.classList.add("shimmer"); }catch(e){}
+}
+
+// The state glyph for a lane, so colour is never the only carrier of meaning (canon Law 4.4): every lane and
+// every counter chip pairs its hue with a shape.
+function laneIcon(l){
+  var M = { draft:"review", live:"live", sent:"send", opened:"opened", replied:"replied",
+            bounced:"stalled", failed:"stalled", other:"archived", won:"check", lost:"x" };
+  return M[l] || "spark";
+}
+
+// The header identity wordmark: "THE CONSOLE" / «غرفة التحكم», localized on load and on every language toggle.
+// The rotating gradient asterisk mark lives beside it (static markup in the shell); this only sets the word.
+function paintBrand(){
+  var w = document.getElementById("brandWord"); if (!w) return;
+  w.textContent = (LANG === "ar") ? "غرفة التحكم" : "THE CONSOLE";
 }
 
 var __edT = {};        // per-slug debounce timer id
@@ -190,6 +283,7 @@ function greetingHtml(slug, row, detail){
   var sugg = greetSuggestText(slug, data);
   return '<div class="dw-sec g-greet" id="crGreet">'+
     '<label class="g-apply"><input type="checkbox" id="crGreetOn"'+(on?" checked":"")+'>'+
+      '<span class="ib-ic g-apply-ic">'+icon("greeting",16)+'</span>'+
       '<span class="g-apply-l">'+esc(t("g_greet_apply"))+'</span>'+
       '<span class="g-sugg" id="crGreetSugg" dir="auto">'+esc(sugg||t("g_greet_none"))+'</span></label>'+
     '<div class="g-hint">'+esc(t("g_greet_hint"))+'</div>'+

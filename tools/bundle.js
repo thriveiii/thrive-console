@@ -1112,15 +1112,27 @@ function buildBoard(){
   .top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 2px 16px;border-bottom:1px solid var(--border-hair)}
   /* The wordmark is the logo moment (Law 4.2): the full gradient, clipped to the text, on dark. On the light
      theme the gradient's pale stops would not hold on white, so the wordmark falls back to solid ink there. */
-  .brand{font-weight:var(--w-max);letter-spacing:.01em;font-size:var(--fs-xl);line-height:1.15;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
-  :root[data-theme="light"] .brand{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink)}
-  @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .brand{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink)}}
+  /* HEADER IDENTITY (canon Law 4.2, the logo moment): a slowly rotating brand-gradient asterisk mark leads
+     the wordmark THE CONSOLE / غرفة التحكم. The mark leads on the right in RTL (logical flex order). The
+     wordmark wears the gradient on dark and solid ink on light where the gradient would pale. Display face is
+     Lato heavy until Syne is pinned. */
+  .brand{display:inline-flex;align-items:center;gap:var(--s-3);text-decoration:none}
+  .brand-mark{display:inline-flex;flex:0 0 auto;line-height:0;animation:brandspin 22s linear infinite}
+  .brand-mark svg{display:block}
+  @keyframes brandspin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){ .brand-mark{animation:none} }
+  html.tab-hidden .brand-mark{animation-play-state:paused}
+  .brand-word{font-weight:var(--w-max);letter-spacing:.06em;font-size:var(--fs-xl);line-height:1.15;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+  :root[data-theme="light"] .brand-word{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink)}
+  :root[data-theme="light"] .brand-mark path{stroke:var(--ink)}
+  @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .brand-word{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink)} :root:not([data-theme="dark"]) .brand-mark path{stroke:var(--ink)}}
   .muted{color:var(--text-muted);font-size:12px}
   .send-cap{font-size:12px;color:var(--text-muted);unicode-bidi:isolate;margin-inline-start:auto}
   .send-cap.warn{color:var(--warning-2)}
   .send-cap:empty{display:none}
   .row-actions{display:flex;gap:10px;align-items:center}
   .link{background:none;border:0;color:var(--brand-teal);font:inherit;cursor:pointer;padding:0;transition:color var(--dur-1) var(--ease)}
+  .link-ic{display:inline-flex;align-items:center;gap:6px}   /* a link that keeps its word and gains a leading icon */
   .link:hover{text-decoration:underline;text-underline-offset:3px}
   .err{margin:10px 0;padding:10px 12px;border:1px solid var(--error-border);background:var(--error-bg);color:var(--error);border-radius:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .signin{max-width:340px;margin:8vh auto 0;background:var(--surface);border:1px solid var(--border-3);border-radius:14px;padding:26px 22px;text-align:center}
@@ -1136,7 +1148,8 @@ function buildBoard(){
   .lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;align-items:start;margin-top:16px}
   .lane{background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:var(--radius-l);padding:12px}
   .lane h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;font-weight:var(--w-head);color:var(--text-muted-2);margin:2px 4px 12px;display:flex;justify-content:space-between;align-items:center}
-  .lane h2 .n{color:var(--text-muted);font-weight:700}
+  .lane h2 .n{color:var(--text-muted);font-weight:700;unicode-bidi:isolate}
+  .lane-h-l{display:inline-flex;align-items:center;gap:6px;min-width:0}   /* the lane state icon + its label (icon + text, Law 4.4) */
   /* Lane colour as a semantic scale (Law 4): the five lane headers and the pipeline chips wear their lane
      hue, left to right along the gradient (draft teal, live blue, sent violet, opened coral, replied green).
      Colour is never the only carrier: the lane also has its text label and its count. */
@@ -1163,24 +1176,25 @@ function buildBoard(){
      display weight the headings pull through --w-* drops one step in RTL. */
   html[dir="rtl"]{--w-body:400; --w-strong:500; --w-head:600; --w-max:700}
   html[dir="rtl"] body, html[dir="rtl"] input, html[dir="rtl"] button{font-family:var(--font-ar);letter-spacing:normal}
-  html[dir="rtl"] .brand{letter-spacing:normal}
+  html[dir="rtl"] .brand-word{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .lane h2{text-transform:none;letter-spacing:normal}
   /* L2 read fidelity: verdict hero, pipeline strip, chips, pills, reply grouping + N-badge, new-activity dot, tray */
   .verdict{display:flex;align-items:baseline;gap:10px;padding:10px 2px 2px}
   .vnum{font-size:var(--fs-2xl);font-weight:var(--w-max);color:var(--text-max);line-height:1}
   .vlabel{color:var(--text-muted-2);font-size:13px}
   .pipe{display:flex;flex-wrap:wrap;gap:8px;padding:6px 2px}
-  .pchip{font-size:12px;color:var(--text-muted-2);background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:999px;padding:3px 9px}
-  .pchip .pn{color:var(--text);font-weight:700}
-  .pchip[data-lane="draft"] .pn{color:var(--lane-draft)}
-  .pchip[data-lane="live"] .pn{color:var(--lane-live)}
-  .pchip[data-lane="sent"] .pn{color:var(--lane-sent)}
-  .pchip[data-lane="opened"] .pn{color:var(--lane-opened)}
-  .pchip[data-lane="replied"] .pn{color:var(--lane-replied)}
+  .pchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted-2);background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:999px;padding:3px 9px}
+  .pchip .pn{color:inherit;font-weight:700;unicode-bidi:isolate}   /* Western numeral stays isolated (Law 6.3) */
+  .pchip[data-lane="draft"]{color:var(--lane-draft)}
+  .pchip[data-lane="live"]{color:var(--lane-live)}
+  .pchip[data-lane="sent"]{color:var(--lane-sent)}
+  .pchip[data-lane="opened"]{color:var(--lane-opened)}
+  .pchip[data-lane="replied"]{color:var(--lane-replied)}
   .chips{display:flex;flex-wrap:wrap;gap:8px;padding:2px}
-  .chip{font-size:11.5px;color:var(--warning);background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:999px;padding:2px 9px}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--warning);background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:999px;padding:2px 9px}
+  .pill .pn,.chip .pn{unicode-bidi:isolate;font-weight:700}
   .pills{display:flex;flex-wrap:wrap;gap:8px;padding:2px 2px 6px}
-  .pill{font-size:11px;border-radius:999px;padding:2px 9px;border:1px solid var(--success-border);background:var(--success-bg);color:var(--success)}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;border-radius:999px;padding:2px 9px;border:1px solid var(--success-border);background:var(--success-bg);color:var(--success)}
   .pill.warn{border-color:var(--warning-border);background:var(--warning-bg);color:var(--warning)}
   .card{position:relative}
   .newdot{position:absolute;top:8px;inset-inline-end:8px;width:8px;height:8px;border-radius:50%;background:var(--brand-teal);box-shadow:0 0 0 2px var(--surface-raised)}
@@ -1211,9 +1225,29 @@ function buildBoard(){
   .ow-close{display:inline-flex;align-items:center;justify-content:center;line-height:1;color:var(--text-muted-2);background:none;border:0;cursor:pointer;padding:4px 6px;border-radius:var(--radius-s);transition:color var(--dur-1) var(--ease),background-color var(--dur-1) var(--ease)}
   .ow-close:hover{color:var(--text-hi);background:var(--surface-sunken)}
   .icn{display:inline-block;vertical-align:middle;flex:0 0 auto}   /* icon set: inherits currentColor, sizes via width/height */
+  /* ONE icon-only control: a themed inline-SVG that inherits currentColor, with a permanent accessible name
+     and a tooltip reveal (below). Comfortable 32px+ touch target; hover/focus lift; visible focus ring. */
+  .iconbtn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:0;border-radius:var(--r-md);background:transparent;color:var(--text-muted);cursor:pointer;transition:color var(--t-instant) var(--e-standard),background-color var(--t-instant) var(--e-standard)}
+  .iconbtn:hover{color:var(--text-hi);background:var(--btn-neutral-bg)}
+  .iconbtn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  /* ONE text-keeping control: a leading icon beside a word that must stay (send journey, lane headers). */
+  .ib-ic{display:inline-flex;flex:0 0 auto;line-height:0;color:currentColor}
+  .ib-t{display:inline}
+  /* ONE tooltip component: revealed on hover / focus (desktop) and on tap/long-press (touch). */
+  .thrive-tip{position:fixed;z-index:90;max-width:220px;padding:5px 9px;border-radius:var(--r-sm);background:var(--panel-2);color:var(--text-hi);border:1px solid var(--hair);box-shadow:var(--el-raised);font-size:var(--fs-sm);font-weight:600;line-height:1.3;pointer-events:none;opacity:0;transform:translateY(-2px);transition:opacity var(--t-quick) var(--e-standard),transform var(--t-quick) var(--e-standard);unicode-bidi:isolate}
+  .thrive-tip.on{opacity:1;transform:none}
+  html[dir="rtl"] .thrive-tip{letter-spacing:normal;text-transform:none}
+  /* CALM GLASS SHIMMER: a restrained sweep of light on a surface as it arrives, in place of a hard cut. Pure
+     transform/opacity (VISUAL_MEMORY law 5); reduced-motion removes it. Canon easings/durations. */
+  @keyframes thriveShimmer{0%{transform:translateX(-120%) skewX(-12deg)}100%{transform:translateX(220%) skewX(-12deg)}}
+  .shimmer{position:relative;overflow:hidden}
+  .shimmer::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(100deg,transparent 20%,rgba(255,255,255,.10) 48%,rgba(255,255,255,.16) 52%,transparent 80%);transform:translateX(-120%) skewX(-12deg);animation:thriveShimmer var(--t-page) var(--e-standard) 1}
+  :root[data-theme="light"] .shimmer::after{background:linear-gradient(100deg,transparent 20%,rgba(255,255,255,.55) 48%,rgba(255,255,255,.75) 52%,transparent 80%)}
+  @media (prefers-reduced-motion:reduce){ .shimmer::after{display:none} }
   .ow-tabs{flex:0 0 auto;display:flex;gap:10px;padding:8px 20px 0;border-bottom:1px solid var(--border-hair);overflow-x:auto}
   .ow-tabs[hidden]{display:none}
-  .ow-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font:inherit;font-size:14px;padding:6px 4px 10px;cursor:pointer;white-space:nowrap}
+  .ow-tab{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font:inherit;font-size:14px;padding:6px 4px 10px;cursor:pointer;white-space:nowrap}
+  .ow-tab .ib-ic{opacity:.85}
   .ow-tab.on{color:var(--text-hi);border-bottom-color:var(--brand-teal)}
   .ow-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px}
   .ow-mode{display:flex;flex-direction:column;gap:12px}
@@ -1254,8 +1288,10 @@ function buildBoard(){
   html[dir="rtl"] .ow-recip-name,html[dir="rtl"] .ow-rs{letter-spacing:normal;text-transform:none}
   html[dir="rtl"] .ow-pick-t,html[dir="rtl"] .ow-pick-s{letter-spacing:normal}
   .ow-mode-h{font-size:14px;color:var(--text-muted-2);margin:0 0 4px}
-  .ow-mode-btn{display:block;width:100%;text-align:start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;color:var(--text-hi);font:inherit;font-size:15px;font-weight:650;cursor:pointer}
+  .ow-mode-btn{display:flex;align-items:center;gap:14px;width:100%;text-align:start;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:16px 18px;color:var(--text-hi);font:inherit;font-size:15px;font-weight:650;cursor:pointer;transition:border-color var(--t-instant) var(--e-standard),background-color var(--t-instant) var(--e-standard)}
   .ow-mode-btn:hover{border-color:var(--hover-border)}
+  .ow-mode-ic{display:inline-flex;flex:0 0 auto;color:var(--brand-teal)}
+  .ow-mode-tx{display:flex;flex-direction:column;min-width:0}
   .ow-mode-btn .ow-mode-sub{display:block;font-weight:400;font-size:12.5px;color:var(--text-muted);margin-top:4px}
   /* G7: the three Page-tab paths reuse .ow-mode-btn; .on marks the chosen one, and its body (the file input or
      the Library picker) sits below the chooser with equal padding on all four sides. */
@@ -1412,7 +1448,7 @@ function buildBoard(){
   /* L4 write actions (drawer): stage moves, archive/reopen, note composer. Buttons are calm and full-width
      on narrow drawers; a busy write disables the set and shows a status line; a failure shows red, never black. */
   .acts{display:flex;flex-wrap:wrap;gap:8px}
-  .act{font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border-radius:9px;padding:8px 12px;border:1px solid var(--btn-neutral-border);background:var(--btn-neutral-bg);color:var(--text);transition:border-color var(--dur-1) var(--ease),background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease)}
+  .act{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;border-radius:var(--r-sm);padding:8px 12px;border:1px solid var(--btn-neutral-border);background:var(--btn-neutral-bg);color:var(--text);transition:border-color var(--dur-1) var(--ease),background-color var(--dur-1) var(--ease),color var(--dur-1) var(--ease)}
   .act:hover{border-color:var(--hover-border);background:var(--surface-raised)}
   .act:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   .act.win{border-color:var(--success-border);background:var(--success-bg);color:var(--success)}
@@ -1637,7 +1673,10 @@ function buildBoard(){
 <body>
 <div class="wrap">
   <div class="top">
-    <span class="brand">Thrive Board</span>
+    <a class="brand" href="#board" id="brandLink" aria-label="THE CONSOLE">
+      <span class="brand-mark" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="url(#thriveMark)" stroke-width="2.2" stroke-linecap="round"><defs><linearGradient id="thriveMark" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse"><stop stop-color="#72BECE"></stop><stop offset=".2" stop-color="#5D7FB7"></stop><stop offset=".4" stop-color="#9685CA"></stop><stop offset=".6" stop-color="#EE8C9D"></stop><stop offset=".8" stop-color="#A78CA7"></stop><stop offset="1" stop-color="#71BFCC"></stop></linearGradient></defs><path d="M12 3v18M4.5 6.75l15 10.5M19.5 6.75l-15 10.5"></path></svg></span>
+      <span class="brand-word" id="brandWord">THE CONSOLE</span>
+    </a>
     <span class="muted">build ${BUILD}</span>
   </div>
   <div id="root"></div>
@@ -1917,7 +1956,8 @@ function buildBoard(){
   function readTheme(){ var v=""; try{ v=localStorage.getItem(themeUserKey())||localStorage.getItem(THEME_KEY)||""; }catch(e){} return (v==="light"||v==="dark")?v:""; }
   function currentTheme(){ var a=""; try{ a=document.documentElement.getAttribute("data-theme")||""; }catch(e){} return (a==="light"||a==="dark")?a:(readTheme()||"dark"); }
   function applyTheme(){ try{ var th=readTheme()||"dark"; document.documentElement.setAttribute("data-theme", th); }catch(e){} }
-  function setTheme(th){ th=(th==="light"?"light":"dark"); try{ localStorage.setItem(themeUserKey(), th); localStorage.setItem(THEME_KEY, th); }catch(e){} try{ document.documentElement.setAttribute("data-theme", th); }catch(e){} var b=document.getElementById("themeBtn"); if(b) b.textContent=themeLabel(); }
+  function setTheme(th){ th=(th==="light"?"light":"dark"); try{ localStorage.setItem(themeUserKey(), th); localStorage.setItem(THEME_KEY, th); }catch(e){} try{ document.documentElement.setAttribute("data-theme", th); }catch(e){}
+    var b=document.getElementById("themeBtn"); if(b){ var lab=themeLabel(); b.innerHTML=icon(th==="light" ? "moon" : "sun"); b.setAttribute("aria-label",lab); b.setAttribute("title",lab); b.setAttribute("data-tip",lab); } }
   function toggleTheme(){ setTheme(currentTheme()==="light"?"dark":"light"); }
   function themeLabel(){ return currentTheme()==="light" ? t("theme_dark") : t("theme_light"); }   // the label names the target the toggle switches TO
 
@@ -2173,8 +2213,8 @@ ${CONTACTS_SRC}
 
   // ---- views (localized; a lang toggle sits on the sign-in card and in the board header) ----
   var VIEW = "signin", __data = null;
-  function langBtn(){ return '<button class="link" id="langBtn" type="button">' + esc(langLabel()) + '</button>'; }
-  function themeBtn(){ return '<button class="link" id="themeBtn" type="button">' + esc(themeLabel()) + '</button>'; }   // minimal toggle; visual polish later
+  function langBtn(){ return iconBtn("langBtn", "globe", langLabel()); }
+  function themeBtn(){ return iconBtn("themeBtn", currentTheme()==="light" ? "moon" : "sun", themeLabel()); }   // sun on dark = switch to light
   function rerender(){ if(VIEW==="board" && __data){ renderBoard(__data); } else if(VIEW==="board"){ loadBoard(); } else { signinView(); } }
 
   // Synchronous "connecting" card: painted before any network call so a warm boot (an expired token that
@@ -2239,22 +2279,23 @@ ${CONTACTS_SRC}
         // New message: the ONE compose entry. It opens the centered window on the mode selector (message without
         // campaign / message with campaign). G5: the separate "Upload campaign" entry is retired - uploading a
         // campaign now lives in the window's Page tab (Mode B).
-        '<button class="link" id="newMsgBtn" type="button">' + esc(t("nm_open")) + '</button>' +
-        // PR1 Library: upload html templates for documentation + activation only (no message, no recipient, no card).
-        '<button class="link" id="libBtn" type="button">' + esc(t("lib_open")) + '</button>' +
-        // Phase 3 Contacts: the networked address book (templates sent + full conversation), retiring Legacy Contacts.
-        '<button class="link" id="contactsBtn" type="button">' + esc(t("ct_open")) + '</button>' +
-        '<button class="link" id="adminBtn" type="button" hidden>' + esc(t("adm_open")) + '</button>' +
-        '<button class="link" id="profileBtn" type="button">' + esc(t("pf_open")) + '</button>' +
-        '<button class="link" id="reload" type="button">' + esc(t("refresh")) + '</button>' +
-        '<button class="link" id="signout" type="button">' + esc(t("signout")) + '</button>' +
+        // New message is the send-journey entry (a core console option, section 4 exception): it keeps its word
+        // and gains a leading compose icon, never icon-only.
+        '<button class="link link-ic" id="newMsgBtn" type="button">' + iconText("compose", t("nm_open")) + '</button>' +
+        // The rest of the chrome is self-evident once iconified: icon + tooltip/label (hover and touch reveal).
+        iconBtn("libBtn", "library", t("lib_open")) +
+        iconBtn("contactsBtn", "contacts", t("ct_open")) +
+        '<span id="adminSlot" hidden>' + iconBtn("adminBtn", "admin", t("adm_open")) + '</span>' +
+        iconBtn("profileBtn", "profile", t("pf_open")) +
+        iconBtn("reload", "refresh", t("refresh")) +
+        iconBtn("signout", "logout", t("signout")) +
       '</span></div>';
   }
   // Reveal the Admin entry only for an owner. Safe to call repeatedly (idempotent) and before the role settles.
   function paintAdminSlot(){
-    var ab=document.getElementById("adminBtn"); if(!ab) return;
+    var slot=document.getElementById("adminSlot") || document.getElementById("adminBtn"); if(!slot) return;
     var owner=false; try{ owner = (typeof isOwner==="function") && isOwner(); }catch(e){}
-    ab.hidden = !owner;
+    slot.hidden = !owner;
   }
   try{ window.__thrivePaintAdminSlot = paintAdminSlot; }catch(e){}
   function wireHeader(){
@@ -2268,8 +2309,12 @@ ${CONTACTS_SRC}
     var rl=document.getElementById("reload"); if(rl) rl.addEventListener("click", function(){ loadBoard(); });
     var so=document.getElementById("signout"); if(so) so.addEventListener("click", function(){ signOut().then(signinView); });
     paintAdminSlot();
+    try{ paintBrand(); }catch(e){}      // the header wordmark, localized to the current language
+    try{ tipWire(); }catch(e){}         // the ONE tooltip component, wired once (idempotent)
     try{ if(typeof refreshSendCap==="function") refreshSendCap(); }catch(e){}   // SEND-HEALTH: fill the send-cap counter on every board paint
   }
+  // Pause the slow header mark when the tab is hidden (canon: MOTION.md, do not spin a mark nobody is watching).
+  try{ document.addEventListener("visibilitychange", function(){ document.documentElement.classList.toggle("tab-hidden", document.hidden); }); }catch(e){}
 
   // Bucket by the SERVER stage only (never derived here). Domain law: a REPLIED opp is a terminal-success story
   // and stays in Replied even once archived - archiving is end-of-conversation, NOT exclusion, so it must never
@@ -2468,14 +2513,15 @@ ${CONTACTS_SRC}
   // the Library - no nested "with/without campaign" step. Each leads straight into its editor. The upload and pick
   // options open Mode B on the Page tab with that path pre-selected; text-only opens the lean Mode A compose.
   function owModeSelectHtml(){
-    var card=function(id, tkey, subkey){
-      return '<button class="ow-mode-btn" id="'+id+'" type="button">'+esc(t(tkey))+
-        '<span class="ow-mode-sub">'+esc(t(subkey))+'</span></button>';
+    // The send-mode options keep their words (section 4 exception) and gain a leading icon.
+    var card=function(id, tkey, subkey, ic){
+      return '<button class="ow-mode-btn" id="'+id+'" type="button"><span class="ow-mode-ic">'+icon(ic,20)+'</span><span class="ow-mode-tx"><span class="ow-mode-t">'+esc(t(tkey))+'</span>'+
+        '<span class="ow-mode-sub">'+esc(t(subkey))+'</span></span></button>';
     };
     return '<div class="ow-modes"><p class="ow-mode-h">'+esc(t("ow_pick"))+'</p>'+
-      card("owPickText","ow_new_text","ow_new_text_sub")+
-      card("owPickUpload","ow_new_upload","ow_new_upload_sub")+
-      card("owPickLib","ow_new_pick","ow_new_pick_sub")+
+      card("owPickText","ow_new_text","ow_new_text_sub","text")+
+      card("owPickUpload","ow_new_upload","ow_new_upload_sub","upload")+
+      card("owPickLib","ow_new_pick","ow_new_pick_sub","library")+
       '</div>';
   }
   // FIX A: a READABLE window header, never the raw msg-... id. Priority: an existing card's real title, then a
@@ -2543,17 +2589,17 @@ ${CONTACTS_SRC}
   // ---- G3 Mode B: the tabbed campaign window. Tabs switch instantly; the compose fields live in #owMsgPanel
   //      (shared editorHtml/recipientHtml by reference); the Page tab is the ONE unified engine; the ONE
   //      primary action is Commit (owCommitCampaign, board-upload). ----
-  var OW_TABS = [ {k:"msg", key:"ow_tab_msg"}, {k:"page", key:"ow_tab_page"}, {k:"recip", key:"ow_tab_recip"}, {k:"preview", key:"ow_tab_preview"} ];
+  var OW_TABS = [ {k:"msg", key:"ow_tab_msg", ic:"text"}, {k:"page", key:"ow_tab_page", ic:"page"}, {k:"recip", key:"ow_tab_recip", ic:"contacts"}, {k:"preview", key:"ow_tab_preview", ic:"review"} ];
   var __owTab = "msg";
   function owTabsHtml(){
-    return OW_TABS.map(function(tb){ return '<button class="ow-tab'+(tb.k===__owTab?" on":"")+'" role="tab" type="button" data-ow-tab="'+tb.k+'">'+esc(t(tb.key))+'</button>'; }).join("");
+    return OW_TABS.map(function(tb){ return '<button class="ow-tab'+(tb.k===__owTab?" on":"")+'" role="tab" type="button" data-ow-tab="'+tb.k+'"><span class="ib-ic">'+icon(tb.ic,15)+'</span><span class="ib-t">'+esc(t(tb.key))+'</span></button>'; }).join("");
   }
   function owModeBBodyHtml(){
     return '<div class="ow-panel" id="owMsgPanel"'+(__owTab==="msg"?"":" hidden")+'></div>'+
       '<div class="ow-panel" id="owPagePanel"'+(__owTab==="page"?"":" hidden")+'></div>'+
       '<div class="ow-panel" id="owRecipPanel"'+(__owTab==="recip"?"":" hidden")+'></div>'+   // G4: lazily filled on first switch (owRecipMount)
       '<div class="ow-panel" id="owPreviewPanel"'+(__owTab==="preview"?"":" hidden")+'></div>'+
-      '<div class="ow-foot"><button class="act send" id="owCommit" type="button">'+esc(t("ow_commit"))+'</button>'+
+      '<div class="ow-foot"><button class="act send" id="owCommit" type="button">'+iconText("check", t("ow_commit"))+'</button>'+
         '<div class="act-status" id="owCommitStatus" role="status" aria-live="polite"></div></div>';
   }
   function owWireTabs(){
@@ -2657,10 +2703,10 @@ ${CONTACTS_SRC}
   //   CONTACT  - the opp's recipients[] and their addresses (read-only; Phase 3 grows this into the contact entity).
   //   ACTIVITY - the drawer's former detail/management half, reused wholesale via owDetailMount into #owDetail:
   //              signals, the reply thread (the heart), the record, notes, the activity timeline, and fate actions.
-  var CR_GATES = [ {k:"msg", key:"cr_gate_msg"}, {k:"page", key:"cr_gate_page"}, {k:"contact", key:"cr_gate_contact"}, {k:"activity", key:"cr_gate_activity"} ];
+  var CR_GATES = [ {k:"msg", key:"cr_gate_msg", ic:"text"}, {k:"page", key:"cr_gate_page", ic:"page"}, {k:"contact", key:"cr_gate_contact", ic:"contacts"}, {k:"activity", key:"cr_gate_activity", ic:"clock"} ];
   var __crGate = "msg", __crMounted = {};
   function crTabsHtml(){
-    return CR_GATES.map(function(g){ return '<button class="ow-tab cr-gate'+(g.k===__crGate?" on":"")+'" role="tab" type="button" data-cr-gate="'+g.k+'">'+esc(t(g.key))+'</button>'; }).join("");
+    return CR_GATES.map(function(g){ return '<button class="ow-tab cr-gate'+(g.k===__crGate?" on":"")+'" role="tab" type="button" data-cr-gate="'+g.k+'"><span class="ib-ic">'+icon(g.ic,15)+'</span><span class="ib-t">'+esc(t(g.key))+'</span></button>'; }).join("");
   }
   function crBodyHtml(){
     return '<div class="cr-panel" id="crMsgPanel"'+(__crGate==="msg"?"":" hidden")+'></div>'+
@@ -2781,6 +2827,7 @@ ${CONTACTS_SRC}
     var sc=document.getElementById("owScrim"); if(!sc) return;         // no window shell -> nothing to open (the drawer is gone)
     sc.hidden=false; var body=document.getElementById("owBody"); if(body) body.scrollTop=0;
     owRender();
+    try{ shimmerOnce(document.getElementById("oppWindow")); }catch(e){}   // calm glass sheen on the window rise
   }
   function closeOppWindow(){
     try{ if(typeof owComposeFlush==="function" && owComposeActive()) owComposeFlush(__owSlug); }catch(e){}   // flush a pending Mode A autosave
@@ -2956,22 +3003,24 @@ ${CONTACTS_SRC}
     else { heroN=draft; heroK="v_draft"; }
     var verdict = '<div class="verdict"><span class="vnum" data-countup="' + heroN + '">0</span><span class="vlabel">' + esc(t(heroK)) + '</span></div>';
     var pipe = '<div class="pipe">' + ["draft","live","sent","opened","replied"].map(function(st){
-      return '<span class="pchip" data-lane="' + st + '"><span class="pn" data-countup="' + laneN(st) + '">0</span> ' + esc(t("l_"+st)) + '</span>';
+      var lab = esc(t("l_"+st));
+      return '<span class="pchip" data-lane="' + st + '" aria-label="' + lab + '" title="' + lab + '" data-tip="' + lab + '">' +
+        icon(laneIcon(st), 14) + '<span class="pn" data-countup="' + laneN(st) + '">0</span></span>';
     }).join("") + '</div>';
 
     // Chips (display only in L2): stalled sent/opened cards, and archived count.
     var stalled=0, archived=0;
     rows.forEach(function(r){ if(r && r.archived) archived++; else if((r.stage==="sent"||r.stage==="opened") && Number(r.idle_days||0)>7) stalled++; });
-    var chips=""; if(stalled) chips+='<span class="chip">'+stalled+' '+esc(t("c_stalled"))+'</span>';
-    if(archived) chips+='<span class="chip">'+archived+' '+esc(t("c_archived"))+'</span>';
+    var chips=""; if(stalled) chips+='<span class="chip">'+icon("stalled",13)+'<span class="pn">'+stalled+'</span> '+esc(t("c_stalled"))+'</span>';
+    if(archived) chips+='<span class="chip">'+icon("archived",13)+'<span class="pn">'+archived+'</span> '+esc(t("c_archived"))+'</span>';
     var chipsHtml = chips ? ('<div class="chips">'+chips+'</div>') : "";
 
     // Pills: a truthful live-freshness pill, and the inbound-health pill (replies waiting to be filed) from the
     // console_inbound read. The engine's drift/sync pills are intentionally NOT carried: the direct reader has
     // no local ledger to drift from and no relay to be stale against, so there is nothing truthful to show.
-    var pills = '<span class="pill live">'+esc(t("p_live"))+'</span>';
+    var pills = '<span class="pill live">'+icon("live",13)+esc(t("p_live"))+'</span>';
     var waiting = (__reps && __reps.waiting) || 0;
-    if(waiting) pills += '<span class="pill warn">'+waiting+' '+esc(t("p_waiting"))+'</span>';
+    if(waiting) pills += '<span class="pill warn">'+icon("replied",13)+'<span class="pn">'+waiting+'</span> '+esc(t("p_waiting"))+'</span>';
     var pillsHtml = '<div class="pills">'+pills+'</div>';
 
     // Lanes: the five open lanes always; bounced/failed only when non-empty; "other" only if (unexpectedly) used.
@@ -2981,7 +3030,7 @@ ${CONTACTS_SRC}
     if((groups.other||[]).length) order.push("other");
     var lanesHtml = '<div class="lanes">' + order.map(function(l){
       var list = groups[l] || [];
-      return '<div class="lane" data-lane="' + l + '"><h2>' + esc(t("l_"+l)) + '<span class="n">' + list.length + '</span></h2>' +
+      return '<div class="lane" data-lane="' + l + '"><h2><span class="lane-h-l">' + icon(laneIcon(l)) + '<span>' + esc(t("l_"+l)) + '</span></span><span class="n">' + list.length + '</span></h2>' +
              (list.length ? list.map(cardHtml).join("") : '<div class="empty">' + esc(t("none")) + '</div>') + '</div>';
     }).join("") + '</div>';
 
