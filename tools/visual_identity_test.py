@@ -95,8 +95,9 @@ with sync_playwright() as p:
     pg.wait_for_selector(".lane", timeout=8000)
     ck("(d) the board renders (lanes present)", pg.evaluate("()=>document.querySelectorAll('.lane').length")>=3)
 
-    accent = probe(pg, "--accent"); teal = probe(pg, "--brand-teal")
-    ck("(b) the accent token is distinct from the brand teal", accent != teal, {"accent":accent,"teal":teal})
+    # the primary-action fill is the accessible deep-rose --btn-primary-bg (the accent role), distinct from teal
+    accent = probe(pg, "--btn-primary-bg"); teal = probe(pg, "--brand-teal")
+    ck("(b) the primary-action token is distinct from the brand teal", accent != teal, {"accent":accent,"teal":teal})
 
     # compose surface: exactly one accent-filled button (Send), and it IS #nmSend
     pg.evaluate("()=>window.owNewMessage()"); pg.wait_for_selector("#owPickText", timeout=5000)
