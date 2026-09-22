@@ -90,7 +90,7 @@ function recipientHtml(slug, row, detail){
   return '<div class="dw-sec"><h3>'+esc(t("r_h"))+'</h3>'+
     '<textarea class="rec-in mono-iso" id="recIn" rows="1" dir="ltr" autocomplete="off" spellcheck="false" '+
       'placeholder="'+esc(t("r_ph"))+'" aria-label="'+esc(t("r_h"))+'">'+esc(val)+'</textarea>'+
-    '<div class="acts"><button class="act send" id="recSave" type="button">'+esc(t("r_save"))+'</button></div>'+
+    '<div class="acts"><button class="act" id="recSave" type="button">'+esc(t("r_save"))+'</button></div>'+
     '<div class="act-status'+(st.cls?(" "+st.cls):"")+'" id="recStatus">'+esc(st.msg||"")+'</div></div>';
 }
 
