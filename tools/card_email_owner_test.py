@@ -45,7 +45,7 @@ U_THYAB="u_thyab"; U_BASEL="u_basel"; U_AGHA="u_agha"
 PROFILES=[
   {"uid":U_THYAB,"display_name":"Abdu Thyab","email":"abdu.thyab@gmail.com"},
   {"uid":U_BASEL,"display_name":"Basel Najjar","email":"alnajjarjawad97@gmail.com"},
-  {"uid":U_AGHA, "display_name":"Agha","email":"agha@thrive.test"},
+  {"uid":U_AGHA, "display_name":"Muhel Agha","email":"muhelagha@gmail.com"},   # canonical map pins this email -> "Agha"
 ]
 # board cards across every lane
 BOARD=[
@@ -55,7 +55,7 @@ BOARD=[
  {"slug":"c-opened","business":"Opened Co","stage":"opened","sent_count":1,"open_count":1,"replied":False,"idle_days":0,"last_activity_ts":"2026-02-02T00:00:00Z","has_page":False,"has_email":True,"archived":False,"cycle":None},
  {"slug":"c-repl","business":"Replied Co","stage":"replied","sent_count":1,"open_count":1,"replied":True,"idle_days":0,"last_activity_ts":"2026-02-01T00:00:00Z","has_page":False,"has_email":True,"archived":False,"cycle":None},
 ]
-# console_opps meta (owner in data.owner + first recipient email). c-opened has NO data.owner (derived from mail);
+# console_opps meta (owner COLUMN + first recipient email). c-opened has NO owner (derived from mail);
 # c-repl has neither owner nor mail -> unassigned.
 META={
  "c-draft":{"ow":U_THYAB,"to":"draftbuyer@shop.example"},
@@ -85,16 +85,19 @@ def make_wire(cur_uid, cur_email, ar=False):
             try: body=json.loads(r.request.post_data or "[]")
             except Exception: body=[]
             for row in (body if isinstance(body,list) else [body]):
-                if isinstance(row,dict): OPP_POSTS.append({"method":r.request.method,"data":row.get("data")})
+                if isinstance(row,dict): OPP_POSTS.append({"method":r.request.method,"owner":row.get("owner"),"data":row.get("data")})
             return r.fulfill(status=204, body="")
-        # the card-meta select: slug + ow:data->>owner + to:data->recipients->0->>addr
-        if "select=" in u and "owner" in u and "recipients" in u:
-            return J(r, [{"slug":k,"ow":v["ow"],"to":v["to"]} for k,v in META.items()])
-        # oppReadData(slug): return the opp's data (with owner) so a re-save preserves it
+        # the OWNER column select (select=slug,owner)
+        if ("select=slug,owner" in u or "select=slug%2Cowner" in u):
+            return J(r, [{"slug":k,"owner":v["ow"]} for k,v in META.items()])
+        # the recipient-email select (data->recipients->0->>addr)
+        if "select=" in u and "recipients" in u:
+            return J(r, [{"slug":k,"to":v["to"]} for k,v in META.items()])
+        # oppReadData(slug): the opp's data jsonb (owner is a column now, not in data)
         s=slug_of(u)
         if s:
             v=META.get(s,{})
-            return J(r, [{"slug":s,"data":{"owner":v.get("ow",""),"recipients":[{"addr":v.get("to","")}]},"archived_at":None}])
+            return J(r, [{"slug":s,"data":{"recipients":[{"addr":v.get("to","")}]},"archived_at":None}])
         return J(r, [])
     def route_mail(r):
         u=r.request.url
@@ -174,10 +177,10 @@ with sync_playwright() as p:
     pg.fill("#recIn","newbuyer@shop.example"); pg.wait_for_timeout(200)
     pg.evaluate("()=>{var b=document.getElementById('recSave'); if(b) b.click();}"); pg.wait_for_timeout(300)
     pg.evaluate("()=>{var b=document.getElementById('nmSend'); if(b) b.click();}"); pg.wait_for_timeout(1200)
-    # the owner stamp lives on the CREATE (oppUpsert POST); saveRecipients is a PATCH that only merges recipients
-    # (preserving an existing data.owner), so the assertion checks the POST writes.
-    owners=[ (row.get("data") or {}).get("owner") for row in OPP_POSTS if row.get("method")=="POST" and isinstance(row.get("data"),dict) ]
-    ck("(c) a newly created opp is stamped with the current member as owner (data.owner = current uid)",
+    # the owner stamp lives on the CREATE (oppUpsert POST) as the top-level owner COLUMN; saveRecipients is a
+    # PATCH that only merges recipients, so the assertion checks the POST writes' owner column.
+    owners=[ row.get("owner") for row in OPP_POSTS if row.get("method")=="POST" ]
+    ck("(c) a newly created opp is stamped with the current member as the owner column (owner = current uid)",
        len(owners)>=1 and all(o==U_THYAB for o in owners) and U_THYAB in owners, {"owners":owners,"posts":len(OPP_POSTS)})
     pg.close(); ctx.close()
 

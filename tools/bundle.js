@@ -1751,10 +1751,10 @@ function buildBoard(){
   // email is the opp's first recipient (data.recipients[0].addr). Both degrade to empty on any failure - a card
   // with no meta simply shows no email line and an unassigned owner, never a broken board.
   var __cardMeta = {};
-  // The two known members map their email to a canonical short name so the chip reads Thyab / Basel exactly,
-  // regardless of the display_name a profile carries. Agha is intentionally absent (his identifier is unknown);
-  // his cards resolve through resolveActor (his profile display_name) and are never guessed. Latin identifiers.
-  var OWNER_CANON = { "abdu.thyab@gmail.com":"Thyab", "alnajjarjawad97@gmail.com":"Basel" };
+  // The three members map their email to a canonical short name so the chip reads Thyab / Agha / Basel exactly,
+  // regardless of the display_name a profile carries (console_profile_names is still the resolver; this pins the
+  // canonical label). An unknown/other email falls back to its display_name, then unassigned. Latin identifiers.
+  var OWNER_CANON = { "abdu.thyab@gmail.com":"Thyab", "muhelagha@gmail.com":"Agha", "alnajjarjawad97@gmail.com":"Basel" };
   var LANG_KEY = "thrive_lang", SESSION_KEY = "console_sb_session", FETCH_TIMEOUT_MS = 6000;
 
   // ---- i18n (a compact clone of i18n.js t/setLang/applyLang, EN + AR). CHROME language (ui_lang) only; the
@@ -3176,19 +3176,30 @@ ${CONTACTS_SRC}
   // 400s to [] via restGet, so owner stays unknown (unassigned) and the email line still shows - never a break.
   function fetchCardMeta(){
     return Promise.all([
-      // owner (stamped into data.owner at create) + the first recipient email, both from the existing data jsonb
-      // (no schema change needed for new cards), in one bounded best-effort read.
-      restGet("console_opps?select=slug,ow:data->>owner,to:data->recipients->0->>addr"),
-      // DERIVED owner fallback for cards created before data.owner existed: the earliest send's actor per opp
-      // (console_mail is ordered ts.asc, so the first actor seen is the original sender). No SQL needed; an
-      // optional backfill can later make it durable in data.owner.
+      // the first recipient email (existing data jsonb) - always resolves.
+      restGet("console_opps?select=slug,to:data->recipients->0->>addr"),
+      // the OWNER column (additive; docs/supabase-owner-column.sql). Its own select so, until the column is
+      // applied in Supabase, this read 400s to [] via restGet and only the owner is unknown - the email and the
+      // derived fallback below still work, so the board never breaks waiting on the migration.
+      restGet("console_opps?select=slug,owner"),
+      // DERIVED owner fallback for rows not yet backfilled: the earliest send's actor per opp (console_mail is
+      // ordered ts.asc, so the first actor seen is the original sender). No SQL needed for this to light up.
       restGet("console_mail?select=opp,actor,ts&order=ts.asc")
     ]).then(function(a){
       var m = {};
-      (Array.isArray(a[0]) ? a[0] : []).forEach(function(r){ if(r && r.slug){ var e = m[r.slug] || (m[r.slug] = {}); e.owner = String(r.ow || ""); e.email = String(r.to || ""); } });
-      (Array.isArray(a[1]) ? a[1] : []).forEach(function(r){ if(r && r.opp && r.actor){ var e = m[r.opp] || (m[r.opp] = {}); if(!e.derived) e.derived = String(r.actor); } });
+      (Array.isArray(a[0]) ? a[0] : []).forEach(function(r){ if(r && r.slug){ var e = m[r.slug] || (m[r.slug] = {}); e.email = String(r.to || ""); } });
+      (Array.isArray(a[1]) ? a[1] : []).forEach(function(r){ if(r && r.slug){ var e = m[r.slug] || (m[r.slug] = {}); e.owner = String(r.owner || ""); } });
+      (Array.isArray(a[2]) ? a[2] : []).forEach(function(r){ if(r && r.opp && r.actor){ var e = m[r.opp] || (m[r.opp] = {}); if(!e.derived) e.derived = String(r.actor); } });
       return m;
     }, function(){ return {}; });
+  }
+  // OWNER STAMP for a write: preserve the durable owner (the console_opps.owner column, mirrored into __cardMeta),
+  // else the derived earliest-sender, else the current signed-in member. So the FIRST of create/upload/send stamps
+  // the creator and a later re-save/re-send never clobbers them; a brand-new opp (absent from __cardMeta) is owned
+  // by the current member. Never fabricates: an unknown owner resolves to the current member only at a real write.
+  function ownerStamp(slug){
+    var m = __cardMeta && __cardMeta[slug];
+    return (m && (m.owner || m.derived)) || currentUid();
   }
   function reloadBoardData(){
     return fetchBoard(false).then(function(rows){

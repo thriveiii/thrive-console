@@ -366,7 +366,6 @@ function upCommit(plan){
     done[r.slug] = 1;
     var data = { source:"upload", page_title:r.title,
       outreach_subject:r.subject || "", outreach_text:r.body || "",
-      owner: currentUid(),   // OWNER: the uploading member owns each card this campaign creates
       // B2: strip a suppressed recipient - the opp/page still commit, but the do-not-contact address is not stored.
       recipients: (r.email && !isSuppressed(r.email)) ? [{ addr:r.email, name:"", lang:"en" }] : [] };
     // Resolve {{ASSET_BASE}} on the page html ONCE, up front, so BOTH the stored console_pages row (Library
@@ -377,7 +376,7 @@ function upCommit(plan){
     // scopes sends/opens to this cycle, so an old transit's ledger rows never re-attach to the new card. The
     // SAME cycle is stamped into the published page (withBeaconClient below), so the beacon carries it on opens.
     var cycle = upNewCycle();
-    return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now(), cycle:cycle })
+    return oppUpsert(r.slug, { business:r.title || r.slug, data:data, up:Date.now(), cycle:cycle, owner:ownerStamp(r.slug) })   // OWNER column: the uploading member owns each card this campaign creates
       .then(function(){ return pageUpsert(r.slug, html); })
       .then(function(){
         if(!String(html).trim()){ ok++; return one(i + 1); }                     // text-only row: no page to publish, untouched
@@ -1256,7 +1255,7 @@ function libPromoteConfirm(slug){
   libPromStatus(slug, t("lib_prom_saving"), "");
   var title = libPromoteTitle(slug);
   var oppSlug = slug + "-" + libShortId();                                                   // this promote's OWN card identity
-  return oppUpsert(oppSlug, { business: title, published: true, up: Date.now(), data: { recipients: [], page_slug: slug, owner: currentUid() } })   // OWNER: the promoting member owns this new card
+  return oppUpsert(oppSlug, { business: title, published: true, up: Date.now(), data: { recipients: [], page_slug: slug }, owner: ownerStamp(oppSlug) })   // OWNER column: the promoting member owns this new card
     .then(function(){ return saveRecipients(oppSlug, list); })                               // attach recipient(s), read-back confirmed
     .then(function(){ return reloadBoardData(); })                                           // the promoted card is now a board row
     .then(function(){ __libPromoting = false; if(go) go.disabled = false; libPromStatus(slug, t("lib_prom_done"), "ok"); return oppSlug; })
@@ -1557,10 +1556,9 @@ function owCommitCampaign(slug){
   var kept=sendToList().filter(function(r){ return !isSuppressed(r.addr); });   // B2 strip at commit
   return oppReadData(slug).then(function(data){
     var next=Object.assign({}, data, { source:"upload", page_title:pr.title||pageSlug,
-      outreach_subject:subj, outreach_text:body, sig:sig, recipients:kept,
-      owner:(data && data.owner) || currentUid() });                            // OWNER: stamp the creator once; preserved on a later re-commit
+      outreach_subject:subj, outreach_text:body, sig:sig, recipients:kept });
     if(pageSlug!==slug) next.page_slug=pageSlug;                                 // a renamed page: the card references it by page_slug
-    return oppUpsert(slug, { business:pr.title||slug, data:next, up:Date.now(), cycle:cycle })
+    return oppUpsert(slug, { business:pr.title||slug, data:next, up:Date.now(), cycle:cycle, owner:ownerStamp(slug) })   // OWNER column: creator stamped once, preserved on a re-commit
       .then(function(){ return pageUpsert(pageSlug, html, { title:pr.title, task:pr.task }); })
       .then(function(){ return pagePublishRelay(pageSlug, withBeaconClient(html, cycle)); });
   }).then(function(){
