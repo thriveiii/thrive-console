@@ -102,6 +102,10 @@ function loadIdentity(){
       var rec = { uid:r.uid||"", name:r.display_name||"", email:r.email||"" };
       if(rec.uid) __profileIndex.byUid[rec.uid] = rec;
       if(rec.email) __profileIndex.byEmail[String(rec.email).toLowerCase()] = rec;
+      // Mirror the email-keyed canonical member map onto UIDs, so a card whose owner/member is a member uid
+      // resolves to its canonical short name directly (the "Unassigned" fix). OWNER_CANON lives in the shared
+      // board.html IIFE scope; guarded so a build without it never throws here.
+      try{ if(rec.uid && rec.email && typeof OWNER_CANON!=="undefined" && OWNER_CANON[String(rec.email).toLowerCase()]) OWNER_CANON_UID[rec.uid] = OWNER_CANON[String(rec.email).toLowerCase()]; }catch(e){}
     });
     var me = uid ? __profileIndex.byUid[uid] : null;
     if(me && me.name) __identity.name = me.name;
@@ -141,6 +145,11 @@ function finishIdentity(){
   // Step 2D: the role just settled, so reveal (or keep hidden) the Admin header entry now that isOwner() is
   // authoritative. paintAdminSlot lives in bundle.js and is idempotent; guarded so it never throws here.
   try{ if(typeof window.__thrivePaintAdminSlot==="function") window.__thrivePaintAdminSlot(); }catch(e){}
+  // Collab PR-1: the profile index (and OWNER_CANON_UID) just settled, so repaint the owner chips ONCE. This
+  // fixes the paint-race where a card painted before the index was ready showed its owner as "Unassigned"; the
+  // chips now upgrade to the member name without a manual refresh - and WITHOUT a board re-render, so an open
+  // tray, the scroll position, and any in-progress interaction are preserved. Guarded and idempotent.
+  try{ if(typeof repaintOwners==="function") repaintOwners(); }catch(e){}
   return __identity;
 }
 

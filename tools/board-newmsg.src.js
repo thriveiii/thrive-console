@@ -44,6 +44,21 @@ function nmClearStore(){ try{ localStorage.removeItem(NM_KEY); }catch(e){} }
 // the lightweight opp row and every later save updates it - idempotent by slug. Same settle-always discipline
 // as oppPatch (authFetchOnce timeout REJECTS, one refresh-retry). console_opps RLS is "for all" to the role,
 // so the insert is allowed; the row the board view and runSend read is a real console_opps row.
+// PGRST204 tolerance: PostgREST returns 400 code "PGRST204" ("Could not find the '<col>' column ...") when a
+// payload names a column that does not exist yet (an additive column not applied in Supabase, e.g. owner). We
+// parse that column name so the caller can strip it and retry, so a not-yet-applied additive column can NEVER
+// 400 a create / upload / send. Returns the missing column name, or "".
+function pgrstMissingColumn(d){
+  try{
+    if(!d) return "";
+    if(String(d.code||"") === "PGRST204"){
+      var m = String(d.message||"").match(/'([^']+)' column/);
+      if(m) return m[1];
+    }
+    var m2 = String((d && d.message) || "").match(/Could not find the '([^']+)' column/);
+    return m2 ? m2[1] : "";
+  }catch(e){ return ""; }
+}
 function oppUpsert(slug, fields, retried){
   var url = URL_BASE + "/rest/v1/console_opps";
   var row = Object.assign({ slug:slug }, fields||{});
@@ -55,7 +70,17 @@ function oppUpsert(slug, fields, retried){
     if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
       return refresh().then(function(ok){ if(ok) return oppUpsert(slug, fields, true); var e=new Error("auth"); e.authRequired=true; throw e; });
     }
-    if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+    if(!r.res.ok){
+      // A missing additive column (e.g. owner before docs/supabase-owner-column.sql is applied) must not break
+      // the create/send: strip the named column and retry ONCE without it. Each retry removes one key, so it
+      // always terminates. The card commits without that field rather than failing the whole write.
+      var miss = pgrstMissingColumn(r.data);
+      if(miss && fields && Object.prototype.hasOwnProperty.call(fields, miss)){
+        var pruned = Object.assign({}, fields); delete pruned[miss];
+        return oppUpsert(slug, pruned, retried);
+      }
+      var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2;
+    }
     return true;
   });
 }
