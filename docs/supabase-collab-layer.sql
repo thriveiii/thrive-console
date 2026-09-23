@@ -83,7 +83,7 @@ begin
     execute 'create policy console_card_members_read_all on public.console_card_members for select to authenticated using (true)';
   end if;
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='console_card_members' and policyname='console_card_members_insert') then
-    execute 'create policy console_card_members_insert on public.console_card_members for insert to authenticated with check (added_by = auth.uid())';
+    execute 'create policy console_card_members_insert on public.console_card_members for insert to authenticated with check (added_by = auth.uid()::text)';
   end if;
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='console_card_members' and policyname='console_card_members_delete') then
     execute 'create policy console_card_members_delete on public.console_card_members for delete to authenticated using (true)';
@@ -105,28 +105,28 @@ begin
     execute 'create policy console_activity_read_all on public.console_activity for select to authenticated using (true)';
   end if;
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='console_activity' and policyname='console_activity_insert_own') then
-    execute 'create policy console_activity_insert_own on public.console_activity for insert to authenticated with check (actor = auth.uid())';
+    execute 'create policy console_activity_insert_own on public.console_activity for insert to authenticated with check (actor = auth.uid()::text)';
   end if;
 
   /* notifications: PRIVATE. A member reads and mutates ONLY their own rows. Insert is allowed for the
      fan-out (recipient may be another member) but must be stamped by the acting member (actor = auth.uid()),
      and a member can never notify themselves (recipient <> actor). */
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='console_notifications' and policyname='console_notifications_read_own') then
-    execute 'create policy console_notifications_read_own on public.console_notifications for select to authenticated using (recipient = auth.uid())';
+    execute 'create policy console_notifications_read_own on public.console_notifications for select to authenticated using (recipient = auth.uid()::text)';
   end if;
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='console_notifications' and policyname='console_notifications_insert_actor') then
-    execute 'create policy console_notifications_insert_actor on public.console_notifications for insert to authenticated with check (actor = auth.uid() and recipient <> auth.uid())';
+    execute 'create policy console_notifications_insert_actor on public.console_notifications for insert to authenticated with check (actor = auth.uid()::text and recipient <> auth.uid()::text)';
   end if;
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='console_notifications' and policyname='console_notifications_update_own') then
-    execute 'create policy console_notifications_update_own on public.console_notifications for update to authenticated using (recipient = auth.uid()) with check (recipient = auth.uid())';
+    execute 'create policy console_notifications_update_own on public.console_notifications for update to authenticated using (recipient = auth.uid()::text) with check (recipient = auth.uid()::text)';
   end if;
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='console_notifications' and policyname='console_notifications_delete_own') then
-    execute 'create policy console_notifications_delete_own on public.console_notifications for delete to authenticated using (recipient = auth.uid())';
+    execute 'create policy console_notifications_delete_own on public.console_notifications for delete to authenticated using (recipient = auth.uid()::text)';
   end if;
 
   /* read-state: PRIVATE own-row cursor. */
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='console_read_state' and policyname='console_read_state_rw_own') then
-    execute 'create policy console_read_state_rw_own on public.console_read_state for all to authenticated using (recipient = auth.uid()) with check (recipient = auth.uid())';
+    execute 'create policy console_read_state_rw_own on public.console_read_state for all to authenticated using (recipient = auth.uid()::text) with check (recipient = auth.uid()::text)';
   end if;
 
   /* card order: open read; authenticated write (order is not lane membership). */
@@ -158,7 +158,7 @@ on conflict (opp, watcher) do nothing;
    The email literals live ONLY here, in the SQL Thyab runs, never in any client,
    exactly like the existing owner seed. This adds or corrects only these three rows and removes nothing. */
 insert into public.console_profiles (uid, display_name, email)
-select u.id, m.name, u.email
+select u.id::text, m.name, u.email
 from auth.users u
 join (values
   ('abdu.thyab@gmail.com',      'Thyab'),
