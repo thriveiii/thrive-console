@@ -11,6 +11,19 @@
    a member reads and mutates only their own rows (recipient = auth.uid()). Lane/stage is DERIVED by the
    console_board view and is never stored here; only membership and an intra-lane order are stored. */
 
+/* 0. owner column prerequisite. The owner -> member/watcher backfill in section 8 reads console_opps.owner,
+   a top-level text column (NOT a data jsonb key: the client only ever sends a top-level owner field). That
+   column is added by the separate docs/supabase-owner-column.sql, which may not have been run on this project,
+   in which case section 8 fails with 42703 (column o.owner does not exist). We add it here too, guarded, so this
+   file is self-sufficient and runs clean end to end. It is additive and idempotent: if the column already
+   exists (any run of the owner migration) this is a no-op and never changes its type. text matches how the
+   client stamps owner (currentUid() = session().uid, a string) and how console_opps.owner is declared. Adding
+   the column also makes FUTURE stamps persist: the client sends owner on every create/upload/send, but its
+   PGRST204 tolerance silently strips the field when the column is missing, so today owner is never stored and
+   every card reads unassigned. Existing rows keep a null owner here (a card with no stored owner stays
+   memberless below); run docs/supabase-owner-column.sql to backfill existing owners from the earliest sender. */
+alter table public.console_opps add column if not exists owner text;
+
 /* 1. card members: the assignee SET per card (independent of owner and of send)  */
 create table if not exists console_card_members (
   opp        text not null,                    /* the opportunity slug */
