@@ -174,7 +174,7 @@ function nmSaveNow(slug){
   nmSetStatus(t("a_saving"), "");
   oppReadData(slug).then(function(data){
     var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
-    return oppUpsert(slug, { business:nmBusiness(subj), data:next, up:Date.now() }).then(function(){
+    return oppUpsert(slug, { business:nmBusiness(subj), data:next, up:Date.now(), owner:ownerStamp(slug) }).then(function(){   // OWNER column: stamp the creator (ownerStamp preserves an existing owner, never clobbers)
       __nmSaving = false;
       __edBase[slug] = next;                 // keep the editor's preview base in sync with the persisted record
       if(typeof nmActive==="function" && nmActive(slug)) nmStore(slug);   // the resume pointer is the OVERLAY's new-message concern; the window composes an existing opp
@@ -251,7 +251,7 @@ function unifiedSend(slug){
   var row = findRow(slug) || { slug:slug };
   oppReadData(slug).then(function(data){
     var next = Object.assign({}, data, { outreach_subject:subj, outreach_text:body, sig:sig, recipients:recips, greetOn:edGreetOn(slug), lang:(LANG==="ar"?"ar":(data.lang||"en")) });
-    return oppUpsert(slug, { business:(row.business || nmBusiness(subj)), data:next, up:Date.now() });
+    return oppUpsert(slug, { business:(row.business || nmBusiness(subj)), data:next, up:Date.now(), owner:ownerStamp(slug) });   // OWNER column: a send-created opp is owned by the sender; an existing owner is preserved
   }).then(function(){
     return reloadBoardData();                          // so the opp is a board row runSend can find
   }).then(function(){
