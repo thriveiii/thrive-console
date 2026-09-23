@@ -57,20 +57,24 @@ _posts = [m.start() for m in re.finditer(r'method:"POST"', board)]
 _patches = [m.start() for m in re.finditer(r'method:"PATCH"', board)]
 def _post_ok(i):
     ctx = board[max(0,i-320):i+60]
-    return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx) or ("console_profiles" in ctx) or ("console_opps" in ctx) or ("console_pages" in ctx)
+    # PR-2 adds a generic authenticated insert helper (restInsert) used ONLY for the collaboration membership +
+    # watcher rows (console_card_members / console_watchers); it is a known write kind, never a ledger table.
+    return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx) or ("console_profiles" in ctx) or ("console_opps" in ctx) or ("console_pages" in ctx) or ("restInsert" in ctx) or ("console_card_members" in ctx) or ("console_watchers" in ctx)
 def _patch_ok(i):
     ctx = board[max(0,i-260):i+40]
     # L4 opp writes hit console_opps by slug; the Step 2C admin title write hits console_profiles by uid; the
     # liveness stamp (pageStampLive, the SINGLE liveness truth) hits console_pages by slug.
     return ("console_opps?slug=eq." in ctx) or ("console_profiles?uid=eq." in ctx) or ("console_pages?slug=eq." in ctx)
-# The card-fate delete (R12) is the ONLY DELETE: it lives in one generic restDelete helper, and every call site
-# targets console_opps or console_pages by slug - never a ledger table (console_mail/console_hits/console_inbound).
+# The DELETE verb lives in ONE generic restDelete helper, and every call site targets console_opps or
+# console_pages by slug (the card-fate delete, R12) or - PR-2 - the collaboration membership / watcher rows by
+# opp (an unassign removes the member and their watcher). Never a ledger table (console_mail/hits/inbound).
 _delverbs = [m.start() for m in re.finditer(r'method:"DELETE"', board)]
 _delcalls = [m.start() for m in re.finditer(r'restDelete\("', board)]
 def _delcall_ok(i):
-    ctx = board[i:i+64]
-    return ('restDelete("console_opps?slug=eq.' in ctx) or ('restDelete("console_pages?slug=eq.' in ctx)
-ck("no PUT; the sole DELETE (R12) lives in restDelete and targets only console_opps/console_pages, never the ledger; every PATCH targets console_opps (by slug) or console_profiles (by uid); every POST is a known kind",
+    ctx = board[i:i+72]
+    return ('restDelete("console_opps?slug=eq.' in ctx) or ('restDelete("console_pages?slug=eq.' in ctx) \
+        or ('restDelete("console_card_members?opp=eq.' in ctx) or ('restDelete("console_watchers?opp=eq.' in ctx)
+ck("no PUT; the sole DELETE verb lives in restDelete and targets only console_opps/console_pages (fate) or console_card_members/console_watchers (unassign) by key, never the ledger; every PATCH targets console_opps (by slug) or console_profiles (by uid); every POST is a known kind",
    ('method:"PUT"' not in board)
    and len(_delverbs) <= 1
    and len(_delcalls) >= 1 and all(_delcall_ok(i) for i in _delcalls)
