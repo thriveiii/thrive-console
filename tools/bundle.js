@@ -1335,15 +1335,31 @@ function buildBoard(){
   .ow-acc-sum{display:flex;align-items:center;gap:8px;padding:8px 8px}
   .ow-acc-inc{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);cursor:pointer;white-space:nowrap}
   .ow-acc-inc input{width:auto;margin:0;accent-color:var(--brand-teal)}
-  .ow-acc-toggle{flex:1 1 auto;min-width:0;text-align:start;background:none;border:0;color:var(--text-hi);font:inherit;font-weight:650;cursor:pointer;padding:8px}
+  .ow-acc-toggle{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;text-align:start;background:none;border:0;color:var(--text-hi);font:inherit;font-weight:650;cursor:pointer;padding:8px}
+  /* FIX C: a caret that marks collapsed vs open. Points toward the inline-end (where it will expand) when
+     collapsed, rotates to point down when open. Reduced-motion drops the rotation transition. */
+  .ow-acc-toggle::before{content:"";flex:0 0 auto;width:0;height:0;border-inline-start:5px solid currentColor;border-block:4px solid transparent;opacity:.7;transition:transform var(--dur-1) var(--e-standard)}
+  .ow-acc.ow-acc-open .ow-acc-toggle::before{transform:rotate(90deg)}
   .ow-acc-t{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .ow-acc-rm{background:none;border:1px solid var(--border);border-radius:var(--radius-s);color:var(--text-muted);font:inherit;font-size:12px;cursor:pointer;padding:8px 8px}
+  /* FIX B: the always-visible collision badge - "updates existing page: X" - a calm info chip in the summary. */
+  .ow-acc-upd{flex:0 0 auto;font-size:11px;color:var(--info);background:var(--info-bg);border:1px solid var(--info-border);border-radius:var(--r-pill);padding:2px 8px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:isolate}
+  .ow-acc-upd[hidden]{display:none}
+  .ow-acc-rm{flex:0 0 auto;background:none;border:1px solid var(--border);border-radius:var(--radius-s);color:var(--text-muted);font:inherit;font-size:12px;cursor:pointer;padding:8px 8px}
   .ow-acc-rm:hover{color:var(--error-2);border-color:var(--error-border)}
-  .ow-acc-body{padding:8px}
-  .ow-acc-body[hidden]{display:none}
+  /* FIX C: collapsed by default; the body is a single-column grid that animates its row track 0fr -> 1fr, so it
+     expands/collapses IN PLACE without a hard jump. The inner wrapper clips at 0fr (its padding folds away too). */
+  .ow-acc-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--dur-1) var(--e-standard)}
+  .ow-acc.ow-acc-open .ow-acc-body{grid-template-rows:1fr}
+  .ow-acc-inner{overflow:hidden;min-height:0}
+  .ow-acc-pad{padding:8px}
+  @media (prefers-reduced-motion:reduce){ .ow-acc-body{transition:none} .ow-acc-toggle::before{transition:none} }
   .ow-acc-out{opacity:.5}
   .ow-acc-out .ow-acc-t{text-decoration:line-through}
-  html[dir="rtl"] .ow-acc-toggle,html[dir="rtl"] .ow-acc-t,html[dir="rtl"] .ow-acc-inc,html[dir="rtl"] .ow-acc-rm{letter-spacing:normal;text-transform:none}
+  /* FIX B: the one-tap "publish as a new page" (revealed only on a collision), on both review surfaces. */
+  .lib-asnew{margin-top:4px;background:none;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text-muted);font:inherit;font-size:11.5px;cursor:pointer;padding:4px 10px;transition:color var(--t-instant) var(--e-standard),border-color var(--t-instant) var(--e-standard)}
+  .lib-asnew:hover{color:var(--text-hi);border-color:var(--brand-teal)}
+  .lib-asnew[hidden]{display:none}
+  html[dir="rtl"] .ow-acc-toggle,html[dir="rtl"] .ow-acc-t,html[dir="rtl"] .ow-acc-inc,html[dir="rtl"] .ow-acc-rm,html[dir="rtl"] .ow-acc-upd,html[dir="rtl"] .lib-asnew{letter-spacing:normal;text-transform:none}
   /* CONTROL ROOM (Phase 1): a card tap opens the opp organized into gates (MESSAGE / PAGE / CONTACT / ACTIVITY),
      opening on MESSAGE with the editor + live preview and the message loaded. The gate strip reuses .ow-tab; each
      gate is a .cr-panel (only the active one shown). Sections are placed by need with equal padding on all four
@@ -1836,6 +1852,8 @@ function buildBoard(){
           ow_path_page:"One page and a written message", ow_path_page_sub:"Upload a single page and write its message in the Message tab.",
           ow_path_pick:"Pick a Library template", ow_path_pick_sub:"Reuse a page already in your Library.",
           ow_campaign_upload:"Choose files", ow_committed_n:"Campaign created. Cards: {n}",
+          ow_going_live_n:"Campaign created. Cards: {n} (going live shortly).", up_going_live:"Published {n}. Going live shortly.",
+          lib_updates_existing:"Updates existing page: {s}", lib_publish_new:"Publish as a new page",
           ow_row_include:"Include", ow_row_remove:"Remove", ow_add_more:"Add more files", ow_none_included:"No files are included. Include at least one, or add a file.",
           ow_prev_msg:"Message", ow_prev_page:"Page", ow_recip_none:"No recipients yet.",
           ow_rs_suppressed:"Do not contact", ow_rs_bounced_hard:"Bounced (hard)", ow_rs_bounced_soft:"Bounced (soft)",
@@ -1947,6 +1965,8 @@ function buildBoard(){
           ow_path_page:"صفحة واحدة ورسالة تكتبها", ow_path_page_sub:"ارفع صفحة واحدة واكتب رسالتها في تبويب الرسالة.",
           ow_path_pick:"اختر قالبًا من المكتبة", ow_path_pick_sub:"أعد استخدام صفحة موجودة في مكتبتك.",
           ow_campaign_upload:"اختر الملفات", ow_committed_n:"أُنشئت الحملة. البطاقات: {n}",
+          ow_going_live_n:"أُنشئت الحملة. البطاقات: {n} (ستُنشر قريبًا).", up_going_live:"نُشرت {n}. ستُنشر قريبًا.",
+          lib_updates_existing:"تحديث صفحة موجودة: {s}", lib_publish_new:"نشر كصفحة جديدة",
           ow_row_include:"مُضمَّنة", ow_row_remove:"إزالة", ow_add_more:"أضف ملفات أخرى", ow_none_included:"لا ملفات مُضمَّنة. ضمِّن ملفًا واحدًا على الأقل، أو أضف ملفًا.",
           ow_prev_msg:"الرسالة", ow_prev_page:"الصفحة", ow_recip_none:"لا مستلمين بعد.",
           ow_rs_suppressed:"عدم التواصل", ow_rs_bounced_hard:"ارتداد نهائي", ow_rs_bounced_soft:"ارتداد مؤقت",
