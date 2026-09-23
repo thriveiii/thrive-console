@@ -152,16 +152,19 @@ from public.console_opps o
 where coalesce(o.owner, '') <> ''
 on conflict (opp, watcher) do nothing;
 
-/* 9. identity backfill: give the three members a real display_name + email so resolveActor always resolves
-   (this is the fix for owner/member chips rendering "unassigned"). The email literals live ONLY here, in the
-   SQL Thyab runs, never in any client, exactly like the existing owner seed. Fills ONLY missing values:
-   a member who already set a display name keeps it. */
+/* 9. identity backfill: give the three members their agreed canonical display_name + email so resolveActor
+   always resolves (the fix for owner/member chips rendering "unassigned"). The names are set AUTHORITATIVELY
+   here so they are the agreed ones and never a stale auth metadata name: muhelagha@gmail.com is set to "Agha".
+   The email literals live ONLY here, in the SQL Thyab runs, never in any client,
+   exactly like the existing owner seed. This adds or corrects only these three rows and removes nothing. */
 insert into public.console_profiles (uid, display_name, email)
-select u.id,
-       coalesce(nullif(u.raw_user_meta_data->>'name', ''), split_part(u.email, '@', 1)),
-       u.email
+select u.id, m.name, u.email
 from auth.users u
-where lower(u.email) in ('abdu.thyab@gmail.com', 'muhelagha@gmail.com', 'alnajjarjawad97@gmail.com')
+join (values
+  ('abdu.thyab@gmail.com',      'Thyab'),
+  ('muhelagha@gmail.com',       'Agha'),
+  ('alnajjarjawad97@gmail.com', 'Basel')
+) as m(email, name) on lower(u.email) = m.email
 on conflict (uid) do update
-set email        = coalesce(nullif(public.console_profiles.email, ''), excluded.email),
-    display_name = coalesce(nullif(public.console_profiles.display_name, ''), excluded.display_name);
+set display_name = excluded.display_name,
+    email        = excluded.email;

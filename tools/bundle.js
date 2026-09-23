@@ -1771,6 +1771,11 @@ function buildBoard(){
   // regardless of the display_name a profile carries (console_profile_names is still the resolver; this pins the
   // canonical label). An unknown/other email falls back to its display_name, then unassigned. Latin identifiers.
   var OWNER_CANON = { "abdu.thyab@gmail.com":"Thyab", "muhelagha@gmail.com":"Agha", "alnajjarjawad97@gmail.com":"Basel" };
+  // UID-keyed mirror of OWNER_CANON, populated at identity load (loadIdentity) by matching each profile's email
+  // to OWNER_CANON. This resolves a stored owner/member UID to its canonical short name DIRECTLY, so a card whose
+  // owner is a member uid reads the right name even before console_profiles.email is backfilled - the fix for the
+  // "Unassigned" chip that depended on the email-keyed map alone.
+  var OWNER_CANON_UID = {};
   var LANG_KEY = "thrive_lang", SESSION_KEY = "console_sb_session", FETCH_TIMEOUT_MS = 6000;
 
   // ---- i18n (a compact clone of i18n.js t/setLang/applyLang, EN + AR). CHROME language (ui_lang) only; the
@@ -2405,9 +2410,11 @@ ${CONTACTS_SRC}
     var v = String(ownerVal==null ? "" : ownerVal).trim();
     if(!v) return "";
     var r = null; try{ if(typeof resolveActor==="function") r = resolveActor(v); }catch(e){}
+    var uid = String((r && r.uid) || (v.indexOf("@")<0 ? v : ""));
     var email = String((r && r.email) || (v.indexOf("@")>=0 ? v : "")).toLowerCase();
-    if(email && OWNER_CANON[email]) return OWNER_CANON[email];
-    if(r && r.name) return r.name;
+    if(uid && OWNER_CANON_UID[uid]) return OWNER_CANON_UID[uid];   // UID-keyed canonical (resilient, works pre-email-backfill)
+    if(email && OWNER_CANON[email]) return OWNER_CANON[email];     // email-keyed canonical (works once email is backfilled)
+    if(r && r.name) return r.name;                                 // else the profile display_name
     if(email) return email.split("@")[0];
     return "";                                          // a uid with no known profile -> unassigned, never a wrong name
   }
@@ -2429,6 +2436,21 @@ ${CONTACTS_SRC}
       (mono ? '<span class="owner-mono" aria-hidden="true" dir="ltr">'+esc(mono)+'</span>' : '')+
       '<span class="owner-nm" dir="ltr">'+esc(name)+'</span></span>';
   }
+  // Collab PR-1 paint-race fix: repaint ONLY the owner chip on every rendered card in place, without a board
+  // re-render, so an owner uid that painted before the profile index settled upgrades to its member name without
+  // resetting the tray, scroll, or any open interaction. Called once from finishIdentity when identity settles.
+  function repaintOwners(){
+    try{
+      [].forEach.call(document.querySelectorAll('#root .card[data-slug]'), function(c){
+        var slug = c.getAttribute('data-slug'); var meta = (__cardMeta && __cardMeta[slug]) || {};
+        var foot = c.querySelector('.card-foot'); if(!foot) return;
+        var old = foot.querySelector('.owner'); if(!old) return;
+        var holder = document.createElement('div'); holder.innerHTML = ownerChipHtml(meta.owner || meta.derived || "");
+        var fresh = holder.firstChild; if(fresh) old.parentNode.replaceChild(fresh, old);
+      });
+    }catch(e){}
+  }
+  try{ window.__thriveRepaintOwners = repaintOwners; }catch(e){}
   // an opp has no business at all). Counts/opens/idle and the reply N-badge come from the server; no stage math.
   function cardHtml(row){
     row = row || {};

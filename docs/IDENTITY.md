@@ -113,6 +113,32 @@ also a printing requirement.
 **Law 4.5.** Surfaces stay near-black. `--bg #0a0a0c`, `--panel #111116`, `--panel-2 #16161d`.
 The palette earns its saturation by spending almost none of it on surfaces.
 
+### 4.6 Member identity colour (G3 amendment, approved)
+
+A new colour DIMENSION distinct from the lane scale: each of the three members carries a personal identity
+hue, used to tag who owns or belongs to a card. This passes G3 with a stated meaning ("member identity"),
+and it obeys Law 4.1 (meaning, not decoration), Law 4.2 (it is NOT the gradient, which stays reserved for
+the one primary action), and Law 4.4 (colour is never the only carrier: the member's name text always sits
+beside the colour, in `--ink-2`). The member hue is used only as an identity ACCENT (a dot, a left border,
+or a soft tint chip), never as lane colour, never as coloured body text, never the gradient.
+
+The hues are chosen from bands the six lane hues leave empty (warm ~18 to 44 degrees, and fuchsia ~312
+degrees), so no member reads as a lane, and each has a light-theme darkened variant exactly as the lanes do.
+
+| Meaning | Token | Dark hex | Light hex | Why this hue |
+|---|---|---|---|---|
+| Member: Thyab | `--mem-thyab` | `#E6B450` | `#8A5D0A` | Gold, in the warm band no lane occupies. |
+| Member: Basel | `--mem-basel` | `#C96F4A` | `#A8482A` | Terracotta, deeper and warmer than Thyab's gold; distinct at a glance. |
+| Member: Agha | `--mem-agha` | `#CE7BD1` | `#9C3FA0` | Fuchsia, far from every lane hue and from the other two members. |
+
+AA: used as a graphical identity object (WCAG non-text contrast, 3:1 against the surface), all three clear
+it in both themes (dark hues on `#111116` roughly 4.6:1 to 9:1; the light darkened variants on `#ffffff`
+roughly 5:1 to 5.5:1). None is a lane hue; none is the reserved gradient; the name text stays `--ink-2`
+(already AA) so the colour is never the sole carrier. Member = Thyab (abdu.thyab@gmail.com),
+Agha (muhelagha@gmail.com; the same person as "Mohammed", always shown as Agha), Basel
+(alnajjarjawad97@gmail.com). The tokens are declared and wired to the member chip in a later collaboration
+PR; this section is the approved colour law they answer to.
+
 ## 5. The weight law
 
 **Law 5.1.** Three levels of visual weight exist, and only three.
