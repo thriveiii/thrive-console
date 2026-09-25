@@ -1033,6 +1033,12 @@ function buildBoard(){
     --lane-replied-t: rgba(126,224,184,.12); --lane-closed-t: rgba(107,114,128,.12);
     --glow: #7EE0B8; --glow-1: rgba(126,224,184,.42); --glow-t: rgba(126,224,184,.10);
 
+    /* ---- Member identity colours (IDENTITY 4.6): an accent DIMENSION, distinct from the six lane hues and
+       never the gradient. Used ONLY as an identity accent (a dot / a soft left border); the name text stays
+       --ink-2, so colour is never the sole carrier. Hues sit in bands the lanes leave empty (warm 18 to 44
+       degrees, and fuchsia ~312), so no member reads as a lane. Light-theme darkened variants follow below. ---- */
+    --mem-thyab: #E6B450; --mem-basel: #C96F4A; --mem-agha: #CE7BD1;
+
     /* ---- Semantic states (canon; separate from the lane scale). ---- */
     --success: #7EE0B8;   --success-bg: var(--lane-replied-t); --success-border: rgba(126,224,184,.34);
     --warning: #F6CF5B;   --warning-2: #F6CF5B;  --warning-bg: rgba(246,207,91,.11); --warning-border: rgba(246,207,91,.34);
@@ -1067,6 +1073,8 @@ function buildBoard(){
     /* lane text colours, darkened for AA on the light panels (hue preserved from the dark scale) */
     --lane-draft: #2e7480; --lane-live: #3e6bb7; --lane-sent: #725bb8;
     --lane-opened: #c0405a; --lane-replied: #1d7752; --lane-closed: #646a77;
+    /* member identity colours, darkened for AA (non-text 3:1) on the light panels; hues preserved from dark */
+    --mem-thyab: #8A5D0A; --mem-basel: #A8482A; --mem-agha: #9C3FA0;
     --success: #1d7752;   --success-bg: rgba(126,224,184,.16); --success-border: rgba(29,119,82,.34);
     --warning: #8a6a1f;   --warning-2: #8a6a1f;  --warning-bg: rgba(246,207,91,.20); --warning-border: rgba(138,106,31,.34);
     --error: #b3261e;     --error-2: #b3261e;    --error-bg: rgba(224,115,111,.14);  --error-border: rgba(179,38,30,.34);
@@ -1091,6 +1099,7 @@ function buildBoard(){
       --brand-teal: #2e7480; --purple: #725bb8; --focus: #725bb8;
       --btn-neutral-bg: #f0f1f4; --btn-neutral-border: #d7d8de;
       --lane-draft: #2e7480; --lane-live: #3e6bb7; --lane-sent: #725bb8; --lane-opened: #c0405a; --lane-replied: #1d7752; --lane-closed: #646a77;
+      --mem-thyab: #8A5D0A; --mem-basel: #A8482A; --mem-agha: #9C3FA0;
       --success: #1d7752; --success-bg: rgba(126,224,184,.16); --success-border: rgba(29,119,82,.34);
       --warning: #8a6a1f; --warning-2: #8a6a1f; --warning-bg: rgba(246,207,91,.20); --warning-border: rgba(138,106,31,.34);
       --error: #b3261e; --error-2: #b3261e; --error-bg: rgba(224,115,111,.14); --error-border: rgba(179,38,30,.34);
@@ -1227,6 +1236,31 @@ function buildBoard(){
   .owner-none{color:var(--text-dim);background:transparent;border-style:dashed;padding-inline:9px}
   .card-to{flex:1 1 auto;min-width:0;text-align:end;font-size:var(--fs-xs);color:var(--text-muted-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:isolate}
   html[dir="rtl"] .owner-nm,html[dir="rtl"] .owner-mono,html[dir="rtl"] .card-to{letter-spacing:normal;text-transform:none}
+  /* CARD FACE MEMBERS (IDENTITY 4.6): the assignee set replaces the single owner chip. Each member is a quiet
+     pill whose colour is an ACCENT ONLY (the dot + a soft left border in the member hue); the name text stays
+     --ink-2, so colour is never the sole carrier. Never the gradient, never a lane hue. Truncates, never wraps,
+     so card geometry holds with multiple members. */
+  .members{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;max-width:60%;overflow:hidden;white-space:nowrap;min-width:0}
+  .member{display:inline-flex;align-items:center;gap:4px;flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap;font-size:var(--fs-xs);color:var(--text-muted);background:var(--surface-sunken);border:1px solid var(--border-soft);border-inline-start:2px solid var(--mem, var(--border-soft));border-radius:var(--r-pill);padding-block:2px;padding-inline:6px 8px}
+  .member.mem-thyab{--mem:var(--mem-thyab)} .member.mem-basel{--mem:var(--mem-basel)} .member.mem-agha{--mem:var(--mem-agha)}
+  .mem-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--mem, var(--text-dim))}
+  .mem-mono{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;border-radius:50%;background:var(--panel-2);color:var(--text-muted-2);font-size:9px;font-weight:700;line-height:1;unicode-bidi:isolate}
+  .mem-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:isolate;color:var(--ink-2)}
+  .mem-more{flex:0 0 auto;font-size:var(--fs-micro);color:var(--text-muted);unicode-bidi:isolate}
+  /* MEMBERS control in the detail: the current assignee chips (each removable) + a toggle roster of the members. */
+  .mem-sec .mem-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+  .mem-sec .mem-empty{font-size:var(--fs-sm);color:var(--text-muted)}
+  .mem-sec .member{font-size:var(--fs-sm)}
+  .mem-x{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;margin-inline-start:2px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--text-muted);cursor:pointer}
+  .mem-x:hover{background:var(--panel-2);color:var(--ink-2)}
+  .mem-add{display:flex;flex-wrap:wrap;gap:6px}
+  .mem-opt{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--text-muted);background:var(--surface-sunken);border:1px solid var(--border-soft);border-inline-start:2px solid var(--mem, var(--border-soft));border-radius:var(--r-pill);padding-block:4px;padding-inline:8px 10px;cursor:pointer;min-height:32px}
+  .mem-opt.mem-thyab{--mem:var(--mem-thyab)} .mem-opt.mem-basel{--mem:var(--mem-basel)} .mem-opt.mem-agha{--mem:var(--mem-agha)}
+  .mem-opt .mem-nm{color:var(--text-muted)}
+  .mem-opt.on{background:var(--panel-2);color:var(--ink-2);border-color:var(--mem, var(--hover-border))}
+  .mem-opt.on .mem-nm{color:var(--ink-2)}
+  .mem-status{margin-top:6px}
+  html[dir="rtl"] .mem-nm,html[dir="rtl"] .mem-mono{letter-spacing:normal;text-transform:none}
   .tray{margin-top:14px;border-top:1px solid var(--border-hair);padding-top:10px}
   .tray-toggle{font-size:13px;font-weight:700}
   .tray-body{margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;align-items:start}
@@ -1795,6 +1829,8 @@ function buildBoard(){
           adm_open:"Admin", adm_title:"Team admin",
           refresh:"Refresh", signout:"Sign out", loading:"Loading the board.", opps:"opportunities",
           none:"none", unnamed:"(unnamed)", owner_by:"Owner", owner_unassigned:"Unassigned",
+          mem_h:"Members", mem_label:"Member", mem_on:"Members", mem_none:"No members yet.",
+          mem_add_h:"Add or remove", mem_remove:"Remove", mem_saving:"Saving.", mem_failed:"Could not save. Try again.",
           l_draft:"Under review", l_live:"Live", l_sent:"Sent", l_opened:"Opened", l_replied:"Replied", l_other:"Other",
           b_send:"send", b_sends:"sends", b_open:"open", b_opens:"opens", b_replied:"replied", b_idle:"days idle",
           bg_page:"page", bg_email:"email", bg_archived:"archived",
@@ -1908,6 +1944,8 @@ function buildBoard(){
           adm_open:"الإدارة", adm_title:"إدارة الفريق",
           refresh:"تحديث", signout:"تسجيل الخروج", loading:"جارٍ تحميل اللوحة.", opps:"فرصة",
           none:"لا شيء", unnamed:"(بدون اسم)", owner_by:"المالك", owner_unassigned:"غير مُسنَد",
+          mem_h:"الأعضاء", mem_label:"عضو", mem_on:"الأعضاء", mem_none:"لا أعضاء بعد.",
+          mem_add_h:"إضافة أو إزالة", mem_remove:"إزالة", mem_saving:"يُحفظ.", mem_failed:"تعذّر الحفظ. أعد المحاولة.",
           l_draft:"قيد المراجعة", l_live:"جاهزة", l_sent:"مُرسلة", l_opened:"مفتوحة", l_replied:"مُجاب عنها", l_other:"أخرى",
           b_send:"إرسال", b_sends:"إرسال", b_open:"فتح", b_opens:"فتح", b_replied:"ردّ", b_idle:"يوم خمول",
           bg_page:"صفحة", bg_email:"رسالة", bg_archived:"مؤرشفة",
@@ -2436,21 +2474,139 @@ ${CONTACTS_SRC}
       (mono ? '<span class="owner-mono" aria-hidden="true" dir="ltr">'+esc(mono)+'</span>' : '')+
       '<span class="owner-nm" dir="ltr">'+esc(name)+'</span></span>';
   }
-  // Collab PR-1 paint-race fix: repaint ONLY the owner chip on every rendered card in place, without a board
-  // re-render, so an owner uid that painted before the profile index settled upgrades to its member name without
-  // resetting the tray, scroll, or any open interaction. Called once from finishIdentity when identity settles.
+  // Collab PR-1 paint-race fix (PR-2: now repaints the member cluster too): repaint ONLY the card-face "who"
+  // node on every rendered card in place, without a board re-render, so an owner/member uid that painted before
+  // the profile index settled upgrades to its member name, and a just-changed assignee set updates on the face,
+  // without resetting the tray, scroll, or any open interaction. Called from finishIdentity and after a member
+  // write. The function keeps its name (repaintOwners) so the paint-race wiring in finishIdentity is unchanged.
   function repaintOwners(){
     try{
       [].forEach.call(document.querySelectorAll('#root .card[data-slug]'), function(c){
-        var slug = c.getAttribute('data-slug'); var meta = (__cardMeta && __cardMeta[slug]) || {};
+        var slug = c.getAttribute('data-slug');
         var foot = c.querySelector('.card-foot'); if(!foot) return;
-        var old = foot.querySelector('.owner'); if(!old) return;
-        var holder = document.createElement('div'); holder.innerHTML = ownerChipHtml(meta.owner || meta.derived || "");
+        var old = foot.querySelector('.members, .owner'); if(!old) return;
+        var holder = document.createElement('div'); holder.innerHTML = cardWhoHtml(slug);
         var fresh = holder.firstChild; if(fresh) old.parentNode.replaceChild(fresh, old);
       });
     }catch(e){}
   }
   try{ window.__thriveRepaintOwners = repaintOwners; }catch(e){}
+
+  // ==== COLLAB PR-2: CARD MEMBERS (the assignee set) =========================================================
+  // Membership is a SET of members per card in console_card_members, INDEPENDENT of owner and of send: any
+  // authenticated member may add or remove any member (the open policy). Adding a member also makes them a
+  // watcher (console_watchers; member = watcher); removing them removes the watcher row. No notification or
+  // activity write here (that is PR-3/PR-4). The member colour is an accent DIMENSION (IDENTITY 4.6), never the
+  // gradient and never a lane hue; the name text stays --ink-2 so colour is never the sole carrier.
+  var MEM_COLOR = { "Thyab":"thyab", "Basel":"basel", "Agha":"agha" };   // canonical short name -> colour key
+  function memColorKey(name){ return MEM_COLOR[String(name||"")] || ""; }
+  function memberName(uid){ return ownerLabel(uid); }                    // reuse the canonical uid->name resolver
+  // The toggleable roster: the three canonical members, each resolved to their live uid via the profile index
+  // (populated at loadIdentity from console_profile_names). A member whose uid is not yet known is omitted, so
+  // the control never offers a member it cannot write. Best-effort and pure; no I/O.
+  function memberRoster(){
+    var out = [];
+    try{
+      Object.keys(OWNER_CANON).forEach(function(email){
+        var lc = String(email).toLowerCase();
+        var p = (__profileIndex && __profileIndex.byEmail) ? __profileIndex.byEmail[lc] : null;
+        var uid = (p && p.uid) || "";
+        var name = OWNER_CANON[email];
+        if(uid) out.push({ uid:uid, email:email, name:name, colorKey:memColorKey(name) });
+      });
+    }catch(e){}
+    return out;
+  }
+  function currentMembers(slug){ var m=(__cardMeta && __cardMeta[slug]) || {}; return Array.isArray(m.members) ? m.members : []; }
+  // One member chip: a colour dot (accent) + monogram + the name in --ink-2. removable adds a remove control;
+  // compact (card face) drops the monogram to save width. An unresolved uid shows a clean "unassigned" label.
+  function memberChipHtml(uid, opts){
+    opts = opts || {};
+    var name = memberName(uid);
+    var key = memColorKey(name);
+    var cls = "member" + (key ? (" mem-"+key) : "");
+    var label = name || t("owner_unassigned");
+    var mono = ownerMono(name);
+    var rm = opts.removable
+      ? '<button class="mem-x" type="button" data-mem-rm="'+esc(uid)+'" aria-label="'+esc(t("mem_remove")+": "+label)+'" title="'+esc(t("mem_remove")+": "+label)+'">'+icon("x",12)+'</button>'
+      : '';
+    return '<span class="'+cls+'" data-mem-uid="'+esc(uid)+'" aria-label="'+esc(t("mem_label")+": "+label)+'">'+
+      '<span class="mem-dot" aria-hidden="true"></span>'+
+      ((mono && !opts.compact) ? '<span class="mem-mono" aria-hidden="true" dir="ltr">'+esc(mono)+'</span>' : '')+
+      '<span class="mem-nm" dir="ltr">'+esc(label)+'</span>'+ rm +'</span>';
+  }
+  // The card-face "who": the member cluster when the card has members, else the owner chip (owner column, or the
+  // console_mail-derived earliest sender, or a clean unassigned state). One stable root node so repaintOwners
+  // can swap it in place. Up to three chips render (there are three members); a larger set shows a "+N" tail.
+  function cardWhoHtml(slug){
+    var mems = currentMembers(slug);
+    if(mems.length){
+      var shown = mems.slice(0,3).map(function(u){ return memberChipHtml(u, { compact:true }); }).join("");
+      var extra = mems.length>3 ? '<span class="mem-more" aria-hidden="true">+'+(mems.length-3)+'</span>' : '';
+      var names = mems.map(memberName).filter(Boolean).join(", ");
+      return '<span class="members" aria-label="'+esc(t("mem_on")+": "+(names||t("owner_unassigned")))+'">'+shown+extra+'</span>';
+    }
+    var meta = (__cardMeta && __cardMeta[slug]) || {};
+    return ownerChipHtml(meta.owner || meta.derived || "");
+  }
+  // The detail Members control: the current assignee chips (each removable) + a toggle roster of the members.
+  function membersSectionHtml(slug){
+    var mems = currentMembers(slug);
+    var chips = mems.length
+      ? mems.map(function(u){ return memberChipHtml(u, { removable:true }); }).join("")
+      : '<span class="mem-empty">'+esc(t("mem_none"))+'</span>';
+    var opts = memberRoster().map(function(m){
+      var on = mems.indexOf(m.uid) >= 0;
+      return '<button class="mem-opt'+(m.colorKey?(" mem-"+m.colorKey):"")+(on?" on":"")+'" type="button" '+
+        'data-mem-add="'+esc(m.uid)+'" aria-pressed="'+(on?"true":"false")+'">'+
+        '<span class="mem-dot" aria-hidden="true"></span><span class="mem-nm" dir="ltr">'+esc(m.name)+'</span></button>';
+    }).join("");
+    return '<div class="dw-sec mem-sec"><h3>'+esc(t("mem_h"))+'</h3>'+
+      '<div class="mem-chips" id="memChips">'+chips+'</div>'+
+      (opts ? '<div class="mem-add" id="memAdd" role="group" aria-label="'+esc(t("mem_add_h"))+'">'+opts+'</div>' : '')+
+      '<div class="act-status mem-status" id="memStatus" role="status" aria-live="polite"></div></div>';
+  }
+  function memSetStatus(msg, cls){ var el=document.getElementById("memStatus"); if(el){ el.className="act-status mem-status"+(cls?(" "+cls):""); el.textContent=msg||""; } }
+  function wireMembers(slug){
+    [].forEach.call(document.querySelectorAll('#owDetail [data-mem-add]'), function(b){
+      b.addEventListener('click', function(){ onMemberToggle(slug, b.getAttribute('data-mem-add')); });
+    });
+    [].forEach.call(document.querySelectorAll('#owDetail [data-mem-rm]'), function(b){
+      b.addEventListener('click', function(){ onMemberToggle(slug, b.getAttribute('data-mem-rm')); });
+    });
+  }
+  // Re-render ONLY the members section in place (no detail re-read), then repaint the board card face behind the
+  // window so its member cluster reflects the change at once.
+  function memRerender(slug){
+    var host = document.querySelector('#owDetail .mem-sec'); if(!host) return;
+    var holder = document.createElement('div'); holder.innerHTML = membersSectionHtml(slug);
+    var fresh = holder.firstChild; if(fresh){ host.parentNode.replaceChild(fresh, host); wireMembers(slug); }
+  }
+  var __memBusy = false;
+  // Toggle a member: remove if already on the card, else add. Reuses the confirm-on-server discipline of the
+  // other writes (nothing is applied until the write confirms; a failure shows red and leaves the set as it was).
+  function onMemberToggle(slug, uid){
+    if(__memBusy || !uid || !slug) return;
+    var have = currentMembers(slug).indexOf(uid) >= 0;
+    __memBusy = true; memSetStatus(t("mem_saving"), "");
+    var op = have ? memberRemove(slug, uid) : memberAdd(slug, uid);
+    op.then(function(){ return memberReadInto(slug); }).then(function(){
+      __memBusy = false; memRerender(slug); repaintOwners(); memSetStatus("", "");
+    }).catch(function(e){
+      __memBusy = false; memSetStatus((e && e.authRequired) ? t("err") : t("mem_failed"), "bad");
+    });
+  }
+  // Re-read one card's assignee set into __cardMeta (best-effort). Used after a member write so the face + the
+  // control both reflect server truth without a full board reload.
+  function memberReadInto(slug){
+    return restGet("console_card_members?opp=eq."+enc(slug)+"&select=member").then(function(rows){
+      var arr = (rows||[]).map(function(r){ return r && r.member; }).filter(Boolean);
+      if(!__cardMeta[slug]) __cardMeta[slug] = {};
+      __cardMeta[slug].members = arr;
+      return arr;
+    });
+  }
+  try{ window.__thriveMembers = { roster:memberRoster, current:currentMembers, toggle:onMemberToggle }; }catch(e){}
   // an opp has no business at all). Counts/opens/idle and the reply N-badge come from the server; no stage math.
   function cardHtml(row){
     row = row || {};
@@ -2477,14 +2633,14 @@ ${CONTACTS_SRC}
         return '<div class="rep"><span class="repn">' + it.num + '</span> ' + esc(it.from || t("unnamed")) + '</div>';
       }).join("") + '</div>';
     }
-    // CARD FACE (all lanes): a quiet foot under a canon hairline carrying WHO owns it (a neutral owner chip) and
-    // the opp's recipient email, LTR-isolated and truncating. The email + owner come from __cardMeta (the bounded
-    // console_opps read); a card with no recipient shows just the owner chip, and the foot always renders so every
-    // card links to its owner (a resolved member, or a clean unassigned state - never a guessed owner).
+    // CARD FACE (all lanes): a quiet foot under a canon hairline carrying WHO is on the card (the assignee set,
+    // each member in their identity colour) and the opp's recipient email, LTR-isolated and truncating. The
+    // members + email come from __cardMeta (bounded reads); a card with no members falls back to the owner chip
+    // (owner column, else the derived earliest sender, else a clean unassigned state - never a guessed owner),
+    // and the foot always renders so every card shows who belongs to it.
     var meta = (__cardMeta && __cardMeta[slug]) || {};
     var toEmail = String(meta.email || "");
-    var ownerVal = meta.owner || meta.derived || "";      // durable data.owner, else the derived earliest-sender, else unassigned
-    var foot = '<div class="card-foot">' + ownerChipHtml(ownerVal) +
+    var foot = '<div class="card-foot">' + cardWhoHtml(slug) +
       (toEmail ? '<bdi class="card-to mono-iso" dir="ltr" title="'+esc(toEmail)+'">'+esc(toEmail)+'</bdi>' : '') +
       '</div>';
     // Edge class from the view fields, verbatim: a rich page -> card-offer; a text-only message (message, no
@@ -2794,7 +2950,7 @@ ${CONTACTS_SRC}
   //      here - composing is a mode you enter via "Compose".
   function owDetailHtml(row, detail){
     var slug=row.slug||"";
-    return numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+uploadActivateHtml(slug, row, detail)+
+    return membersSectionHtml(slug)+numsHtml(row, slug)+factsHtml(row)+archivedInfoHtml(row, detail)+uploadActivateHtml(slug, row, detail)+
       actionsHtml(row, { noSend:true })+threadHtml(slug, detail)+recordHtml(detail)+
       notesHtml(slug, detail)+activityHtml(slug, detail);
   }
@@ -2804,6 +2960,7 @@ ${CONTACTS_SRC}
       btn.addEventListener("click", function(){ onAction(slug, btn.getAttribute("data-act")); });   // promote/revert/archive/reopen/delete (+confirm)
     });
     var na=document.getElementById("noteAdd"); if(na) na.addEventListener("click", function(){ onAddNote(slug); });
+    try{ wireMembers(slug); }catch(e){}                                                // COLLAB PR-2: the members add/remove control
     try{ if(typeof upWireActivate==="function") upWireActivate(slug); }catch(e){}      // F1: the hosted-page Re-check button + re-verify on open
   }
   function owDetailMount(slug){
@@ -3028,6 +3185,37 @@ ${CONTACTS_SRC}
       return true;
     });
   }
+  // Generic authenticated INSERT into a console_ table (the open-authenticated write pattern console_comments /
+  // profileSaveName use): POST an array with merge-duplicates so a re-insert of the same primary key is a no-op.
+  // Same settle-always discipline as oppUpsert (authFetchOnce timeout REJECTS), one refresh-retry. PR-2 uses it
+  // for console_card_members and console_watchers (both have a composite PK, so merge-duplicates is idempotent).
+  function restInsert(table, rows, retried){
+    var url = URL_BASE + "/rest/v1/" + table;
+    return authFetchOnce(url, {
+      method:"POST",
+      headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Content-Type":"application/json", "Prefer":"resolution=merge-duplicates,return=minimal" },
+      cache:"no-store", body: JSON.stringify(Array.isArray(rows) ? rows : [rows])
+    }).then(function(r){
+      if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+        return refresh().then(function(ok){ if(ok) return restInsert(table, rows, true); var e=new Error("auth"); e.authRequired=true; throw e; });
+      }
+      if(!r.res.ok){ var e2=new Error((r.data && r.data.message) || ("HTTP "+r.res.status)); if(r.res.status===401||r.res.status===403) e2.authRequired=true; throw e2; }
+      return true;
+    });
+  }
+  // Add a member to a card: stamp added_by = currentUid() (the insert policy's with-check), then seed the same
+  // member as a watcher (member = watcher). Both are idempotent (composite PK + merge-duplicates), so re-adding
+  // is safe. No notification / activity write (PR-3/PR-4).
+  function memberAdd(slug, uid){
+    return restInsert("console_card_members", { opp:slug, member:uid, added_by:currentUid() })
+      .then(function(){ return restInsert("console_watchers", { opp:slug, watcher:uid }); });
+  }
+  // Remove a member from a card: delete their membership row AND their watcher row (a member who is no longer on
+  // the card no longer watches it). Best-effort on the watcher delete so a missing watcher row is not an error.
+  function memberRemove(slug, uid){
+    return restDelete("console_card_members?opp=eq."+enc(slug)+"&member=eq."+enc(uid))
+      .then(function(){ return restDelete("console_watchers?opp=eq."+enc(slug)+"&watcher=eq."+enc(uid)).catch(function(){ return true; }); });
+  }
   // Full delete of one card. OWNERSHIP: a promoted card carries data.page_slug and SHARES the template page, so it
   // never owns a console_pages row of its own - delete ONLY its opp. A card with NO data.page_slug owns its page,
   // so its console_pages row is removed with it. The ledger (console_mail/console_inbound) is never touched.
@@ -3226,12 +3414,17 @@ ${CONTACTS_SRC}
       restGet("console_opps?select=slug,owner"),
       // DERIVED owner fallback for rows not yet backfilled: the earliest send's actor per opp (console_mail is
       // ordered ts.asc, so the first actor seen is the original sender). No SQL needed for this to light up.
-      restGet("console_mail?select=opp,actor,ts&order=ts.asc")
+      restGet("console_mail?select=opp,actor,ts&order=ts.asc"),
+      // COLLAB PR-2: the assignee SET per card (console_card_members), one bounded read for the whole board so a
+      // card face paints its member chips synchronously. Best-effort: if the table is absent this 400s to [] and
+      // the face falls back to the owner chip - the board never breaks waiting on a table.
+      restGet("console_card_members?select=opp,member")
     ]).then(function(a){
       var m = {};
       (Array.isArray(a[0]) ? a[0] : []).forEach(function(r){ if(r && r.slug){ var e = m[r.slug] || (m[r.slug] = {}); e.email = String(r.to || ""); } });
       (Array.isArray(a[1]) ? a[1] : []).forEach(function(r){ if(r && r.slug){ var e = m[r.slug] || (m[r.slug] = {}); e.owner = String(r.owner || ""); } });
       (Array.isArray(a[2]) ? a[2] : []).forEach(function(r){ if(r && r.opp && r.actor){ var e = m[r.opp] || (m[r.opp] = {}); if(!e.derived) e.derived = String(r.actor); } });
+      (Array.isArray(a[3]) ? a[3] : []).forEach(function(r){ if(r && r.opp && r.member){ var e = m[r.opp] || (m[r.opp] = {}); (e.members || (e.members = [])).push(String(r.member)); } });
       return m;
     }, function(){ return {}; });
   }

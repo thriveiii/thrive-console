@@ -136,8 +136,10 @@ it in both themes (dark hues on `#111116` roughly 4.6:1 to 9:1; the light darken
 roughly 5:1 to 5.5:1). None is a lane hue; none is the reserved gradient; the name text stays `--ink-2`
 (already AA) so the colour is never the sole carrier. Member = Thyab (abdu.thyab@gmail.com),
 Agha (muhelagha@gmail.com; the same person as "Mohammed", always shown as Agha), Basel
-(alnajjarjawad97@gmail.com). The tokens are declared and wired to the member chip in a later collaboration
-PR; this section is the approved colour law they answer to.
+(alnajjarjawad97@gmail.com). The tokens are declared (`:root`, and the light-theme darkened variants) and
+wired to the member chip on the card face and in the opp detail's Members control (collaboration PR-2); the
+colour is an accent only (the dot and a soft left border), the name text stays `--ink-2`, and it is never the
+gradient nor a lane hue. This section is the approved colour law they answer to.
 
 ## 5. The weight law
 
