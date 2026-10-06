@@ -1038,6 +1038,10 @@ function buildBoard(){
        --ink-2, so colour is never the sole carrier. Hues sit in bands the lanes leave empty (warm 18 to 44
        degrees, and fuchsia ~312), so no member reads as a lane. Light-theme darkened variants follow below. ---- */
     --mem-thyab: #E6B450; --mem-basel: #C96F4A; --mem-agha: #CE7BD1;
+    /* PR-C: each member hue as a soft TINT (the chip background) and the glyph colour on a FILLED member circle.
+       --on-mem is near-black on the bright dark-theme hues (AA, 5.3:1 or better on all three). */
+    --mem-thyab-t: rgba(230,180,80,.18); --mem-basel-t: rgba(201,111,74,.20); --mem-agha-t: rgba(206,123,209,.18);
+    --on-mem: #0e0b14;
 
     /* ---- Semantic states (canon; separate from the lane scale). ---- */
     --success: #7EE0B8;   --success-bg: var(--lane-replied-t); --success-border: rgba(126,224,184,.34);
@@ -1075,6 +1079,8 @@ function buildBoard(){
     --lane-opened: #c0405a; --lane-replied: #1d7752; --lane-closed: #646a77;
     /* member identity colours, darkened for AA (non-text 3:1) on the light panels; hues preserved from dark */
     --mem-thyab: #8A5D0A; --mem-basel: #A8482A; --mem-agha: #9C3FA0;
+    --mem-thyab-t: rgba(138,93,10,.11); --mem-basel-t: rgba(168,72,42,.11); --mem-agha-t: rgba(156,63,160,.11);
+    --on-mem: #ffffff;   /* white on the darkened light-theme hues (AA, 5.7:1 on all three) */
     --success: #1d7752;   --success-bg: rgba(126,224,184,.16); --success-border: rgba(29,119,82,.34);
     --warning: #8a6a1f;   --warning-2: #8a6a1f;  --warning-bg: rgba(246,207,91,.20); --warning-border: rgba(138,106,31,.34);
     --error: #b3261e;     --error-2: #b3261e;    --error-bg: rgba(224,115,111,.14);  --error-border: rgba(179,38,30,.34);
@@ -1100,6 +1106,7 @@ function buildBoard(){
       --btn-neutral-bg: #f0f1f4; --btn-neutral-border: #d7d8de;
       --lane-draft: #2e7480; --lane-live: #3e6bb7; --lane-sent: #725bb8; --lane-opened: #c0405a; --lane-replied: #1d7752; --lane-closed: #646a77;
       --mem-thyab: #8A5D0A; --mem-basel: #A8482A; --mem-agha: #9C3FA0;
+      --mem-thyab-t: rgba(138,93,10,.11); --mem-basel-t: rgba(168,72,42,.11); --mem-agha-t: rgba(156,63,160,.11); --on-mem: #ffffff;
       --success: #1d7752; --success-bg: rgba(126,224,184,.16); --success-border: rgba(29,119,82,.34);
       --warning: #8a6a1f; --warning-2: #8a6a1f; --warning-bg: rgba(246,207,91,.20); --warning-border: rgba(138,106,31,.34);
       --error: #b3261e; --error-2: #b3261e; --error-bg: rgba(224,115,111,.14); --error-border: rgba(179,38,30,.34);
@@ -1241,10 +1248,16 @@ function buildBoard(){
      --ink-2, so colour is never the sole carrier. Never the gradient, never a lane hue. Truncates, never wraps,
      so card geometry holds with multiple members. */
   .members{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;max-width:60%;overflow:hidden;white-space:nowrap;min-width:0}
-  .member{display:inline-flex;align-items:center;gap:4px;flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap;font-size:var(--fs-xs);color:var(--text-muted);background:var(--surface-sunken);border:1px solid var(--border-soft);border-inline-start:2px solid var(--mem, var(--border-soft));border-radius:var(--r-pill);padding-block:2px;padding-inline:6px 8px}
-  .member.mem-thyab{--mem:var(--mem-thyab)} .member.mem-basel{--mem:var(--mem-basel)} .member.mem-agha{--mem:var(--mem-agha)}
+  /* PR-C: the chip reads in the member's colour at a glance - a soft TINT of the member hue behind the chip, a
+     member-hue border, and the monogram circle FILLED with the member colour (glyph --on-mem, AA). The name stays
+     --ink-2 on the tint (AA in both themes), so colour is never the only carrier. Never the gradient; the lane
+     colours are untouched. An unknown member falls back to the neutral chip. */
+  .member{display:inline-flex;align-items:center;gap:5px;flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap;font-size:var(--fs-xs);color:var(--ink-2);background:var(--mem-t, var(--surface-sunken));border:1px solid var(--mem, var(--border-soft));border-radius:var(--r-pill);padding-block:2px;padding-inline:2px 8px}
+  .member.mem-thyab,.mem-opt.mem-thyab{--mem:var(--mem-thyab);--mem-t:var(--mem-thyab-t);--mem-on:var(--on-mem)}
+  .member.mem-basel,.mem-opt.mem-basel{--mem:var(--mem-basel);--mem-t:var(--mem-basel-t);--mem-on:var(--on-mem)}
+  .member.mem-agha,.mem-opt.mem-agha{--mem:var(--mem-agha);--mem-t:var(--mem-agha-t);--mem-on:var(--on-mem)}
   .mem-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--mem, var(--text-dim))}
-  .mem-mono{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;border-radius:50%;background:var(--panel-2);color:var(--text-muted-2);font-size:9px;font-weight:700;line-height:1;unicode-bidi:isolate}
+  .mem-mono{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;border-radius:50%;background:var(--mem, var(--panel-2));color:var(--mem-on, var(--text-muted-2));font-size:9px;font-weight:800;line-height:1;unicode-bidi:isolate}
   .mem-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:isolate;color:var(--ink-2)}
   .mem-more{flex:0 0 auto;font-size:var(--fs-micro);color:var(--text-muted);unicode-bidi:isolate}
   /* MEMBERS control in the detail: the current assignee chips (each removable) + a toggle roster of the members. */
@@ -1254,11 +1267,13 @@ function buildBoard(){
   .mem-x{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;margin-inline-start:2px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--text-muted);cursor:pointer}
   .mem-x:hover{background:var(--panel-2);color:var(--ink-2)}
   .mem-add{display:flex;flex-wrap:wrap;gap:6px}
-  .mem-opt{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--text-muted);background:var(--surface-sunken);border:1px solid var(--border-soft);border-inline-start:2px solid var(--mem, var(--border-soft));border-radius:var(--r-pill);padding-block:4px;padding-inline:8px 10px;cursor:pointer;min-height:32px}
-  .mem-opt.mem-thyab{--mem:var(--mem-thyab)} .mem-opt.mem-basel{--mem:var(--mem-basel)} .mem-opt.mem-agha{--mem:var(--mem-agha)}
-  .mem-opt .mem-nm{color:var(--text-muted)}
-  .mem-opt.on{background:var(--panel-2);color:var(--ink-2);border-color:var(--mem, var(--hover-border))}
-  .mem-opt.on .mem-nm{color:var(--ink-2)}
+  /* The roster toggles: every option shows the member's filled monogram (who they are); an option that is ON
+     takes the member tint + member-hue border, so the assigned set reads in colour in the control too. */
+  .mem-opt{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--ink-2);background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:var(--r-pill);padding-block:4px;padding-inline:4px 10px;cursor:pointer;min-height:32px}
+  .mem-opt .mem-mono{width:20px;height:20px;font-size:10px}
+  .mem-opt .mem-nm{color:var(--ink-2)}
+  .mem-opt.on{background:var(--mem-t, var(--panel-2));border-color:var(--mem, var(--hover-border))}
+  .mem-sec .member .mem-mono{width:20px;height:20px;font-size:10px}
   .mem-status{margin-top:6px}
   html[dir="rtl"] .mem-nm,html[dir="rtl"] .mem-mono{letter-spacing:normal;text-transform:none}
   .tray{margin-top:14px;border-top:1px solid var(--border-hair);padding-top:10px}
@@ -2547,9 +2562,10 @@ ${CONTACTS_SRC}
     var rm = opts.removable
       ? '<button class="mem-x" type="button" data-mem-rm="'+esc(uid)+'" aria-label="'+esc(t("mem_remove")+": "+label)+'" title="'+esc(t("mem_remove")+": "+label)+'">'+icon("x",12)+'</button>'
       : '';
+    // PR-C: the monogram circle (filled in the member colour) is the identity mark on EVERY chip, card face
+    // included; the dot remains only as the fallback for a member with no resolvable name.
     return '<span class="'+cls+'" data-mem-uid="'+esc(uid)+'" aria-label="'+esc(t("mem_label")+": "+label)+'">'+
-      '<span class="mem-dot" aria-hidden="true"></span>'+
-      ((mono && !opts.compact) ? '<span class="mem-mono" aria-hidden="true" dir="ltr">'+esc(mono)+'</span>' : '')+
+      (mono ? '<span class="mem-mono" aria-hidden="true" dir="ltr">'+esc(mono)+'</span>' : '<span class="mem-dot" aria-hidden="true"></span>')+
       '<span class="mem-nm" dir="ltr">'+esc(label)+'</span>'+ rm +'</span>';
   }
   // The card-face "who": the member cluster when the card has members, else the owner chip (owner column, or the
@@ -2576,7 +2592,7 @@ ${CONTACTS_SRC}
       var on = mems.indexOf(m.uid) >= 0;
       return '<button class="mem-opt'+(m.colorKey?(" mem-"+m.colorKey):"")+(on?" on":"")+'" type="button" '+
         'data-mem-add="'+esc(m.uid)+'" aria-pressed="'+(on?"true":"false")+'">'+
-        '<span class="mem-dot" aria-hidden="true"></span><span class="mem-nm" dir="ltr">'+esc(m.name)+'</span></button>';
+        '<span class="mem-mono" aria-hidden="true" dir="ltr">'+esc(ownerMono(m.name))+'</span><span class="mem-nm" dir="ltr">'+esc(m.name)+'</span></button>';
     }).join("");
     return '<div class="dw-sec mem-sec"><h3>'+esc(t("mem_h"))+'</h3>'+
       '<div class="mem-chips" id="memChips">'+chips+'</div>'+

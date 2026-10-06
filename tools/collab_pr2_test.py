@@ -153,11 +153,11 @@ with sync_playwright() as p:
     pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_selector(".lane", timeout=8000); pg.wait_for_timeout(900)
 
     basel = pg.evaluate("""()=>{ var c=document.querySelector('.card[data-slug=\\"c-basel\\"] .member.mem-basel');
-        if(!c) return null; var dot=c.querySelector('.mem-dot'); var nm=c.querySelector('.mem-nm');
+        if(!c) return null; var dot=c.querySelector('.mem-mono'); var nm=c.querySelector('.mem-nm');   /* PR-C: the filled monogram carries the member colour */
         return { name:nm?nm.textContent:'', dir:nm?nm.getAttribute('dir'):'', dotbg:dot?getComputedStyle(dot).backgroundColor:'' }; }""")
     ck("(b) the Basel-owned card shows a terracotta member chip named Basel",
        basel is not None and basel["name"]=="Basel" and basel["dir"]=="ltr", basel)
-    ck("(b) the member dot carries the --mem-basel colour (#C96F4A = rgb(201,111,74))",
+    ck("(b) the member monogram is filled with the --mem-basel colour (#C96F4A = rgb(201,111,74))",
        basel is not None and basel["dotbg"].replace(" ","")=="rgb(201,111,74)", basel)
 
     multi = pg.evaluate("""()=>{ var card=document.querySelector('.card[data-slug=\\"c-multi\\"]');
