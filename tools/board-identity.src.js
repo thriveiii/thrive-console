@@ -150,6 +150,8 @@ function finishIdentity(){
   // chips now upgrade to the member name without a manual refresh - and WITHOUT a board re-render, so an open
   // tray, the scroll position, and any in-progress interaction are preserved. Guarded and idempotent.
   try{ if(typeof repaintOwners==="function") repaintOwners(); }catch(e){}
+  // PR-B: the shared signature book (teammates' saved signatures), fire-and-forget; never gates the board.
+  try{ loadSigBook().catch(function(){}); }catch(e){}
   return __identity;
 }
 
@@ -286,15 +288,66 @@ function saveSignatureEntry(entry){
   next.push({ id:entry.id, name:entry.name, text:entry.text });
   var base = (__identity.prefs && typeof __identity.prefs==="object") ? __identity.prefs : {};
   var nextPrefs = Object.assign({}, base, { signatures: normSignatures(next) });
-  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); return normSignatures(saved.signatures); });
+  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); sigBookPublish(saved.signatures); return normSignatures(saved.signatures); });
 }
 // Remove one saved signature by id; persist; reflect. Returns the confirmed list.
 function removeSignatureEntry(id){
   var next = normSignatures(__identity.signatures).filter(function(s){ return s.id !== id; });
   var base = (__identity.prefs && typeof __identity.prefs==="object") ? __identity.prefs : {};
   var nextPrefs = Object.assign({}, base, { signatures: next });
-  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); return normSignatures(saved.signatures); });
+  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); sigBookPublish(saved.signatures); return normSignatures(saved.signatures); });
 }
+
+// ===================================================================================================
+// PR-B SHARED SIGNATURE BOOK. console_signatures (uid text, signatures jsonb, def, updated_at) is the durable
+// per-user store every teammate can READ (open select to authenticated) and each member WRITES only for their
+// own row (uid = auth.uid()::text). console_profiles stays own-row, so it could never answer "what is Basel's
+// signature?" for Thyab; this book does. Saves mirror into it (sigBookPublish, best-effort, after the existing
+// prefs write confirms), and it loads once at identity settle (loadSigBook). A missing table degrades to an
+// empty book (identGet returns [] on any failure), so the board never breaks on an unapplied migration.
+// ===================================================================================================
+var __sigBook = {};   // uid -> { signatures:[{id,name,text}], def:"" }
+function loadSigBook(){
+  return identGet("console_signatures?select=uid,signatures,def").then(function(rows){
+    var b = {};
+    (rows||[]).forEach(function(r){ if(r && r.uid) b[String(r.uid)] = { signatures:normSignatures(r.signatures), def:String(r.def||"") }; });
+    __sigBook = b;
+    // Own fallback: a member who saved signatures on another device (book row present, prefs empty here) sees them.
+    var me = currentUid();
+    if(me && b[me] && b[me].signatures.length && !normSignatures(__identity.signatures).length){
+      __identity.signatures = b[me].signatures;
+      try{ if(window.__thriveIdentity) window.__thriveIdentity.signatures = normSignatures(b[me].signatures); }catch(e){}
+    }
+    try{ if(typeof edOwnerSigRefresh==="function") edOwnerSigRefresh(); }catch(e){}   // an open editor may now default to the owner's
+    return b;
+  });
+}
+// Own-row upsert into the book (merge-duplicates on uid). Never throws; a failed or unapplied table returns false.
+function sigBookPublish(signatures, retried){
+  var uid = currentUid(); if(!uid) return Promise.resolve(false);
+  var list = normSignatures(signatures);
+  return authFetchOnce(URL_BASE + "/rest/v1/console_signatures", {
+    method:"POST",
+    headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Content-Type":"application/json", "Prefer":"resolution=merge-duplicates,return=minimal" },
+    cache:"no-store", body: JSON.stringify([{ uid:uid, signatures:list, updated_at:new Date().toISOString() }])
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ return ok ? sigBookPublish(signatures, true) : false; });
+    }
+    if(!r.res.ok) return false;
+    var prev = __sigBook[uid] || { def:"" };
+    __sigBook[uid] = { signatures:list, def:prev.def || "" };
+    return true;
+  }, function(){ return false; });
+}
+// A member's SAVED default signature text (the book's def entry, else the first), or "" when they have none.
+function memberSignature(uid){
+  var e = __sigBook[String(uid||"")]; if(!e || !e.signatures.length) return "";
+  var pick = null;
+  if(e.def){ for(var i=0;i<e.signatures.length;i++){ if(e.signatures[i].id === e.def){ pick = e.signatures[i]; break; } } }
+  return String((pick || e.signatures[0]).text || "");
+}
+try{ window.__thriveSigBook = function(){ return __sigBook; }; window.__thriveMemberSignature = memberSignature; }catch(e){}
 try{
   window.__thriveSignatures = function(){ return normSignatures(__identity.signatures); };   // the per-user saved set
   window.__thriveSaveSignature = function(entry){ return saveSignatureEntry(entry); };        // add/replace (await the confirm)

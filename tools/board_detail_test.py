@@ -59,7 +59,8 @@ def _post_ok(i):
     ctx = board[max(0,i-320):i+60]
     # PR-2 adds a generic authenticated insert helper (restInsert) used ONLY for the collaboration membership +
     # watcher rows (console_card_members / console_watchers); it is a known write kind, never a ledger table.
-    return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx) or ("console_profiles" in ctx) or ("console_opps" in ctx) or ("console_pages" in ctx) or ("restInsert" in ctx) or ("console_card_members" in ctx) or ("console_watchers" in ctx)
+    # PR-B adds the member's OWN-row upsert into the shared signature book (console_signatures, own-row RLS).
+    return ("auth/v1" in ctx) or ("console_mail" in ctx) or ("relayEp(" in ctx) or ("console_profiles" in ctx) or ("console_opps" in ctx) or ("console_pages" in ctx) or ("restInsert" in ctx) or ("console_card_members" in ctx) or ("console_watchers" in ctx) or ("console_signatures" in ctx)
 def _patch_ok(i):
     ctx = board[max(0,i-260):i+40]
     # L4 opp writes hit console_opps by slug; the Step 2C admin title write hits console_profiles by uid; the

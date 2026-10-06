@@ -1740,6 +1740,7 @@ function buildBoard(){
   .ed-ck.ck-no::before{background:var(--warning)}
   .ed-sig-field{margin:6px 0 10px}
   .ed-sig-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .ed-sig-uses{display:inline-flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}   /* PR-B: "Use my signature" + "Use <Owner>'s signature", wrapping on a phone */
   .ed-sig-lab{font-size:12px;color:var(--text-muted)}
   .ed-sig-use{font-size:12px;padding:5px 10px}
   textarea.ed-sig-in{min-height:66px;line-height:1.6;padding:12px;font-family:inherit;unicode-bidi:plaintext;font-size:13px}
@@ -1877,7 +1878,7 @@ function buildBoard(){
           r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email.",
           ed_h:"Message", ed_subj:"Subject", ed_subj_ph:"Subject line",
           ed_body:"Body", ed_body_ph:"Write the message. Use Insert opp link to add the page link.",
-          ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature",
+          ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature", ed_sig_use_owner:"Use {name}'s signature",
           ed_sig_add:"Save this signature", ed_sig_pick:"Use this signature", ed_sig_remove:"Remove",
           ed_sig_saved:"Signature saved.", ed_sig_save_failed:"Could not save the signature.", ed_sig_empty:"Write a signature first, then save it.",
           ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
@@ -1997,7 +1998,7 @@ function buildBoard(){
           r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا.",
           ed_h:"الرسالة", ed_subj:"الموضوع", ed_subj_ph:"سطر الموضوع",
           ed_body:"النص", ed_body_ph:"اكتب الرسالة. استخدم إدراج رابط الفرصة لإضافة رابط الصفحة.",
-          ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي",
+          ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي", ed_sig_use_owner:"استخدم توقيع {name}",
           ed_sig_add:"احفظ هذا التوقيع", ed_sig_pick:"استخدم هذا التوقيع", ed_sig_remove:"إزالة",
           ed_sig_saved:"حُفظ التوقيع.", ed_sig_save_failed:"تعذّر حفظ التوقيع.", ed_sig_empty:"اكتب توقيعًا أولًا ثم احفظه.",
           ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="23695ca0">
+<meta name="thrive-build" content="ac9da67c">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -825,6 +825,7 @@
   .ed-ck.ck-no::before{background:var(--warning)}
   .ed-sig-field{margin:6px 0 10px}
   .ed-sig-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .ed-sig-uses{display:inline-flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}   /* PR-B: "Use my signature" + "Use <Owner>'s signature", wrapping on a phone */
   .ed-sig-lab{font-size:12px;color:var(--text-muted)}
   .ed-sig-use{font-size:12px;padding:5px 10px}
   textarea.ed-sig-in{min-height:66px;line-height:1.6;padding:12px;font-family:inherit;unicode-bidi:plaintext;font-size:13px}
@@ -875,7 +876,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "23695ca0";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "ac9da67c";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -962,7 +963,7 @@
           r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email.",
           ed_h:"Message", ed_subj:"Subject", ed_subj_ph:"Subject line",
           ed_body:"Body", ed_body_ph:"Write the message. Use Insert opp link to add the page link.",
-          ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature",
+          ed_link:"Insert opp link", ed_sig:"Signature", ed_sig_use:"Use my signature", ed_sig_use_owner:"Use {name}'s signature",
           ed_sig_add:"Save this signature", ed_sig_pick:"Use this signature", ed_sig_remove:"Remove",
           ed_sig_saved:"Signature saved.", ed_sig_save_failed:"Could not save the signature.", ed_sig_empty:"Write a signature first, then save it.",
           ed_sig_ph:"Signature (optional). Leave empty for no signature.", ed_preview:"Preview (exactly what will send)",
@@ -1082,7 +1083,7 @@
           r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا.",
           ed_h:"الرسالة", ed_subj:"الموضوع", ed_subj_ph:"سطر الموضوع",
           ed_body:"النص", ed_body_ph:"اكتب الرسالة. استخدم إدراج رابط الفرصة لإضافة رابط الصفحة.",
-          ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي",
+          ed_link:"إدراج رابط الفرصة", ed_sig:"التوقيع", ed_sig_use:"استخدم توقيعي", ed_sig_use_owner:"استخدم توقيع {name}",
           ed_sig_add:"احفظ هذا التوقيع", ed_sig_pick:"استخدم هذا التوقيع", ed_sig_remove:"إزالة",
           ed_sig_saved:"حُفظ التوقيع.", ed_sig_save_failed:"تعذّر حفظ التوقيع.", ed_sig_empty:"اكتب توقيعًا أولًا ثم احفظه.",
           ed_sig_ph:"التوقيع (اختياري). اتركه فارغًا لبلا توقيع.", ed_preview:"معاينة (ما سيُرسل تمامًا)",
@@ -1521,6 +1522,8 @@ function finishIdentity(){
   // chips now upgrade to the member name without a manual refresh - and WITHOUT a board re-render, so an open
   // tray, the scroll position, and any in-progress interaction are preserved. Guarded and idempotent.
   try{ if(typeof repaintOwners==="function") repaintOwners(); }catch(e){}
+  // PR-B: the shared signature book (teammates' saved signatures), fire-and-forget; never gates the board.
+  try{ loadSigBook().catch(function(){}); }catch(e){}
   return __identity;
 }
 
@@ -1657,15 +1660,66 @@ function saveSignatureEntry(entry){
   next.push({ id:entry.id, name:entry.name, text:entry.text });
   var base = (__identity.prefs && typeof __identity.prefs==="object") ? __identity.prefs : {};
   var nextPrefs = Object.assign({}, base, { signatures: normSignatures(next) });
-  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); return normSignatures(saved.signatures); });
+  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); sigBookPublish(saved.signatures); return normSignatures(saved.signatures); });
 }
 // Remove one saved signature by id; persist; reflect. Returns the confirmed list.
 function removeSignatureEntry(id){
   var next = normSignatures(__identity.signatures).filter(function(s){ return s.id !== id; });
   var base = (__identity.prefs && typeof __identity.prefs==="object") ? __identity.prefs : {};
   var nextPrefs = Object.assign({}, base, { signatures: next });
-  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); return normSignatures(saved.signatures); });
+  return profileSavePrefs(nextPrefs).then(function(saved){ applyPrefsLocally(saved); sigBookPublish(saved.signatures); return normSignatures(saved.signatures); });
 }
+
+// ===================================================================================================
+// PR-B SHARED SIGNATURE BOOK. console_signatures (uid text, signatures jsonb, def, updated_at) is the durable
+// per-user store every teammate can READ (open select to authenticated) and each member WRITES only for their
+// own row (uid = auth.uid()::text). console_profiles stays own-row, so it could never answer "what is Basel's
+// signature?" for Thyab; this book does. Saves mirror into it (sigBookPublish, best-effort, after the existing
+// prefs write confirms), and it loads once at identity settle (loadSigBook). A missing table degrades to an
+// empty book (identGet returns [] on any failure), so the board never breaks on an unapplied migration.
+// ===================================================================================================
+var __sigBook = {};   // uid -> { signatures:[{id,name,text}], def:"" }
+function loadSigBook(){
+  return identGet("console_signatures?select=uid,signatures,def").then(function(rows){
+    var b = {};
+    (rows||[]).forEach(function(r){ if(r && r.uid) b[String(r.uid)] = { signatures:normSignatures(r.signatures), def:String(r.def||"") }; });
+    __sigBook = b;
+    // Own fallback: a member who saved signatures on another device (book row present, prefs empty here) sees them.
+    var me = currentUid();
+    if(me && b[me] && b[me].signatures.length && !normSignatures(__identity.signatures).length){
+      __identity.signatures = b[me].signatures;
+      try{ if(window.__thriveIdentity) window.__thriveIdentity.signatures = normSignatures(b[me].signatures); }catch(e){}
+    }
+    try{ if(typeof edOwnerSigRefresh==="function") edOwnerSigRefresh(); }catch(e){}   // an open editor may now default to the owner's
+    return b;
+  });
+}
+// Own-row upsert into the book (merge-duplicates on uid). Never throws; a failed or unapplied table returns false.
+function sigBookPublish(signatures, retried){
+  var uid = currentUid(); if(!uid) return Promise.resolve(false);
+  var list = normSignatures(signatures);
+  return authFetchOnce(URL_BASE + "/rest/v1/console_signatures", {
+    method:"POST",
+    headers:{ "apikey":ANON, "Authorization":"Bearer "+bearer(), "Content-Type":"application/json", "Prefer":"resolution=merge-duplicates,return=minimal" },
+    cache:"no-store", body: JSON.stringify([{ uid:uid, signatures:list, updated_at:new Date().toISOString() }])
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ return ok ? sigBookPublish(signatures, true) : false; });
+    }
+    if(!r.res.ok) return false;
+    var prev = __sigBook[uid] || { def:"" };
+    __sigBook[uid] = { signatures:list, def:prev.def || "" };
+    return true;
+  }, function(){ return false; });
+}
+// A member's SAVED default signature text (the book's def entry, else the first), or "" when they have none.
+function memberSignature(uid){
+  var e = __sigBook[String(uid||"")]; if(!e || !e.signatures.length) return "";
+  var pick = null;
+  if(e.def){ for(var i=0;i<e.signatures.length;i++){ if(e.signatures[i].id === e.def){ pick = e.signatures[i]; break; } } }
+  return String((pick || e.signatures[0]).text || "");
+}
+try{ window.__thriveSigBook = function(){ return __sigBook; }; window.__thriveMemberSignature = memberSignature; }catch(e){}
 try{
   window.__thriveSignatures = function(){ return normSignatures(__identity.signatures); };   // the per-user saved set
   window.__thriveSaveSignature = function(entry){ return saveSignatureEntry(entry); };        // add/replace (await the confirm)
@@ -2115,9 +2169,11 @@ function sendCompile(slug, row, data, rcpt, mode){
   var lead = (data.greetOn === true) ? (greetingLine("name", person, platform, lang) + "\n\n") : "";   // opt-in only
   var inner = mergeFieldsInto(lead + body0, fill, ctx);            // OFF -> the typed body verbatim (user tokens still resolve)
   var subject = mergeFieldsInto(data.outreach_subject||"", fill, ctx).replace(/^\s+|\s+$/g, "");
-  // GUARANTEE the G7.1 signature: an empty signature field falls back to the operator's localized default block,
-  // so every send carries a signature. edSignatureDefault (board-editor) reads the per-user identity.
-  var sig = (data.sig && String(data.sig).trim()) ? data.sig : ((typeof edSignatureDefault==="function") ? edSignatureDefault(lang) : "");
+  // GUARANTEE the G7.1 signature: an empty signature field falls back to a localized default block, so every send
+  // carries a signature. PR-B: on another member's card the fallback is the CARD OWNER's signature (their saved
+  // one, else their own name block), never the viewer's; on your own card it is your default as before.
+  var sig = (data.sig && String(data.sig).trim()) ? data.sig
+    : ((typeof edGuaranteedSignature==="function") ? edGuaranteedSignature(slug, lang) : ((typeof edSignatureDefault==="function") ? edSignatureDefault(lang) : ""));
   var plan = planAttachments(data.attachments||[]);
   var bodyPlain = inner + attachHostedBlockText(plan.hosted, lang);   // hosted-image links ride as text lines
   var token = recipientOpenToken(slug, addr, subject);       // == the console_mail row id; still the open-pixel token below
@@ -2751,7 +2807,11 @@ function edMsgLang(){
 // site line is the agency constant. This only FILLS the field on demand ("Use my signature"); never automatic.
 function edSignatureDefault(lang){
   var id = edIdentity();
-  var name = String(id.name==null?"":id.name).trim();
+  return edSignatureDefaultFor(String(id.name==null?"":id.name).trim(), lang);
+}
+// The same three-line default for ANY member's name (PR-B: a teammate's default when they saved none).
+function edSignatureDefaultFor(name, lang){
+  name = String(name==null?"":name).trim();
   var site = (typeof AGENCY_SITE_L5!=="undefined" && AGENCY_SITE_L5) ? AGENCY_SITE_L5 : "thriveiii.com";
   var agency = (lang==="ar") ? AGENCY_NAME_AR_L5 : AGENCY_NAME_EN_L5;
   var lines = [];
@@ -2762,6 +2822,54 @@ function edSignatureDefault(lang){
 }
 // Back-compat seam name: the "Use my signature" fill, now the localized default (name / agency / site).
 function edSignaturePreset(){ return edSignatureDefault(edMsgLang()); }
+// ---- PR-B: the CARD OWNER's signature ------------------------------------------------------------------
+// The owner of a card is the stored owner column, else the console_mail-derived earliest sender (the same
+// precedence the card face uses). Returns "" for a card with no known owner, and "" when the owner IS the viewer
+// (on your own card there is only "Use my signature").
+function edCardOwner(slug){
+  try{
+    var m = (typeof __cardMeta!=="undefined" && __cardMeta && __cardMeta[slug]) || {};
+    var o = String(m.owner || m.derived || "").trim();
+    if(!o) return "";
+    if(typeof currentUid==="function" && o === currentUid()) return "";
+    return o;
+  }catch(e){ return ""; }
+}
+function edOwnerName(uid){ try{ return (typeof ownerLabel==="function") ? ownerLabel(uid) : ""; }catch(e){ return ""; } }
+// "Use <Owner>'s signature": the owner's SAVED default from the shared book, else their three-line default
+// built from THEIR name (never the viewer's).
+function edOwnerSignature(uid){ return edOwnerSignatureFor(uid, edMsgLang()); }
+function edOwnerSignatureFor(uid, lang){
+  var saved = (typeof memberSignature==="function") ? memberSignature(uid) : "";
+  return saved || edSignatureDefaultFor(edOwnerName(uid), lang);
+}
+// The GUARANTEED-signature fallback for a send whose signature field is empty (sendCompile). The guarantee is
+// kept - every send carries a signature - but on ANOTHER member's card it is that OWNER's signature, never the
+// viewer's. Your own card, or a card with no known owner, keeps the viewer's default exactly as before.
+function edGuaranteedSignature(slug, lang){
+  var owner = edCardOwner(slug);
+  if(owner && edOwnerName(owner)) return edOwnerSignatureFor(owner, lang);
+  return edSignatureDefault(lang);
+}
+// The AUTOMATIC default on another member's card: when the card carries no signature of its own (data.sig
+// empty) and the field is untouched, prefill the owner's SAVED signature if they have one; otherwise leave the
+// field EMPTY. It never auto-inserts the viewer's signature. It does not write: the preview reflects it at once,
+// the send reads the field, and the first real edit persists it like any typed signature.
+var __edSigTouched = {}, __edLastWired = "";
+function edApplyOwnerDefault(slug){
+  var el = edEl("edSig"); if(!el || __edSigTouched[slug]) return false;
+  if(String(el.value||"").trim()) return false;                                   // the card's own signature wins
+  if(String(((__edBase[slug]||{}).sig)||"").trim()) return false;
+  var owner = edCardOwner(slug); if(!owner) return false;
+  var saved = (typeof memberSignature==="function") ? memberSignature(owner) : "";
+  if(!saved) return false;                                                        // no saved owner signature: stay empty
+  el.value = saved; el.setAttribute("data-sig-src", "owner");
+  try{ edTick(slug); }catch(e){}
+  return true;
+}
+// Called when the shared book finishes loading: an editor that is already open may now take the owner default,
+// and its owner button label is current.
+function edOwnerSigRefresh(){ try{ if(__edLastWired) edApplyOwnerDefault(__edLastWired); }catch(e){} }
 // The user's saved (named) signatures, from runtime identity (console_profiles.prefs.signatures). Always an
 // array; each entry is { id, name, text }. Per-user by construction (own profile row).
 function edSavedSigs(){ var id=edIdentity(); var a=id && id.signatures; return Array.isArray(a) ? a : []; }
@@ -2875,6 +2983,7 @@ function editorHtml(slug, row, detail){
   // The signature FIELD pre-fills from the persisted record's data.sig (empty if none); on re-render inside an
   // open drawer it keeps the live typed value so a paint never clobbers an in-progress signature.
   var sig = data ? String(data.sig||"") : (edVal("edSig"));
+  var sigOwner = edCardOwner(slug), sigOwnerName = sigOwner ? edOwnerName(sigOwner) : "";   // PR-B: the card owner (not the viewer)
   var subjOk = !!subj.trim(), bodyOk = !!body.trim(), linkOk = edHasLink(slug, body);
   return '<div class="dw-sec ed-sec"><h3>'+esc(t("ed_h"))+'</h3>'+
     '<input class="ed-subj" id="edSubj" type="text" dir="auto" autocomplete="off" spellcheck="true" '+
@@ -2888,7 +2997,11 @@ function editorHtml(slug, row, detail){
     '</ul>'+
     '<div class="ed-sig-field">'+
       '<div class="ed-sig-head"><span class="ed-sig-lab">'+esc(t("ed_sig"))+'</span>'+
-        '<button class="act ed-sig-use" id="edSigFill" type="button">'+esc(t("ed_sig_use"))+'</button></div>'+
+        '<span class="ed-sig-uses"><button class="act ed-sig-use" id="edSigFill" type="button">'+esc(t("ed_sig_use"))+'</button>'+
+        // PR-B: on ANOTHER member's card, a second choice fills the card owner's signature (never automatic for
+        // the viewer's). Hidden on your own card and on a card with no known owner.
+        (sigOwner && sigOwnerName ? '<button class="act ed-sig-use" id="edSigOwner" type="button" data-owner="'+esc(sigOwner)+'">'+esc(t("ed_sig_use_owner").replace("{name}", sigOwnerName))+'</button>' : '')+
+        '</span></div>'+
       '<textarea class="rec-in ed-sig-in" id="edSig" rows="3" dir="auto" autocomplete="off" spellcheck="true" '+
         'placeholder="'+esc(t("ed_sig_ph"))+'" aria-label="'+esc(t("ed_sig"))+'">'+esc(sig)+'</textarea>'+
       // G7.1: the user's SAVED signatures - pick one to fill the field, or "+" to save the current text as a new
@@ -3062,9 +3175,11 @@ function wireEditor(slug){
   var onInput=function(){ edTick(slug); edScheduleSave(slug, 700); };
   if(subjEl) subjEl.addEventListener("input", onInput);
   if(bodyEl) bodyEl.addEventListener("input", onInput);
-  var sigEl=edEl("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven
+  var sigEl=edEl("edSig"); if(sigEl) sigEl.addEventListener("input", function(){ __edSigTouched[slug]=1; onInput(); });   // E0: signature is field-driven; a typed signature is never overridden by the owner default
   var lk=edEl("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
-  var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
+  var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ __edSigTouched[slug]=1; edFillSignature(slug); });
+  var so=edEl("edSigOwner"); if(so) so.addEventListener("click", function(){ __edSigTouched[slug]=1; edFillSignatureText(slug, edOwnerSignature(so.getAttribute("data-owner"))); });   // PR-B: the card owner's signature
+  __edLastWired = slug; edApplyOwnerDefault(slug);             // PR-B: default to the owner's SAVED signature on another member's empty card
   edRenderSavedSigs(slug);                                     // G7.1: the per-user saved-signatures strip + "+"
   // Optional greeting (one opt-in checkbox) + the bulk "related contacts".
   var gon=edEl("crGreetOn"); if(gon) gon.addEventListener("change", function(){ edSetGreetOn(slug, gon.checked); });
@@ -5813,7 +5928,7 @@ function ctOpenConvoFromLibrary(cid){
         iconBtn("reload", "refresh", t("refresh")) +
         iconBtn("signout", "logout", t("signout")) +
       '</span>' +
-      '<span class="build-mini muted" title="build 23695ca0">23695ca0</span>';
+      '<span class="build-mini muted" title="build ac9da67c">ac9da67c</span>';
   }
   // Reveal the Admin entry only for an owner. Safe to call repeatedly (idempotent) and before the role settles.
   function paintAdminSlot(){

@@ -297,9 +297,11 @@ function sendCompile(slug, row, data, rcpt, mode){
   var lead = (data.greetOn === true) ? (greetingLine("name", person, platform, lang) + "\n\n") : "";   // opt-in only
   var inner = mergeFieldsInto(lead + body0, fill, ctx);            // OFF -> the typed body verbatim (user tokens still resolve)
   var subject = mergeFieldsInto(data.outreach_subject||"", fill, ctx).replace(/^\s+|\s+$/g, "");
-  // GUARANTEE the G7.1 signature: an empty signature field falls back to the operator's localized default block,
-  // so every send carries a signature. edSignatureDefault (board-editor) reads the per-user identity.
-  var sig = (data.sig && String(data.sig).trim()) ? data.sig : ((typeof edSignatureDefault==="function") ? edSignatureDefault(lang) : "");
+  // GUARANTEE the G7.1 signature: an empty signature field falls back to a localized default block, so every send
+  // carries a signature. PR-B: on another member's card the fallback is the CARD OWNER's signature (their saved
+  // one, else their own name block), never the viewer's; on your own card it is your default as before.
+  var sig = (data.sig && String(data.sig).trim()) ? data.sig
+    : ((typeof edGuaranteedSignature==="function") ? edGuaranteedSignature(slug, lang) : ((typeof edSignatureDefault==="function") ? edSignatureDefault(lang) : ""));
   var plan = planAttachments(data.attachments||[]);
   var bodyPlain = inner + attachHostedBlockText(plan.hosted, lang);   // hosted-image links ride as text lines
   var token = recipientOpenToken(slug, addr, subject);       // == the console_mail row id; still the open-pixel token below
