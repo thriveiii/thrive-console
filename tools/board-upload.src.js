@@ -380,19 +380,18 @@ function upCommit(plan){
       .then(function(){ return pageUpsert(r.slug, html); })
       .then(function(){
         if(!String(html).trim()){ ok++; return one(i + 1); }                     // text-only row: no page to publish, untouched
-        return pagePublishRelay(r.slug, withBeaconClient(html, cycle)).then(   // commit the static file NOW, carrying THIS transit's cycle
-          function(){ ok++; published.push(r.slug); return one(i + 1); },       // the relay confirmed the commit landed
+        return upPublishOnce(r.slug, withBeaconClient(html, cycle)).then(      // commit the static file NOW, carrying THIS transit's cycle
+          function(){ ok++; published.push(r.slug); upPubNote(r.slug, "publishing", ""); return one(i + 1); },   // the relay CONFIRMED the commit
           function(e){
-            // F1 COMMIT TRUTH (the "Created N of M. Failed" defect): a page whose commit may have LANDED must
-            // never be tallied Failed. pagePublish_ returns {ok:true} the instant the GitHub PUT lands (Cloudflare
-            // rebuilds AFTER), and a structured {ok:false} (__kind relayreject) is the ONLY relay signal the commit
-            // did not happen. A client TIMEOUT (kind timeout, idempotent commit) OR a relay-endpoint transport
-            // error (__kind relayhttp: an Apps Script 5xx or a failed 302 body-hop, which can arrive AFTER the
-            // commit already landed) is AMBIGUOUS, not a failure: mark the page PUBLISHED-PENDING ("going live
-            // shortly") and let the background live-verify (upActivateBackground, F1-safe) confirm. Only a genuine
-            // commit failure - relayreject here, or the opp/page write reject below - is ever tallied Failed.
-            if(e && e.__kind === "relayreject"){ fail++; failed.push(r.title || r.slug); return one(i + 1); }
-            published.push(r.slug); pending++; pendingTitles.push(r.title || r.slug); return one(i + 1);
+            // F1 COMMIT TRUTH, kept: a structured refusal (relayreject - ok:false, or a 2xx with no publish
+            // result) is the relay saying the commit did NOT happen, so it is a Failed row, and PR-A carries the
+            // relay's own reason so the operator sees WHY (e.g. a GitHub credential error), not just a title.
+            // An AMBIGUOUS outcome (a client timeout, or a transport error that persisted through one retry) may
+            // have landed, so it is not tallied Failed - but it is NO LONGER shown as a green success either: the
+            // page is recorded "unconfirmed", the result names it, and the card shows a Publish action until the
+            // live link proves it (PR-A: never a silent permanent "going live").
+            if(e && e.__kind === "relayreject"){ fail++; failed.push((r.title || r.slug) + " (" + String(e.message || t("pub_err_unconfirmed")) + ")"); upPubNote(r.slug, "failed", e.message); return one(i + 1); }
+            published.push(r.slug); pending++; pendingTitles.push(r.title || r.slug); upPubNote(r.slug, "unconfirmed", (e && e.message) || ""); return one(i + 1);
           });
       }, function(){ fail++; failed.push(r.title || r.slug); return one(i + 1); });   // opp/page write failure (pre-publish): a genuine failure
   }
@@ -413,7 +412,7 @@ function upActivateBackground(slugs){
   var left = pend.length;
   pend.forEach(function(slug){
     verifyLivePoll(slug).then(function(v){
-      if(v && v.ok){ delete __upLive[slug]; return pageStampLive(slug).catch(function(){}); }
+      if(v && v.ok){ delete __upLive[slug]; delete __upPub[slug]; return pageStampLive(slug).catch(function(){}); }
       // F1: a not-yet-resolving URL is an async deploy that has not landed, NOT a failure. Leave the page in
       // the neutral transitional state (do not record "dead"/"unconfirmed"); re-verify on the next drawer open
       // flips it to Live when the deploy arrives. No RED for a committed page.
@@ -466,14 +465,140 @@ function pageReadHtml(slug, retried){
   });
 }
 // POST the page to the relay to commit it as a static file. The client sends only { op, slug, html } - no token.
+// PR-A PUBLISH TRUTH: success requires a POSITIVE confirmation, { ok:true } from the relay (pagePublish_ answers
+// that only after the GitHub PUT lands). A 2xx whose body is not that JSON (an Apps Script error or quota page,
+// an auth interstitial, an empty body) used to read as success because only ok:false was checked, so a page that
+// never committed was tallied published. It is now an explicit refusal carrying what the relay said.
 function pagePublishRelay(slug, html){
   return relayPost({ op:"page_publish", slug:slug, html:html }, PAGE_PUBLISH_TIMEOUT_MS).then(function(r){
-    if(!r.res.ok){ var e=new Error("relay " + r.res.status); e.__kind="relayhttp"; throw e; }    // a real HTTP error
-    var d = r.data || {};
-    if(d.ok === false){ var e2=new Error(d.error || "publish failed"); e2.__kind="relayreject"; throw e2; }  // the relay ran and refused
+    if(!r.res.ok){ var e=new Error(t("pub_err_http").replace("{s}", String(r.res.status))); e.__kind="relayhttp"; throw e; }   // a real HTTP error
+    var d = r.data;
+    if(!d || typeof d !== "object"){
+      var e3=new Error(t("pub_err_noresult") + (r.text ? (" " + String(r.text).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120)) : ""));
+      e3.__kind="relayreject"; throw e3;                                                       // 2xx but no publish result: never a success
+    }
+    if(d.ok !== true){ var e2=new Error(d.error || t("pub_err_unconfirmed")); e2.__kind="relayreject"; throw e2; }  // the relay ran and refused (or did not confirm)
     return d;
   });
 }
+// One publish with ONE retry on a transport error (relayhttp). page_publish is idempotent by path + sha, so a
+// retry can never duplicate a page; it turns most transient relay hiccups into a confirmed commit or an explicit
+// refusal instead of an ambiguous outcome. A timeout is NOT retried (the 30s commit very likely landed).
+function upPublishOnce(slug, html){
+  return pagePublishRelay(slug, html).catch(function(e){
+    if(e && e.__kind === "relayhttp") return pagePublishRelay(slug, html);
+    throw e;
+  });
+}
+
+// ==== PR-A PUBLISH TRUTH: the page state is derived from facts, never from "a page row exists" ===============
+// A console_pages row is written BEFORE the commit, so its existence proves nothing about GitHub. The state is:
+//   live         live_verified_at is set (the durable proof, stamped only after a real fetch of the live URL)
+//   publishing   the relay CONFIRMED a commit (this session) or the row was written within the deploy grace window,
+//                and the live URL does not resolve yet - a neutral "going live shortly" with Re-check
+//   unpublished  otherwise - "Not published", with a one-tap Publish and the relay's reason when it is known
+// __upPub holds this session's publish outcomes by page slug: { state:"publishing"|"unconfirmed"|"failed", at, error }.
+var PUBLISH_GRACE_MS = 10 * 60 * 1000;   // a confirmed commit normally deploys in 1 to 3 minutes; 10 is generous
+var __upPub = {}, __upPublishing = {};
+function upPubNote(pageSlug, state, error){ __upPub[pageSlug] = { state:state, at:Date.now(), error:String(error || "") }; }
+function pagePubState(pageSlug, page){
+  page = page || {};
+  if(page.live_verified_at) return { key:"live", error:"" };
+  var note = __upPub[pageSlug], now = Date.now();
+  if(__upPublishing[pageSlug]) return { key:"working", error:"" };
+  if(note && note.state === "failed") return { key:"unpublished", error:note.error };
+  if(note && (now - note.at) < PUBLISH_GRACE_MS) return { key:"publishing", error:"" };   // confirmed or unconfirmed, still inside the window
+  if(!note){ var up = Number(page.up || 0); if(up && (now - up) < PUBLISH_GRACE_MS) return { key:"publishing", error:"" }; }
+  return { key:"unpublished", error:(note && note.error) || "" };
+}
+// The one-tap Publish button any surface renders for a not-live page. data-publish-page drives the ONE delegated
+// handler below, so the detail, the Page tab and the send-gate message all publish through the same path.
+function pagePublishBtnHtml(pageSlug, oppSlug){
+  var busy = !!__upPublishing[pageSlug];
+  return '<button class="act send pub-now" type="button" data-publish-page="' + esc(pageSlug) + '" data-publish-opp="' + esc(oppSlug || "") + '"' + (busy ? " disabled" : "") + '>' +
+    esc(t(busy ? "pub_working" : "pub_now")) + '</button>';
+}
+// The state line for a page: text + class from pagePubState. Never claims Live without live_verified_at.
+function pagePubLineHtml(pageSlug, page){
+  var st = pagePubState(pageSlug, page);
+  var key = st.key === "live" ? "up_state_live" : st.key === "publishing" ? "up_state_going_live" : st.key === "working" ? "pub_working_line" : "pub_state_unpublished";
+  var cls = st.key === "live" ? "ok" : st.key === "unpublished" ? "warn" : "";
+  return '<div class="up-state pub-state ' + cls + '" data-pub-state="' + st.key + '">' + esc(t(key)) + '</div>' +
+    (st.key === "unpublished" && st.error ? '<div class="pub-err" dir="auto">' + esc(t("pub_reason") + " " + st.error) + '</div>' : '');
+}
+// Bump the page row's up stamp after a CONFIRMED commit, so another member's session sees the fresh deploy window
+// (publishing) instead of a stale "Not published". Same bounded PATCH discipline as pageStampLive; best-effort.
+function pageTouch(slug, retried){
+  var url = URL_BASE + "/rest/v1/console_pages?slug=eq." + encodeURIComponent(slug);
+  return authFetchOnce(url, {
+    method:"PATCH", headers:{ "apikey":ANON, "Authorization":"Bearer " + bearer(), "Content-Type":"application/json", "Prefer":"return=minimal" },
+    cache:"no-store", body: JSON.stringify({ up: Date.now() })
+  }).then(function(r){
+    if((r.res.status===401 || r.res.status===403) && !retried && session() && session().refresh_token){
+      return refresh().then(function(ok){ if(ok) return pageTouch(slug, true); return false; });
+    }
+    return !!r.res.ok;
+  });
+}
+// Re-render every surface that shows this page's state (the Details page section, the Page tab).
+function pagePubRefresh(pageSlug, oppSlug){
+  try{ if(oppSlug) refreshOppDetail(oppSlug); }catch(e){}
+  try{ if(oppSlug && typeof crPageMount === "function" && document.getElementById("crPagePanel")) crPageMount(oppSlug); }catch(e){}
+  try{ [].forEach.call(document.querySelectorAll('[data-publish-page="' + pageSlug + '"]'), function(b){ b.disabled = !!__upPublishing[pageSlug]; b.textContent = t(__upPublishing[pageSlug] ? "pub_working" : "pub_now"); }); }catch(e){}
+}
+// ONE-TAP PUBLISH, for any member (the relay holds the token; the client sends only the page). Reads the stored
+// html, stamps the opp's current transit cycle (as upCommit does), commits through the relay with the positive-
+// confirmation check, then verifies the live URL in the background and stamps live_verified_at ONLY on a real ok.
+// A refusal records the relay's reason and shows it; nothing is ever reported published without the relay's ok.
+function pagePublishNow(pageSlug, oppSlug){
+  if(!pageSlug || __upPublishing[pageSlug]) return Promise.resolve(null);
+  __upPublishing[pageSlug] = 1; pagePubRefresh(pageSlug, oppSlug);
+  var row = (oppSlug && typeof findRow === "function") ? findRow(oppSlug) : null;
+  var cycle = (row && row.cycle) || "";
+  return pageReadHtml(pageSlug).then(function(html){
+    if(!String(html || "").trim()){ var e0=new Error(t("pub_err_nohtml")); e0.__kind="relayreject"; throw e0; }
+    return upPublishOnce(pageSlug, withBeaconClient(assetBaseInto(html), cycle));
+  }).then(function(){
+    delete __upPublishing[pageSlug]; upPubNote(pageSlug, "publishing", "");
+    pageTouch(pageSlug).catch(function(){});
+    upVerifyAfterPublish(pageSlug, oppSlug);
+    pagePubRefresh(pageSlug, oppSlug);
+    return { ok:true };
+  }, function(e){
+    delete __upPublishing[pageSlug];
+    if(e && e.__kind === "relayreject"){ upPubNote(pageSlug, "failed", e.message); pagePubRefresh(pageSlug, oppSlug); return { ok:false, error:String(e.message || "") }; }
+    if(e && e.authRequired){ upPubNote(pageSlug, "failed", t("err")); pagePubRefresh(pageSlug, oppSlug); return { ok:false, error:t("err") }; }
+    upPubNote(pageSlug, "unconfirmed", (e && e.message) || "");                 // ambiguous: the live link decides
+    upVerifyAfterPublish(pageSlug, oppSlug);
+    pagePubRefresh(pageSlug, oppSlug);
+    return { ok:false, unconfirmed:true };
+  });
+}
+// After a publish, prove it: poll the live URL (patient, backing off) and stamp live_verified_at only on a real ok,
+// then refresh the surfaces and the board so the card moves to Live. A spent budget leaves the time-derived state.
+function upVerifyAfterPublish(pageSlug, oppSlug){
+  if(__upVerifying[pageSlug]) return;
+  __upVerifying[pageSlug] = 1;
+  verifyLivePoll(pageSlug).then(function(v){
+    if(v && v.ok){ delete __upPub[pageSlug]; return pageStampLive(pageSlug).catch(function(){}); }
+  }, function(){}).then(function(){
+    delete __upVerifying[pageSlug];
+    pagePubRefresh(pageSlug, oppSlug);
+    try{ reloadBoardData().then(function(){}, function(){}); }catch(e){}
+  });
+}
+// The ONE delegated click handler for every Publish button (installed once; buttons are re-rendered freely).
+(function upWirePublishDelegate(){
+  try{
+    if(window.__thrivePubDelegate) return; window.__thrivePubDelegate = 1;
+    document.addEventListener("click", function(ev){
+      var b = ev.target && ev.target.closest ? ev.target.closest("[data-publish-page]") : null; if(!b) return;
+      ev.preventDefault(); if(b.disabled) return;
+      pagePublishNow(b.getAttribute("data-publish-page"), b.getAttribute("data-publish-opp") || "");
+    });
+  }catch(e){}
+})();
+try{ window.__thrivePublishNow = pagePublishNow; window.__thrivePubState = pagePubState; }catch(e){}
 // A bounded wait (never a hang): a real setTimeout wrapped in a promise, used only to space verify-live polls.
 function upDelay(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
 // Verify-live with a bounded, BACKING-OFF poll for the GitHub Pages publish delay. A FRESH Pages path
@@ -522,7 +647,7 @@ function verifyLive(slug){
 function upSendLiveGate(slug, data){
   data = data || {};
   if(data.source !== "upload") return Promise.resolve();
-  function deny(kind){ var e=new Error(kind); e.__kind=kind; throw e; }
+  function deny(kind){ var e=new Error(kind); e.__kind=kind; e.__page=slug; throw e; }   // PR-A: carry the page so the refusal can offer Publish
   // Pages now activate ON UPLOAD, so a card in Operations already carries a live page. The gate therefore
   // blocks ONLY on a DEFINITIVELY dead page (404/410); it never blocks on "not activated" or on a transient
   // GET. A live page passes; a transient failure (network/5xx/unknown) is retried once and then ALLOWED (do
@@ -621,10 +746,11 @@ function upApprove(){
       upSetStatus(t("up_done_partial").replace("{k}", String(committed)).replace("{n}", String(committed + res.fail)) + " " + names, (committed ? "warn" : "bad"));
       var ap2=document.getElementById("upApprove"); if(ap2) ap2.disabled = false;   // allow a retry
     } else if(res.pending){
-      // F1 TRANSITIONAL: the commit landed (or very likely did) but liveness is not confirmed yet - published,
-      // going live shortly. Never a RED here; the background verify flips the card to live when the deploy lands.
-      upSetStatus(t("up_going_live").replace("{n}", String(committed)), "ok");
-      setTimeout(function(){ closeUpload(); }, 900);
+      // PR-A: the relay did not CONFIRM these commits (a timeout or a transport error). They may have landed, so
+      // this is not RED, but it is not a green success either: an amber note names them and the overlay stays
+      // open. Each card shows a Publish action until the live link proves the page (the background verify).
+      upSetStatus(t("up_pub_unconfirmed").replace("{n}", String(res.pending)) + " " + (res.pendingTitles || []).join(", "), "warn");
+      var ap3=document.getElementById("upApprove"); if(ap3) ap3.disabled = true;
     } else {
       upSetStatus(t("up_done") + " " + (res.ok || 0), "ok");
       setTimeout(function(){ closeUpload(); }, 600);
@@ -652,18 +778,16 @@ function uploadActivateHtml(slug, row, detail){
   var hasPage = !!(page || (detail && detail.opp && detail.opp.data && detail.opp.data.page_slug));
   if(!hasPage) return "";                                        // no page anywhere -> nothing to activate
   var live = !!(page && page.live_verified_at);                 // the SINGLE, durable liveness truth (on the effective page)
-  // F1 PUBLISH TRUTH: a COMMITTED page is published. The only two states are live (green) or a neutral
-  // transitional "Published, going live shortly" - NEVER a RED "dead"/failed, because a not-yet-resolving URL
-  // is an async deploy that has not landed, not a publish failure. The transitional state always offers a
-  // Re-check, and the background re-verify (upWireActivate on open) flips it to green Live when the deploy
-  // lands. RED is reserved for a genuine relay/commit failure, which surfaces on the upload result panel
-  // (libDoneRowHtml), never here.
-  var stateKey = live ? "up_state_live" : "up_state_going_live";
-  var stateCls = live ? "ok" : "";                              // never "bad" for a committed page
+  // PR-A PUBLISH TRUTH (replaces "a page row means committed"): the row is written BEFORE the commit, so the state
+  // is derived (pagePubState) - live (green), publishing (neutral, inside the deploy window, with Re-check), or
+  // NOT PUBLISHED (amber, with a one-tap Publish and the relay's reason when known). A card is never told it is
+  // "going live" forever: once the window passes without a live link it says so and offers the fix.
+  var st = pagePubState(pageSlug, page || {});
   var canReverify = !live;                                       // Re-check offered until it resolves live
-  return '<div class="dw-sec up-act-sec" data-page-slug="' + esc(pageSlug) + '" data-live="' + (live ? "1" : "0") + '"><h3>' + esc(t("up_page_h")) + '</h3>'+
-    '<div class="up-state ' + stateCls + '" id="upState">' + esc(t(stateKey)) + '</div>'+
-    (canReverify ? '<div class="acts"><button class="act" id="upReverify" type="button">' + esc(t("up_reverify")) + '</button></div>' : '')+
+  return '<div class="dw-sec up-act-sec" data-page-slug="' + esc(pageSlug) + '" data-live="' + (live ? "1" : "0") + '" data-pub-state="' + st.key + '"><h3>' + esc(t("up_page_h")) + '</h3>'+
+    '<div id="upState">' + pagePubLineHtml(pageSlug, page || {}) + '</div>'+
+    (canReverify ? '<div class="acts">' + (st.key === "unpublished" || st.key === "working" ? pagePublishBtnHtml(pageSlug, slug) : '') +
+      '<button class="act" id="upReverify" type="button">' + esc(t("up_reverify")) + '</button></div>' : '')+
     '<div class="act-status" id="upActStatus"></div>'+
     // F2: an in-place srcdoc preview of the stored page html (populated async in upWireActivate via
     // pageReadHtml), so a landed offer previews instantly, before AND after the deploy resolves.
@@ -902,15 +1026,18 @@ function upCommitLibrary(plan){
     var html = assetBaseInto((r.page && r.page.html) || ""), title = r.title || upPretty(r.slug), task = r.task || "";   // resolve {{ASSET_BASE}} before store + commit
     if(!String(html).trim()){ results.push({ slug:r.slug, title:title, task:task, ok:false, kind:"nohtml" }); return one(i + 1); }
     return pageUpsert(r.slug, html, { title:title, task:task })                     // console_pages row ONLY (title+task) - no oppUpsert
-      .then(function(){ return pagePublishRelay(r.slug, withBeaconClient(html)); }) // relay commits the static file
+      .then(function(){ return upPublishOnce(r.slug, withBeaconClient(html)); })    // relay commits the static file (PR-A: positive confirm + one transport retry)
       .then(function(){
-        results.push({ slug:r.slug, title:title, ok:true, published:true, live:false, link:liveUrl(r.slug) });  // committed = published
+        upPubNote(r.slug, "publishing", "");
+        results.push({ slug:r.slug, title:title, ok:true, published:true, live:false, link:liveUrl(r.slug) });  // the relay CONFIRMED the commit
         return one(i + 1);
       }, function(e){
         if(e && e.kind === "timeout"){                                             // idempotent commit, likely landed -> confirming
+          upPubNote(r.slug, "unconfirmed", "");
           results.push({ slug:r.slug, title:title, ok:true, published:true, confirming:true, live:false, link:liveUrl(r.slug) });
         } else {                                                                    // a real relay error is the only true failure
-          results.push({ slug:r.slug, title:title, ok:false, kind:(e && e.__kind) || "fail" });
+          upPubNote(r.slug, "failed", (e && e.message) || "");
+          results.push({ slug:r.slug, title:title, ok:false, kind:(e && e.__kind) || "fail", error:(e && e.message) || "" });
         }
         return one(i + 1);
       });
@@ -949,7 +1076,7 @@ function libDoneRowHtml(x){
         '<button class="act" type="button" data-lib-open="' + esc(x.slug) + '">' + esc(t("lib_open_page")) + '</button></div>'+
     '</div>';
   }
-  var reason = (x.kind === "nohtml") ? t("up_no_html") : t("up_commit_failed");   // a committed page is never here
+  var reason = (x.kind === "nohtml") ? t("up_no_html") : (t("up_commit_failed") + (x.error ? (" " + t("pub_reason") + " " + x.error) : ""));   // PR-A: the relay's own reason
   return '<div class="up-row up-row-warn" data-lib-slug="' + esc(x.slug) + '">'+
     '<div class="up-row-h"><span class="up-slug mono-iso">' + esc(x.slug) + '</span> '+
       '<span class="up-title">' + esc(x.title || "") + '</span>'+
@@ -1631,8 +1758,9 @@ function owCommitCampaign(slug){
     if(pageSlug!==slug) next.page_slug=pageSlug;                                 // a renamed page: the card references it by page_slug
     return oppUpsert(slug, { business:pr.title||slug, data:next, up:Date.now(), cycle:cycle, owner:ownerStamp(slug) })   // OWNER column: creator stamped once, preserved on a re-commit
       .then(function(){ return pageUpsert(pageSlug, html, { title:pr.title, task:pr.task }); })
-      .then(function(){ return pagePublishRelay(pageSlug, withBeaconClient(html, cycle)); });
+      .then(function(){ return upPublishOnce(pageSlug, withBeaconClient(html, cycle)); });   // PR-A: positive confirm + one transport retry
   }).then(function(){
+    upPubNote(pageSlug, "publishing", "");
     try{ upActivateBackground([pageSlug]); }catch(e){}                            // F1 publish-truth (never a false RED)
     return reloadBoardData().then(function(){},function(){});
   }).then(function(){
@@ -1645,9 +1773,17 @@ function owCommitCampaign(slug){
     // AMBIGUOUS, not a failure - the page is published, going live shortly. Confirm in the background, never a
     // false Failed. Only a structured relay refusal (relayreject) or a pre-publish Supabase write error is genuine.
     if((e && e.__kind === "relayhttp") || (e && e.kind === "timeout")){
+      upPubNote(pageSlug, "unconfirmed", (e && e.message) || "");
       try{ upActivateBackground([pageSlug]); }catch(e2){}
       reloadBoardData().then(function(){},function(){});
       owCommitStatus(t("up_going_live").replace("{n}", "1"), "ok"); return true;
+    }
+    // PR-A: a relay REFUSAL happens AFTER the card and page row were written, so "nothing was created" is false.
+    // Say the truth: the card exists, the page is not published, and why; the card's Page tab offers Publish.
+    if(e && e.__kind === "relayreject"){
+      upPubNote(pageSlug, "failed", e.message);
+      reloadBoardData().then(function(){},function(){});
+      owCommitStatus(t("pub_state_unpublished") + " " + t("pub_reason") + " " + String(e.message || ""), "bad"); return false;
     }
     owCommitStatus(t("up_write_failed"), "bad"); return false;
   });
