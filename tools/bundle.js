@@ -3103,7 +3103,7 @@ ${CONTACTS_SRC}
       box.innerHTML = (st.key==="live")
         ? '<div class="cr-field"><span class="cr-k">'+esc(t("lib_link"))+'</span><bdi class="cr-v mono-iso" dir="ltr">'+esc(liveUrl(pageSlug))+'</bdi></div>'
         : '<div class="cr-field"><span class="cr-k">'+esc(t("pub_status"))+'</span><span class="cr-v">'+pagePubLineHtml(pageSlug, page||{})+'</span></div>'+
-          '<div class="acts">'+pagePublishBtnHtml(pageSlug, slug)+'</div>';
+          '<div class="acts">'+pagePublishBtnHtml(pageSlug, slug, true)+'</div>';   // the Page tab's one primary action
     }
     try{ restGet("console_pages?slug=eq."+enc(pageSlug)+"&select=title,live_verified_at,up&limit=1").then(function(rows){
       var row=(rows && rows[0]) || {};

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="thrive-build" content="dd5779ba">
+<meta name="thrive-build" content="23695ca0">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Thrive Board</title>
 <script>/* First paint in the operator's language: set dir/lang from thrive_lang before any render, so Arabic is right-to-left from the first frame (i18n.js first-paint discipline). ui_lang only; there is no doc content here. */
@@ -875,7 +875,7 @@
 (function(){
   "use strict";
   // Public by design (RLS + the operator sign-in protect the data, never the secrecy of these two values).
-  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "dd5779ba";
+  var URL_BASE = "https://ssqhwdzgegzqcjfcclmr.supabase.co", ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzcWh3ZHpnZWd6cWNqZmNjbG1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzODAyNTcsImV4cCI6MjA4Njk1NjI1N30.MASuul-IGtVxKSwlo57DgFdy5_kwMuumxnoTupAMQxs", BUILD = "23695ca0";
   // L5: the relay /exec endpoint, baked from library/sync.json at build time (public by design; the Resend key
   // lives only on the relay). A localStorage thrive_email_ep override is read defensively (never a precondition).
   var RELAY_EP = "https://script.google.com/macros/s/AKfycbzesk5GB7vgstJuP4Nx-EF4DOCb1ZTph5EzvY5KlkqXSlEBH-l3zCfAgUMNbD_VJ1hL3g/exec";
@@ -3914,9 +3914,12 @@ function pagePubState(pageSlug, page){
 }
 // The one-tap Publish button any surface renders for a not-live page. data-publish-page drives the ONE delegated
 // handler below, so the detail, the Page tab and the send-gate message all publish through the same path.
-function pagePublishBtnHtml(pageSlug, oppSlug){
+// primary=true ONLY where Publish is the surface's one primary action (the Page tab). Beside a Send (the
+// send-gate refusal) or among the Details actions it is a neutral button, so the gradient stays reserved for ONE
+// primary action per surface.
+function pagePublishBtnHtml(pageSlug, oppSlug, primary){
   var busy = !!__upPublishing[pageSlug];
-  return '<button class="act send pub-now" type="button" data-publish-page="' + esc(pageSlug) + '" data-publish-opp="' + esc(oppSlug || "") + '"' + (busy ? " disabled" : "") + '>' +
+  return '<button class="act' + (primary ? ' send' : '') + ' pub-now" type="button" data-publish-page="' + esc(pageSlug) + '" data-publish-opp="' + esc(oppSlug || "") + '"' + (busy ? " disabled" : "") + '>' +
     esc(t(busy ? "pub_working" : "pub_now")) + '</button>';
 }
 // The state line for a page: text + class from pagePubState. Never claims Live without live_verified_at.
@@ -5810,7 +5813,7 @@ function ctOpenConvoFromLibrary(cid){
         iconBtn("reload", "refresh", t("refresh")) +
         iconBtn("signout", "logout", t("signout")) +
       '</span>' +
-      '<span class="build-mini muted" title="build dd5779ba">dd5779ba</span>';
+      '<span class="build-mini muted" title="build 23695ca0">23695ca0</span>';
   }
   // Reveal the Admin entry only for an owner. Safe to call repeatedly (idempotent) and before the role settles.
   function paintAdminSlot(){
@@ -6498,7 +6501,7 @@ function ctOpenConvoFromLibrary(cid){
       box.innerHTML = (st.key==="live")
         ? '<div class="cr-field"><span class="cr-k">'+esc(t("lib_link"))+'</span><bdi class="cr-v mono-iso" dir="ltr">'+esc(liveUrl(pageSlug))+'</bdi></div>'
         : '<div class="cr-field"><span class="cr-k">'+esc(t("pub_status"))+'</span><span class="cr-v">'+pagePubLineHtml(pageSlug, page||{})+'</span></div>'+
-          '<div class="acts">'+pagePublishBtnHtml(pageSlug, slug)+'</div>';
+          '<div class="acts">'+pagePublishBtnHtml(pageSlug, slug, true)+'</div>';   // the Page tab's one primary action
     }
     try{ restGet("console_pages?slug=eq."+enc(pageSlug)+"&select=title,live_verified_at,up&limit=1").then(function(rows){
       var row=(rows && rows[0]) || {};

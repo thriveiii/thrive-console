@@ -135,6 +135,7 @@ with sync_playwright() as p:
         txt:b.textContent, btn:!!b.querySelector('[data-publish-page]') }; }""")
     ck("(b) unpublished page: the Page tab does NOT show a Live link", tab["state"]=="unpublished" and "Live link" not in tab["txt"], tab)
     ck("(b) unpublished page: the Page tab shows Not published + a one-tap Publish", "Not published" in tab["txt"] and tab["btn"], tab)
+    ck("(b) on the Page tab, Publish is the one primary action", pg.evaluate("()=>!!document.querySelector('#crPub .act.send[data-publish-page]')"))
     pg.close(); ctx.close()
 
     st, ctx, pg, perr = boot(b, "ok")
@@ -188,10 +189,12 @@ with sync_playwright() as p:
     pg.evaluate("()=>{ var b=document.getElementById('nmSend'); if(b) b.disabled=false; }")
     pg.click("#crMsgPanel #nmSend"); pg.wait_for_timeout(3500)
     sends = [x for x in st["relay"] if x.get("to")]
-    gate = pg.evaluate("()=>{ var s=document.getElementById('nmStatus'); return s ? { txt:s.textContent, btn:!!s.querySelector('[data-publish-page]') } : null; }")
+    gate = pg.evaluate("()=>{ var s=document.getElementById('nmStatus'); var b=s?s.querySelector('[data-publish-page]'):null; var n=document.querySelectorAll('#crMsgPanel .act.send').length; return s ? { txt:s.textContent, btn:!!b, cls:b?b.className:'', gradients:n } : null; }")
     ck("(c) the gate blocks the send: the relay send op is never called for an unpublished page", sends==[], sends)
     ck("(c) the refusal is actionable: names the cause and offers a one-tap Publish",
        gate is not None and "not published" in gate["txt"].lower() and gate["btn"], gate)
+    ck("(c) beside Send, Publish is a neutral button: one gradient primary action on the surface (Send)",
+       gate is not None and " send" not in (" " + gate["cls"]) and gate["gradients"] == 1, gate)
     pg.close(); ctx.close()
 
     b.close()

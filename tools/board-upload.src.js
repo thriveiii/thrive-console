@@ -513,9 +513,12 @@ function pagePubState(pageSlug, page){
 }
 // The one-tap Publish button any surface renders for a not-live page. data-publish-page drives the ONE delegated
 // handler below, so the detail, the Page tab and the send-gate message all publish through the same path.
-function pagePublishBtnHtml(pageSlug, oppSlug){
+// primary=true ONLY where Publish is the surface's one primary action (the Page tab). Beside a Send (the
+// send-gate refusal) or among the Details actions it is a neutral button, so the gradient stays reserved for ONE
+// primary action per surface.
+function pagePublishBtnHtml(pageSlug, oppSlug, primary){
   var busy = !!__upPublishing[pageSlug];
-  return '<button class="act send pub-now" type="button" data-publish-page="' + esc(pageSlug) + '" data-publish-opp="' + esc(oppSlug || "") + '"' + (busy ? " disabled" : "") + '>' +
+  return '<button class="act' + (primary ? ' send' : '') + ' pub-now" type="button" data-publish-page="' + esc(pageSlug) + '" data-publish-opp="' + esc(oppSlug || "") + '"' + (busy ? " disabled" : "") + '>' +
     esc(t(busy ? "pub_working" : "pub_now")) + '</button>';
 }
 // The state line for a page: text + class from pagePubState. Never claims Live without live_verified_at.
