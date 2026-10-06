@@ -1236,23 +1236,26 @@ function buildBoard(){
   .repn{display:inline-block;min-width:15px;color:var(--text-dim)}
   /* CARD FOOT: who owns it (a neutral chip, never the gradient) + the recipient email (LTR-isolated, truncating).
      One quiet hairline row on every card; the lane color stays the semantic carrier, the owner chip is neutral. */
-  .card-foot{margin-top:6px;border-top:1px solid var(--border-soft);padding-top:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+  .card-foot{margin-top:6px;border-top:1px solid var(--border-soft);padding-top:6px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 8px;min-width:0}
   .owner{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;max-width:58%;overflow:hidden;white-space:nowrap;font-size:var(--fs-xs);color:var(--text-muted);background:var(--surface-sunken);border:1px solid var(--border-soft);border-radius:var(--r-pill);padding-block:2px;padding-inline:3px 9px}
   .owner-mono{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:16px;height:16px;border-radius:50%;background:var(--panel-2);color:var(--text-muted-2);font-size:9px;font-weight:700;line-height:1;unicode-bidi:isolate}
   .owner-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:isolate}
   .owner-none{color:var(--text-dim);background:transparent;border-style:dashed;padding-inline:9px}
-  .card-to{flex:1 1 auto;min-width:0;text-align:end;font-size:var(--fs-xs);color:var(--text-muted-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:isolate}
+  .card-to{flex:1 1 7.5em;min-width:7.5em;max-width:100%;text-align:end;font-size:var(--fs-xs);color:var(--text-muted-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:isolate}
   html[dir="rtl"] .owner-nm,html[dir="rtl"] .owner-mono,html[dir="rtl"] .card-to{letter-spacing:normal;text-transform:none}
   /* CARD FACE MEMBERS (IDENTITY 4.6): the assignee set replaces the single owner chip. Each member is a quiet
      pill whose colour is an ACCENT ONLY (the dot + a soft left border in the member hue); the name text stays
      --ink-2, so colour is never the sole carrier. Never the gradient, never a lane hue. Truncates, never wraps,
      so card geometry holds with multiple members. */
-  .members{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;max-width:60%;overflow:hidden;white-space:nowrap;min-width:0}
+  /* PR-C legibility: member chips never shrink (a name must read whole, never "T..." or a stray glyph). The
+     cluster wraps within the card, and the recipient email yields first: it truncates, then drops to its own line
+     beneath the members when the card is too narrow for both. No horizontal overflow at any width. */
+  .members{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;flex:0 1 auto;max-width:100%;min-width:0}
   /* PR-C: the chip reads in the member's colour at a glance - a soft TINT of the member hue behind the chip, a
      member-hue border, and the monogram circle FILLED with the member colour (glyph --on-mem, AA). The name stays
      --ink-2 on the tint (AA in both themes), so colour is never the only carrier. Never the gradient; the lane
      colours are untouched. An unknown member falls back to the neutral chip. */
-  .member{display:inline-flex;align-items:center;gap:5px;flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap;font-size:var(--fs-xs);color:var(--ink-2);background:var(--mem-t, var(--surface-sunken));border:1px solid var(--mem, var(--border-soft));border-radius:var(--r-pill);padding-block:2px;padding-inline:2px 8px}
+  .member{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;max-width:100%;min-width:0;overflow:hidden;white-space:nowrap;font-size:var(--fs-xs);color:var(--ink-2);background:var(--mem-t, var(--surface-sunken));border:1px solid var(--mem, var(--border-soft));border-radius:var(--r-pill);padding-block:2px;padding-inline:2px 8px}
   .member.mem-thyab,.mem-opt.mem-thyab{--mem:var(--mem-thyab);--mem-t:var(--mem-thyab-t);--mem-on:var(--on-mem)}
   .member.mem-basel,.mem-opt.mem-basel{--mem:var(--mem-basel);--mem-t:var(--mem-basel-t);--mem-on:var(--on-mem)}
   .member.mem-agha,.mem-opt.mem-agha{--mem:var(--mem-agha);--mem-t:var(--mem-agha-t);--mem-on:var(--on-mem)}

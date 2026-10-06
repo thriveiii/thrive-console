@@ -142,20 +142,23 @@ with sync_playwright() as p:
         pg.close(); ctx.close()
 
     # ---- (f) phone width + Arabic: no overflow, name LTR, letter-spacing normal ----------------------
-    for lang in ("en", "ar"):
-        ctx = b.new_context(viewport={"width":390,"height":844}); wire(ctx, "dark", lang)
+    for w, lang in ((390, "en"), (390, "ar"), (1024, "en"), (1440, "en"), (1440, "ar")):
+        ctx = b.new_context(viewport={"width":w,"height":900}); wire(ctx, "dark", lang)
         pg = ctx.new_page(); perr = []; pg.on("pageerror", lambda e: perr.append(str(e)))
         pg.goto(f"{base}/library/board.html", wait_until="load"); pg.wait_for_selector(".lane", timeout=8000); pg.wait_for_timeout(1200)
         g = pg.evaluate("""()=>{ var card=document.querySelector('.card[data-slug="c-multi"]'); if(!card) return null;
             var foot=card.querySelector('.card-foot'); var nm=card.querySelector('.members .member .mem-nm');
-            return { n:card.querySelectorAll('.members .member').length, over:card.scrollWidth-card.clientWidth, fover:foot.scrollWidth-foot.clientWidth,
+            var names=[].map.call(card.querySelectorAll('.members .member .mem-nm'), function(e){ return { t:e.textContent, cut:(e.scrollWidth - e.clientWidth) > 1 || e.clientWidth < 8 }; });
+            return { names:names, n:card.querySelectorAll('.members .member').length, over:card.scrollWidth-card.clientWidth, fover:foot.scrollWidth-foot.clientWidth,
                      dir:document.documentElement.getAttribute('dir'), nmdir:nm?nm.getAttribute('dir'):'', ls:nm?getComputedStyle(nm).letterSpacing:'' }; }""")
-        ck(f"[390 {lang}] (f) three coloured member chips render", g is not None and g["n"] == 3, g)
-        ck(f"[390 {lang}] (f) no horizontal overflow of the card", g is not None and g["over"] <= 1 and g["fover"] <= 1, g)
+        ck(f"[{w} {lang}] (f) three coloured member chips render", g is not None and g["n"] == 3, g)
+        ck(f"[{w} {lang}] (f) every member name reads WHOLE (never truncated to an initial or a stray glyph)",
+           g is not None and [x["t"] for x in g["names"]] == ["Thyab", "Basel", "Agha"] and not any(x["cut"] for x in g["names"]), g and g["names"])
+        ck(f"[{w} {lang}] (f) no horizontal overflow of the card", g is not None and g["over"] <= 1 and g["fover"] <= 1, g)
         if lang == "ar":
-            ck("[390 ar] (f) Arabic mirrors; the member name stays LTR with normal spacing",
+            ck(f"[{w} ar] (f) Arabic mirrors; the member name stays LTR with normal spacing",
                g["dir"] == "rtl" and g["nmdir"] == "ltr" and g["ls"] in ("normal", "0px"), g)
-        ck(f"[390 {lang}] no uncaught error", perr == [], perr)
+        ck(f"[{w} {lang}] no uncaught error", perr == [], perr)
         pg.close(); ctx.close()
     b.close()
 
