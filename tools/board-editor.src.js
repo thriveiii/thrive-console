@@ -187,7 +187,11 @@ function edMsgLang(){
 // site line is the agency constant. This only FILLS the field on demand ("Use my signature"); never automatic.
 function edSignatureDefault(lang){
   var id = edIdentity();
-  var name = String(id.name==null?"":id.name).trim();
+  return edSignatureDefaultFor(String(id.name==null?"":id.name).trim(), lang);
+}
+// The same three-line default for ANY member's name (PR-B: a teammate's default when they saved none).
+function edSignatureDefaultFor(name, lang){
+  name = String(name==null?"":name).trim();
   var site = (typeof AGENCY_SITE_L5!=="undefined" && AGENCY_SITE_L5) ? AGENCY_SITE_L5 : "thriveiii.com";
   var agency = (lang==="ar") ? AGENCY_NAME_AR_L5 : AGENCY_NAME_EN_L5;
   var lines = [];
@@ -198,6 +202,54 @@ function edSignatureDefault(lang){
 }
 // Back-compat seam name: the "Use my signature" fill, now the localized default (name / agency / site).
 function edSignaturePreset(){ return edSignatureDefault(edMsgLang()); }
+// ---- PR-B: the CARD OWNER's signature ------------------------------------------------------------------
+// The owner of a card is the stored owner column, else the console_mail-derived earliest sender (the same
+// precedence the card face uses). Returns "" for a card with no known owner, and "" when the owner IS the viewer
+// (on your own card there is only "Use my signature").
+function edCardOwner(slug){
+  try{
+    var m = (typeof __cardMeta!=="undefined" && __cardMeta && __cardMeta[slug]) || {};
+    var o = String(m.owner || m.derived || "").trim();
+    if(!o) return "";
+    if(typeof currentUid==="function" && o === currentUid()) return "";
+    return o;
+  }catch(e){ return ""; }
+}
+function edOwnerName(uid){ try{ return (typeof ownerLabel==="function") ? ownerLabel(uid) : ""; }catch(e){ return ""; } }
+// "Use <Owner>'s signature": the owner's SAVED default from the shared book, else their three-line default
+// built from THEIR name (never the viewer's).
+function edOwnerSignature(uid){ return edOwnerSignatureFor(uid, edMsgLang()); }
+function edOwnerSignatureFor(uid, lang){
+  var saved = (typeof memberSignature==="function") ? memberSignature(uid) : "";
+  return saved || edSignatureDefaultFor(edOwnerName(uid), lang);
+}
+// The GUARANTEED-signature fallback for a send whose signature field is empty (sendCompile). The guarantee is
+// kept - every send carries a signature - but on ANOTHER member's card it is that OWNER's signature, never the
+// viewer's. Your own card, or a card with no known owner, keeps the viewer's default exactly as before.
+function edGuaranteedSignature(slug, lang){
+  var owner = edCardOwner(slug);
+  if(owner && edOwnerName(owner)) return edOwnerSignatureFor(owner, lang);
+  return edSignatureDefault(lang);
+}
+// The AUTOMATIC default on another member's card: when the card carries no signature of its own (data.sig
+// empty) and the field is untouched, prefill the owner's SAVED signature if they have one; otherwise leave the
+// field EMPTY. It never auto-inserts the viewer's signature. It does not write: the preview reflects it at once,
+// the send reads the field, and the first real edit persists it like any typed signature.
+var __edSigTouched = {}, __edLastWired = "";
+function edApplyOwnerDefault(slug){
+  var el = edEl("edSig"); if(!el || __edSigTouched[slug]) return false;
+  if(String(el.value||"").trim()) return false;                                   // the card's own signature wins
+  if(String(((__edBase[slug]||{}).sig)||"").trim()) return false;
+  var owner = edCardOwner(slug); if(!owner) return false;
+  var saved = (typeof memberSignature==="function") ? memberSignature(owner) : "";
+  if(!saved) return false;                                                        // no saved owner signature: stay empty
+  el.value = saved; el.setAttribute("data-sig-src", "owner");
+  try{ edTick(slug); }catch(e){}
+  return true;
+}
+// Called when the shared book finishes loading: an editor that is already open may now take the owner default,
+// and its owner button label is current.
+function edOwnerSigRefresh(){ try{ if(__edLastWired) edApplyOwnerDefault(__edLastWired); }catch(e){} }
 // The user's saved (named) signatures, from runtime identity (console_profiles.prefs.signatures). Always an
 // array; each entry is { id, name, text }. Per-user by construction (own profile row).
 function edSavedSigs(){ var id=edIdentity(); var a=id && id.signatures; return Array.isArray(a) ? a : []; }
@@ -311,6 +363,7 @@ function editorHtml(slug, row, detail){
   // The signature FIELD pre-fills from the persisted record's data.sig (empty if none); on re-render inside an
   // open drawer it keeps the live typed value so a paint never clobbers an in-progress signature.
   var sig = data ? String(data.sig||"") : (edVal("edSig"));
+  var sigOwner = edCardOwner(slug), sigOwnerName = sigOwner ? edOwnerName(sigOwner) : "";   // PR-B: the card owner (not the viewer)
   var subjOk = !!subj.trim(), bodyOk = !!body.trim(), linkOk = edHasLink(slug, body);
   return '<div class="dw-sec ed-sec"><h3>'+esc(t("ed_h"))+'</h3>'+
     '<input class="ed-subj" id="edSubj" type="text" dir="auto" autocomplete="off" spellcheck="true" '+
@@ -324,7 +377,11 @@ function editorHtml(slug, row, detail){
     '</ul>'+
     '<div class="ed-sig-field">'+
       '<div class="ed-sig-head"><span class="ed-sig-lab">'+esc(t("ed_sig"))+'</span>'+
-        '<button class="act ed-sig-use" id="edSigFill" type="button">'+esc(t("ed_sig_use"))+'</button></div>'+
+        '<span class="ed-sig-uses"><button class="act ed-sig-use" id="edSigFill" type="button">'+esc(t("ed_sig_use"))+'</button>'+
+        // PR-B: on ANOTHER member's card, a second choice fills the card owner's signature (never automatic for
+        // the viewer's). Hidden on your own card and on a card with no known owner.
+        (sigOwner && sigOwnerName ? '<button class="act ed-sig-use" id="edSigOwner" type="button" data-owner="'+esc(sigOwner)+'">'+esc(t("ed_sig_use_owner").replace("{name}", sigOwnerName))+'</button>' : '')+
+        '</span></div>'+
       '<textarea class="rec-in ed-sig-in" id="edSig" rows="3" dir="auto" autocomplete="off" spellcheck="true" '+
         'placeholder="'+esc(t("ed_sig_ph"))+'" aria-label="'+esc(t("ed_sig"))+'">'+esc(sig)+'</textarea>'+
       // G7.1: the user's SAVED signatures - pick one to fill the field, or "+" to save the current text as a new
@@ -498,9 +555,11 @@ function wireEditor(slug){
   var onInput=function(){ edTick(slug); edScheduleSave(slug, 700); };
   if(subjEl) subjEl.addEventListener("input", onInput);
   if(bodyEl) bodyEl.addEventListener("input", onInput);
-  var sigEl=edEl("edSig"); if(sigEl) sigEl.addEventListener("input", onInput);   // E0: signature is field-driven
+  var sigEl=edEl("edSig"); if(sigEl) sigEl.addEventListener("input", function(){ __edSigTouched[slug]=1; onInput(); });   // E0: signature is field-driven; a typed signature is never overridden by the owner default
   var lk=edEl("edLink"); if(lk) lk.addEventListener("click", function(){ edInsertLink(slug); });
-  var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ edFillSignature(slug); });
+  var sf=edEl("edSigFill"); if(sf) sf.addEventListener("click", function(){ __edSigTouched[slug]=1; edFillSignature(slug); });
+  var so=edEl("edSigOwner"); if(so) so.addEventListener("click", function(){ __edSigTouched[slug]=1; edFillSignatureText(slug, edOwnerSignature(so.getAttribute("data-owner"))); });   // PR-B: the card owner's signature
+  __edLastWired = slug; edApplyOwnerDefault(slug);             // PR-B: default to the owner's SAVED signature on another member's empty card
   edRenderSavedSigs(slug);                                     // G7.1: the per-user saved-signatures strip + "+"
   // Optional greeting (one opt-in checkbox) + the bulk "related contacts".
   var gon=edEl("crGreetOn"); if(gon) gon.addEventListener("change", function(){ edSetGreetOn(slug, gon.checked); });
