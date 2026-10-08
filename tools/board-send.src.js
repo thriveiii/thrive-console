@@ -577,11 +577,12 @@ function runSend(slug){
     var msg = (kind==="norecip") ? t("s_no_recip") : (kind==="nomsg") ? t("s_no_msg")
       : (kind==="cap") ? t("s_cap")
       : (kind==="suppress_block") ? t("s_suppress_unavail")   // B2 fail-closed: the do-not-contact list never loaded; nothing was sent
-      : (kind==="deadlink") ? t("s_dead_link")    // page activates on upload; the ONLY page block left is a definitively dead link (404/410)
+      : (kind==="deadlink") ? t("s_dead_link")    // the gate stays STRICT: a page that does not resolve (404/410) is never sent; PR-A makes the refusal actionable
       : (e && e.authRequired) ? t("err") : t("s_failed");
-    __act[slug] = { msg:msg, cls:"bad" };
+    var pub = (kind==="deadlink") ? String((e && e.__page) || slug) : "";   // PR-A: the page to publish, so the refusal carries a one-tap Publish
+    __act[slug] = { msg:msg, cls:"bad", pub:pub };
     if(owDetailActive(slug)) refreshOppDetail(slug); else { try{ redInto(root, "send", new Error(t("s_failed"))); }catch(x){} }
-    return { msg:msg, cls:"bad", sent:0, failed:1, capped:0 };              // resolve (never reject) so the caller can render the reason
+    return { msg:msg, cls:"bad", sent:0, failed:1, capped:0, pub:pub };     // resolve (never reject) so the caller can render the reason
   });
 }
 // "Sent k of n." with Western numerals, isolated for RTL by the .act-status container.

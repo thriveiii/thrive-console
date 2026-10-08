@@ -286,6 +286,9 @@ function unifiedSend(slug){
     return Promise.resolve(runSend(slug)).then(function(result){   // runSend resolves with { msg, cls, ... }
       if(over && result){
         nmSetStatus(result.msg, result.cls);            // green on full success, amber on partial, red on failure
+        // PR-A: a send the live gate refused because the page is not published carries a one-tap Publish beside
+        // the reason (the gate itself stays strict - nothing is sent until the page resolves live).
+        if(result.pub && typeof pagePublishBtnHtml==="function"){ var ns=document.getElementById("nmStatus"); if(ns){ var pw=document.createElement("div"); pw.className="acts pub-gate"; pw.innerHTML=pagePublishBtnHtml(result.pub, slug); ns.appendChild(pw); } }
         if(result.cls !== "ok"){ var sd2=document.getElementById("nmSend"); if(sd2) sd2.disabled=false; }   // let the operator retry a failed/partial send
       }
       // a drawer-originated send (over===false) shows its result via runSend's own __act[slug] + refreshOppDetail

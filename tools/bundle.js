@@ -1698,6 +1698,12 @@ function buildBoard(){
   .ct-mem-tag{flex-basis:100%}
   .up-state.ok{color:var(--success);border-color:var(--success-border)}
   .up-state.bad{color:var(--warning);border-color:var(--warning-border)}
+  /* PR-A publish truth: a not-published page reads amber (a state to act on, not an error), with the relay's
+     reason beneath it and the one-tap Publish. Live stays green; publishing stays neutral. */
+  .up-state.warn{color:var(--warning-2);border-color:var(--warning-border);background:var(--warning-bg)}
+  .pub-err{margin-top:6px;font-size:var(--fs-sm);color:var(--text-muted);overflow-wrap:anywhere}
+  .cr-pub .acts,.pub-gate{margin-top:8px}
+  html[dir="rtl"] .pub-err,html[dir="rtl"] .pub-state{letter-spacing:normal;text-transform:none}
   .pf-ro{font-size:14px;color:var(--text);background:var(--surface);border:1px solid var(--border-soft);border-radius:8px;padding:9px 11px;word-break:break-word}
   .pf-note{font-size:11.5px;color:var(--text-dim);margin-top:6px}
   .pf-admin{border-top:1px solid var(--border-soft);padding-top:14px;margin-top:20px}
@@ -1860,7 +1866,12 @@ function buildBoard(){
           s_no_msg:"No prepared message on this opportunity.",
           s_sent_n:"Sent {k} of {n}.", s_failed_n:"{f} failed:", s_capped_n:"{c} blocked by the daily cap.", s_skipped_n:"{s} skipped (do-not-contact).",
           s_cap:"Daily send cap reached. Nothing was sent.", s_suppress_unavail:"Send halted: the do-not-contact list could not be loaded. Nothing was sent.", cap_today:"today", cap_month:"this month",
-          s_dead_link:"The page link is not live. Nothing was sent.",
+          s_dead_link:"Page not published yet. Nothing was sent. Publish it now, then send.",
+          pub_now:"Publish now", pub_working:"Publishing...", pub_working_line:"Publishing the page...", pub_status:"Status",
+          pub_state_unpublished:"Not published. This page is not live yet.", pub_reason:"Reason:",
+          pub_err_http:"The publish server answered HTTP {s}.", pub_err_noresult:"The publish server did not return a publish result.",
+          pub_err_unconfirmed:"The publish server did not confirm the publish.", pub_err_nohtml:"This page has no stored HTML to publish.",
+          up_pub_unconfirmed:"Not confirmed for {n} page(s). Open each card and tap Publish now:",
           r_h:"Recipient email", r_ph:"one or more emails, comma or newline separated", r_save:"Save recipient",
           r_saving:"Saving…", r_saved:"Saved.", r_failed:"Could not save. Nothing changed.",
           r_empty:"Enter a recipient email.", r_bad:"That does not look like a valid email.",
@@ -1975,7 +1986,12 @@ function buildBoard(){
           s_no_msg:"لا توجد رسالة مُعدّة لهذه الفرصة.",
           s_sent_n:"أُرسلت {k} من {n}.", s_failed_n:"أخفقت {f}:", s_capped_n:"حُجبت {c} بحدّ اليوم.", s_skipped_n:"تُخطّيت {s} (قائمة عدم التواصل).",
           s_cap:"بلغت حدّ الإرسال اليومي. لم يُرسل شيء.", s_suppress_unavail:"توقّف الإرسال: تعذّر تحميل قائمة عدم التواصل. لم يُرسل شيء.", cap_today:"اليوم", cap_month:"الشهر",
-          s_dead_link:"رابط الصفحة غير فعّال. لم يُرسل شيء.",
+          s_dead_link:"الصفحة لم تُنشر بعد. لم يُرسل شيء. انشرها الآن ثم أرسل.",
+          pub_now:"انشر الآن", pub_working:"جارٍ النشر...", pub_working_line:"جارٍ نشر الصفحة...", pub_status:"الحالة",
+          pub_state_unpublished:"لم تُنشر. هذه الصفحة ليست حيّة بعد.", pub_reason:"السبب:",
+          pub_err_http:"ردّ خادم النشر برمز HTTP {s}.", pub_err_noresult:"لم يُرجع خادم النشر نتيجة النشر.",
+          pub_err_unconfirmed:"لم يؤكّد خادم النشر النشر.", pub_err_nohtml:"لا يوجد محتوى محفوظ لهذه الصفحة لنشره.",
+          up_pub_unconfirmed:"لم يُؤكَّد نشر {n} من الصفحات. افتح كل بطاقة واضغط انشر الآن:",
           r_h:"بريد المستلم", r_ph:"بريد واحد أو أكثر، مفصولة بفاصلة أو سطر", r_save:"حفظ المستلم",
           r_saving:"جارٍ الحفظ…", r_saved:"تم الحفظ.", r_failed:"تعذّر الحفظ. لم يتغيّر شيء.",
           r_empty:"أدخل بريد المستلم.", r_bad:"هذا لا يبدو بريدًا صالحًا.",
@@ -2206,7 +2222,7 @@ function buildBoard(){
       // page row of its own, so its liveness lives on page_slug, not the card's slug. The page row carries the
       // SINGLE liveness truth (live_verified_at); read-only, derived from the verified page, never a data flag.
       var pageSlug=(opp && opp.data && opp.data.page_slug) || slug;
-      return restGet("console_pages?slug=eq."+enc(pageSlug)+"&select=slug,live_verified_at&limit=1").then(function(pg){
+      return restGet("console_pages?slug=eq."+enc(pageSlug)+"&select=slug,live_verified_at,up&limit=1").then(function(pg){
         return { opp:opp, mail:a[1]||[], hits:a[2]||[], page:(pg||[])[0]||null, pageSlug:pageSlug };
       }, function(){ return { opp:opp, mail:a[1]||[], hits:a[2]||[], page:null, pageSlug:pageSlug }; });
     }, function(){ return { opp:null, mail:[], hits:[], page:null, pageSlug:slug }; });
@@ -2750,7 +2766,8 @@ ${CONTACTS_SRC}
           '<div class="acts">'+actBtn("delete_go","a_del_yes","danger")+actBtn("delete_cancel","a_del_no","")+'</div></div>'
       : '';
     return '<div class="dw-sec"><h3>'+esc(t("a_actions"))+'</h3><div class="acts">'+btns.join("")+'</div>'+confirmRow+
-      '<div class="act-status'+(a.cls?(" "+a.cls):"")+'" id="actStatus" role="status" aria-live="polite">'+esc(a.msg||"")+'</div></div>';
+      '<div class="act-status'+(a.cls?(" "+a.cls):"")+'" id="actStatus" role="status" aria-live="polite">'+esc(a.msg||"")+'</div>'+
+      (a.pub && typeof pagePublishBtnHtml==="function" ? '<div class="acts pub-gate">'+pagePublishBtnHtml(a.pub, row.slug)+'</div>' : '')+'</div>';   // PR-A: a send refused for an unpublished page offers Publish in one tap
   }
   function noteItemHtml(n){
     n=n||{}; var meta=[fmtWhen(n.ts), (n.by ? (t("a_note_by")+" "+actorName(n.by)) : "")].filter(Boolean).join("  \\u00b7  ");
@@ -3073,14 +3090,34 @@ ${CONTACTS_SRC}
       '<div class="cr-sec"><h3 class="cr-h">'+esc(t("cr_page_h"))+'</h3>'+
         '<div class="cr-field"><span class="cr-k">'+esc(t("cr_page_title"))+'</span><span class="cr-v" id="crPageTitle" dir="auto">'+esc(upPretty(pageSlug))+'</span></div>'+
         '<div class="cr-field"><span class="cr-k">'+esc(t("cr_page_link_name"))+'</span><bdi class="cr-v mono-iso" dir="ltr">'+esc(pageSlug)+'</bdi></div>'+
-        '<div class="cr-field"><span class="cr-k">'+esc(t("lib_link"))+'</span><bdi class="cr-v mono-iso" dir="ltr">'+esc(liveUrl(pageSlug))+'</bdi></div>'+
+        // PR-A: the LIVE link is shown ONLY when the page is proven live (live_verified_at). Until then this slot
+        // carries the real publish state (Publishing / Not published) and a one-tap Publish, never a "Live link".
+        '<div class="cr-pub" id="crPub"><div class="up-empty">'+esc(t("up_verifying"))+'</div></div>'+
         '<div class="cr-prev-h">'+esc(t("cr_page_preview"))+'</div>'+
         '<div class="cr-page-box" id="crPageBox"><div class="up-empty">'+esc(t("up_reading"))+'</div></div>'+
       '</div>';
-    try{ restGet("console_pages?slug=eq."+enc(pageSlug)+"&select=title&limit=1").then(function(rows){
-      var ti=document.getElementById("crPageTitle"); if(!ti) return;
-      var title=(rows && rows[0] && String(rows[0].title||"").trim()) || upPretty(pageSlug); ti.textContent=title;
-    }, function(){}); }catch(e){}
+    function paintPub(page){
+      var box=document.getElementById("crPub"); if(!box) return;
+      var st=pagePubState(pageSlug, page||{});
+      box.setAttribute("data-pub-state", st.key);
+      box.innerHTML = (st.key==="live")
+        ? '<div class="cr-field"><span class="cr-k">'+esc(t("lib_link"))+'</span><bdi class="cr-v mono-iso" dir="ltr">'+esc(liveUrl(pageSlug))+'</bdi></div>'
+        : '<div class="cr-field"><span class="cr-k">'+esc(t("pub_status"))+'</span><span class="cr-v">'+pagePubLineHtml(pageSlug, page||{})+'</span></div>'+
+          '<div class="acts">'+pagePublishBtnHtml(pageSlug, slug, true)+'</div>';   // the Page tab's one primary action
+    }
+    try{ restGet("console_pages?slug=eq."+enc(pageSlug)+"&select=title,live_verified_at,up&limit=1").then(function(rows){
+      var row=(rows && rows[0]) || {};
+      var ti=document.getElementById("crPageTitle");
+      if(ti) ti.textContent=(String(row.title||"").trim()) || upPretty(pageSlug);
+      paintPub(row);
+      // Not proven live yet: one real fetch of the live URL. If it resolves, stamp live_verified_at (the same
+      // single liveness write) and repaint as Live; otherwise the derived state stands. Never an optimistic Live.
+      if(!row.live_verified_at && !__upPublishing[pageSlug]){
+        verifyLive(pageSlug).then(function(v){
+          if(v && v.ok){ return pageStampLive(pageSlug).then(function(){ paintPub({ live_verified_at:new Date().toISOString() }); }, function(){}); }
+        }, function(){});
+      }
+    }, function(){ paintPub({}); }); }catch(e){}
     try{ pageReadHtml(pageSlug).then(function(html){
       var box=document.getElementById("crPageBox"); if(!box) return;
       if(String(html||"").trim()) box.innerHTML = pageFrameIframe(html);
