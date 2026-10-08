@@ -138,8 +138,13 @@ roughly 5:1 to 5.5:1). None is a lane hue; none is the reserved gradient; the na
 Agha (muhelagha@gmail.com; the same person as "Mohammed", always shown as Agha), Basel
 (alnajjarjawad97@gmail.com). The tokens are declared (`:root`, and the light-theme darkened variants) and
 wired to the member chip on the card face and in the opp detail's Members control (collaboration PR-2); the
-colour is an accent only (the dot and a soft left border), the name text stays `--ink-2`, and it is never the
-gradient nor a lane hue. This section is the approved colour law they answer to.
+colour is an accent only, the name text stays `--ink-2`, and it is never the gradient nor a lane hue. PR-C made
+the chip read in colour at a glance using the "soft tint chip" this law allows: a tint of the member hue behind
+the chip (`--mem-thyab-t`, `--mem-basel-t`, `--mem-agha-t`), a member-hue border, and the monogram circle filled
+with the member hue, its glyph in `--on-mem` (near-black `#0e0b14` on the dark-theme hues, white on the darkened
+light-theme hues). Measured AA: name on the tinted chip 8.4:1 or better (dark) and 14.8:1 or better (light);
+monogram glyph on its fill 5.4:1 or better; the filled circle against the card 5.0:1 or better. This section is
+the approved colour law they answer to.
 
 ## 5. The weight law
 
